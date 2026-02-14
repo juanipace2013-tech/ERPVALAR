@@ -49,6 +49,7 @@ model User {
   opportunities Opportunity[]
   quotes        Quote[]
   invoices      Invoice[]
+  customersSalesPerson Customer[] @relation("CustomerSalesPerson")
 
   // Accounting relations
   journalEntries JournalEntry[]
@@ -120,11 +121,10 @@ enum TaxCondition {
 enum CustomerStatus {
   ACTIVE
   INACTIVE
-  BLOCKED
 }
 
 enum CustomerType {
-  COMPANY
+  BUSINESS
   INDIVIDUAL
 }
 
@@ -133,7 +133,7 @@ model Customer {
   // Datos básicos
   name            String
   businessName    String?        // Razón social
-  type            CustomerType   @default(COMPANY)
+  type            CustomerType   @default(BUSINESS)
 
   // Datos fiscales argentinos
   cuit            String         @unique
@@ -159,6 +159,11 @@ model Customer {
   paymentTerms    Int?           // Días de plazo de pago
   discount        Decimal?       @db.Decimal(5, 2) // Descuento porcentual
   priceMultiplier Decimal        @default(1.0) @db.Decimal(5, 3) // Multiplicador de precio (ej: 1.2 = 20% markup)
+  balance         Decimal        @default(0) @db.Decimal(15, 2) // Saldo actual del cliente
+
+  // Vendedor asignado
+  salesPersonId   String?
+  salesPerson     User?          @relation("CustomerSalesPerson", fields: [salesPersonId], references: [id])
 
   // Metadatos
   notes           String?        @db.Text
@@ -176,6 +181,7 @@ model Customer {
   @@index([name])
   @@index([status])
   @@index([province])
+  @@index([salesPersonId])
   @@map("customers")
 }
 

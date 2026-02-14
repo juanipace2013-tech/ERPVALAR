@@ -45,8 +45,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Construir ordenamiento dinámico
-    const orderBy: any = {}
-    orderBy[sortBy] = sortOrder
+    // Validar campos permitidos para ordenamiento
+    const allowedSortFields = ['name', 'businessName', 'balance', 'createdAt', 'cuit']
+    const validSortBy = allowedSortFields.includes(sortBy) ? sortBy : 'balance'
+    const validSortOrder = sortOrder === 'asc' || sortOrder === 'desc' ? sortOrder : 'desc'
 
     // Obtener clientes con paginación
     const [customers, total] = await Promise.all([
@@ -54,7 +56,7 @@ export async function GET(request: NextRequest) {
         where,
         skip,
         take: limit,
-        orderBy,
+        orderBy: { [validSortBy]: validSortOrder },
         include: {
           salesPerson: {
             select: {

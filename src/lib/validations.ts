@@ -19,7 +19,7 @@ export type LoginInput = z.infer<typeof loginSchema>
 export const customerSchema = z.object({
   name: z.string().min(2, 'El nombre debe tener al menos 2 caracteres'),
   businessName: z.string().optional(),
-  type: z.enum(['COMPANY', 'INDIVIDUAL']),
+  type: z.enum(['BUSINESS', 'INDIVIDUAL']),
 
   // Datos fiscales
   cuit: z
@@ -53,7 +53,7 @@ export const customerSchema = z.object({
   country: z.string().default('Argentina'),
 
   // Configuración comercial
-  status: z.enum(['ACTIVE', 'INACTIVE', 'BLOCKED']).default('ACTIVE'),
+  status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE'),
   creditLimit: z.number().nonnegative('El límite debe ser positivo').optional(),
   creditCurrency: z.enum(['ARS', 'USD', 'EUR']).optional(),
   paymentTerms: z.number().int().nonnegative('Los días deben ser positivos').optional(),
@@ -62,6 +62,8 @@ export const customerSchema = z.object({
     .min(0, 'El descuento no puede ser negativo')
     .max(100, 'El descuento no puede ser mayor a 100')
     .optional(),
+  priceMultiplier: z.number().positive('El multiplicador debe ser positivo').default(1.0),
+  salesPersonId: z.string().optional(),
 
   // Notas
   notes: z.string().optional(),

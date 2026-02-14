@@ -20,6 +20,13 @@ export async function GET(
     const customer = await prisma.customer.findUnique({
       where: { id },
       include: {
+        salesPerson: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
         contacts: {
           orderBy: {
             isPrimary: 'desc',
@@ -61,6 +68,13 @@ export async function GET(
                 name: true,
               },
             },
+          },
+        },
+        _count: {
+          select: {
+            opportunities: true,
+            quotes: true,
+            invoices: true,
           },
         },
       },
@@ -152,7 +166,25 @@ export async function PUT(
         creditCurrency: validatedData.creditCurrency,
         paymentTerms: validatedData.paymentTerms,
         discount: validatedData.discount,
+        priceMultiplier: validatedData.priceMultiplier,
+        salesPersonId: validatedData.salesPersonId,
         notes: validatedData.notes,
+      },
+      include: {
+        salesPerson: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        _count: {
+          select: {
+            opportunities: true,
+            quotes: true,
+            invoices: true,
+          },
+        },
       },
     })
 

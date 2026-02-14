@@ -85,6 +85,8 @@ export default function NuevoItemPage() {
       setLoading(true)
 
       // Preparar datos para la API
+      const costValue = formData.cost ? parseFloat(String(formData.cost)) : null
+
       const productData = {
         sku: formData.sku,
         name: formData.name,
@@ -95,13 +97,16 @@ export default function NuevoItemPage() {
         brand: formData.brand || null,
         stockQuantity: parseInt(String(formData.stockQuantity)) || 0,
         minStock: parseInt(String(formData.minStock)) || 0,
-        maxStock: formData.maxStock ? parseInt(String(formData.maxStock)) : null,
+        maxStock: formData.maxStock && parseInt(String(formData.maxStock)) > 0
+          ? parseInt(String(formData.maxStock))
+          : null,
         isTaxable: formData.isTaxable,
         taxRate: parseFloat(String(formData.taxRate)),
         trackInventory: formData.trackInventory,
         allowNegative: formData.allowNegative,
-        lastCost: parseFloat(String(formData.cost)) || null,
-        averageCost: parseFloat(String(formData.cost)) || null,
+        status: 'ACTIVE',
+        lastCost: costValue,
+        averageCost: costValue,
         prices: [
           {
             currency: 'ARS',
@@ -109,12 +114,13 @@ export default function NuevoItemPage() {
             amount: parseFloat(String(formData.salePrice)),
             validFrom: new Date().toISOString(),
           },
-          {
+          // Solo incluir precio COST si hay un costo válido
+          ...(costValue && costValue > 0 ? [{
             currency: 'ARS',
             priceType: 'COST',
-            amount: parseFloat(String(formData.cost)),
+            amount: costValue,
             validFrom: new Date().toISOString(),
-          },
+          }] : []),
         ],
       }
 
@@ -134,15 +140,27 @@ export default function NuevoItemPage() {
       if (!response.ok) {
         // Mostrar errores de validación específicos
         if (responseData.details && Array.isArray(responseData.details)) {
+          console.error('❌ DETALLES DE VALIDACIÓN:')
+          responseData.details.forEach((err: any) => {
+            console.error(`  - Campo: ${err.path.join('.')}`)
+            console.error(`    Mensaje: ${err.message}`)
+            console.error(`    Valor recibido:`, err.received)
+          })
+
           const errorMessages = responseData.details
-            .map((err: any) => `${err.path.join('.')}: ${err.message}`)
+            .map((err: any) => `• ${err.path.join('.')}: ${err.message}`)
             .join('\n')
-          console.error('❌ Errores de validación:', errorMessages)
-          toast.error(`Errores de validación:\n${errorMessages}`)
+
+          toast.error(`Error de validación:\n${errorMessages}`, {
+            duration: 10000,
+          })
         } else {
           toast.error(responseData.error || 'Error al crear el producto')
         }
-        throw new Error(responseData.error || 'Error al crear el producto')
+
+        // No lanzar error para que el usuario pueda ver los detalles
+        setLoading(false)
+        return
       }
 
       toast.success('Producto creado exitosamente')

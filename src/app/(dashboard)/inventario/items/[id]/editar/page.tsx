@@ -156,6 +156,8 @@ export default function EditarItemPage({ params }: { params: Promise<{ id: strin
       setSaving(true)
 
       // Preparar datos para la API
+      const costValue = formData.cost ? parseFloat(String(formData.cost)) : null
+
       const productData = {
         sku: formData.sku,
         name: formData.name,
@@ -166,11 +168,14 @@ export default function EditarItemPage({ params }: { params: Promise<{ id: strin
         brand: formData.brand || null,
         stockQuantity: parseInt(String(formData.stockQuantity)) || 0,
         minStock: parseInt(String(formData.minStock)) || 0,
-        maxStock: formData.maxStock ? parseInt(String(formData.maxStock)) : null,
+        maxStock: formData.maxStock && parseInt(String(formData.maxStock)) > 0
+          ? parseInt(String(formData.maxStock))
+          : null,
         isTaxable: formData.isTaxable,
         taxRate: parseFloat(String(formData.taxRate)),
         trackInventory: formData.trackInventory,
         allowNegative: formData.allowNegative,
+        status: 'ACTIVE',
         prices: [
           {
             currency: 'ARS',
@@ -178,12 +183,13 @@ export default function EditarItemPage({ params }: { params: Promise<{ id: strin
             amount: parseFloat(String(formData.salePrice)),
             validFrom: new Date().toISOString(),
           },
-          {
+          // Solo incluir precio COST si hay un costo válido
+          ...(costValue && costValue > 0 ? [{
             currency: 'ARS',
             priceType: 'COST',
-            amount: parseFloat(String(formData.cost)),
+            amount: costValue,
             validFrom: new Date().toISOString(),
-          },
+          }] : []),
         ],
       }
 

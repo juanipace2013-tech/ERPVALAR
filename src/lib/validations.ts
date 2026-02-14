@@ -97,24 +97,24 @@ export const productSchema = z.object({
     .min(2, 'El SKU debe tener al menos 2 caracteres')
     .regex(/^[A-Z0-9-]+$/, 'El SKU solo puede contener letras mayúsculas, números y guiones'),
   name: z.string().min(2, 'El nombre debe tener al menos 2 caracteres'),
-  description: z.string().optional(),
+  description: z.string().nullable().optional(),
 
   // Tipo de producto
   type: z.enum(['PRODUCT', 'SERVICE', 'COMBO']).default('PRODUCT'),
 
   // Categorización
-  categoryId: z.string().optional(),
-  brand: z.string().optional(),
+  categoryId: z.string().nullable().optional(),
+  brand: z.string().nullable().optional(),
 
   // Stock
   stockQuantity: z.number().int().nonnegative('El stock no puede ser negativo'),
   minStock: z.number().int().nonnegative('El stock mínimo no puede ser negativo'),
-  maxStock: z.number().int().positive('El stock máximo debe ser positivo').optional(),
+  maxStock: z.number().int().positive('El stock máximo debe ser positivo').nullable().optional(),
   unit: z.string().default('UN'),
 
   // Costos
-  lastCost: z.number().nonnegative('El costo no puede ser negativo').optional(),
-  averageCost: z.number().nonnegative('El costo promedio no puede ser negativo').optional(),
+  lastCost: z.number().nonnegative('El costo no puede ser negativo').nullable().optional(),
+  averageCost: z.number().nonnegative('El costo promedio no puede ser negativo').nullable().optional(),
 
   // Configuración
   status: z.enum(['ACTIVE', 'INACTIVE', 'DISCONTINUED']).default('ACTIVE'),
@@ -123,8 +123,11 @@ export const productSchema = z.object({
   trackInventory: z.boolean().default(true),
   allowNegative: z.boolean().default(false),
 
+  // Imágenes
+  images: z.array(z.string().url()).default([]),
+
   // Notas
-  notes: z.string().optional(),
+  notes: z.string().nullable().optional(),
 })
 
 export type ProductInput = z.infer<typeof productSchema>

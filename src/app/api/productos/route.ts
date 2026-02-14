@@ -106,8 +106,12 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
 
+    console.log('📥 Datos recibidos en API:', JSON.stringify(body, null, 2))
+
     // Validar datos
     const validatedData = productWithPricesSchema.parse(body)
+
+    console.log('✅ Datos validados:', JSON.stringify(validatedData, null, 2))
 
     // Verificar si el SKU ya existe
     const existingProduct = await prisma.product.findUnique({
@@ -141,6 +145,7 @@ export async function POST(request: NextRequest) {
         taxRate: validatedData.taxRate,
         trackInventory: validatedData.trackInventory,
         allowNegative: validatedData.allowNegative,
+        images: validatedData.images,
         notes: validatedData.notes,
         prices: validatedData.prices
           ? {
@@ -175,15 +180,42 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(product, { status: 201 })
   } catch (error) {
     if (error instanceof z.ZodError) {
+      console.error('❌ ERROR DE VALIDACIÓN ZOD:')
+      console.error(JSON.stringify(error.issues, null, 2))
+
+      // Crear mensajes de error más legibles
+      const errorMessages = error.issues.map(err => {
+        const field = err.path.join('.')
+        const message = err.message
+        return `Campo "${field}": ${message}`
+      })
+
       return NextResponse.json(
-        { error: 'Datos inválidos', details: (error as any).errors },
+        {
+          error: 'Errores de validación',
+          message: errorMessages.join(' | '),
+          details: error.issues.map(err => ({
+            path: err.path,
+            message: err.message,
+            code: err.code,
+            received: (err as any).received,
+          }))
+        },
         { status: 400 }
       )
     }
 
-    console.error('Error creating product:', error)
+    console.error('❌ ERROR AL CREAR PRODUCTO:', error)
+    if (error instanceof Error) {
+      console.error('Mensaje:', error.message)
+      console.error('Stack:', error.stack)
+    }
+
     return NextResponse.json(
-      { error: 'Error al crear producto' },
+      {
+        error: 'Error al crear producto',
+        message: error instanceof Error ? error.message : 'Error desconocido'
+      },
       { status: 500 }
     )
   }

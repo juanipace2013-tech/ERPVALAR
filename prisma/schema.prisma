@@ -268,7 +268,7 @@ model Product {
   allowNegative   Boolean       @default(false)
 
   // Imágenes y documentos
-  images          String[]      // Array de URLs
+  images          String[]      @default([]) // Array de URLs
 
   // Metadatos
   notes           String?       @db.Text

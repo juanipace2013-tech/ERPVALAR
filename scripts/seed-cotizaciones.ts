@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, ProductType } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
@@ -52,7 +52,7 @@ async function main() {
       name: 'VÁLV. ESF. INOX. P.TOTAL 3 PZAS 1/2" M. DIRECTO',
       brand: 'GENEBRE',
       listPriceUSD: 769.79,
-      type: 'PRODUCT',
+      type: ProductType.PRODUCT,
       unit: 'UN',
       stockQuantity: 25,
       minStock: 5,
@@ -63,7 +63,7 @@ async function main() {
       name: 'VÁLVULA ESFÉRICA BRONCE 1" PASO TOTAL',
       brand: 'GENEBRE',
       listPriceUSD: 324.50,
-      type: 'PRODUCT',
+      type: ProductType.PRODUCT,
       unit: 'UN',
       stockQuantity: 50,
       minStock: 10,
@@ -74,7 +74,7 @@ async function main() {
       name: 'VÁLVULA MARIPOSA PVC-U DN50 2"',
       brand: 'CEPEX',
       listPriceUSD: 156.30,
-      type: 'PRODUCT',
+      type: ProductType.PRODUCT,
       unit: 'UN',
       stockQuantity: 30,
       minStock: 8,
@@ -85,7 +85,7 @@ async function main() {
       name: 'MANÓMETRO GLICERINA 0-10 BAR 1/4" POST',
       brand: 'WINTERS',
       listPriceUSD: 45.80,
-      type: 'PRODUCT',
+      type: ProductType.PRODUCT,
       unit: 'UN',
       stockQuantity: 100,
       minStock: 20,
@@ -96,7 +96,7 @@ async function main() {
       name: 'JUNTA TEFLÓN 1/2"',
       brand: 'GENÉRICO',
       listPriceUSD: 2.50,
-      type: 'PRODUCT',
+      type: ProductType.PRODUCT,
       unit: 'UN',
       stockQuantity: 500,
       minStock: 100,
@@ -107,7 +107,7 @@ async function main() {
       name: 'TORNILLO INOX M8x30',
       brand: 'GENÉRICO',
       listPriceUSD: 0.75,
-      type: 'PRODUCT',
+      type: ProductType.PRODUCT,
       unit: 'UN',
       stockQuantity: 1000,
       minStock: 200,
@@ -129,12 +129,23 @@ async function main() {
           listPriceUSD: product.listPriceUSD,
           stockQuantity: product.stockQuantity,
           minStock: product.minStock,
+          ...(categoryId ? { categoryId } : {}),
         },
       })
       console.log(`  ↻ ${product.sku} - ${product.name} (actualizado)`)
     } else {
       await prisma.product.create({
-        data: product,
+        data: {
+          sku: product.sku,
+          name: product.name,
+          brand: product.brand,
+          listPriceUSD: product.listPriceUSD,
+          type: product.type,
+          unit: product.unit,
+          stockQuantity: product.stockQuantity,
+          minStock: product.minStock,
+          ...(categoryId ? { categoryId } : {}),
+        },
       })
       console.log(`  ✓ ${product.sku} - ${product.name}`)
     }

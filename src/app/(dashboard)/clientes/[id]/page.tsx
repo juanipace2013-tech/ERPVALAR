@@ -92,9 +92,42 @@ interface Invoice {
   status: string
 }
 
+interface AccountMovement {
+  id: string
+  type: 'INVOICE'
+  date: string
+  reference: string
+  invoiceType: string
+  description: string
+  status: string
+  currency: string
+  debit: number
+  credit: number
+  balance: number
+  dueDate: string
+  paidDate: string | null
+  items: Array<{
+    product: string
+    quantity: number
+    unitPrice: number
+    subtotal: number
+  }>
+  user: string
+}
+
+interface AccountStats {
+  totalInvoices: number
+  pendingInvoices: number
+  paidInvoices: number
+  overdueInvoices: number
+  totalDebt: number
+  totalInvoiced: number
+  totalPaid: number
+}
+
 const TAX_CONDITIONS = [
   { value: 'RESPONSABLE_INSCRIPTO', label: 'Responsable Inscripto' },
-  { value: 'MONOTRIBUTISTA', label: 'Monotributista' },
+  { value: 'MONOTRIBUTO', label: 'Monotributista' },
   { value: 'EXENTO', label: 'Exento' },
   { value: 'CONSUMIDOR_FINAL', label: 'Consumidor Final' },
 ]
@@ -142,6 +175,9 @@ export default function CustomerDetailPage() {
     total: 0,
     totalPages: 0,
   })
+  const [accountMovements, setAccountMovements] = useState<AccountMovement[]>([])
+  const [accountStats, setAccountStats] = useState<AccountStats | null>(null)
+  const [loadingMovements, setLoadingMovements] = useState(false)
 
   const [formData, setFormData] = useState<Partial<Customer>>({})
 
@@ -191,6 +227,25 @@ export default function CustomerDetailPage() {
       }
     } catch (error) {
       console.error('Error fetching invoices:', error)
+    }
+  }
+
+  const fetchAccountMovements = async () => {
+    try {
+      setLoadingMovements(true)
+      const response = await fetch(`/api/clientes/${customerId}/movimientos`)
+      if (response.ok) {
+        const data = await response.json()
+        setAccountMovements(data.movements || [])
+        setAccountStats(data.stats || null)
+      } else {
+        toast.error('Error al cargar movimientos de cuenta')
+      }
+    } catch (error) {
+      console.error('Error fetching account movements:', error)
+      toast.error('Error al cargar movimientos de cuenta')
+    } finally {
+      setLoadingMovements(false)
     }
   }
 
@@ -414,7 +469,11 @@ export default function CustomerDetailPage() {
               <TabsTrigger
                 value="account"
                 className="data-[state=active]:bg-blue-600 data-[state=active]:text-white"
-                disabled
+                onClick={() => {
+                  if (accountMovements.length === 0 && !loadingMovements) {
+                    fetchAccountMovements()
+                  }
+                }}
               >
                 <DollarSign className="h-4 w-4 mr-2" />
                 Cuenta cliente
@@ -910,6 +969,143 @@ export default function CustomerDetailPage() {
                     </div>
                   </div>
                 </div>
+              </div>
+            </TabsContent>
+
+            {/* Tab: Cuenta cliente */}
+            <TabsContent value="account" className="mt-6">
+              <div className="space-y-6">
+                <h3 className="text-lg font-semibold text-blue-900">
+                  Movimientos de cuenta
+                </h3>
+
+                {/* Estadísticas */}
+                {accountStats && (
+                  <div className="grid gap-4 md:grid-cols-4">
+                    <Card className="border-blue-200">
+                      <CardContent className="p-4">
+                        <div className="text-sm text-muted-foreground">Total Facturado</div>
+                        <div className="text-2xl font-bold text-blue-900">
+                          $ {formatCurrency(accountStats.totalInvoiced)}
+                        </div>
+                      </CardContent>
+                    </Card>
+                    <Card className="border-green-200">
+                      <CardContent className="p-4">
+                        <div className="text-sm text-muted-foreground">Pagado</div>
+                        <div className="text-2xl font-bold text-green-600">
+                          $ {formatCurrency(accountStats.totalPaid)}
+                        </div>
+                      </CardContent>
+                    </Card>
+                    <Card className="border-orange-200">
+                      <CardContent className="p-4">
+                        <div className="text-sm text-muted-foreground">Deuda Actual</div>
+                        <div className="text-2xl font-bold text-orange-600">
+                          $ {formatCurrency(accountStats.totalDebt)}
+                        </div>
+                      </CardContent>
+                    </Card>
+                    <Card className="border-red-200">
+                      <CardContent className="p-4">
+                        <div className="text-sm text-muted-foreground">Facturas Vencidas</div>
+                        <div className="text-2xl font-bold text-red-600">
+                          {accountStats.overdueInvoices}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+
+                {/* Lista de movimientos */}
+                {loadingMovements ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                  </div>
+                ) : accountMovements.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <p>No hay movimientos registrados</p>
+                  </div>
+                ) : (
+                  <div className="border rounded-lg overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-blue-50">
+                          <TableHead className="font-semibold text-blue-900">Fecha</TableHead>
+                          <TableHead className="font-semibold text-blue-900">Comprobante</TableHead>
+                          <TableHead className="font-semibold text-blue-900">Descripción</TableHead>
+                          <TableHead className="font-semibold text-blue-900">Estado</TableHead>
+                          <TableHead className="text-right font-semibold text-blue-900">Debe</TableHead>
+                          <TableHead className="text-right font-semibold text-blue-900">Haber</TableHead>
+                          <TableHead className="text-right font-semibold text-blue-900">Saldo</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {accountMovements.map((movement) => (
+                          <TableRow key={movement.id} className="hover:bg-blue-50">
+                            <TableCell className="font-medium">
+                              {formatDate(movement.date)}
+                            </TableCell>
+                            <TableCell>
+                              <span className="font-mono text-sm">
+                                {movement.reference}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <div>
+                                <div className="font-medium">{movement.description}</div>
+                                {movement.items && movement.items.length > 0 && (
+                                  <div className="text-xs text-muted-foreground mt-1">
+                                    {movement.items.slice(0, 2).map((item, idx) => (
+                                      <div key={idx}>
+                                        {item.quantity}x {item.product}
+                                      </div>
+                                    ))}
+                                    {movement.items.length > 2 && (
+                                      <div>+{movement.items.length - 2} más</div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <span
+                                className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                  movement.status === 'PAID'
+                                    ? 'bg-green-100 text-green-700'
+                                    : movement.status === 'AUTHORIZED' || movement.status === 'SENT'
+                                    ? 'bg-orange-100 text-orange-700'
+                                    : movement.status === 'PENDING'
+                                    ? 'bg-yellow-100 text-yellow-700'
+                                    : 'bg-gray-100 text-gray-700'
+                                }`}
+                              >
+                                {movement.status === 'PAID'
+                                  ? 'Pagada'
+                                  : movement.status === 'AUTHORIZED'
+                                  ? 'Autorizada'
+                                  : movement.status === 'SENT'
+                                  ? 'Enviada'
+                                  : movement.status === 'PENDING'
+                                  ? 'Pendiente'
+                                  : movement.status}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {movement.debit > 0 ? `$ ${formatCurrency(movement.debit)}` : '-'}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {movement.credit > 0 ? `$ ${formatCurrency(movement.credit)}` : '-'}
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-semibold">
+                              $ {formatCurrency(movement.balance)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
               </div>
             </TabsContent>
 

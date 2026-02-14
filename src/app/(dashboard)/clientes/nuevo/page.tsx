@@ -85,7 +85,7 @@ export default function NewCustomerPage() {
     paymentTerms: '',
     discount: '',
     priceMultiplier: '1.0',
-    salesPersonId: '',
+    salesPersonId: 'NONE',
     notes: '',
   })
 
@@ -133,7 +133,7 @@ export default function NewCustomerPage() {
         paymentTerms: formData.paymentTerms ? parseInt(formData.paymentTerms) : undefined,
         discount: formData.discount ? parseFloat(formData.discount) : undefined,
         priceMultiplier: parseFloat(formData.priceMultiplier),
-        salesPersonId: formData.salesPersonId || undefined,
+        salesPersonId: formData.salesPersonId && formData.salesPersonId !== 'NONE' ? formData.salesPersonId : undefined,
         notes: formData.notes || undefined,
       }
 
@@ -490,7 +490,7 @@ export default function NewCustomerPage() {
                       <SelectValue placeholder="Sin asignar" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Sin asignar</SelectItem>
+                      <SelectItem value="NONE">Sin asignar</SelectItem>
                       {users.map((user) => (
                         <SelectItem key={user.id} value={user.id}>
                           {user.name}

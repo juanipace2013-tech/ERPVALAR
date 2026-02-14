@@ -410,7 +410,10 @@ export default function ClientesPage() {
           <UserPlus className="h-4 w-4 mr-2" />
           Nuevo cliente
         </Button>
-        <Button variant="outline">
+        <Button
+          variant="outline"
+          onClick={() => router.push('/clientes/importar')}
+        >
           <Upload className="h-4 w-4 mr-2" />
           Importar
         </Button>

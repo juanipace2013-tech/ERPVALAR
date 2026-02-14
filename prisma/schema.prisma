@@ -1,0 +1,960 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ========================================
+// AUTENTICACIÓN Y USUARIOS
+// ========================================
+
+enum UserRole {
+  ADMIN
+  GERENTE
+  VENDEDOR
+  CONTADOR
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  password      String
+  role          UserRole  @default(VENDEDOR)
+  status        UserStatus @default(ACTIVE)
+  avatar        String?
+  phone         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // NextAuth relations
+  accounts      Account[]
+  sessions      Session[]
+
+  // Business relations
+  activities    Activity[]
+  opportunities Opportunity[]
+  quotes        Quote[]
+  invoices      Invoice[]
+
+  // Accounting relations
+  journalEntries JournalEntry[]
+
+  // Inventory relations
+  stockMovements StockMovement[]
+
+  @@index([email])
+  @@index([role])
+  @@index([status])
+  @@map("users")
+}
+
+// NextAuth Models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ========================================
+// CLIENTES
+// ========================================
+
+enum TaxCondition {
+  RESPONSABLE_INSCRIPTO
+  MONOTRIBUTO
+  EXENTO
+  CONSUMIDOR_FINAL
+  NO_RESPONSABLE
+  RESPONSABLE_NO_INSCRIPTO
+}
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+  BLOCKED
+}
+
+enum CustomerType {
+  COMPANY
+  INDIVIDUAL
+}
+
+model Customer {
+  id              String         @id @default(cuid())
+  // Datos básicos
+  name            String
+  businessName    String?        // Razón social
+  type            CustomerType   @default(COMPANY)
+
+  // Datos fiscales argentinos
+  cuit            String         @unique
+  taxCondition    TaxCondition   @default(RESPONSABLE_INSCRIPTO)
+
+  // Contacto
+  email           String?
+  phone           String?
+  mobile          String?
+  website         String?
+
+  // Dirección
+  address         String?
+  city            String?
+  province        String?        // Provincia argentina
+  postalCode      String?
+  country         String         @default("Argentina")
+
+  // Configuración comercial
+  status          CustomerStatus @default(ACTIVE)
+  creditLimit     Decimal?       @db.Decimal(12, 2)
+  creditCurrency  Currency?      @default(ARS)
+  paymentTerms    Int?           // Días de plazo de pago
+  discount        Decimal?       @db.Decimal(5, 2) // Descuento porcentual
+
+  // Metadatos
+  notes           String?        @db.Text
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  // Relaciones
+  contacts        Contact[]
+  opportunities   Opportunity[]
+  quotes          Quote[]
+  invoices        Invoice[]
+  activities      Activity[]
+
+  @@index([cuit])
+  @@index([name])
+  @@index([status])
+  @@index([province])
+  @@map("customers")
+}
+
+model Contact {
+  id          String   @id @default(cuid())
+  customerId  String
+
+  firstName   String
+  lastName    String
+  position    String?
+  email       String?
+  phone       String?
+  mobile      String?
+  isPrimary   Boolean  @default(false)
+
+  notes       String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([email])
+  @@map("contacts")
+}
+
+// ========================================
+// PRODUCTOS
+// ========================================
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+  DISCONTINUED
+}
+
+enum ProductType {
+  PRODUCT      // Producto físico con inventario
+  SERVICE      // Servicio sin inventario
+  COMBO        // Combo de productos
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String?
+  parentId    String?
+
+  parent      Category?  @relation("CategoryToCategory", fields: [parentId], references: [id])
+  children    Category[] @relation("CategoryToCategory")
+  products    Product[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([name])
+  @@index([parentId])
+  @@map("categories")
+}
+
+model Product {
+  id              String        @id @default(cuid())
+
+  // Identificación
+  sku             String        @unique
+  name            String
+  description     String?       @db.Text
+
+  // Tipo y categorización
+  type            ProductType   @default(PRODUCT)
+  categoryId      String?
+  brand           String?
+
+  // Stock (stock total calculado)
+  stockQuantity   Int           @default(0)
+  minStock        Int           @default(0)
+  maxStock        Int?
+  unit            String        @default("UN") // Unidad de medida
+
+  // Costos y precios
+  lastCost        Decimal?      @db.Decimal(12, 2) // Último costo de compra
+  averageCost     Decimal?      @db.Decimal(12, 2) // Costo promedio calculado
+
+  // Configuración
+  status          ProductStatus @default(ACTIVE)
+  isTaxable       Boolean       @default(true)
+  taxRate         Decimal       @default(21) @db.Decimal(5, 2) // IVA 21% default
+
+  // Control de inventario
+  trackInventory  Boolean       @default(true)
+  allowNegative   Boolean       @default(false)
+
+  // Imágenes y documentos
+  images          String[]      // Array de URLs
+
+  // Metadatos
+  notes           String?       @db.Text
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relaciones
+  category        Category?     @relation(fields: [categoryId], references: [id])
+  prices          ProductPrice[]
+  quoteItems      QuoteItem[]
+  invoiceItems    InvoiceItem[]
+  stockMovements  StockMovement[]
+  warehouseStocks WarehouseStock[]
+  priceListItems  PriceListItem[]
+
+  @@index([sku])
+  @@index([name])
+  @@index([type])
+  @@index([categoryId])
+  @@index([status])
+  @@map("products")
+}
+
+enum Currency {
+  ARS
+  USD
+  EUR
+}
+
+enum PriceType {
+  COST      // Precio de costo
+  SALE      // Precio de venta
+  LIST      // Precio de lista
+  WHOLESALE // Precio mayorista
+}
+
+model ProductPrice {
+  id          String    @id @default(cuid())
+  productId   String
+
+  currency    Currency
+  priceType   PriceType
+  amount      Decimal   @db.Decimal(12, 2)
+
+  // Vigencia
+  validFrom   DateTime  @default(now())
+  validUntil  DateTime?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, currency, priceType, validFrom])
+  @@index([productId])
+  @@index([currency])
+  @@index([priceType])
+  @@map("product_prices")
+}
+
+// ========================================
+// TIPOS DE CAMBIO
+// ========================================
+
+enum ExchangeRateSource {
+  MANUAL
+  BANCO_CENTRAL
+  API
+}
+
+model ExchangeRate {
+  id          String              @id @default(cuid())
+
+  fromCurrency Currency
+  toCurrency   Currency
+  rate         Decimal             @db.Decimal(12, 6)
+
+  source      ExchangeRateSource  @default(MANUAL)
+  validFrom   DateTime            @default(now())
+  validUntil  DateTime?
+
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@unique([fromCurrency, toCurrency, validFrom])
+  @@index([fromCurrency, toCurrency])
+  @@index([validFrom])
+  @@map("exchange_rates")
+}
+
+// ========================================
+// CRM - OPORTUNIDADES Y COTIZACIONES
+// ========================================
+
+enum OpportunityStage {
+  LEAD           // Prospecto
+  QUALIFIED      // Calificado
+  PROPOSAL       // Propuesta enviada
+  NEGOTIATION    // Negociación
+  CLOSED_WON     // Ganada
+  CLOSED_LOST    // Perdida
+}
+
+enum OpportunityPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Opportunity {
+  id              String              @id @default(cuid())
+
+  customerId      String
+  userId          String              // Vendedor asignado
+
+  title           String
+  description     String?             @db.Text
+  stage           OpportunityStage    @default(LEAD)
+  priority        OpportunityPriority @default(MEDIUM)
+
+  estimatedValue  Decimal?            @db.Decimal(12, 2)
+  currency        Currency            @default(ARS)
+  probability     Int?                // Probabilidad de cierre (0-100)
+
+  expectedCloseDate DateTime?
+  closedDate      DateTime?
+
+  lostReason      String?             @db.Text
+
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  customer        Customer            @relation(fields: [customerId], references: [id])
+  user            User                @relation(fields: [userId], references: [id])
+  quotes          Quote[]
+  activities      Activity[]
+
+  @@index([customerId])
+  @@index([userId])
+  @@index([stage])
+  @@index([expectedCloseDate])
+  @@map("opportunities")
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+model Quote {
+  id              String      @id @default(cuid())
+  quoteNumber     String      @unique
+
+  customerId      String
+  opportunityId   String?
+  userId          String
+
+  status          QuoteStatus @default(DRAFT)
+  currency        Currency    @default(ARS)
+
+  subtotal        Decimal     @db.Decimal(12, 2)
+  taxAmount       Decimal     @db.Decimal(12, 2)
+  discount        Decimal     @default(0) @db.Decimal(12, 2)
+  total           Decimal     @db.Decimal(12, 2)
+
+  validUntil      DateTime
+  notes           String?     @db.Text
+  terms           String?     @db.Text
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  customer        Customer    @relation(fields: [customerId], references: [id])
+  opportunity     Opportunity? @relation(fields: [opportunityId], references: [id])
+  user            User        @relation(fields: [userId], references: [id])
+  items           QuoteItem[]
+  invoice         Invoice?
+
+  @@index([customerId])
+  @@index([opportunityId])
+  @@index([userId])
+  @@index([status])
+  @@index([quoteNumber])
+  @@map("quotes")
+}
+
+model QuoteItem {
+  id          String  @id @default(cuid())
+  quoteId     String
+  productId   String
+
+  quantity    Int
+  unitPrice   Decimal @db.Decimal(12, 2)
+  discount    Decimal @default(0) @db.Decimal(5, 2) // Descuento porcentual
+  taxRate     Decimal @db.Decimal(5, 2)
+  subtotal    Decimal @db.Decimal(12, 2)
+
+  description String?
+
+  quote       Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  product     Product @relation(fields: [productId], references: [id])
+
+  @@index([quoteId])
+  @@index([productId])
+  @@map("quote_items")
+}
+
+// ========================================
+// FACTURACIÓN
+// ========================================
+
+enum InvoiceType {
+  A  // Factura A
+  B  // Factura B
+  C  // Factura C
+  E  // Factura E (Exportación)
+}
+
+enum InvoiceStatus {
+  DRAFT
+  PENDING      // Pendiente de emisión
+  AUTHORIZED   // Autorizada por AFIP
+  SENT         // Enviada al cliente
+  PAID
+  OVERDUE      // Vencida
+  CANCELLED
+}
+
+model Invoice {
+  id              String        @id @default(cuid())
+  invoiceNumber   String        @unique
+  invoiceType     InvoiceType
+
+  customerId      String
+  quoteId         String?       @unique
+  userId          String
+
+  status          InvoiceStatus @default(DRAFT)
+  currency        Currency      @default(ARS)
+
+  subtotal        Decimal       @db.Decimal(12, 2)
+  taxAmount       Decimal       @db.Decimal(12, 2)
+  discount        Decimal       @default(0) @db.Decimal(12, 2)
+  total           Decimal       @db.Decimal(12, 2)
+
+  // AFIP
+  cae             String?       // Código de Autorización Electrónico
+  caeExpiration   DateTime?
+
+  issueDate       DateTime      @default(now())
+  dueDate         DateTime
+  paidDate        DateTime?
+
+  notes           String?       @db.Text
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  customer        Customer      @relation(fields: [customerId], references: [id])
+  quote           Quote?        @relation(fields: [quoteId], references: [id])
+  user            User          @relation(fields: [userId], references: [id])
+  items           InvoiceItem[]
+
+  // Accounting relations
+  journalEntries  JournalEntry[]
+  ivaBooks        IVABook[]
+  taxWithholdings TaxWithholding[]
+
+  // Inventory relations
+  stockMovements  StockMovement[]
+
+  @@index([customerId])
+  @@index([userId])
+  @@index([status])
+  @@index([invoiceNumber])
+  @@index([issueDate])
+  @@index([dueDate])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  productId   String
+
+  quantity    Int
+  unitPrice   Decimal @db.Decimal(12, 2)
+  discount    Decimal @default(0) @db.Decimal(5, 2)
+  taxRate     Decimal @db.Decimal(5, 2)
+  subtotal    Decimal @db.Decimal(12, 2)
+
+  description String?
+
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  product     Product @relation(fields: [productId], references: [id])
+
+  @@index([invoiceId])
+  @@index([productId])
+  @@map("invoice_items")
+}
+
+// ========================================
+// ACTIVIDADES Y AUDIT LOG
+// ========================================
+
+enum ActivityType {
+  CUSTOMER_CREATED
+  CUSTOMER_UPDATED
+  CUSTOMER_DELETED
+  PRODUCT_CREATED
+  PRODUCT_UPDATED
+  PRODUCT_DELETED
+  OPPORTUNITY_CREATED
+  OPPORTUNITY_UPDATED
+  OPPORTUNITY_STAGE_CHANGED
+  QUOTE_CREATED
+  QUOTE_SENT
+  QUOTE_ACCEPTED
+  QUOTE_REJECTED
+  INVOICE_CREATED
+  INVOICE_SENT
+  INVOICE_PAID
+  NOTE_ADDED
+  EMAIL_SENT
+  CALL_LOGGED
+  MEETING_SCHEDULED
+}
+
+model Activity {
+  id              String       @id @default(cuid())
+
+  type            ActivityType
+  userId          String
+
+  // Relación polimórfica
+  entityType      String       // "customer", "opportunity", "quote", etc.
+  entityId        String
+
+  customerId      String?
+  opportunityId   String?
+
+  title           String
+  description     String?      @db.Text
+  metadata        Json?        // Datos adicionales en JSON
+
+  createdAt       DateTime     @default(now())
+
+  user            User         @relation(fields: [userId], references: [id])
+  customer        Customer?    @relation(fields: [customerId], references: [id])
+  opportunity     Opportunity? @relation(fields: [opportunityId], references: [id])
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([customerId])
+  @@index([opportunityId])
+  @@index([createdAt])
+  @@map("activities")
+}
+
+// ========================================
+// MÓDULO DE CONTABILIDAD ARGENTINA
+// ========================================
+
+// Plan de Cuentas Contable
+enum AccountType {
+  ACTIVO              // Activo
+  PASIVO              // Pasivo
+  PATRIMONIO_NETO     // Patrimonio Neto
+  INGRESO             // Ingresos
+  EGRESO              // Egresos/Costos/Gastos
+}
+
+// ========================================
+// MÓDULO DE INVENTARIO
+// ========================================
+
+enum StockMovementType {
+  COMPRA                // Compra a proveedor (entrada)
+  VENTA                 // Venta a cliente (salida automática)
+  AJUSTE_POSITIVO       // Ajuste manual - incremento
+  AJUSTE_NEGATIVO       // Ajuste manual - decremento
+  DEVOLUCION_CLIENTE    // Devolución de cliente (entrada)
+  DEVOLUCION_PROVEEDOR  // Devolución a proveedor (salida)
+  TRANSFERENCIA         // Transferencia entre depósitos
+}
+
+// Depósitos / Almacenes
+model Warehouse {
+  id              String    @id @default(cuid())
+  code            String    @unique
+  name            String
+  description     String?
+  address         String?
+  isActive        Boolean   @default(true)
+  isDefault       Boolean   @default(false)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  warehouseStocks WarehouseStock[]
+  stockMovements  StockMovement[]
+
+  @@index([code])
+  @@index([isActive])
+  @@map("warehouses")
+}
+
+// Stock por depósito
+model WarehouseStock {
+  id              String    @id @default(cuid())
+  warehouseId     String
+  productId       String
+
+  quantity        Int       @default(0)
+  minStock        Int       @default(0)
+  maxStock        Int?
+
+  lastUpdated     DateTime  @default(now())
+
+  warehouse       Warehouse @relation(fields: [warehouseId], references: [id])
+  product         Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([warehouseId, productId])
+  @@index([warehouseId])
+  @@index([productId])
+  @@map("warehouse_stocks")
+}
+
+// Listas de precios
+model PriceList {
+  id              String    @id @default(cuid())
+  name            String
+  description     String?
+  isActive        Boolean   @default(true)
+  isDefault       Boolean   @default(false)
+
+  validFrom       DateTime  @default(now())
+  validUntil      DateTime?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  priceListItems  PriceListItem[]
+
+  @@index([name])
+  @@index([isActive])
+  @@map("price_lists")
+}
+
+// Items de lista de precios
+model PriceListItem {
+  id              String    @id @default(cuid())
+  priceListId     String
+  productId       String
+
+  price           Decimal   @db.Decimal(12, 2)
+  currency        Currency  @default(ARS)
+
+  priceList       PriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
+  product         Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([priceListId, productId])
+  @@index([priceListId])
+  @@index([productId])
+  @@map("price_list_items")
+}
+
+model ChartOfAccount {
+  id              String      @id @default(cuid())
+  code            String      @unique  // Ej: 1.1.01.001
+  name            String
+  accountType     AccountType
+  parentId        String?
+  level           Int         // 1, 2, 3, 4 (niveles de jerarquía)
+  isActive        Boolean     @default(true)
+  acceptsEntries  Boolean     @default(true) // Si acepta asientos directos
+
+  parent          ChartOfAccount?  @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children        ChartOfAccount[] @relation("AccountHierarchy")
+
+  journalEntryLines JournalEntryLine[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([code])
+  @@index([accountType])
+  @@index([parentId])
+  @@map("chart_of_accounts")
+}
+
+// Asientos Contables
+enum JournalEntryStatus {
+  DRAFT      // Borrador
+  POSTED     // Contabilizado
+  VOIDED     // Anulado
+}
+
+model JournalEntry {
+  id              String              @id @default(cuid())
+  entryNumber     Int                 @unique @default(autoincrement())
+  date            DateTime            @default(now())
+  description     String
+  reference       String?             // Referencia externa
+
+  // Relación con documentos
+  invoiceId       String?
+  paymentId       String?
+
+  status          JournalEntryStatus  @default(DRAFT)
+  userId          String
+
+  lines           JournalEntryLine[]
+  stockMovements  StockMovement[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id])
+  invoice         Invoice? @relation(fields: [invoiceId], references: [id])
+
+  @@index([entryNumber])
+  @@index([date])
+  @@index([status])
+  @@index([userId])
+  @@index([invoiceId])
+  @@map("journal_entries")
+}
+
+// Líneas de Asiento (Debe y Haber)
+model JournalEntryLine {
+  id              String   @id @default(cuid())
+  journalEntryId  String
+  accountId       String
+
+  debit           Decimal  @default(0) @db.Decimal(15, 2)
+  credit          Decimal  @default(0) @db.Decimal(15, 2)
+  description     String?
+
+  journalEntry    JournalEntry    @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  account         ChartOfAccount  @relation(fields: [accountId], references: [id])
+
+  @@index([journalEntryId])
+  @@index([accountId])
+  @@map("journal_entry_lines")
+}
+
+// Libro IVA
+enum IVABookType {
+  COMPRAS  // Libro IVA Compras
+  VENTAS   // Libro IVA Ventas
+}
+
+model IVABook {
+  id              String      @id @default(cuid())
+  bookType        IVABookType
+  period          String      // YYYY-MM formato
+
+  invoiceId       String      @unique
+  date            DateTime
+  pointOfSale     String      // Punto de Venta
+  invoiceNumber   String
+  invoiceType     String      // A, B, C, E
+
+  documentType    String      // CUIT, DNI, etc.
+  documentNumber  String
+  businessName    String
+
+  // Importes
+  netAmount       Decimal  @db.Decimal(15, 2)
+  notTaxed        Decimal  @default(0) @db.Decimal(15, 2)
+  exempt          Decimal  @default(0) @db.Decimal(15, 2)
+
+  // IVA por alícuota
+  iva21           Decimal  @default(0) @db.Decimal(15, 2)
+  iva105          Decimal  @default(0) @db.Decimal(15, 2)
+  iva27           Decimal  @default(0) @db.Decimal(15, 2)
+  iva05           Decimal  @default(0) @db.Decimal(15, 2)
+
+  // Otros conceptos
+  perceptions     Decimal  @default(0) @db.Decimal(15, 2)
+  otherTaxes      Decimal  @default(0) @db.Decimal(15, 2)
+  total           Decimal  @db.Decimal(15, 2)
+
+  invoice         Invoice  @relation(fields: [invoiceId], references: [id])
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([bookType])
+  @@index([period])
+  @@index([date])
+  @@map("iva_books")
+}
+
+// Percepciones y Retenciones
+enum WithholdingType {
+  PERCEPCION  // Percepción
+  RETENCION   // Retención
+}
+
+enum TaxTypeEnum {
+  IVA          // Retención/Percepción IVA
+  GANANCIAS    // Retención Ganancias
+  IIBB         // Retención/Percepción IIBB
+  SUSS         // SUSS (Sistema Único de Seguridad Social)
+  OTROS        // Otros impuestos
+}
+
+model TaxWithholding {
+  id              String          @id @default(cuid())
+  type            WithholdingType
+
+  invoiceId       String
+  taxType         TaxTypeEnum
+  jurisdiction    String?         // Jurisdicción (para IIBB)
+
+  taxableAmount   Decimal  @db.Decimal(15, 2)
+  rate            Decimal  @db.Decimal(5, 2)
+  amount          Decimal  @db.Decimal(15, 2)
+
+  certificateNumber String?
+  date            DateTime
+
+  invoice         Invoice  @relation(fields: [invoiceId], references: [id])
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([invoiceId])
+  @@index([type])
+  @@index([taxType])
+  @@index([date])
+  @@map("tax_withholdings")
+}
+
+// Movimientos de Stock
+model StockMovement {
+  id              String            @id @default(cuid())
+
+  // Relaciones
+  productId       String
+  warehouseId     String?           // Depósito origen
+  invoiceId       String?           // Si es VENTA
+  userId          String            // Quien hizo el movimiento
+
+  // Tipo y cantidad
+  type            StockMovementType
+  quantity        Int               // Positivo = entrada, Negativo = salida
+
+  // Costeo (para CMV)
+  unitCost        Decimal           @db.Decimal(12, 2)
+  totalCost       Decimal           @db.Decimal(12, 2)
+  currency        Currency          @default(ARS)
+
+  // Snapshot de stock
+  stockBefore     Int
+  stockAfter      Int
+
+  // Contabilidad
+  journalEntryId  String?           // Asiento generado (si aplica)
+
+  // Metadatos
+  reference       String?
+  notes           String?           @db.Text
+  date            DateTime          @default(now())
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  // Relaciones
+  product         Product           @relation(fields: [productId], references: [id])
+  warehouse       Warehouse?        @relation(fields: [warehouseId], references: [id])
+  invoice         Invoice?          @relation(fields: [invoiceId], references: [id])
+  user            User              @relation(fields: [userId], references: [id])
+  journalEntry    JournalEntry?     @relation(fields: [journalEntryId], references: [id])
+
+  @@index([productId])
+  @@index([warehouseId])
+  @@index([invoiceId])
+  @@index([userId])
+  @@index([type])
+  @@index([date])
+  @@index([createdAt])
+  @@map("stock_movements")
+}

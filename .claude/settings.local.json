@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(ls:*)",
+      "Bash(npx shadcn@latest init:*)",
+      "Bash(npx shadcn@latest add button input card table dialog select form label tabs toast avatar dropdown-menu badge separator skeleton checkbox textarea calendar popover command sheet -y)",
+      "Bash(npx shadcn@latest add button input card table dialog select form label tabs sonner avatar dropdown-menu badge separator skeleton checkbox textarea calendar popover command sheet -y)",
+      "Bash(npx prisma init:*)",
+      "Bash(npm run db:generate:*)",
+      "Bash(npx prisma:*)",
+      "Bash(npm run db:push:*)",
+      "Bash(npm run db:seed:*)",
+      "Bash(npm run dev:*)",
+      "Bash(npm run build:*)",
+      "Bash(taskkill:*)",
+      "Bash(start:*)",
+      "Bash(npx tsx:*)",
+      "Bash(find:*)",
+      "Bash(netstat:*)",
+      "Bash(curl:*)",
+      "Bash(tasklist:*)",
+      "Bash(ps:*)",
+      "Bash(findstr:*)",
+      "Bash(npx tsc:*)",
+      "Bash(grep:*)",
+      "Bash(git init:*)",
+      "Bash(git config:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}

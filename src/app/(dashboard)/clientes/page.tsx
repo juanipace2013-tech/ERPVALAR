@@ -107,16 +107,23 @@ export default function ClientesPage() {
       }
 
       const response = await fetch(`/api/clientes?${params}`)
+
       if (!response.ok) {
-        throw new Error('Error al cargar clientes')
+        if (response.status === 401) {
+          toast.error('Sesión expirada. Por favor inicia sesión nuevamente.')
+          window.location.href = '/login'
+          return
+        }
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || `Error ${response.status}: ${response.statusText}`)
       }
 
       const data = await response.json()
-      setCustomers(data.customers)
-      setPagination(data.pagination)
+      setCustomers(data.customers || [])
+      setPagination(data.pagination || pagination)
     } catch (error) {
       console.error('Error:', error)
-      toast.error('Error al cargar clientes')
+      toast.error(error instanceof Error ? error.message : 'Error al cargar clientes')
     } finally {
       setLoading(false)
     }

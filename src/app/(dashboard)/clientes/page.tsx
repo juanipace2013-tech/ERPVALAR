@@ -106,7 +106,11 @@ export default function ClientesPage() {
         params.append('search', searchQuery)
       }
 
+      console.log('Fetching customers with params:', params.toString())
+
       const response = await fetch(`/api/clientes?${params}`)
+
+      console.log('Response status:', response.status, response.statusText)
 
       if (!response.ok) {
         if (response.status === 401) {
@@ -114,15 +118,25 @@ export default function ClientesPage() {
           window.location.href = '/login'
           return
         }
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || `Error ${response.status}: ${response.statusText}`)
+
+        let errorMessage = `Error ${response.status}: ${response.statusText}`
+        try {
+          const errorData = await response.json()
+          console.error('Error data:', errorData)
+          errorMessage = errorData.error || errorData.message || errorMessage
+        } catch (e) {
+          console.error('Could not parse error response:', e)
+        }
+
+        throw new Error(errorMessage)
       }
 
       const data = await response.json()
+      console.log('Customers loaded:', data.customers?.length || 0)
       setCustomers(data.customers || [])
       setPagination(data.pagination || pagination)
     } catch (error) {
-      console.error('Error:', error)
+      console.error('Error fetching customers:', error)
       toast.error(error instanceof Error ? error.message : 'Error al cargar clientes')
     } finally {
       setLoading(false)

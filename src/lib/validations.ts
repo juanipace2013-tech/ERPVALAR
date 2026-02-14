@@ -233,7 +233,7 @@ export const exchangeRateSchema = z.object({
   rate: z.number().positive('El tipo de cambio debe ser positivo'),
   source: z.enum(['MANUAL', 'BANCO_CENTRAL', 'API']).default('MANUAL'),
   validFrom: z.date().optional(),
-  validUntil: z.date().optional(),
+  validUntil: z.date().nullable().optional(),
 }).refine(
   (data) => data.fromCurrency !== data.toCurrency,
   'Las monedas deben ser diferentes'

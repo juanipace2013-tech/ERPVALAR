@@ -158,6 +158,7 @@ model Customer {
   creditCurrency  Currency?      @default(ARS)
   paymentTerms    Int?           // Días de plazo de pago
   discount        Decimal?       @db.Decimal(5, 2) // Descuento porcentual
+  priceMultiplier Decimal        @default(1.0) @db.Decimal(5, 3) // Multiplicador de precio (ej: 1.2 = 20% markup)
 
   // Metadatos
   notes           String?        @db.Text
@@ -257,6 +258,7 @@ model Product {
   // Costos y precios
   lastCost        Decimal?      @db.Decimal(12, 2) // Último costo de compra
   averageCost     Decimal?      @db.Decimal(12, 2) // Costo promedio calculado
+  listPriceUSD    Decimal?      @db.Decimal(12, 2) // Precio lista en USD (para cotizaciones)
 
   // Configuración
   status          ProductStatus @default(ACTIVE)
@@ -276,9 +278,10 @@ model Product {
   updatedAt       DateTime      @updatedAt
 
   // Relaciones
-  category        Category?     @relation(fields: [categoryId], references: [id])
+  category        Category?              @relation(fields: [categoryId], references: [id])
   prices          ProductPrice[]
   quoteItems      QuoteItem[]
+  quoteAdditionals QuoteItemAdditional[]
   invoiceItems    InvoiceItem[]
   stockMovements  StockMovement[]
   warehouseStocks WarehouseStock[]
@@ -353,6 +356,9 @@ model ExchangeRate {
   createdAt   DateTime            @default(now())
   updatedAt   DateTime            @updatedAt
 
+  // Relaciones
+  invoices    Invoice[]
+
   @@unique([fromCurrency, toCurrency, validFrom])
   @@index([fromCurrency, toCurrency])
   @@index([validFrom])
@@ -424,60 +430,114 @@ enum QuoteStatus {
 
 model Quote {
   id              String      @id @default(cuid())
-  quoteNumber     String      @unique
+  quoteNumber     String      @unique  // VAL-YYYY-NNN
 
   customerId      String
   opportunityId   String?
-  userId          String
+  salesPersonId   String       // Vendedor
 
-  status          QuoteStatus @default(DRAFT)
-  currency        Currency    @default(ARS)
+  date            DateTime     @default(now())
+  status          QuoteStatus  @default(DRAFT)
+  currency        Currency     @default(USD)  // VAL ARG factura en USD
 
-  subtotal        Decimal     @db.Decimal(12, 2)
-  taxAmount       Decimal     @db.Decimal(12, 2)
-  discount        Decimal     @default(0) @db.Decimal(12, 2)
-  total           Decimal     @db.Decimal(12, 2)
+  // Tipo de cambio USD->ARS del día
+  exchangeRate    Decimal      @db.Decimal(12, 6)
 
-  validUntil      DateTime
-  notes           String?     @db.Text
-  terms           String?     @db.Text
+  // Totales (en USD)
+  subtotal        Decimal      @default(0) @db.Decimal(15, 2)
+  total           Decimal      @default(0) @db.Decimal(15, 2)
 
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  validUntil      DateTime?
+  terms           String?      @db.Text  // Condiciones de pago
+  notes           String?      @db.Text
 
-  customer        Customer    @relation(fields: [customerId], references: [id])
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  customer        Customer     @relation(fields: [customerId], references: [id])
   opportunity     Opportunity? @relation(fields: [opportunityId], references: [id])
-  user            User        @relation(fields: [userId], references: [id])
+  salesPerson     User         @relation(fields: [salesPersonId], references: [id])
   items           QuoteItem[]
   invoice         Invoice?
 
   @@index([customerId])
   @@index([opportunityId])
-  @@index([userId])
+  @@index([salesPersonId])
   @@index([status])
   @@index([quoteNumber])
+  @@index([date])
   @@map("quotes")
 }
 
 model QuoteItem {
-  id          String  @id @default(cuid())
-  quoteId     String
-  productId   String
+  id                    String                 @id @default(cuid())
+  quoteId               String
+  itemNumber            Int                    // 10, 20, 30, 40... (incrementos de 10)
 
-  quantity    Int
-  unitPrice   Decimal @db.Decimal(12, 2)
-  discount    Decimal @default(0) @db.Decimal(5, 2) // Descuento porcentual
-  taxRate     Decimal @db.Decimal(5, 2)
-  subtotal    Decimal @db.Decimal(12, 2)
+  productId             String
+  description           String?                // Override de descripción
 
-  description String?
+  quantity              Int
 
-  quote       Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  product     Product @relation(fields: [productId], references: [id])
+  // Precios y descuentos (todo en USD)
+  listPrice             Decimal                @db.Decimal(12, 2)  // Precio lista del producto principal
+  brandDiscount         Decimal                @default(0) @db.Decimal(5, 3)  // Descuento por marca (0-1, ej: 0.15 = 15%)
+  customerMultiplier    Decimal                @default(1) @db.Decimal(5, 3)  // Multiplicador del cliente (ej: 1.2)
+
+  // Precios calculados
+  unitPrice             Decimal                @db.Decimal(12, 2)  // Precio unitario calculado
+  totalPrice            Decimal                @db.Decimal(15, 2)  // Total del item
+
+  // Alternativas (Item 10A, 10B como alternativas de Item 10)
+  isAlternative         Boolean                @default(false)
+  alternativeToItemId   String?
+
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  quote                 Quote                  @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  product               Product                @relation(fields: [productId], references: [id])
+  alternativeToItem     QuoteItem?             @relation("ItemAlternatives", fields: [alternativeToItemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  alternatives          QuoteItem[]            @relation("ItemAlternatives")
+  additionals           QuoteItemAdditional[]
 
   @@index([quoteId])
   @@index([productId])
+  @@index([itemNumber])
+  @@index([alternativeToItemId])
   @@map("quote_items")
+}
+
+// Adicionales: hasta 5 productos complementarios por item
+model QuoteItemAdditional {
+  id          String     @id @default(cuid())
+  quoteItemId String
+  productId   String
+  position    Int        // 1-5 (Adicional 1, 2, 3, 4, 5)
+  listPrice   Decimal    @db.Decimal(12, 2)  // Precio del adicional en USD
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  quoteItem   QuoteItem  @relation(fields: [quoteItemId], references: [id], onDelete: Cascade)
+  product     Product    @relation(fields: [productId], references: [id])
+
+  @@index([quoteItemId])
+  @@index([productId])
+  @@map("quote_item_additionals")
+}
+
+// Descuentos por marca
+model BrandDiscount {
+  id               String   @id @default(cuid())
+  brand            String   @unique  // GENEBRE, WINTERS, CEPEX, etc.
+  discountPercent  Decimal  @db.Decimal(5, 2)  // 0-100 (ej: 15 = 15%)
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([brand])
+  @@map("brand_discounts")
 }
 
 // ========================================
@@ -513,10 +573,15 @@ model Invoice {
   status          InvoiceStatus @default(DRAFT)
   currency        Currency      @default(ARS)
 
+  // Montos en moneda original
   subtotal        Decimal       @db.Decimal(12, 2)
   taxAmount       Decimal       @db.Decimal(12, 2)
   discount        Decimal       @default(0) @db.Decimal(12, 2)
   total           Decimal       @db.Decimal(12, 2)
+
+  // Tipo de cambio para contabilidad (solo si currency != ARS)
+  exchangeRate    Decimal?      @db.Decimal(12, 6)  // TC usado para convertir a ARS
+  exchangeRateId  String?       // Referencia al ExchangeRate usado
 
   // AFIP
   cae             String?       // Código de Autorización Electrónico
@@ -531,9 +596,10 @@ model Invoice {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  customer        Customer      @relation(fields: [customerId], references: [id])
-  quote           Quote?        @relation(fields: [quoteId], references: [id])
-  user            User          @relation(fields: [userId], references: [id])
+  customer        Customer       @relation(fields: [customerId], references: [id])
+  quote           Quote?         @relation(fields: [quoteId], references: [id])
+  user            User           @relation(fields: [userId], references: [id])
+  exchangeRateRef ExchangeRate?  @relation(fields: [exchangeRateId], references: [id])
   items           InvoiceItem[]
 
   // Accounting relations
@@ -599,6 +665,9 @@ enum ActivityType {
   EMAIL_SENT
   CALL_LOGGED
   MEETING_SCHEDULED
+  EXCHANGE_RATE_CREATED
+  EXCHANGE_RATE_UPDATED
+  EXCHANGE_RATE_DELETED
 }
 
 model Activity {

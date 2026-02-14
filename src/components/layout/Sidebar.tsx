@@ -67,8 +67,8 @@ const navItems: NavItem[] = [
     roles: ['ADMIN', 'GERENTE'],
   },
   {
-    title: 'Tipos de Cambio',
-    href: '/tipos-cambio',
+    title: 'Tipo de Cambio',
+    href: '/tipo-cambio',
     icon: DollarSign,
     roles: ['ADMIN', 'GERENTE', 'CONTADOR'],
   },

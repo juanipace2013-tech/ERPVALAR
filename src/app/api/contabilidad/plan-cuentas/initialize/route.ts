@@ -1,6 +1,7 @@
+import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+
+
 import { prisma } from '@/lib/prisma'
 import { PLAN_CUENTAS_ARGENTINA } from '@/lib/contabilidad/plan-cuentas-argentina'
 import { getParentCode } from '@/lib/contabilidad/validations'
@@ -8,7 +9,7 @@ import { getParentCode } from '@/lib/contabilidad/validations'
 // POST /api/contabilidad/plan-cuentas/initialize - Inicializar plan de cuentas
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await auth()
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }

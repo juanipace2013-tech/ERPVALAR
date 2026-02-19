@@ -1,20 +1,21 @@
+import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+
+
 import { prisma } from '@/lib/prisma'
 
 // GET /api/clientes/[id]/movimientos - Obtener movimientos de cuenta del cliente
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await auth()
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
 
-    const customerId = params.id
+    const { id: customerId } = await params
 
     // Verificar que el cliente existe
     const customer = await prisma.customer.findUnique({
@@ -38,7 +39,7 @@ export async function GET(
           include: {
             product: {
               select: {
-                code: true,
+                sku: true,
                 name: true,
               },
             },

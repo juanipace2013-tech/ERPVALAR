@@ -1,6 +1,7 @@
+import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+
+
 import { prisma } from '@/lib/prisma'
 import { productWithPricesSchema } from '@/lib/validations'
 import { z } from 'zod'
@@ -11,7 +12,7 @@ import { z } from 'zod'
  */
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await auth()
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
@@ -93,7 +94,7 @@ export async function POST(request: NextRequest) {
         if (error instanceof z.ZodError) {
           results.errors.push({
             sku: productData.sku || 'unknown',
-            error: error.errors.map(e => e.message).join(', '),
+            error: error.issues.map(e => e.message).join(', '),
           })
         } else {
           results.errors.push({

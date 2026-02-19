@@ -5,7 +5,7 @@ import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: PrismaAdapter(prisma),
+  adapter: PrismaAdapter(prisma) as any,
   providers: [
     Credentials({
       name: 'Credentials',
@@ -63,7 +63,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.id = user.id
+        token.id = user.id as string
         token.role = (user as any).role
         token.status = (user as any).status
         token.avatar = (user as any).avatar
@@ -73,8 +73,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string
-        session.user.role = token.role as string
-        session.user.status = token.status as string
+        session.user.role = token.role as any
+        session.user.status = token.status as any
         session.user.avatar = (token.avatar as string | null) || null
       }
       return session

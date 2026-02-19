@@ -1,6 +1,7 @@
+import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+
+
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
@@ -32,7 +33,7 @@ const importCustomerSchema = z.object({
 // POST /api/clientes/import - Importar clientes desde CSV
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await auth()
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
@@ -102,7 +103,7 @@ export async function POST(request: NextRequest) {
             row: rowNumber,
             status: 'error',
             customer: customer,
-            error: error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join(', '),
+            error: error.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join(', '),
           })
         } else {
           validationResults.push({
@@ -206,7 +207,7 @@ export async function POST(request: NextRequest) {
 // GET /api/clientes/import - Descargar plantilla CSV
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await auth()
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }

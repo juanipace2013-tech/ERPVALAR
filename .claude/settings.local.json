@@ -55,7 +55,11 @@
       "Bash(Select-String \"DATABASE_URL|DIRECT_URL\")",
       "Bash(1 <<'EOF'\nSELECT code, name FROM chart_of_accounts WHERE code IN \\('114301','114105','114101','213201','1.1.03.001'\\) ORDER BY code;\nEOF)",
       "Bash(npx next build)",
-      "Bash(timeout 15 npx next dev:*)"
+      "Bash(timeout 15 npx next dev:*)",
+      "Bash(kill:*)",
+      "Bash(cmd /c:*)",
+      "Bash(python:*)",
+      "Bash(git stash:*)"
     ]
   }
 }

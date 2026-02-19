@@ -321,7 +321,7 @@ async function main() {
     data: {
       name: 'Construcciones del Sur SA',
       businessName: 'Construcciones del Sur Sociedad Anónima',
-      type: 'COMPANY',
+      type: 'BUSINESS',
       cuit: '30-71234567-8',
       taxCondition: 'RESPONSABLE_INSCRIPTO',
       email: 'ventas@construccionesdelsur.com',
@@ -358,7 +358,7 @@ async function main() {
     data: {
       name: 'Industrias Metalúrgicas',
       businessName: 'Industrias Metalúrgicas Argentina SRL',
-      type: 'COMPANY',
+      type: 'BUSINESS',
       cuit: '30-71234568-9',
       taxCondition: 'RESPONSABLE_INSCRIPTO',
       email: 'compras@metalurgicas.com.ar',

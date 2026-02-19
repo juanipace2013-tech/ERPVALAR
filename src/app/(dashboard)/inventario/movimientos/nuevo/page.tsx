@@ -149,7 +149,7 @@ export default function NuevoMovimientoPage() {
 
     // Validar que no quede stock negativo (a menos que el producto lo permita)
     const newStock = calculateNewStock()
-    if (newStock < 0 && selectedProduct && !selectedProduct.allowNegative) {
+    if (newStock < 0 && selectedProduct && !(selectedProduct as any).allowNegative) {
       toast.error(`Stock insuficiente. Disponible: ${selectedProduct.stockQuantity}`)
       return
     }

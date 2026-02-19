@@ -14,6 +14,8 @@ import {
   Settings,
   TrendingUp,
   DollarSign,
+  Banknote,
+  Landmark,
 } from 'lucide-react'
 
 interface NavItem {
@@ -59,6 +61,18 @@ const navItems: NavItem[] = [
     href: '/facturas',
     icon: Receipt,
     roles: ['ADMIN', 'GERENTE', 'CONTADOR'],
+  },
+  {
+    title: 'Cobros',
+    href: '/cobros',
+    icon: Banknote,
+    roles: ['ADMIN', 'GERENTE', 'CONTADOR'],
+  },
+  {
+    title: 'Tesorería',
+    href: '/tesoreria/cuentas',
+    icon: Landmark,
+    roles: ['ADMIN', 'CONTADOR'],
   },
   {
     title: 'Inventario',

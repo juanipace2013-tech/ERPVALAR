@@ -1,11 +1,12 @@
+import { auth } from '@/auth'
 /**
  * API Endpoint: /api/inventario/productos/[id]/ajuste
  * Adjust product stock to a specific quantity
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+;
+;
 import { z } from 'zod';
 import { processStockAdjustment } from '@/lib/inventario/stock.service';
 import { stockAdjustmentSchema } from '@/lib/inventario/validations';
@@ -19,7 +20,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await auth();
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
     }

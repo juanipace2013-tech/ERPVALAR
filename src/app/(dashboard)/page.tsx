@@ -1,5 +1,4 @@
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import { MetricCard } from '@/components/dashboard/MetricCard'
 import { Users, Package, TrendingUp, DollarSign } from 'lucide-react'
@@ -83,7 +82,7 @@ async function getDashboardData() {
 }
 
 export default async function DashboardPage() {
-  const session = await getServerSession(authOptions)
+  const session = await auth()
   const data = await getDashboardData()
 
   return (

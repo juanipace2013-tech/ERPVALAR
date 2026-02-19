@@ -1,6 +1,7 @@
+import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+
+
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
@@ -16,16 +17,17 @@ const updateSchema = z.object({
 // GET /api/tesoreria/cuentas/[id]
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await auth()
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
 
+    const { id } = await params
     const account = await prisma.treasuryAccount.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
         chartOfAccount: { select: { id: true, code: true, name: true } }
       }
@@ -45,10 +47,10 @@ export async function GET(
 // PUT /api/tesoreria/cuentas/[id]
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await auth()
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
@@ -57,6 +59,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Sin permisos para esta acción' }, { status: 403 })
     }
 
+    const { id } = await params
     const body = await request.json()
     const validation = updateSchema.safeParse(body)
     if (!validation.success) {
@@ -66,7 +69,7 @@ export async function PUT(
       )
     }
 
-    const existing = await prisma.treasuryAccount.findUnique({ where: { id: params.id } })
+    const existing = await prisma.treasuryAccount.findUnique({ where: { id } })
     if (!existing) {
       return NextResponse.json({ error: 'Cuenta no encontrada' }, { status: 404 })
     }
@@ -89,7 +92,7 @@ export async function PUT(
     }
 
     const account = await prisma.treasuryAccount.update({
-      where: { id: params.id },
+      where: { id },
       data: validation.data,
       include: {
         chartOfAccount: { select: { id: true, code: true, name: true } }
@@ -106,10 +109,10 @@ export async function PUT(
 // DELETE /api/tesoreria/cuentas/[id] — soft delete (isActive = false)
 export async function DELETE(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await auth()
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
@@ -118,19 +121,20 @@ export async function DELETE(
       return NextResponse.json({ error: 'Sin permisos para esta acción' }, { status: 403 })
     }
 
-    const existing = await prisma.treasuryAccount.findUnique({ where: { id: params.id } })
+    const { id } = await params
+    const existing = await prisma.treasuryAccount.findUnique({ where: { id } })
     if (!existing) {
       return NextResponse.json({ error: 'Cuenta no encontrada' }, { status: 404 })
     }
 
     // Verificar que no tiene recibos asociados activos
     const usedInReceipts = await prisma.receiptPaymentMethod.count({
-      where: { treasuryAccountId: params.id }
+      where: { treasuryAccountId: id }
     })
     if (usedInReceipts > 0) {
       // Solo desactivar, no borrar
       await prisma.treasuryAccount.update({
-        where: { id: params.id },
+        where: { id },
         data: { isActive: false }
       })
       return NextResponse.json({
@@ -138,7 +142,7 @@ export async function DELETE(
       })
     }
 
-    await prisma.treasuryAccount.delete({ where: { id: params.id } })
+    await prisma.treasuryAccount.delete({ where: { id } })
     return NextResponse.json({ message: 'Cuenta eliminada correctamente' })
   } catch (error) {
     console.error('[DELETE /api/tesoreria/cuentas/[id]]', error)

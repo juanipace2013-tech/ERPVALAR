@@ -1,6 +1,7 @@
+import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+
+
 import { prisma } from '@/lib/prisma'
 import { updateReceipt } from '@/lib/cobros/receipt.service'
 import { z } from 'zod'
@@ -39,16 +40,17 @@ const updateReceiptSchema = z.object({
 // GET /api/cobros/[id]
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await auth()
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
 
+    const { id } = await params
     const receipt = await prisma.receipt.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
         customer: { select: { id: true, name: true, cuit: true, taxCondition: true } },
         user:     { select: { id: true, name: true } },
@@ -88,16 +90,17 @@ export async function GET(
 // PUT /api/cobros/[id] — Solo si está en BORRADOR
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await auth()
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
 
+    const { id } = await params
     const existing = await prisma.receipt.findUnique({
-      where: { id: params.id },
+      where: { id },
       select: { status: true, customerId: true }
     })
     if (!existing) {
@@ -119,7 +122,7 @@ export async function PUT(
       )
     }
 
-    const receipt = await updateReceipt(params.id, {
+    const receipt = await updateReceipt(id, {
       ...validation.data,
       customerId: existing.customerId,
       userId:     session.user.id,

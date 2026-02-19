@@ -1,11 +1,12 @@
+import { auth } from '@/auth'
 /**
  * API Endpoint: /api/facturas/preview
  * Preview invoice impact on inventory before creation
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+;
+;
 import { z } from 'zod';
 import { getInvoiceInventoryPreview } from '@/lib/inventario/invoice-inventory.service';
 
@@ -32,7 +33,7 @@ const previewSchema = z.object({
  */
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await auth();
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
     }

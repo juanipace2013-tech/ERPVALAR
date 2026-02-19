@@ -1,6 +1,7 @@
+import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+
+
 import { prisma } from '@/lib/prisma'
 import { journalEntrySchema } from '@/lib/contabilidad/validations'
 import { z } from 'zod'
@@ -8,7 +9,7 @@ import { z } from 'zod'
 // GET /api/contabilidad/asientos - Listar asientos contables
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await auth()
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
@@ -95,7 +96,7 @@ export async function GET(request: NextRequest) {
 // POST /api/contabilidad/asientos - Crear asiento contable
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await auth()
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }

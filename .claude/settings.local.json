@@ -44,22 +44,7 @@
       "Bash(head:*)",
       "Bash(lsof:*)",
       "Bash(test:*)",
-      "Bash(\"/c/Users/santi/crm-valarg/src/app/api/contabilidad/plan-cuentas/[id]/route.ts\":*)",
-      "Bash(python3:*)",
-      "Bash(python3 -m pip install:*)",
-      "Bash(powershell -Command \"\n$excel = ''C:\\\\Users\\\\santi\\\\Downloads\\\\Asiento Diario Central Puerto Muestra.xlsx''\n$pkg = [System.IO.Packaging.Package]::Open\\($excel, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read\\)\n$pkg.GetParts\\(\\) | ForEach-Object { $_.Uri }\n$pkg.Close\\(\\)\n\")",
-      "Bash(powershell -NoProfile -Command:*)",
-      "Bash(powershell -NoProfile -File - << 'EOF'\n$excel = 'C:\\\\Users\\\\santi\\\\Downloads\\\\Asiento Diario Central Puerto Muestra.xlsx'\n$pkg = [System.IO.Packaging.Package]::Open\\($excel, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read\\)\n$pkg.GetParts\\(\\) | ForEach-Object { $_.Uri }\n$pkg.Close\\(\\)\nEOF)",
-      "Bash(dir:*)",
-      "Bash(Get-Content:*)",
-      "Bash(Select-String \"DATABASE_URL|DIRECT_URL\")",
-      "Bash(1 <<'EOF'\nSELECT code, name FROM chart_of_accounts WHERE code IN \\('114301','114105','114101','213201','1.1.03.001'\\) ORDER BY code;\nEOF)",
-      "Bash(npx next build)",
-      "Bash(timeout 15 npx next dev:*)",
-      "Bash(kill:*)",
-      "Bash(cmd /c:*)",
-      "Bash(python:*)",
-      "Bash(git stash:*)"
+      "Bash(\"/c/Users/santi/crm-valarg/src/app/api/contabilidad/plan-cuentas/[id]/route.ts\":*)"
     ]
   }
 }

@@ -1,7 +1,6 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
-
 import { prisma } from '@/lib/prisma'
 import { PLAN_CUENTAS_ARGENTINA } from '@/lib/contabilidad/plan-cuentas-argentina'
 import { getParentCode } from '@/lib/contabilidad/validations'

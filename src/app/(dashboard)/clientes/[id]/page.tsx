@@ -183,12 +183,14 @@ export default function CustomerDetailPage() {
 
   useEffect(() => {
     fetchCustomer()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId])
 
   useEffect(() => {
     if (customer) {
       fetchInvoices()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customer, invoicesPagination.page])
 
   const fetchCustomer = async () => {
@@ -253,15 +255,41 @@ export default function CustomerDetailPage() {
     try {
       setSaving(true)
 
+      // Solo enviar los campos que son parte del schema de validación
+      const updateData = {
+        name: formData.name,
+        businessName: formData.businessName,
+        type: formData.type,
+        cuit: formData.cuit,
+        taxCondition: formData.taxCondition,
+        email: formData.email,
+        phone: formData.phone,
+        mobile: formData.mobile,
+        website: formData.website,
+        address: formData.address,
+        city: formData.city,
+        province: formData.province,
+        postalCode: formData.postalCode,
+        country: formData.country,
+        status: formData.status,
+        creditLimit: formData.creditLimit,
+        creditCurrency: formData.creditCurrency,
+        paymentTerms: formData.paymentTerms,
+        discount: formData.discount,
+        priceMultiplier: formData.priceMultiplier,
+        salesPersonId: formData.salesPerson?.id,
+        notes: formData.notes,
+      }
+
       const response = await fetch(`/api/clientes/${customerId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(updateData),
       })
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.message || 'Error al actualizar cliente')
+        throw new Error(errorData.error || 'Error al actualizar cliente')
       }
 
       const updatedCustomer = await response.json()
@@ -281,7 +309,7 @@ export default function CustomerDetailPage() {
     setEditing(false)
   }
 
-  const formatCurrency = (amount: number, currency: string = 'ARS') => {
+  const formatCurrency = (amount: number, _currency: string = 'ARS') => {
     return new Intl.NumberFormat('es-AR', {
       style: 'decimal',
       minimumFractionDigits: 2,
@@ -330,10 +358,6 @@ export default function CustomerDetailPage() {
 
   const pendingInvoices = invoices.filter(
     (inv) => inv.status === 'PENDING' || inv.status === 'OVERDUE'
-  )
-  const totalDebt = pendingInvoices.reduce(
-    (sum, inv) => sum + (Number(inv.total) - Number(inv.paidAmount)),
-    0
   )
 
   return (

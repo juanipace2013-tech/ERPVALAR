@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ArrowLeft, Save, Loader2 } from 'lucide-react'
+import { ArrowLeft, Save, Loader2, Search } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface User {
@@ -62,6 +62,7 @@ const PROVINCIAS = [
 export default function NewCustomerPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const [loadingAFIP, setLoadingAFIP] = useState(false)
   const [users, setUsers] = useState<User[]>([])
 
   const [formData, setFormData] = useState({
@@ -102,6 +103,64 @@ export default function NewCustomerPage() {
       }
     } catch (error) {
       console.error('Error fetching users:', error)
+    }
+  }
+
+  const fetchAFIPData = async () => {
+    const cuit = formData.cuit.replace(/[-\s]/g, '')
+
+    if (!cuit || cuit.length !== 11) {
+      toast.error('Por favor ingresa un CUIT válido (11 dígitos)')
+      return
+    }
+
+    try {
+      setLoadingAFIP(true)
+      toast.info('Consultando AFIP...')
+
+      const response = await fetch(`/api/afip/cuit/${cuit}`)
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || 'Error al consultar AFIP')
+      }
+
+      const result = await response.json()
+
+      if (result.success && result.data) {
+        // Autocompletar formulario con datos de AFIP
+        setFormData({
+          ...formData,
+          name: result.data.name || formData.name,
+          businessName: result.data.businessName || formData.businessName,
+          type: result.data.type || formData.type,
+          taxCondition: result.data.taxCondition || formData.taxCondition,
+          address: result.data.address || formData.address,
+          city: result.data.city || formData.city,
+          province: result.data.province || formData.province,
+          postalCode: result.data.postalCode || formData.postalCode,
+          country: result.data.country || formData.country,
+          status: result.data.status || formData.status,
+          notes: result.data.notes || formData.notes,
+          email: result.data.email || formData.email,
+          phone: result.data.phone || formData.phone,
+        })
+
+        toast.success('✓ Datos cargados desde AFIP')
+      } else {
+        throw new Error('No se pudieron obtener los datos')
+      }
+    } catch (error) {
+      console.error('Error fetching AFIP data:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Error al consultar AFIP'
+
+      toast.error(errorMessage, {
+        duration: 5000,
+        description: 'El servicio público de AFIP puede tener restricciones. ' +
+                    'Puedes ingresar los datos manualmente o configurar Web Services oficiales.',
+      })
+    } finally {
+      setLoadingAFIP(false)
     }
   }
 
@@ -146,7 +205,7 @@ export default function NewCustomerPage() {
       if (!response.ok) {
         const errorData = await response.json()
         if (errorData.details) {
-          const errors = errorData.details.map((err: any) => err.message).join(', ')
+          const errors = errorData.details.map((err: { message: string }) => err.message).join(', ')
           throw new Error(errors)
         }
         throw new Error(errorData.error || 'Error al crear cliente')
@@ -163,7 +222,7 @@ export default function NewCustomerPage() {
     }
   }
 
-  const handleInputChange = (field: string, value: any) => {
+  const handleInputChange = (field: string, value: string) => {
     setFormData({ ...formData, [field]: value })
   }
 
@@ -246,15 +305,37 @@ export default function NewCustomerPage() {
                   <Label htmlFor="cuit">
                     CUIT <span className="text-red-500">*</span>
                   </Label>
-                  <Input
-                    id="cuit"
-                    value={formData.cuit}
-                    onChange={(e) => handleInputChange('cuit', e.target.value)}
-                    placeholder="20-12345678-9"
-                    required
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      id="cuit"
+                      value={formData.cuit}
+                      onChange={(e) => handleInputChange('cuit', e.target.value)}
+                      placeholder="20-12345678-9"
+                      required
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={fetchAFIPData}
+                      disabled={loadingAFIP || !formData.cuit}
+                      className="whitespace-nowrap"
+                    >
+                      {loadingAFIP ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Consultando...
+                        </>
+                      ) : (
+                        <>
+                          <Search className="h-4 w-4 mr-2" />
+                          Buscar en AFIP
+                        </>
+                      )}
+                    </Button>
+                  </div>
                   <p className="text-xs text-muted-foreground">
-                    Formato: XX-XXXXXXXX-X
+                    Formato: XX-XXXXXXXX-X • Haz clic en &quot;Buscar en AFIP&quot; para autocompletar
                   </p>
                 </div>
 

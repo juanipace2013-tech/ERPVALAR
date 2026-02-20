@@ -1,7 +1,6 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
-
 import { prisma } from '@/lib/prisma'
 import { productWithPricesSchema } from '@/lib/validations'
 import { z } from 'zod'

@@ -71,9 +71,17 @@ export interface StockValidationResult {
  * Interface for invoice creation with inventory
  */
 export interface InvoiceWithInventoryResult {
-  invoice: any; // Full invoice object
-  movements: any[]; // StockMovement objects
-  journalEntry: any; // JournalEntry object for CMV
+  invoice: {
+    id: string;
+    invoiceNumber: string;
+    [key: string]: unknown;
+  };
+  movements: StockMovementWithRelations[];
+  journalEntry: {
+    id: string;
+    entryNumber: number;
+    [key: string]: unknown;
+  } | null;
 }
 
 /**

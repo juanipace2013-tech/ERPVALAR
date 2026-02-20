@@ -4,6 +4,7 @@ import { auth } from '@/auth'
  * Handles CRUD operations for stock movements
  */
 
+import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server';
 ;
 ;
@@ -49,7 +50,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Parámetros inválidos', details: (error as any).errors },
+        { error: 'Parámetros inválidos', details: error.issues },
         { status: 400 }
       );
     }
@@ -109,7 +110,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Datos inválidos', details: (error as any).errors },
+        { error: 'Datos inválidos', details: error.issues },
         { status: 400 }
       );
     }

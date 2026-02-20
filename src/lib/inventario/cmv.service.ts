@@ -96,7 +96,7 @@ export async function validateProductsCost(
   for (const productId of productIds) {
     try {
       await getUnitCost(productId, client);
-    } catch (error) {
+    } catch (_error) {
       missingCost.push(productId);
     }
   }

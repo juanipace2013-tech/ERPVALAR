@@ -32,10 +32,8 @@ import {
 } from '@/components/ui/dialog'
 import {
   DollarSign,
-  RefreshCw,
   Plus,
   Loader2,
-  TrendingUp,
   Calendar,
   Building2,
 } from 'lucide-react'
@@ -175,9 +173,6 @@ export default function TipoCambioPage() {
     }
   }
 
-  const formatCurrency = (from: string, to: string) => {
-    return `${from} → ${to}`
-  }
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('es-AR', {

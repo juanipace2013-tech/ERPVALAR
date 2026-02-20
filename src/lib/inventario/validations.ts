@@ -11,15 +11,15 @@ import { StockMovementType, Currency } from '@prisma/client';
 export const stockMovementSchema = z.object({
   productId: z.string().min(1, 'ID de producto requerido'),
   type: z.nativeEnum(StockMovementType, {
-    message: 'Tipo de movimiento inválido',
-  } as any),
+    errorMap: () => ({ message: 'Tipo de movimiento inválido' }),
+  }),
   quantity: z
     .number()
     .int('La cantidad debe ser un número entero')
     .refine((val) => val !== 0, {
       message: 'La cantidad no puede ser cero',
     }),
-  unitCost: z.number().positive('El costo unitario debe ser positivo'),
+  unitCost: z.number().nonnegative('El costo unitario no puede ser negativo'),
   currency: z.nativeEnum(Currency).default(Currency.ARS),
   reference: z.string().optional(),
   notes: z.string().optional(),

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Table,
   TableBody,
@@ -28,6 +28,7 @@ import {
   ArrowDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { ClientesResumen } from '@/components/clientes/ClientesResumen'
 
 interface Customer {
   id: string
@@ -67,6 +68,9 @@ export default function ClientesPage() {
     totalPages: 0,
   })
 
+  // Active Tab
+  const [activeTab, setActiveTab] = useState<'gestion' | 'resumen'>('gestion')
+
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>('ACTIVE')
   const [searchQuery, setSearchQuery] = useState('')
@@ -75,6 +79,7 @@ export default function ClientesPage() {
 
   useEffect(() => {
     fetchCustomers()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, pagination.page, sortBy, sortOrder])
 
   // Debounce search
@@ -88,6 +93,7 @@ export default function ClientesPage() {
     }, 500)
 
     return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery])
 
   const fetchCustomers = async () => {
@@ -207,19 +213,18 @@ export default function ClientesPage() {
         <CardContent className="p-4">
           <div className="flex gap-2 flex-wrap">
             <Button
-              variant="default"
-              className="bg-blue-600 hover:bg-blue-700"
+              variant={activeTab === 'gestion' ? 'default' : 'outline'}
+              className={activeTab === 'gestion' ? 'bg-blue-600 hover:bg-blue-700' : ''}
+              onClick={() => setActiveTab('gestion')}
             >
               Gestión de clientes
             </Button>
-            <Button variant="outline" disabled>
+            <Button
+              variant={activeTab === 'resumen' ? 'default' : 'outline'}
+              className={activeTab === 'resumen' ? 'bg-blue-600 hover:bg-blue-700' : ''}
+              onClick={() => setActiveTab('resumen')}
+            >
               Resumen clientes
-            </Button>
-            <Button variant="outline" disabled>
-              Importación facturas
-            </Button>
-            <Button variant="outline" disabled>
-              Mercado Pago
             </Button>
           </div>
         </CardContent>
@@ -228,11 +233,15 @@ export default function ClientesPage() {
       {/* Main Content */}
       <Card className="border-blue-200">
         <CardContent className="p-6">
-          {/* Title and Tabs */}
-          <div className="mb-6">
-            <h2 className="text-xl font-semibold text-blue-900 mb-4">
-              Lista de clientes
-            </h2>
+          {activeTab === 'resumen' ? (
+            <ClientesResumen />
+          ) : (
+            <>
+              {/* Title and Tabs */}
+              <div className="mb-6">
+                <h2 className="text-xl font-semibold text-blue-900 mb-4">
+                  Lista de clientes
+                </h2>
 
             <Tabs
               value={statusFilter}
@@ -398,6 +407,8 @@ export default function ClientesPage() {
               </>
             )}
           </div>
+            </>
+          )}
         </CardContent>
       </Card>
 

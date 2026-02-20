@@ -50,6 +50,7 @@ model User {
   quotes        Quote[]
   invoices      Invoice[]
   customersSalesPerson Customer[] @relation("CustomerSalesPerson")
+  suppliersBuyer Supplier[] @relation("SupplierBuyer")
 
   // Accounting relations
   journalEntries JournalEntry[]
@@ -57,8 +58,13 @@ model User {
   // Inventory relations
   stockMovements StockMovement[]
 
-  // Cobros relations
-  receipts       Receipt[] @relation("UserReceipts")
+  // Purchase relations
+  purchaseOrders    PurchaseOrder[]
+  purchaseInvoices  PurchaseInvoice[]
+  supplierPayments  SupplierPayment[]
+
+  // Customer relations
+  customerReceipts  CustomerReceipt[]
 
   @@index([email])
   @@index([role])
@@ -177,9 +183,11 @@ model Customer {
   contacts        Contact[]
   opportunities   Opportunity[]
   quotes          Quote[]
+  deliveryNotes   DeliveryNote[]
   invoices        Invoice[]
   activities      Activity[]
   receipts        Receipt[]
+  customerReceipts CustomerReceipt[] @relation("CustomerReceipts")
 
   @@index([cuit])
   @@index([name])
@@ -210,6 +218,404 @@ model Contact {
   @@index([customerId])
   @@index([email])
   @@map("contacts")
+}
+
+// ========================================
+// PROVEEDORES
+// ========================================
+
+enum SupplierStatus {
+  ACTIVE
+  INACTIVE
+  BLOCKED
+}
+
+model Supplier {
+  id              String         @id @default(cuid())
+
+  // Información básica
+  name            String         // Nombre comercial
+  legalName       String?        // Razón social
+  taxId           String?        @unique // CUIT
+
+  // Financiero
+  discount        Decimal        @default(0) @db.Decimal(5, 2) // Descuento que nos dan (0-100%)
+  paymentDays     Int            @default(30) // Días de plazo de pago
+  balance         Decimal        @default(0) @db.Decimal(12, 2) // Saldo (lo que les debemos)
+
+  // Contacto
+  email           String?
+  phone           String?
+  mobile          String?
+  address         String?
+  city            String?
+  province        String?
+  postalCode      String?
+  website         String?
+
+  // Comercial
+  paymentTerms    String?        @db.Text // Condiciones de pago
+  accountNumber   String?        // Número de cuenta bancaria
+  buyerUserId     String?        // Usuario comprador asignado
+  buyerUser       User?          @relation("SupplierBuyer", fields: [buyerUserId], references: [id])
+
+  // Clasificación
+  category        String?        // Válvulas, Instrumentos, etc.
+  brands          String[]       // Marcas que representa (GENEBRE, WINTERS, etc.)
+
+  // Estado
+  status          SupplierStatus @default(ACTIVE)
+  isPreferred     Boolean        @default(false) // Proveedor preferido
+
+  // Notas
+  notes           String?        @db.Text
+  internalNotes   String?        @db.Text // Notas privadas internas
+
+  // Relaciones
+  products        Product[]         @relation("SupplierProducts")
+  purchaseOrders  PurchaseOrder[]
+  purchaseInvoices PurchaseInvoice[]
+  payments        SupplierPayment[]
+  treasuryPayments Payment[]
+
+  // Timestamps
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([name])
+  @@index([taxId])
+  @@index([status])
+  @@index([buyerUserId])
+  @@index([isPreferred])
+  @@map("suppliers")
+}
+
+// ========================================
+// ÓRDENES DE COMPRA Y PAGOS A PROVEEDORES
+// ========================================
+
+enum PurchaseOrderStatus {
+  DRAFT         // Borrador
+  PENDING       // Pendiente de aprobación
+  APPROVED      // Aprobada
+  RECEIVED      // Recibida
+  PARTIALLY_RECEIVED  // Parcialmente recibida
+  CANCELLED     // Cancelada
+}
+
+model PurchaseOrder {
+  id              String              @id @default(cuid())
+  orderNumber     String              @unique
+
+  supplierId      String
+  userId          String              // Usuario que crea la orden
+
+  status          PurchaseOrderStatus @default(DRAFT)
+  currency        Currency            @default(ARS)
+
+  // Montos
+  subtotal        Decimal             @db.Decimal(12, 2)
+  taxAmount       Decimal             @db.Decimal(12, 2)
+  discount        Decimal             @default(0) @db.Decimal(12, 2)
+  total           Decimal             @db.Decimal(12, 2)
+
+  // Fechas
+  orderDate       DateTime            @default(now())
+  expectedDate    DateTime?           // Fecha esperada de entrega
+  receivedDate    DateTime?           // Fecha de recepción
+
+  // Pagos
+  paidAmount      Decimal             @default(0) @db.Decimal(12, 2)
+
+  notes           String?             @db.Text
+
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  // Relaciones
+  supplier        Supplier            @relation(fields: [supplierId], references: [id])
+  user            User                @relation(fields: [userId], references: [id])
+  items           PurchaseOrderItem[]
+  payments        SupplierPayment[]
+  purchaseInvoices PurchaseInvoice[]
+
+  @@index([supplierId])
+  @@index([userId])
+  @@index([status])
+  @@index([orderNumber])
+  @@index([orderDate])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id              String        @id @default(cuid())
+  purchaseOrderId String
+  productId       String
+
+  quantity        Int
+  receivedQty     Int           @default(0)
+  unitCost        Decimal       @db.Decimal(12, 2)
+  discount        Decimal       @default(0) @db.Decimal(5, 2)
+  taxRate         Decimal       @db.Decimal(5, 2)
+  subtotal        Decimal       @db.Decimal(12, 2)
+
+  description     String?
+
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product         Product       @relation(fields: [productId], references: [id])
+
+  @@index([purchaseOrderId])
+  @@index([productId])
+  @@map("purchase_order_items")
+}
+
+enum PaymentMethod {
+  CASH          // Efectivo
+  TRANSFER      // Transferencia
+  CHECK         // Cheque
+  DEBIT         // Débito
+  CREDIT        // Crédito
+}
+
+// ========================================
+// FACTURAS DE COMPRA A PROVEEDORES
+// ========================================
+
+enum PurchaseInvoiceStatus {
+  DRAFT         // Borrador
+  PENDING       // Pendiente de aprobación
+  APPROVED      // Aprobada
+  PAID          // Pagada
+  CANCELLED     // Anulada
+}
+
+model PurchaseInvoice {
+  id                    String                @id @default(cuid())
+  invoiceNumber         String                @unique  // A00031-00293139
+
+  // Proveedor
+  supplierId            String
+  supplier              Supplier              @relation(fields: [supplierId], references: [id])
+
+  // Tipo de comprobante
+  voucherType           InvoiceType           // A, B, C
+  invoiceType           String                @default("FA") // FA (Factura), NC (Nota Crédito), ND (Nota Débito)
+
+  // Fechas
+  invoiceDate           DateTime              // Fecha contable
+  receiptDate           DateTime              @default(now()) // Fecha de recepción
+  dueDate               DateTime              // Fecha de vencimiento
+
+  // Numeración del proveedor
+  pointOfSale           String                // 00031
+  invoiceNumberSuffix   String                // 00293139
+
+  // AFIP
+  cae                   String?               // 86073755026904
+  caeExpirationDate     DateTime?             // 23/02/2026
+
+  // Remito y orden asociados
+  deliveryNoteNumber    String?               // R00035-00293139
+  purchaseOrderId       String?
+  purchaseOrder         PurchaseOrder?        @relation(fields: [purchaseOrderId], references: [id])
+
+  // Condiciones comerciales
+  paymentTerms          String?               // "Cuenta corriente 30 días"
+  generalDiscount       Decimal               @default(0) @db.Decimal(5, 2) // 30%
+
+  // Importes
+  subtotal              Decimal               @db.Decimal(15, 2) // Antes de descuento
+  discountAmount        Decimal               @default(0) @db.Decimal(15, 2) // Monto del descuento
+  netAmount             Decimal               @db.Decimal(15, 2) // Neto gravado (después de descuento)
+  notTaxedAmount        Decimal               @default(0) @db.Decimal(15, 2) // No gravado
+  exemptAmount          Decimal               @default(0) @db.Decimal(15, 2) // Exento
+  taxAmount             Decimal               @db.Decimal(15, 2) // IVA
+  perceptionsAmount     Decimal               @default(0) @db.Decimal(15, 2) // Percepciones IIBB
+  total                 Decimal               @db.Decimal(15, 2) // Total factura
+  balance               Decimal               @db.Decimal(15, 2) // Saldo pendiente de pago
+
+  // Moneda
+  currency              String                @default("ARS")
+  exchangeRate          Decimal               @default(1) @db.Decimal(12, 6)
+
+  // Estado
+  status                PurchaseInvoiceStatus @default(PENDING)
+  paymentStatus         PaymentStatus         @default(PENDING)
+
+  // Control de inventario
+  stockImpact           Boolean               @default(false)  // Si ya impactó en stock
+  stockImpactedAt       DateTime?
+
+  // Contabilidad
+  journalEntryId        String?               @unique
+  journalEntry          JournalEntry?         @relation(fields: [journalEntryId], references: [id])
+
+  // Notas
+  description           String?
+  internalNotes         String?               @db.Text
+
+  // Usuario
+  createdBy             String
+  createdByUser         User                  @relation(fields: [createdBy], references: [id])
+
+  // Relaciones
+  items                 PurchaseInvoiceItem[]
+  taxes                 PurchaseInvoiceTax[]
+  perceptions           PurchaseInvoicePerception[]
+  payments              PurchasePayment[]
+
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  @@index([supplierId])
+  @@index([invoiceDate])
+  @@index([status])
+  @@index([createdBy])
+  @@map("purchase_invoices")
+}
+
+model PurchaseInvoiceItem {
+  id                    String              @id @default(cuid())
+  purchaseInvoiceId     String
+  purchaseInvoice       PurchaseInvoice     @relation(fields: [purchaseInvoiceId], references: [id], onDelete: Cascade)
+
+  // Producto
+  productId             String?
+  product               Product?            @relation(fields: [productId], references: [id])
+
+  // Códigos del proveedor
+  supplierProductCode   String?             // 0013028 10 (código del proveedor)
+  description           String              // Descripción completa
+
+  // Cantidades
+  unit                  String              @default("UN") // UNI, KG, M, etc.
+  quantity              Decimal             @db.Decimal(12, 3)
+
+  // Precios
+  listPrice             Decimal             @db.Decimal(15, 2) // Precio de lista
+  discountPercent       Decimal             @default(0) @db.Decimal(5, 2) // Descuento % aplicado
+  unitPrice             Decimal             @db.Decimal(15, 2) // Precio unitario final
+  subtotal              Decimal             @db.Decimal(15, 2) // Precio x cantidad
+
+  // IVA
+  taxRate               Decimal             @default(21) @db.Decimal(5, 2) // 21%, 10.5%, 27%, 0%
+  taxAmount             Decimal             @db.Decimal(15, 2)
+  total                 Decimal             @db.Decimal(15, 2)
+
+  // Contabilidad
+  accountId             String?             // Cuenta contable (115100 - Mercaderías)
+  account               ChartOfAccount?     @relation(fields: [accountId], references: [id])
+
+  // Trazabilidad
+  batchNumber           String?             // Número de lote
+  expirationDate        DateTime?           // Vencimiento (si aplica)
+  importInfo            String?             // "IC04-183058-T Or:ESPAÑA Adu:BS.AS."
+
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  @@index([purchaseInvoiceId])
+  @@index([productId])
+  @@index([accountId])
+  @@map("purchase_invoice_items")
+}
+
+model PurchaseInvoiceTax {
+  id                    String          @id @default(cuid())
+  purchaseInvoiceId     String
+  purchaseInvoice       PurchaseInvoice @relation(fields: [purchaseInvoiceId], references: [id], onDelete: Cascade)
+
+  taxType               String          // IVA_21, IVA_10_5, IVA_27, IVA_5, IVA_2_5
+  rate                  Decimal         @db.Decimal(5, 2) // 21, 10.5, 27, 5, 2.5
+  baseAmount            Decimal         @db.Decimal(15, 2) // Base imponible
+  taxAmount             Decimal         @db.Decimal(15, 2) // Monto del impuesto
+
+  createdAt             DateTime        @default(now())
+
+  @@index([purchaseInvoiceId])
+  @@map("purchase_invoice_taxes")
+}
+
+model PurchaseInvoicePerception {
+  id                    String              @id @default(cuid())
+  purchaseInvoiceId     String
+  purchaseInvoice       PurchaseInvoice     @relation(fields: [purchaseInvoiceId], references: [id], onDelete: Cascade)
+
+  // Jurisdicción
+  jurisdiction          String              // AGIP, BS.AS., JUJUY, SALTA, etc.
+  perceptionType        String              // IIBB, Ganancias, SUSS
+  regulation            String?             // "352/22 G11", "B1/02", "DPR 974/01"
+
+  // Cálculo
+  rate                  Decimal             @db.Decimal(5, 2) // 3.00, 0.70, 1.25, 0.08
+  baseAmount            Decimal             @db.Decimal(15, 2) // Base sobre la que se calcula
+  amount                Decimal             @db.Decimal(15, 2) // Monto de la percepción
+
+  // Contabilidad
+  accountId             String?             // 114301 - Ret y Percepciones Imp IIBB
+  account               ChartOfAccount?     @relation(fields: [accountId], references: [id])
+
+  createdAt             DateTime            @default(now())
+
+  @@index([purchaseInvoiceId])
+  @@index([accountId])
+  @@map("purchase_invoice_perceptions")
+}
+
+model PurchasePayment {
+  id                    String              @id @default(cuid())
+
+  // Referencia al pago en tesorería
+  paymentId             String?             // Pago de tesorería
+  payment               Payment?            @relation(fields: [paymentId], references: [id])
+
+  // Factura de compra
+  purchaseInvoiceId     String
+  purchaseInvoice       PurchaseInvoice     @relation(fields: [purchaseInvoiceId], references: [id])
+
+  // Datos del pago
+  amount                Decimal             @db.Decimal(15, 2)
+  paymentDate           DateTime            @default(now())
+  paymentMethod         PaymentMethod       @default(TRANSFER)
+  reference             String?             // Número de cheque, transferencia, etc.
+  notes                 String?             @db.Text
+
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  @@index([purchaseInvoiceId])
+  @@index([paymentId])
+  @@map("purchase_payments")
+}
+
+model SupplierPayment {
+  id              String         @id @default(cuid())
+
+  supplierId      String
+  purchaseOrderId String?        // Opcional: puede ser un pago general
+  userId          String         // Usuario que registra el pago
+
+  amount          Decimal        @db.Decimal(12, 2)
+  currency        Currency       @default(ARS)
+  method          PaymentMethod  @default(TRANSFER)
+
+  paymentDate     DateTime       @default(now())
+  reference       String?        // Número de transferencia, cheque, etc.
+  notes           String?        @db.Text
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  // Relaciones
+  supplier        Supplier       @relation(fields: [supplierId], references: [id])
+  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  user            User           @relation(fields: [userId], references: [id])
+
+  @@index([supplierId])
+  @@index([purchaseOrderId])
+  @@index([userId])
+  @@index([paymentDate])
+  @@map("supplier_payments")
 }
 
 // ========================================
@@ -257,6 +663,7 @@ model Product {
   // Tipo y categorización
   type            ProductType   @default(PRODUCT)
   categoryId      String?
+  supplierId      String?       // Proveedor principal del producto
   brand           String?
 
   // Stock (stock total calculado)
@@ -289,10 +696,14 @@ model Product {
 
   // Relaciones
   category        Category?              @relation(fields: [categoryId], references: [id])
+  supplier        Supplier?              @relation("SupplierProducts", fields: [supplierId], references: [id])
   prices          ProductPrice[]
   quoteItems      QuoteItem[]
   quoteAdditionals QuoteItemAdditional[]
+  deliveryNoteItems DeliveryNoteItem[]
   invoiceItems    InvoiceItem[]
+  purchaseOrderItems PurchaseOrderItem[]
+  purchaseInvoiceItems PurchaseInvoiceItem[]
   stockMovements  StockMovement[]
   warehouseStocks WarehouseStock[]
   priceListItems  PriceListItem[]
@@ -301,6 +712,7 @@ model Product {
   @@index([name])
   @@index([type])
   @@index([categoryId])
+  @@index([supplierId])
   @@index([status])
   @@map("products")
 }
@@ -431,11 +843,13 @@ model Opportunity {
 }
 
 enum QuoteStatus {
-  DRAFT
-  SENT
-  ACCEPTED
-  REJECTED
-  EXPIRED
+  DRAFT           // Borrador
+  SENT            // Enviada al cliente
+  ACCEPTED        // Aceptada por el cliente
+  REJECTED        // Rechazada por el cliente
+  EXPIRED         // Vencida (pasó validUntil)
+  CANCELLED       // Cancelada manualmente
+  CONVERTED       // Convertida a factura/remito
 }
 
 model Quote {
@@ -453,13 +867,23 @@ model Quote {
   // Tipo de cambio USD->ARS del día
   exchangeRate    Decimal      @db.Decimal(12, 6)
 
+  // Estado y seguimiento
+  statusUpdatedAt DateTime?
+  statusUpdatedBy String?
+
+  // Respuesta del cliente
+  customerResponse     String?   @db.Text    // Comentarios del cliente
+  responseDate         DateTime?
+  rejectionReason      String?   @db.Text
+
   // Totales (en USD)
   subtotal        Decimal      @default(0) @db.Decimal(15, 2)
   total           Decimal      @default(0) @db.Decimal(15, 2)
 
   validUntil      DateTime?
   terms           String?      @db.Text  // Condiciones de pago
-  notes           String?      @db.Text
+  notes           String?      @db.Text  // Notas visibles en PDF
+  internalNotes   String?      @db.Text  // Notas internas, no visibles
 
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
@@ -468,7 +892,11 @@ model Quote {
   opportunity     Opportunity? @relation(fields: [opportunityId], references: [id])
   salesPerson     User         @relation(fields: [salesPersonId], references: [id])
   items           QuoteItem[]
-  invoice         Invoice?
+  deliveryNotes   DeliveryNote[]    // Remitos generados
+  invoices        Invoice[]         // Facturas generadas
+  statusHistory   QuoteStatusHistory[]
+  publicToken     QuotePublicToken?  // Token para acceso público
+  emailLogs       QuoteEmailLog[]    // Log de emails enviados
 
   @@index([customerId])
   @@index([opportunityId])
@@ -476,6 +904,7 @@ model Quote {
   @@index([status])
   @@index([quoteNumber])
   @@index([date])
+  @@index([validUntil])
   @@map("quotes")
 }
 
@@ -497,6 +926,9 @@ model QuoteItem {
   // Precios calculados
   unitPrice             Decimal                @db.Decimal(12, 2)  // Precio unitario calculado
   totalPrice            Decimal                @db.Decimal(15, 2)  // Total del item
+
+  // Plazo de entrega
+  deliveryTime          String?                // Plazo de entrega (ej: "Inmediato", "7 días", "15 días")
 
   // Alternativas (Item 10A, 10B como alternativas de Item 10)
   isAlternative         Boolean                @default(false)
@@ -550,6 +982,150 @@ model BrandDiscount {
   @@map("brand_discounts")
 }
 
+// Historial de cambios de estado de cotizaciones
+model QuoteStatusHistory {
+  id          String      @id @default(cuid())
+  quoteId     String
+  fromStatus  QuoteStatus
+  toStatus    QuoteStatus
+  changedBy   String      // User ID
+  notes       String?     @db.Text
+  createdAt   DateTime    @default(now())
+
+  quote       Quote       @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([quoteId])
+  @@index([createdAt])
+  @@map("quote_status_history")
+}
+
+// Token público para acceso a cotizaciones sin login
+model QuotePublicToken {
+  id          String      @id @default(cuid())
+  quoteId     String      @unique
+  token       String      @unique
+  expiresAt   DateTime
+  createdAt   DateTime    @default(now())
+
+  quote       Quote       @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([expiresAt])
+  @@map("quote_public_tokens")
+}
+
+// Log de emails enviados para cotizaciones
+model QuoteEmailLog {
+  id              String      @id @default(cuid())
+  quoteId         String
+  recipientEmail  String
+  subject         String
+  status          String      // 'sent', 'failed'
+  emailId         String?     // ID del email en Resend
+  publicToken     String?     // Token asociado
+  error           String?     @db.Text
+  createdAt       DateTime    @default(now())
+
+  quote           Quote       @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([quoteId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("quote_email_logs")
+}
+
+// ========================================
+// REMITOS / DELIVERY NOTES
+// ========================================
+
+enum DeliveryNoteStatus {
+  PENDING           // Pendiente de preparar
+  PREPARING         // En preparación
+  READY             // Listo para despachar
+  DISPATCHED        // Despachado
+  DELIVERED         // Entregado
+  CANCELLED         // Cancelado
+}
+
+model DeliveryNote {
+  id                String             @id @default(cuid())
+  deliveryNumber    String             @unique  // 0001-00000001
+
+  // Origen
+  quoteId           String?
+  quote             Quote?             @relation(fields: [quoteId], references: [id])
+
+  // Cliente
+  customerId        String
+  customer          Customer           @relation(fields: [customerId], references: [id])
+
+  // Fechas
+  date              DateTime           @default(now())
+  deliveryDate      DateTime?          // Fecha real de entrega
+
+  // Dirección de entrega
+  deliveryAddress   String?
+  deliveryCity      String?
+  deliveryProvince  String?
+  deliveryPostalCode String?
+
+  // Estado
+  status            DeliveryNoteStatus @default(PENDING)
+
+  // Transporte
+  carrier           String?            // Transportista
+  trackingNumber    String?            // Número de seguimiento
+
+  // Responsables
+  preparedBy        String?            // Quién preparó el pedido
+  deliveredBy       String?            // Quién entregó
+  receivedBy        String?            // Quién recibió (firma cliente)
+
+  // Notas
+  notes             String?            @db.Text
+  internalNotes     String?            @db.Text
+
+  // Items
+  items             DeliveryNoteItem[]
+
+  // Facturación
+  invoices          Invoice[]          // Facturas generadas desde este remito
+
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([deliveryNumber])
+  @@index([customerId])
+  @@index([quoteId])
+  @@index([status])
+  @@index([date])
+  @@map("delivery_notes")
+}
+
+model DeliveryNoteItem {
+  id                String        @id @default(cuid())
+  deliveryNoteId    String
+  deliveryNote      DeliveryNote  @relation(fields: [deliveryNoteId], references: [id], onDelete: Cascade)
+
+  productId         String
+  product           Product       @relation(fields: [productId], references: [id])
+
+  description       String
+  quantity          Int
+
+  // Ubicación en depósito
+  warehouseLocation String?
+  batchNumber       String?       // Número de lote
+  serialNumber      String?       // Número de serie
+
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([deliveryNoteId])
+  @@index([productId])
+  @@map("delivery_note_items")
+}
+
 // ========================================
 // FACTURACIÓN
 // ========================================
@@ -559,6 +1135,11 @@ enum InvoiceType {
   B  // Factura B
   C  // Factura C
   E  // Factura E (Exportación)
+}
+
+enum TransactionType {
+  SALE       // Venta a cliente
+  PURCHASE   // Compra a proveedor
 }
 
 enum InvoiceStatus {
@@ -571,13 +1152,30 @@ enum InvoiceStatus {
   CANCELLED
 }
 
+enum AfipStatus {
+  PENDING           // Pendiente de enviar
+  SENT              // Enviada a AFIP
+  APPROVED          // Aprobada (con CAE)
+  REJECTED          // Rechazada por AFIP
+  ERROR             // Error al enviar
+}
+
+enum InvoicePaymentStatus {
+  UNPAID            // Impaga
+  PARTIAL           // Pago parcial
+  PAID              // Pagada
+}
+
 model Invoice {
   id              String        @id @default(cuid())
   invoiceNumber   String        @unique
   invoiceType     InvoiceType
+  transactionType TransactionType @default(SALE)
 
+  // Origen
   customerId      String
-  quoteId         String?       @unique
+  quoteId         String?       // Puede haber varias facturas de una cotización
+  deliveryNoteId  String?       // Factura generada desde un remito
   userId          String
 
   status          InvoiceStatus @default(DRAFT)
@@ -588,7 +1186,7 @@ model Invoice {
   taxAmount       Decimal       @db.Decimal(12, 2)
   discount        Decimal       @default(0) @db.Decimal(12, 2)
   total           Decimal       @db.Decimal(12, 2)
-  paidAmount      Decimal       @default(0) @db.Decimal(15, 2) // Suma cobrada via recibos
+  balance         Decimal       @default(0) @db.Decimal(12, 2) // Saldo pendiente
 
   // Tipo de cambio para contabilidad (solo si currency != ARS)
   exchangeRate    Decimal?      @db.Decimal(12, 6)  // TC usado para convertir a ARS
@@ -597,6 +1195,11 @@ model Invoice {
   // AFIP
   cae             String?       // Código de Autorización Electrónico
   caeExpiration   DateTime?
+  afipStatus      AfipStatus    @default(PENDING)
+  afipError       String?       @db.Text
+
+  // Estado de pago
+  paymentStatus   InvoicePaymentStatus @default(UNPAID)
 
   issueDate       DateTime      @default(now())
   dueDate         DateTime
@@ -609,6 +1212,7 @@ model Invoice {
 
   customer        Customer       @relation(fields: [customerId], references: [id])
   quote           Quote?         @relation(fields: [quoteId], references: [id])
+  deliveryNote    DeliveryNote?  @relation(fields: [deliveryNoteId], references: [id])
   user            User           @relation(fields: [userId], references: [id])
   exchangeRateRef ExchangeRate?  @relation(fields: [exchangeRateId], references: [id])
   items           InvoiceItem[]
@@ -617,9 +1221,7 @@ model Invoice {
   journalEntries  JournalEntry[]
   ivaBooks        IVABook[]
   taxWithholdings TaxWithholding[]
-
-  // Cobros relations
-  receiptApplications ReceiptInvoiceApplication[]
+  customerReceipts CustomerReceipt[]
 
   // Inventory relations
   stockMovements  StockMovement[]
@@ -627,9 +1229,14 @@ model Invoice {
   @@index([customerId])
   @@index([userId])
   @@index([status])
+  @@index([transactionType])
   @@index([invoiceNumber])
   @@index([issueDate])
   @@index([dueDate])
+  @@index([quoteId])
+  @@index([deliveryNoteId])
+  @@index([afipStatus])
+  @@index([paymentStatus])
   @@map("invoices")
 }
 
@@ -825,19 +1432,29 @@ model PriceListItem {
 
 model ChartOfAccount {
   id              String      @id @default(cuid())
-  code            String      @unique  // Ej: 1.1.01.001
+  code            String      @unique  // Ej: 1.1.1.001
   name            String
   accountType     AccountType
+  category        String?     // CAJA_Y_BANCOS, CREDITOS_VENTAS, etc.
   parentId        String?
   level           Int         // 1, 2, 3, 4 (niveles de jerarquía)
-  isActive        Boolean     @default(true)
-  acceptsEntries  Boolean     @default(true) // Si acepta asientos directos
 
-  parent          ChartOfAccount?  @relation("AccountHierarchy", fields: [parentId], references: [id])
+  // Control
+  isActive        Boolean     @default(true)
+  isDetailAccount Boolean     @default(false)  // Si permite movimientos (nivel más bajo)
+  acceptsEntries  Boolean     @default(true)   // Si acepta asientos directos (deprecated, usar isDetailAccount)
+
+  // Saldos (calculados)
+  debitBalance    Decimal     @default(0) @db.Decimal(15, 2)
+  creditBalance   Decimal     @default(0) @db.Decimal(15, 2)
+
+  parent          ChartOfAccount?  @relation("AccountHierarchy", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   children        ChartOfAccount[] @relation("AccountHierarchy")
 
   journalEntryLines JournalEntryLine[]
-  treasuryAccounts  TreasuryAccount[]
+  journalEntryTemplateLines JournalEntryTemplateLine[]
+  purchaseInvoiceItems PurchaseInvoiceItem[]
+  purchaseInvoicePerceptions PurchaseInvoicePerception[]
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -845,10 +1462,103 @@ model ChartOfAccount {
   @@index([code])
   @@index([accountType])
   @@index([parentId])
+  @@index([category])
   @@map("chart_of_accounts")
 }
 
-// Asientos Contables
+// ========================================
+// PLANTILLAS DE ASIENTOS CONTABLES
+// ========================================
+
+enum TriggerType {
+  SALE_INVOICE          // Factura de venta
+  PURCHASE_INVOICE      // Factura de compra
+  CUSTOMER_PAYMENT      // Cobro a cliente
+  SUPPLIER_PAYMENT      // Pago a proveedor
+  BANK_TRANSFER         // Transferencia bancaria
+  LOAN_DISBURSEMENT     // Desembolso de préstamo
+  LOAN_PAYMENT          // Pago de cuota de préstamo
+  EXPENSE               // Gasto
+  SALARY_PAYMENT        // Pago de sueldo
+  DEPRECIATION          // Depreciación
+  INVENTORY_ADJUSTMENT  // Ajuste de inventario
+  OPENING_ENTRY         // Asiento de apertura
+  CLOSING_ENTRY         // Asiento de cierre
+  MANUAL                // Asiento manual
+}
+
+enum EntryLineSide {
+  DEBIT       // Debe
+  CREDIT      // Haber
+}
+
+enum AmountType {
+  TOTAL           // Total del documento (ej: total factura)
+  SUBTOTAL        // Subtotal sin impuestos
+  TAX             // Impuestos (IVA)
+  TAX_21          // IVA 21%
+  TAX_10_5        // IVA 10.5%
+  PERCEPTION      // Percepciones
+  FIXED           // Monto fijo
+  PERCENTAGE      // Porcentaje del total
+  BALANCE         // Saldo restante
+  PRINCIPAL       // Capital de préstamo
+  INTEREST        // Intereses
+  NET_PAYMENT     // Pago neto (después de retenciones)
+  RETENTION       // Retenciones
+  CUSTOM          // Campo personalizado
+}
+
+model JournalEntryTemplate {
+  id              String                      @id @default(cuid())
+  name            String                      // "Factura de Venta Tipo A"
+  code            String                      @unique // "SALE_INVOICE_A"
+  triggerType     TriggerType                 // SALE_INVOICE, PURCHASE_INVOICE, etc.
+  description     String?
+  isActive        Boolean                     @default(true)
+
+  // Líneas de la plantilla
+  lines           JournalEntryTemplateLine[]
+
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+
+  @@index([code])
+  @@index([triggerType])
+  @@index([isActive])
+  @@map("journal_entry_templates")
+}
+
+model JournalEntryTemplateLine {
+  id          String                  @id @default(cuid())
+  templateId  String
+  template    JournalEntryTemplate    @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  lineNumber  Int                     // Orden
+  accountId   String                  // Cuenta a afectar
+  account     ChartOfAccount          @relation(fields: [accountId], references: [id])
+
+  side        EntryLineSide           // DEBIT o CREDIT
+  amountType  AmountType              // TOTAL, SUBTOTAL, TAX, FIXED, PERCENTAGE
+
+  // Para montos fijos o porcentajes
+  fixedAmount Decimal?                @db.Decimal(15, 2)
+  percentage  Decimal?                @db.Decimal(5, 2)
+
+  description String?                 // Descripción de la línea
+
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  @@index([templateId])
+  @@index([accountId])
+  @@map("journal_entry_template_lines")
+}
+
+// ========================================
+// ASIENTOS CONTABLES
+// ========================================
+
 enum JournalEntryStatus {
   DRAFT      // Borrador
   POSTED     // Contabilizado
@@ -865,7 +1575,12 @@ model JournalEntry {
   // Relación con documentos
   invoiceId       String?
   paymentId       String?
-  receiptId       String?  @unique  // Para asientos tipo REC
+  purchaseInvoice PurchaseInvoice?
+
+  // Plantilla aplicada
+  templateCode    String?             // Código de plantilla utilizada
+  triggerType     TriggerType?        // Tipo de operación que disparó el asiento
+  isAutomatic     Boolean             @default(false)  // Si fue generado automáticamente
 
   status          JournalEntryStatus  @default(DRAFT)
   userId          String
@@ -878,7 +1593,6 @@ model JournalEntry {
 
   user            User     @relation(fields: [userId], references: [id])
   invoice         Invoice? @relation(fields: [invoiceId], references: [id])
-  receipt         Receipt? @relation("ReceiptJournalEntry", fields: [receiptId], references: [id])
 
   @@index([entryNumber])
   @@index([date])
@@ -954,171 +1668,7 @@ model IVABook {
   @@map("iva_books")
 }
 
-// ========================================
-// MÓDULO COBROS Y TESORERÍA
-// ========================================
-
-enum ReceiptStatus {
-  BORRADOR   // Draft - editable
-  APROBADO   // Contabilizado - genera asiento, bloquea edición
-  ANULADO    // Anulado
-}
-
-enum TreasuryAccountType {
-  BANCO_CUENTA_CORRIENTE
-  BANCO_CAJA_AHORRO
-  CAJA
-  VALORES_A_DEPOSITAR
-}
-
-enum PaymentMethodType {
-  TRANSFERENCIA
-  CHEQUE
-  EFECTIVO
-  DEPOSITO
-  OTROS
-}
-
-// Cuentas de Tesorería (fondos: bancos, cajas)
-model TreasuryAccount {
-  id               String              @id @default(cuid())
-  name             String              // "Banco Galicia CC ARS"
-  type             TreasuryAccountType
-  bankName         String?
-  accountNumber    String?             // CBU / número de cuenta
-  isActive         Boolean             @default(true)
-
-  // Cuenta contable vinculada (DEBE en asiento de cobro)
-  chartOfAccountId String
-  chartOfAccount   ChartOfAccount @relation(fields: [chartOfAccountId], references: [id])
-
-  receiptPaymentMethods ReceiptPaymentMethod[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([isActive])
-  @@index([chartOfAccountId])
-  @@map("treasury_accounts")
-}
-
-// Recibo de cobro
-model Receipt {
-  id            String        @id @default(cuid())
-  pointOfSale   String        @default("0001")
-  receiptNumber String        @unique  // "0001-00000001"
-
-  customerId    String
-  customer      Customer      @relation(fields: [customerId], references: [id])
-
-  date          DateTime      @default(now())
-  status        ReceiptStatus @default(BORRADOR)
-  description   String?       @db.Text
-
-  userId        String
-  user          User          @relation("UserReceipts", fields: [userId], references: [id])
-
-  // Totales desnormalizados para performance
-  totalApplied      Decimal @default(0) @db.Decimal(15, 2) // Suma facturas aplicadas
-  totalWithholdings Decimal @default(0) @db.Decimal(15, 2) // Suma retenciones
-  totalToCobrar     Decimal @default(0) @db.Decimal(15, 2) // totalApplied - totalWithholdings
-  totalCobrado      Decimal @default(0) @db.Decimal(15, 2) // Suma medios de cobro
-
-  // Asiento contable generado al aprobar (relación inversa - JournalEntry tiene receiptId)
-  journalEntry   JournalEntry? @relation("ReceiptJournalEntry")
-
-  invoiceApplications ReceiptInvoiceApplication[]
-  withholdingGroups   ReceiptWithholdingGroup[]
-  paymentMethods      ReceiptPaymentMethod[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([customerId])
-  @@index([status])
-  @@index([date])
-  @@index([userId])
-  @@index([receiptNumber])
-  @@map("receipts")
-}
-
-// Facturas aplicadas en un recibo
-model ReceiptInvoiceApplication {
-  id          String @id @default(cuid())
-  receiptId   String
-  invoiceId   String
-
-  invoiceTotal  Decimal @db.Decimal(15, 2) // Snapshot del total al momento de aplicar
-  appliedAmount Decimal @db.Decimal(15, 2) // Monto aplicado (puede ser parcial)
-
-  receipt Receipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
-  invoice Invoice @relation(fields: [invoiceId], references: [id])
-
-  @@unique([receiptId, invoiceId])
-  @@index([receiptId])
-  @@index([invoiceId])
-  @@map("receipt_invoice_applications")
-}
-
-// Grupo de retenciones por tipo (IIBB tiene múltiples jurisdicciones)
-model ReceiptWithholdingGroup {
-  id          String @id @default(cuid())
-  receiptId   String
-  groupType   String // "IIBB" | "IVA" | "SUSS" | "GANANCIAS"
-  totalAmount Decimal @db.Decimal(15, 2)
-
-  receipt Receipt               @relation(fields: [receiptId], references: [id], onDelete: Cascade)
-  lines   ReceiptWithholdingLine[]
-
-  @@unique([receiptId, groupType])
-  @@index([receiptId])
-  @@map("receipt_withholding_groups")
-}
-
-// Línea individual de retención
-model ReceiptWithholdingLine {
-  id                String  @id @default(cuid())
-  groupId           String
-
-  withholdingType   String  // "IIBB_CABA" | "IIBB_MENDOZA" | "IVA" | "SUSS" | "GANANCIAS"
-  jurisdictionLabel String? // Para IIBB_OTRAS o display override
-  certificateNumber String?
-  amount            Decimal @db.Decimal(15, 2)
-
-  group ReceiptWithholdingGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-
-  @@index([groupId])
-  @@index([withholdingType])
-  @@map("receipt_withholding_lines")
-}
-
-// Medios de cobro del recibo
-model ReceiptPaymentMethod {
-  id                String            @id @default(cuid())
-  receiptId         String
-  treasuryAccountId String
-  paymentType       PaymentMethodType
-  amount            Decimal           @db.Decimal(15, 2)
-
-  // Para cheques
-  checkNumber String?
-  checkDate   DateTime?
-  checkBank   String?
-
-  reference String?
-  notes     String?
-
-  receipt         Receipt         @relation(fields: [receiptId], references: [id], onDelete: Cascade)
-  treasuryAccount TreasuryAccount @relation(fields: [treasuryAccountId], references: [id])
-
-  @@index([receiptId])
-  @@index([treasuryAccountId])
-  @@map("receipt_payment_methods")
-}
-
-// ========================================
 // Percepciones y Retenciones
-// ========================================
 enum WithholdingType {
   PERCEPCION  // Percepción
   RETENCION   // Retención
@@ -1207,4 +1757,386 @@ model StockMovement {
   @@index([date])
   @@index([createdAt])
   @@map("stock_movements")
+}
+
+// ========================================
+// CONFIGURACIÓN DE EMPRESA
+// ========================================
+
+model CompanySettings {
+  id                    String   @id @default(cuid())
+
+  // Datos generales
+  name                  String
+  legalName             String
+  address               String
+  city                  String
+  province              String
+  postalCode            String
+  country               String   @default("Argentina")
+  phone                 String
+  email                 String
+  cbu                   String?
+  taxId                 String   // CUIT
+  iibbNumber            String?
+
+  // Logo
+  logoUrl               String?
+  logoWidth             Int?     // en mm
+  logoHeight            Int?     // en mm
+
+  // Datos impositivos
+  taxCondition          TaxCondition @default(RESPONSABLE_INSCRIPTO)
+  fiscalDebitAccount    String?
+  fiscalCreditAccount   String?
+
+  // Agentes de retención
+  isWithholdingAgent    Boolean  @default(false)
+  withholdingGananciasAccount String?
+  withholdingIIBB       Boolean  @default(false)
+  withholdingIIBBAccount String?
+  withholdingIVA        Boolean  @default(false)
+  withholdingIVAAccount String?
+  withholdingARBA       Boolean  @default(false)
+  autoCalculateAGIP     Boolean  @default(false)
+
+  // Retenciones sufridas
+  retentionGananciasAccount String?
+  retentionIVAAccount       String?
+  retentionSUSSAccount      String?
+
+  // Percepciones sufridas
+  perceptionIVAAccount      String?
+
+  // Clientes/Proveedores
+  customerDefaultAccount      String?
+  customerAdvanceAccount      String?
+  customerInterestAccount     String?
+  customerDiscountAccount     String?
+  customerExchangeAccount     String?
+
+  supplierDefaultAccount      String?
+  supplierAdvanceAccount      String?
+  supplierInterestAccount     String?
+  supplierDiscountAccount     String?
+  supplierExchangeAccount     String?
+
+  // Avisos de vencimiento
+  invoiceReminder1Enabled     Boolean  @default(true)
+  invoiceReminder1Days        Int      @default(1)
+  invoiceReminder1Before      Boolean  @default(false)
+  invoiceReminder2Enabled     Boolean  @default(true)
+  invoiceReminder2Days        Int      @default(7)
+  invoiceReminder2Before      Boolean  @default(false)
+  invoiceReminder3Enabled     Boolean  @default(true)
+  invoiceReminder3Days        Int      @default(10)
+  invoiceReminder3Before      Boolean  @default(false)
+
+  autoSendReceipts            Boolean  @default(true)
+  autoSendPaymentOrders       Boolean  @default(false)
+
+  // Tesorería
+  valuesToDepositAccount      String?
+  deferredChecksAccount       String?
+
+  // Timestamps
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("company_settings")
+}
+
+enum NumberingMethod {
+  MANUAL
+  AUTOMATIC
+}
+
+model InvoiceNumbering {
+  id                String   @id @default(cuid())
+  description       String
+  prefix            String   // 0001, 0002, etc.
+  numberFrom        Int
+  numberTo          Int
+  currentNumber     Int
+  isDefault         Boolean  @default(false)
+
+  // Método de numeración
+  numberingMethod   NumberingMethod @default(AUTOMATIC)
+
+  // Tipos de comprobante
+  isSaleInvoice     Boolean  @default(false)
+  isDebitNote       Boolean  @default(false)
+  isCreditNote      Boolean  @default(false)
+  isPaymentOrder    Boolean  @default(false)
+  isReceipt         Boolean  @default(false)
+  isRemittance      Boolean  @default(false)
+  isElectronic      Boolean  @default(false)
+
+  voucherType       String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("invoice_numbering")
+}
+
+enum CheckType {
+  COMMON
+  DEFERRED
+  THIRD_PARTY
+}
+
+enum CheckStatus {
+  PENDING
+  CLEARED
+  BOUNCED
+  CANCELLED
+}
+
+model BankCheckbook {
+  id          String   @id @default(cuid())
+  bankName    String
+  accountNumber String
+  checkFrom   Int
+  checkTo     Int
+  currentCheck Int
+
+  checks      Check[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("bank_checkbooks")
+}
+
+model Check {
+  id            String      @id @default(cuid())
+  checkbookId   String
+  checkbook     BankCheckbook @relation(fields: [checkbookId], references: [id], onDelete: Cascade)
+  checkNumber   String
+  paymentDate   DateTime
+  type          CheckType
+  amount        Decimal     @db.Decimal(12, 2)
+  status        CheckStatus @default(PENDING)
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([checkbookId])
+  @@map("checks")
+}
+
+// ========================================
+// MÓDULO DE TESORERÍA
+// ========================================
+
+enum BankAccountType {
+  CASH              // Caja
+  CHECKING_ACCOUNT  // Cuenta Corriente
+  SAVINGS_ACCOUNT   // Caja de Ahorro
+  CREDIT_CARD       // Tarjeta de Crédito
+  FOREIGN_CURRENCY  // Moneda Extranjera
+}
+
+model BankAccount {
+  id                String            @id @default(cuid())
+  name              String            // "Cta Cte Galicia"
+  type              BankAccountType
+  bank              String?           // "Banco Galicia"
+  accountNumber     String?
+  cbu               String?
+  alias             String?
+
+  // Saldos
+  balance           Decimal           @default(0) @db.Decimal(15, 2)
+  reconciledBalance Decimal           @default(0) @db.Decimal(15, 2)
+
+  // Moneda extranjera
+  currency          String            @default("ARS") // ARS, USD, EUR
+  currencyBalance   Decimal?          @db.Decimal(15, 2) // Saldo en moneda original
+
+  // Conexión bancaria
+  isConnected       Boolean           @default(false)
+  bankConnectionId  String?
+
+  // Estado
+  isActive          Boolean           @default(true)
+
+  // Relaciones
+  transactions      BankTransaction[]
+  payments          Payment[]
+  receipts          Receipt[]
+
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([name])
+  @@index([type])
+  @@index([isActive])
+  @@map("bank_accounts")
+}
+
+enum BankTransactionType {
+  INCOME            // Ingreso
+  EXPENSE           // Egreso
+  TRANSFER          // Transferencia entre cuentas
+  DEPOSIT           // Depósito
+  WITHDRAWAL        // Extracción
+  CHECK_CLEARING    // Cobro de cheque
+  CHECK_PAYMENT     // Pago con cheque
+  CARD_PAYMENT      // Pago con tarjeta
+  BANK_FEE          // Comisión bancaria
+  INTEREST          // Intereses
+}
+
+model BankTransaction {
+  id                String          @id @default(cuid())
+  bankAccountId     String
+  bankAccount       BankAccount     @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+
+  // Datos del movimiento
+  date              DateTime
+  type              BankTransactionType
+  voucherType       String?         // REC, PAG, DEP, EXT, etc.
+  voucherNumber     String?
+  checkNumber       String?
+
+  // Contraparte
+  entityType        String?         // CUSTOMER, SUPPLIER
+  entityId          String?
+  entityName        String?
+
+  // Importes
+  description       String?
+  debit             Decimal         @default(0) @db.Decimal(15, 2) // Ingreso
+  credit            Decimal         @default(0) @db.Decimal(15, 2) // Egreso
+  balance           Decimal         @db.Decimal(15, 2) // Saldo después del movimiento
+
+  // Conciliación
+  isReconciled      Boolean         @default(false)
+  reconciledAt      DateTime?
+
+  // Relaciones
+  invoiceId         String?
+  paymentId         String?
+  receiptId         String?
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([bankAccountId, date])
+  @@index([date])
+  @@index([entityId])
+  @@map("bank_transactions")
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+model Payment {
+  id                String          @id @default(cuid())
+  paymentNumber     String          @unique
+  date              DateTime        @default(now())
+
+  // A quién se paga
+  supplierId        String?
+  supplier          Supplier?       @relation(fields: [supplierId], references: [id])
+
+  // Método de pago
+  bankAccountId     String?
+  bankAccount       BankAccount?    @relation(fields: [bankAccountId], references: [id])
+
+  paymentMethod     PaymentMethod
+
+  // Monto
+  amount            Decimal         @db.Decimal(15, 2)
+  currency          String          @default("ARS")
+
+  // Detalles
+  description       String?
+  checkNumber       String?
+
+  // Estado
+  status            PaymentStatus   @default(PENDING)
+
+  // Relaciones
+  purchasePayments  PurchasePayment[]
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([paymentNumber])
+  @@index([supplierId])
+  @@index([bankAccountId])
+  @@index([date])
+  @@map("payments")
+}
+
+model Receipt {
+  id                String          @id @default(cuid())
+  receiptNumber     String          @unique
+  date              DateTime        @default(now())
+
+  // De quién se cobra
+  customerId        String?
+  customer          Customer?       @relation(fields: [customerId], references: [id])
+
+  // Método de cobro
+  bankAccountId     String?
+  bankAccount       BankAccount?    @relation(fields: [bankAccountId], references: [id])
+
+  collectionMethod  PaymentMethod
+
+  // Monto
+  amount            Decimal         @db.Decimal(15, 2)
+  currency          String          @default("ARS")
+
+  // Detalles
+  description       String?
+  checkNumber       String?
+
+  // Estado
+  status            PaymentStatus   @default(PENDING)
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([receiptNumber])
+  @@index([customerId])
+  @@index([bankAccountId])
+  @@index([date])
+  @@map("receipts")
+}
+
+// Cobros a clientes (con integración contable)
+model CustomerReceipt {
+  id            String        @id @default(cuid())
+  customerId    String
+  customer      Customer      @relation("CustomerReceipts", fields: [customerId], references: [id])
+
+  // Factura asociada (opcional)
+  invoiceId     String?
+  invoice       Invoice?      @relation(fields: [invoiceId], references: [id])
+
+  amount        Decimal       @db.Decimal(15, 2)
+  currency      String        @default("ARS")
+  receiptDate   DateTime      @default(now())
+  method        String        // CASH, TRANSFER, DEBIT, CREDIT, CHECK
+  reference     String?       // Número de cheque, transferencia, etc.
+  notes         String?
+
+  // Usuario que registró el cobro
+  userId        String
+  user          User          @relation(fields: [userId], references: [id])
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([customerId])
+  @@index([invoiceId])
+  @@index([receiptDate])
+  @@map("customer_receipts")
 }

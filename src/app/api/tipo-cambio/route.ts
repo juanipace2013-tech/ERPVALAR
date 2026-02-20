@@ -1,7 +1,6 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
-
 import { prisma } from '@/lib/prisma'
 import { exchangeRateSchema } from '@/lib/validations'
 import { z } from 'zod'
@@ -25,7 +24,7 @@ export async function GET(request: NextRequest) {
     const now = new Date()
 
     // Construir filtros
-    const where: any = {}
+    const where: Record<string, unknown> = {}
 
     if (fromCurrency) {
       where.fromCurrency = fromCurrency
@@ -92,7 +91,7 @@ export async function POST(request: NextRequest) {
     console.log('📥 Datos recibidos para tipo de cambio:', body)
 
     // Preparar datos para validación
-    const dataToValidate: any = {
+    const dataToValidate: Record<string, unknown> = {
       fromCurrency: body.fromCurrency,
       toCurrency: body.toCurrency,
       rate: body.rate,

@@ -5,7 +5,6 @@ import { useRouter, useParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Select,
@@ -23,23 +22,15 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import {
   ArrowLeft,
   Save,
   Loader2,
   Plus,
   Trash2,
   Calculator,
-  DollarSign,
   Package,
   X,
+  Pencil,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -76,6 +67,7 @@ interface QuoteItem {
   customerMultiplier: number
   unitPrice: number
   totalPrice: number
+  deliveryTime: string | null
   isAlternative: boolean
   alternativeToItemId: string | null
   additionals: Additional[]
@@ -113,6 +105,7 @@ interface ItemFormData {
   productId: string
   quantity: number
   description: string
+  deliveryTime: string
   isAlternative: boolean
   alternativeToItemId: string | null
   additionals: Array<{
@@ -127,17 +120,18 @@ export default function QuoteDetailPage() {
   const quoteId = params.id as string
 
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
   const [quote, setQuote] = useState<Quote | null>(null)
   const [products, setProducts] = useState<Product[]>([])
   const [brandDiscounts, setBrandDiscounts] = useState<BrandDiscount[]>([])
 
   // Item form state
   const [showItemDialog, setShowItemDialog] = useState(false)
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [itemFormData, setItemFormData] = useState<ItemFormData>({
     productId: '',
     quantity: 1,
     description: '',
+    deliveryTime: 'Inmediato',
     isAlternative: false,
     alternativeToItemId: null,
     additionals: [],
@@ -162,10 +156,12 @@ export default function QuoteDetailPage() {
     fetchQuoteData()
     fetchProducts()
     fetchBrandDiscounts()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteId])
 
   useEffect(() => {
     calculatePricePreview()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemFormData.productId, itemFormData.quantity, itemFormData.additionals])
 
   const fetchQuoteData = async () => {
@@ -284,9 +280,10 @@ export default function QuoteDetailPage() {
         productId: itemFormData.productId,
         quantity: itemFormData.quantity,
         description: itemFormData.description || product.name,
+        deliveryTime: itemFormData.deliveryTime,
         isAlternative: itemFormData.isAlternative,
         alternativeToItemId: itemFormData.alternativeToItemId,
-        additionals: itemFormData.additionals.map((add, index) => ({
+        additionals: itemFormData.additionals.map((add) => ({
           productId: add.productId,
           listPrice: add.listPrice,
         })),
@@ -335,6 +332,84 @@ export default function QuoteDetailPage() {
     }
   }
 
+  const handleOpenEditDialog = (item: QuoteItem) => {
+    setEditingItemId(item.id)
+    setItemFormData({
+      productId: item.productId,
+      quantity: item.quantity,
+      description: item.description || '',
+      deliveryTime: item.deliveryTime || 'Inmediato',
+      isAlternative: item.isAlternative,
+      alternativeToItemId: item.alternativeToItemId,
+      additionals: item.additionals.map(add => ({
+        productId: add.productId,
+        listPrice: Number(add.listPrice),
+      })),
+    })
+    setShowItemDialog(true)
+  }
+
+  const handleSaveItem = async () => {
+    if (!itemFormData.productId) {
+      toast.error('Debe seleccionar un producto')
+      return
+    }
+
+    // Si estamos editando, llamar a handleEditItem
+    if (editingItemId) {
+      return handleEditItem()
+    }
+
+    // Si no, es agregar nuevo item
+    return handleAddItem()
+  }
+
+  const handleEditItem = async () => {
+    if (!editingItemId) return
+
+    try {
+      setItemFormLoading(true)
+
+      const product = products.find((p) => p.id === itemFormData.productId)
+      if (!product) {
+        throw new Error('Producto no encontrado')
+      }
+
+      const payload = {
+        productId: itemFormData.productId,
+        quantity: itemFormData.quantity,
+        description: itemFormData.description || product.name,
+        deliveryTime: itemFormData.deliveryTime,
+        additionals: itemFormData.additionals.map((add) => ({
+          productId: add.productId,
+          listPrice: add.listPrice,
+        })),
+      }
+
+      const response = await fetch(`/api/quotes/items/${editingItemId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || 'Error al editar item')
+      }
+
+      toast.success('Item actualizado exitosamente')
+      setShowItemDialog(false)
+      setEditingItemId(null)
+      resetItemForm()
+      await fetchQuoteData()
+    } catch (error) {
+      console.error('Error:', error)
+      toast.error(error instanceof Error ? error.message : 'Error al editar item')
+    } finally {
+      setItemFormLoading(false)
+    }
+  }
+
   const handleAddAdditional = () => {
     if (itemFormData.additionals.length >= 5) {
       toast.error('Máximo 5 adicionales por item')
@@ -371,10 +446,12 @@ export default function QuoteDetailPage() {
   }
 
   const resetItemForm = () => {
+    setEditingItemId(null)
     setItemFormData({
       productId: '',
       quantity: 1,
       description: '',
+      deliveryTime: 'Inmediato',
       isAlternative: false,
       alternativeToItemId: null,
       additionals: [],
@@ -431,7 +508,7 @@ export default function QuoteDetailPage() {
     )
   }
 
-  const totalInARS = quote.total * quote.exchangeRate
+  const totalInARS = Number(quote.total) * Number(quote.exchangeRate)
 
   return (
     <div className="space-y-6">
@@ -456,7 +533,27 @@ export default function QuoteDetailPage() {
         <div className="flex gap-2">
           <Button
             variant="outline"
-            onClick={() => router.push(`/cotizaciones/${quote.id}/pdf`)}
+            onClick={async () => {
+              try {
+                const response = await fetch(`/api/cotizaciones/${quote.id}/pdf`)
+                if (!response.ok) throw new Error('Error al generar PDF')
+
+                const blob = await response.blob()
+                const url = window.URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `Cotizacion-${quote.quoteNumber}.pdf`
+                document.body.appendChild(a)
+                a.click()
+                window.URL.revokeObjectURL(url)
+                document.body.removeChild(a)
+
+                toast.success('PDF generado correctamente')
+              } catch (error) {
+                console.error('Error:', error)
+                toast.error('Error al generar PDF')
+              }
+            }}
           >
             Descargar PDF
           </Button>
@@ -501,7 +598,7 @@ export default function QuoteDetailPage() {
             <div>
               <Label className="text-muted-foreground">Tipo de Cambio</Label>
               <p className="font-medium font-mono">
-                USD 1 = ARS {quote.exchangeRate.toFixed(2)}
+                USD 1 = ARS {Number(quote.exchangeRate).toFixed(2)}
               </p>
             </div>
             <div>
@@ -534,10 +631,16 @@ export default function QuoteDetailPage() {
               <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>
-                    {itemFormData.isAlternative ? 'Agregar Alternativa' : 'Agregar Item'}
+                    {editingItemId
+                      ? 'Editar Item'
+                      : itemFormData.isAlternative
+                        ? 'Agregar Alternativa'
+                        : 'Agregar Item'}
                   </DialogTitle>
                   <DialogDescription>
-                    Complete los datos del item. El precio se calcula automáticamente.
+                    {editingItemId
+                      ? 'Modifique los datos del item. El precio se recalculará automáticamente.'
+                      : 'Complete los datos del item. El precio se calcula automáticamente.'}
                   </DialogDescription>
                 </DialogHeader>
 
@@ -579,7 +682,7 @@ export default function QuoteDetailPage() {
                             </div>
                             <div className="text-right">
                               <p className="font-mono font-semibold">
-                                USD {product.listPriceUSD?.toFixed(2) || '0.00'}
+                                USD {product.listPriceUSD ? Number(product.listPriceUSD).toFixed(2) : '0.00'}
                               </p>
                             </div>
                           </div>
@@ -632,6 +735,21 @@ export default function QuoteDetailPage() {
                     </div>
                   </div>
 
+                  {/* Delivery Time */}
+                  <div className="space-y-2">
+                    <Label>Plazo de Entrega</Label>
+                    <Input
+                      value={itemFormData.deliveryTime}
+                      onChange={(e) =>
+                        setItemFormData({
+                          ...itemFormData,
+                          deliveryTime: e.target.value,
+                        })
+                      }
+                      placeholder="Ej: Inmediato, 15 días, 30 días..."
+                    />
+                  </div>
+
                   {/* Additionals */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
@@ -662,7 +780,7 @@ export default function QuoteDetailPage() {
                             {products.map((product) => (
                               <SelectItem key={product.id} value={product.id}>
                                 {product.name} - USD{' '}
-                                {product.listPriceUSD?.toFixed(2) || '0.00'}
+                                {product.listPriceUSD ? Number(product.listPriceUSD).toFixed(2) : '0.00'}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -736,7 +854,7 @@ export default function QuoteDetailPage() {
                               </div>
                               <div className="text-sm font-normal text-muted-foreground">
                                 ARS{' '}
-                                {(pricePreview.totalPrice * quote.exchangeRate).toFixed(
+                                {(pricePreview.totalPrice * Number(quote.exchangeRate)).toFixed(
                                   2
                                 )}
                               </div>
@@ -752,25 +870,37 @@ export default function QuoteDetailPage() {
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={() => setShowItemDialog(false)}
+                      onClick={() => {
+                        setShowItemDialog(false)
+                        resetItemForm()
+                      }}
                       disabled={itemFormLoading}
                     >
                       Cancelar
                     </Button>
                     <Button
-                      onClick={handleAddItem}
+                      onClick={handleSaveItem}
                       disabled={!itemFormData.productId || itemFormLoading}
                       className="bg-blue-600 hover:bg-blue-700"
                     >
                       {itemFormLoading ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Agregando...
+                          {editingItemId ? 'Guardando...' : 'Agregando...'}
                         </>
                       ) : (
                         <>
-                          <Plus className="mr-2 h-4 w-4" />
-                          Agregar Item
+                          {editingItemId ? (
+                            <>
+                              <Save className="mr-2 h-4 w-4" />
+                              Guardar cambios
+                            </>
+                          ) : (
+                            <>
+                              <Plus className="mr-2 h-4 w-4" />
+                              Agregar Item
+                            </>
+                          )}
                         </>
                       )}
                     </Button>
@@ -785,7 +915,7 @@ export default function QuoteDetailPage() {
             <div className="text-center py-12 text-muted-foreground">
               <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No hay items en esta cotización</p>
-              <p className="text-sm">Haga clic en "Agregar Item" para comenzar</p>
+              <p className="text-sm">Haga clic en &quot;Agregar Item&quot; para comenzar</p>
             </div>
           ) : (
             <div className="space-y-8">
@@ -876,6 +1006,14 @@ export default function QuoteDetailPage() {
                                   {Number(mainItem.customerMultiplier).toFixed(2)}x
                                 </span>
                               </div>
+                              <div>
+                                <span className="text-muted-foreground">
+                                  Plazo:
+                                </span>
+                                <span className="ml-2 font-medium">
+                                  {mainItem.deliveryTime || 'Inmediato'}
+                                </span>
+                              </div>
                             </div>
                           </div>
 
@@ -898,11 +1036,19 @@ export default function QuoteDetailPage() {
                               <p className="text-sm text-muted-foreground">
                                 ARS{' '}
                                 {(
-                                  Number(mainItem.totalPrice) * quote.exchangeRate
+                                  Number(mainItem.totalPrice) * Number(quote.exchangeRate)
                                 ).toFixed(2)}
                               </p>
                             </div>
                             <div className="flex gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleOpenEditDialog(mainItem)}
+                                title="Editar item"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -978,13 +1124,13 @@ export default function QuoteDetailPage() {
             <div className="flex justify-between text-lg">
               <span className="text-muted-foreground">Subtotal:</span>
               <span className="font-mono font-semibold">
-                USD {quote.subtotal.toFixed(2)}
+                USD {Number(quote.subtotal).toFixed(2)}
               </span>
             </div>
             <div className="flex justify-between text-2xl font-bold text-blue-900 border-t-2 pt-2">
               <span>Total:</span>
               <div className="text-right">
-                <div className="font-mono">USD {quote.total.toFixed(2)}</div>
+                <div className="font-mono">USD {Number(quote.total).toFixed(2)}</div>
                 <div className="text-lg font-normal text-muted-foreground">
                   ARS {totalInARS.toFixed(2)}
                 </div>

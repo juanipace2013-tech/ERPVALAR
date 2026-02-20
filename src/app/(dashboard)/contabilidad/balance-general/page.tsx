@@ -4,16 +4,8 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { Label } from '@/components/ui/label'
-import { BarChart3, Download, Printer, Calendar } from 'lucide-react'
+import { Download, Printer, Calendar } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface BalanceItem {

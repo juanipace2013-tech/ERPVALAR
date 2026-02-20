@@ -12,7 +12,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { Plus, Trash2, ArrowLeft, Save } from 'lucide-react'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
@@ -75,7 +74,7 @@ export default function NuevoAsientoPage() {
     }
   }
 
-  const updateLine = (index: number, field: keyof EntryLine, value: any) => {
+  const updateLine = (index: number, field: keyof EntryLine, value: string | number) => {
     const newLines = [...lines]
     newLines[index] = { ...newLines[index], [field]: value }
     setLines(newLines)
@@ -156,9 +155,9 @@ export default function NuevoAsientoPage() {
           : 'Asiento guardado como borrador'
       )
       router.push(`/contabilidad/asientos/${entry.id}`)
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error:', error)
-      toast.error(error.message || 'Error al crear asiento')
+      toast.error(error instanceof Error ? error.message : 'Error al crear asiento')
     } finally {
       setLoading(false)
     }

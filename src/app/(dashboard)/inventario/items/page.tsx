@@ -24,15 +24,14 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  Package,
   Plus,
   Search,
   FileSpreadsheet,
   TrendingUp,
   Settings,
-  Download,
   Upload,
   DollarSign,
+  Package,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -77,6 +76,7 @@ export default function ItemsInventarioPage() {
 
   useEffect(() => {
     fetchProducts()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, typeFilter])
 
   const fetchProducts = async () => {

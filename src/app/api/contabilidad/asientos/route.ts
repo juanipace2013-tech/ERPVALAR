@@ -1,10 +1,10 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
-
 import { prisma } from '@/lib/prisma'
 import { journalEntrySchema } from '@/lib/contabilidad/validations'
 import { z } from 'zod'
+import { JournalEntryStatus, Prisma } from '@prisma/client'
 
 // GET /api/contabilidad/asientos - Listar asientos contables
 export async function GET(request: NextRequest) {
@@ -21,23 +21,19 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '20')
 
-    const where: any = {}
+    const where: Prisma.JournalEntryWhereInput = {}
 
     if (status && status !== 'all') {
-      where.status = status
+      where.status = status as JournalEntryStatus
     }
 
-    if (startDate) {
-      where.date = {
-        ...where.date,
-        gte: new Date(startDate),
+    if (startDate || endDate) {
+      where.date = {}
+      if (startDate) {
+        where.date.gte = new Date(startDate)
       }
-    }
-
-    if (endDate) {
-      where.date = {
-        ...where.date,
-        lte: new Date(endDate),
+      if (endDate) {
+        where.date.lte = new Date(endDate)
       }
     }
 
@@ -147,7 +143,7 @@ export async function POST(request: NextRequest) {
       data: {
         date: new Date(validatedData.date),
         description: validatedData.description,
-        status: (validatedData as any).status || 'DRAFT',
+        status: ((validatedData as Record<string, unknown>).status as JournalEntryStatus) || 'DRAFT',
         user: {
           connect: { id: session.user.id },
         },
@@ -173,7 +169,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Datos inválidos', details: (error as any).errors },
+        { error: 'Datos inválidos', details: error.issues },
         { status: 400 }
       )
     }

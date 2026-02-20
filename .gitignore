@@ -24,6 +24,17 @@
 .DS_Store
 *.pem
 
+# AFIP certificates and keys - NEVER COMMIT
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+afip-certs/
+afip-credentials/
+afip-homo.*
+afip-prod.*
+
 # debug
 npm-debug.log*
 yarn-debug.log*

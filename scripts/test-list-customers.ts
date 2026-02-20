@@ -17,7 +17,7 @@ async function main() {
 
     if (data.customers.length > 0) {
       console.log('👥 Lista de clientes:\n')
-      data.customers.forEach((customer: any, index: number) => {
+      data.customers.forEach((customer: { name: string; businessName?: string; cuit: string; balance: number; priceMultiplier: number; salesPerson?: { name: string }; status: string; id: string }, index: number) => {
         console.log(`${index + 1}. ${customer.name}`)
         console.log(`   Razón Social: ${customer.businessName || 'N/A'}`)
         console.log(`   CUIT: ${customer.cuit}`)

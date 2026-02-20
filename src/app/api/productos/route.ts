@@ -1,7 +1,6 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
-
 import { prisma } from '@/lib/prisma'
 import { productWithPricesSchema } from '@/lib/validations'
 import { z } from 'zod'
@@ -20,12 +19,13 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search') || ''
     const status = searchParams.get('status') || ''
     const categoryId = searchParams.get('categoryId') || ''
+    const supplierId = searchParams.get('supplierId') || ''
     const type = searchParams.get('type') || '' // Nuevo filtro por tipo
 
     const skip = (page - 1) * limit
 
     // Construir filtros
-    const where: any = {}
+    const where: Record<string, unknown> = {}
 
     if (search) {
       where.OR = [
@@ -41,6 +41,10 @@ export async function GET(request: NextRequest) {
 
     if (categoryId) {
       where.categoryId = categoryId
+    }
+
+    if (supplierId) {
+      where.supplierId = supplierId
     }
 
     if (type && type !== 'ALL') {
@@ -199,7 +203,7 @@ export async function POST(request: NextRequest) {
             path: err.path,
             message: err.message,
             code: err.code,
-            received: (err as any).received,
+            received: 'received' in err ? (err as unknown as { received: string }).received : undefined,
           }))
         },
         { status: 400 }

@@ -1,7 +1,6 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
-
 import { prisma } from '@/lib/prisma'
 
 // GET /api/clientes/[id]/movimientos - Obtener movimientos de cuenta del cliente
@@ -15,7 +14,8 @@ export async function GET(
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
 
-    const { id: customerId } = await params
+    const { id } = await params
+    const customerId = id
 
     // Verificar que el cliente existe
     const customer = await prisma.customer.findUnique({

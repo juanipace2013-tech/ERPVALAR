@@ -1,7 +1,6 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
-
 import { prisma } from '@/lib/prisma'
 import { exchangeRateSchema } from '@/lib/validations'
 import { z } from 'zod'
@@ -73,7 +72,7 @@ export async function PUT(
     }
 
     // Preparar datos para validación
-    const dataToValidate: any = {
+    const dataToValidate: Record<string, unknown> = {
       fromCurrency: body.fromCurrency,
       toCurrency: body.toCurrency,
       rate: body.rate,

@@ -351,6 +351,6 @@ export async function processStockAdjustment(
       tx
     );
 
-    return movement as any as StockMovementWithRelations;
+    return movement as unknown as StockMovementWithRelations;
   });
 }

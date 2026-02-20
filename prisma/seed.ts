@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, CustomerType } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 
 const prisma = new PrismaClient()
@@ -166,7 +166,7 @@ async function main() {
   // ========================================
   console.log('Creating sample products...')
 
-  const producto1 = await prisma.product.create({
+  const _producto1 = await prisma.product.create({
     data: {
       sku: 'TOOL-001',
       name: 'Taladro Percutor 500W',
@@ -219,7 +219,7 @@ async function main() {
     },
   })
 
-  const producto2 = await prisma.product.create({
+  const _producto2 = await prisma.product.create({
     data: {
       sku: 'SEG-001',
       name: 'Casco de Seguridad',
@@ -270,7 +270,7 @@ async function main() {
     },
   })
 
-  const producto3 = await prisma.product.create({
+  const _producto3 = await prisma.product.create({
     data: {
       sku: 'FER-001',
       name: 'Tornillos Autoperforantes x100',
@@ -317,11 +317,11 @@ async function main() {
   // ========================================
   console.log('Creating sample customers...')
 
-  const cliente1 = await prisma.customer.create({
+  const _cliente1 = await prisma.customer.create({
     data: {
       name: 'Construcciones del Sur SA',
       businessName: 'Construcciones del Sur Sociedad Anónima',
-      type: 'BUSINESS',
+      type: CustomerType.BUSINESS,
       cuit: '30-71234567-8',
       taxCondition: 'RESPONSABLE_INSCRIPTO',
       email: 'ventas@construccionesdelsur.com',
@@ -354,11 +354,11 @@ async function main() {
     },
   })
 
-  const cliente2 = await prisma.customer.create({
+  const _cliente2 = await prisma.customer.create({
     data: {
       name: 'Industrias Metalúrgicas',
       businessName: 'Industrias Metalúrgicas Argentina SRL',
-      type: 'BUSINESS',
+      type: CustomerType.BUSINESS,
       cuit: '30-71234568-9',
       taxCondition: 'RESPONSABLE_INSCRIPTO',
       email: 'compras@metalurgicas.com.ar',

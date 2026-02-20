@@ -1,7 +1,6 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
-
 import { prisma } from '@/lib/prisma'
 import { getBCRAUSDRate } from '@/lib/bcra'
 
@@ -9,7 +8,7 @@ import { getBCRAUSDRate } from '@/lib/bcra'
  * GET /api/tipo-cambio/bcra
  * Obtiene el tipo de cambio USD del BCRA y lo guarda en la base de datos
  */
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     const session = await auth()
     if (!session) {

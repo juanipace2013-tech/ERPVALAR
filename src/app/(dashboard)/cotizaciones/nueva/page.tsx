@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ArrowLeft, Save, Loader2, Plus, DollarSign } from 'lucide-react'
+import { ArrowLeft, Save, Loader2, DollarSign } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface Customer {
@@ -42,8 +42,8 @@ export default function NuevaCotizacionPage() {
   const [quoteNumber, setQuoteNumber] = useState('')
   const [exchangeRate, setExchangeRate] = useState(0)
   const [customers, setCustomers] = useState<Customer[]>([])
-  const [products, setProducts] = useState<Product[]>([])
-  const [brandDiscounts, setBrandDiscounts] = useState<BrandDiscount[]>([])
+  const [_products, setProducts] = useState<Product[]>([])
+  const [_brandDiscounts, setBrandDiscounts] = useState<BrandDiscount[]>([])
 
   const [formData, setFormData] = useState({
     customerId: '',

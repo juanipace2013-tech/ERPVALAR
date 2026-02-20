@@ -1,7 +1,6 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
-
 import { prisma } from '@/lib/prisma'
 
 /**
@@ -120,11 +119,12 @@ export async function POST(
         customerMultiplier,
         unitPrice,
         totalPrice,
+        deliveryTime: body.deliveryTime || 'Inmediato',
         isAlternative: body.isAlternative || false,
         alternativeToItemId: body.alternativeToItemId,
         additionals: body.additionals
           ? {
-              create: body.additionals.map((add: any, index: number) => ({
+              create: body.additionals.map((add: { productId: string; listPrice: number }, index: number) => ({
                 productId: add.productId,
                 position: index + 1,
                 listPrice: add.listPrice,

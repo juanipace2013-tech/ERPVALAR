@@ -48,7 +48,12 @@
       "Bash(tail:*)",
       "Bash(for:*)",
       "Bash(do npx tsx scripts/clean-categories.ts)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(git -C /c/Users/santi/crm-valarg log --oneline)",
+      "Bash(git stash:*)",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)",
+      "Bash(git merge:*)"
     ]
   }
 }

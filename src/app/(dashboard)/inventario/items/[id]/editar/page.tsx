@@ -77,6 +77,7 @@ export default function EditarItemPage({ params }: { params: Promise<{ id: strin
   useEffect(() => {
     fetchProduct()
     fetchCategories()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
   const fetchProduct = async () => {
@@ -134,7 +135,7 @@ export default function EditarItemPage({ params }: { params: Promise<{ id: strin
     }
   }
 
-  const handleChange = (field: string, value: any) => {
+  const handleChange = (field: string, value: string | number | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
   }
 
@@ -208,9 +209,9 @@ export default function EditarItemPage({ params }: { params: Promise<{ id: strin
 
       toast.success('Producto actualizado exitosamente')
       router.push(`/inventario/items/${id}`)
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error:', error)
-      toast.error(error.message || 'Error al actualizar el producto')
+      toast.error(error instanceof Error ? error.message : 'Error al actualizar el producto')
     } finally {
       setSaving(false)
     }

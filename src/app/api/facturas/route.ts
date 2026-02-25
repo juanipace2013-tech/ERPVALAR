@@ -4,6 +4,7 @@ import { auth } from '@/auth'
  * Handles invoice creation with automatic inventory and accounting integration
  */
 
+import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server';
 ;
 ;
@@ -12,7 +13,6 @@ import { prisma } from '@/lib/prisma';
 import {
   processInvoiceCreationWithInventory,
   validateInvoiceForInventory,
-  getInvoiceInventoryPreview,
 } from '@/lib/inventario/invoice-inventory.service';
 
 /**
@@ -31,8 +31,8 @@ const invoiceItemSchema = z.object({
 const invoiceCreateSchema = z.object({
   invoiceNumber: z.string().min(1, 'Número de factura requerido'),
   invoiceType: z.enum(['A', 'B', 'C', 'E'], {
-    message: 'Tipo de factura inválido',
-  } as any),
+    errorMap: () => ({ message: 'Tipo de factura inválido' }),
+  }),
   customerId: z.string().min(1, 'ID de cliente requerido'),
   currency: z.enum(['ARS', 'USD', 'EUR']).default('ARS'),
   subtotal: z.number().nonnegative(),
@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
     const skip = (page - 1) * limit;
 
     // Build filters
-    const where: any = {};
+    const where: Record<string, unknown> = {};
 
     if (status) {
       where.status = status;
@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate invoice data (stock, costs, etc.)
-    const validation = await validateInvoiceForInventory(validatedData as any);
+    const validation = await validateInvoiceForInventory(validatedData);
 
     if (!validation.valid) {
       return NextResponse.json(
@@ -187,7 +187,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Process invoice creation with inventory and accounting
-    const result = await processInvoiceCreationWithInventory(validatedData as any);
+    const result = await processInvoiceCreationWithInventory(validatedData);
 
     return NextResponse.json(
       {
@@ -205,7 +205,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Datos inválidos', details: (error as any).errors },
+        { error: 'Datos inválidos', details: error.issues },
         { status: 400 }
       );
     }

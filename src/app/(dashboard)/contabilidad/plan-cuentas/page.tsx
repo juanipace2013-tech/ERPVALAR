@@ -1,319 +1,483 @@
-'use client'
+'use client';
 
-import { useState, useEffect } from 'react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
-import { Plus, Search, Download, Upload } from 'lucide-react'
-import { toast } from 'sonner'
+  SelectValue
+} from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Plus,
+  Search,
+  ChevronDown,
+  ChevronRight,
+  Pencil,
+  Trash2,
+  AlertCircle
+} from 'lucide-react';
+import { toast } from 'sonner';
 
-interface Account {
-  id: string
-  code: string
-  name: string
-  accountType: string
-  level: number
-  isActive: boolean
-  acceptsEntries: boolean
-  parent?: {
-    id: string
-    code: string
-    name: string
-  }
-  _count: {
-    children: number
-    journalEntryLines: number
-  }
+interface ChartOfAccount {
+  id: string;
+  code: string;
+  name: string;
+  accountType: string;
+  category: string | null;
+  level: number;
+  isDetailAccount: boolean;
+  acceptsEntries: boolean;
+  debitBalance: number;
+  creditBalance: number;
+  parentId: string | null;
+  children?: ChartOfAccount[];
 }
 
-const ACCOUNT_TYPE_LABELS: Record<string, string> = {
-  ACTIVO: 'Activo',
-  PASIVO: 'Pasivo',
-  PATRIMONIO_NETO: 'Patrimonio Neto',
-  INGRESO: 'Ingreso',
-  EGRESO: 'Egreso',
+const typeColors: Record<string, string> = {
+  ACTIVO: 'bg-blue-100 text-blue-800',
+  PASIVO: 'bg-red-100 text-red-800',
+  PATRIMONIO_NETO: 'bg-green-100 text-green-800',
+  INGRESO: 'bg-emerald-100 text-emerald-800',
+  EGRESO: 'bg-orange-100 text-orange-800',
+};
+
+const accountTypes = [
+  { value: 'ACTIVO', label: 'Activo' },
+  { value: 'PASIVO', label: 'Pasivo' },
+  { value: 'PATRIMONIO_NETO', label: 'Patrimonio Neto' },
+  { value: 'INGRESO', label: 'Ingreso' },
+  { value: 'EGRESO', label: 'Egreso' },
+];
+
+interface AccountRowProps {
+  account: ChartOfAccount;
+  level: number;
+  onToggle: (id: string) => void;
+  onEdit: (account: ChartOfAccount) => void;
+  onDelete: (account: ChartOfAccount) => void;
+  expanded: Set<string>;
 }
 
-const ACCOUNT_TYPE_COLORS: Record<string, string> = {
-  ACTIVO: 'bg-blue-100 text-blue-700',
-  PASIVO: 'bg-red-100 text-red-700',
-  PATRIMONIO_NETO: 'bg-purple-100 text-purple-700',
-  INGRESO: 'bg-green-100 text-green-700',
-  EGRESO: 'bg-orange-100 text-orange-700',
+function AccountRow({ account, level = 0, onToggle, onEdit, onDelete, expanded }: AccountRowProps) {
+  const hasChildren = (account.children?.length ?? 0) > 0;
+  const isExpanded = expanded.has(account.id);
+
+  return (
+    <>
+      <tr className="hover:bg-muted/50 border-b">
+        <td className="p-3" style={{ paddingLeft: `${level * 24 + 12}px` }}>
+          <div className="flex items-center gap-2">
+            {hasChildren ? (
+              <button onClick={() => onToggle(account.id)} className="p-1 hover:bg-muted rounded">
+                {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              </button>
+            ) : <div className="w-6" />}
+            <span className={`font-mono ${level === 0 ? 'font-bold' : ''}`}>{account.code}</span>
+          </div>
+        </td>
+        <td className="p-3">
+          <div className="flex items-center gap-2">
+            <span className={level === 0 ? 'font-bold' : ''}>{account.name}</span>
+            {account.isDetailAccount && (
+              <Badge variant="secondary" className="text-xs">Detalle</Badge>
+            )}
+          </div>
+        </td>
+        <td className="p-3">
+          <Badge variant="outline" className={typeColors[account.accountType]}>
+            {account.accountType}
+          </Badge>
+        </td>
+        <td className="p-3 text-right font-mono">
+          {account.isDetailAccount ? Number(account.debitBalance).toFixed(2) : '-'}
+        </td>
+        <td className="p-3 text-right font-mono">
+          {account.isDetailAccount ? Number(account.creditBalance).toFixed(2) : '-'}
+        </td>
+        <td className="p-3 text-right">
+          <div className="flex items-center justify-end gap-1">
+            <Button variant="ghost" size="sm" onClick={() => onEdit(account)}>
+              <Pencil className="h-4 w-4" />
+            </Button>
+            {!hasChildren && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onDelete(account)}
+                className="text-destructive hover:text-destructive"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        </td>
+      </tr>
+      {hasChildren && isExpanded && account.children?.map((child: ChartOfAccount) => (
+        <AccountRow
+          key={child.id}
+          account={child}
+          level={level + 1}
+          onToggle={onToggle}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          expanded={expanded}
+        />
+      ))}
+    </>
+  );
 }
 
-export default function PlanCuentasPage() {
-  const [accounts, setAccounts] = useState<Account[]>([])
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [typeFilter, setTypeFilter] = useState('all')
-  const [levelFilter, setLevelFilter] = useState('all')
-  const [hasInitialized, setHasInitialized] = useState(false)
+export default function PlanDeCuentasPage() {
+  const [accounts, setAccounts] = useState<ChartOfAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [expanded, setExpanded] = useState(new Set<string>());
+
+  // Edit/Create dialog
+  const [editDialog, setEditDialog] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<ChartOfAccount | null>(null);
+  const [formData, setFormData] = useState({
+    code: '',
+    name: '',
+    accountType: 'ACTIVO',
+    category: '',
+    isDetailAccount: false,
+    acceptsEntries: true,
+    parentId: null as string | null,
+  });
+
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetchAccounts()
-  }, [typeFilter, levelFilter])
+    loadAccounts();
+  }, []);
 
-  const fetchAccounts = async () => {
+  const loadAccounts = async () => {
     try {
-      setLoading(true)
-      const params = new URLSearchParams()
-
-      if (typeFilter !== 'all') {
-        params.append('accountType', typeFilter)
-      }
-
-      if (levelFilter !== 'all') {
-        params.append('level', levelFilter)
-      }
-
-      params.append('activeOnly', 'true')
-
-      const response = await fetch(`/api/contabilidad/plan-cuentas?${params}`)
-
-      if (!response.ok) {
-        throw new Error('Error al cargar cuentas')
-      }
-
-      const data = await response.json()
-      setAccounts(data)
-      setHasInitialized(data.length > 0)
+      const res = await fetch('/api/contabilidad/plan-cuentas');
+      const data = await res.json();
+      setAccounts(data);
+      const level1 = data.map((acc: ChartOfAccount) => acc.id);
+      setExpanded(new Set(level1));
     } catch (error) {
-      console.error('Error:', error)
-      toast.error('Error al cargar plan de cuentas')
-      setAccounts([])
+      toast.error('Error al cargar el plan de cuentas');
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
-  const initializePlan = async () => {
-    if (!confirm('¿Deseas inicializar el plan de cuentas argentino estándar?')) {
-      return
+  const toggleExpand = (id: string) => {
+    setExpanded(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      return newSet;
+    });
+  };
+
+  const handleEdit = (account: ChartOfAccount) => {
+    setEditingAccount(account);
+    setFormData({
+      code: account.code,
+      name: account.name,
+      accountType: account.accountType,
+      category: account.category || '',
+      isDetailAccount: account.isDetailAccount,
+      acceptsEntries: account.acceptsEntries,
+      parentId: account.parentId,
+    });
+    setEditDialog(true);
+  };
+
+  const handleCreate = () => {
+    setEditingAccount(null);
+    setFormData({
+      code: '',
+      name: '',
+      accountType: 'ACTIVO',
+      category: '',
+      isDetailAccount: false,
+      acceptsEntries: true,
+      parentId: null,
+    });
+    setEditDialog(true);
+  };
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+
+      if (editingAccount) {
+        // Actualizar
+        const res = await fetch(`/api/contabilidad/plan-cuentas/${editingAccount.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json();
+          throw new Error(errorData.error || 'Error al actualizar cuenta');
+        }
+        toast.success('Cuenta actualizada correctamente');
+      } else {
+        // Crear
+        const res = await fetch('/api/contabilidad/plan-cuentas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json();
+          throw new Error(errorData.error || 'Error al crear cuenta');
+        }
+        toast.success('Cuenta creada correctamente');
+      }
+
+      setEditDialog(false);
+      loadAccounts();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Error al guardar');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (account: ChartOfAccount) => {
+    if (!confirm(`¿Está seguro de eliminar la cuenta ${account.code} - ${account.name}?`)) {
+      return;
     }
 
     try {
-      setLoading(true)
-      toast.info('Inicializando plan de cuentas...')
+      const res = await fetch(`/api/contabilidad/plan-cuentas/${account.id}`, {
+        method: 'DELETE',
+      });
 
-      const response = await fetch('/api/contabilidad/plan-cuentas/initialize', {
-        method: 'POST',
-      })
-
-      if (!response.ok) {
-        throw new Error('Error al inicializar')
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Error al eliminar cuenta');
       }
 
-      const result = await response.json()
-      toast.success(`Plan de cuentas creado: ${result.count} cuentas`)
-      fetchAccounts()
+      toast.success('Cuenta eliminada correctamente');
+      loadAccounts();
     } catch (error) {
-      console.error('Error:', error)
-      toast.error('Error al inicializar plan de cuentas')
-    } finally {
-      setLoading(false)
+      toast.error(error instanceof Error ? error.message : 'Error al eliminar');
     }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      </div>
+    );
   }
 
-  const filteredAccounts = accounts.filter(account =>
-    account.name.toLowerCase().includes(search.toLowerCase()) ||
-    account.code.includes(search)
-  )
-
-  const getLevelIndent = (level: number) => {
-    return `${(level - 1) * 2}rem`
-  }
+  const filtered = accounts.filter(acc =>
+    acc.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    acc.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Plan de Cuentas</h1>
-          <p className="text-gray-600 mt-1">
-            Gestiona el plan de cuentas contable
-          </p>
+          <h1 className="text-3xl font-bold">Plan de Cuentas</h1>
+          <p className="text-muted-foreground">Gestión del plan de cuentas contable</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={initializePlan}>
-            <Upload className="mr-2 h-4 w-4" />
-            Inicializar Plan
-          </Button>
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            Nueva Cuenta
-          </Button>
-        </div>
+        <Button onClick={handleCreate}>
+          <Plus className="h-4 w-4 mr-2" />
+          Nueva Cuenta
+        </Button>
       </div>
 
-      {/* Filtros */}
       <Card>
-        <CardHeader>
-          <CardTitle>Plan de Cuentas Contable</CardTitle>
-          <CardDescription>
-            {hasInitialized
-              ? `${accounts.length} cuentas registradas`
-              : 'Inicializa el plan de cuentas para comenzar'}
-          </CardDescription>
-        </CardHeader>
+        <CardHeader><CardTitle>Filtros</CardTitle></CardHeader>
         <CardContent>
-          <div className="flex flex-col gap-4 mb-6 sm:flex-row">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Buscar por código o nombre..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-full sm:w-[200px]">
-                <SelectValue placeholder="Tipo de cuenta" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos los tipos</SelectItem>
-                <SelectItem value="ACTIVO">Activo</SelectItem>
-                <SelectItem value="PASIVO">Pasivo</SelectItem>
-                <SelectItem value="PATRIMONIO_NETO">Patrimonio Neto</SelectItem>
-                <SelectItem value="INGRESO">Ingreso</SelectItem>
-                <SelectItem value="EGRESO">Egreso</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={levelFilter} onValueChange={setLevelFilter}>
-              <SelectTrigger className="w-full sm:w-[150px]">
-                <SelectValue placeholder="Nivel" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos los niveles</SelectItem>
-                <SelectItem value="1">Nivel 1</SelectItem>
-                <SelectItem value="2">Nivel 2</SelectItem>
-                <SelectItem value="3">Nivel 3</SelectItem>
-                <SelectItem value="4">Nivel 4</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="relative">
+            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por código o nombre..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+            />
           </div>
-
-          {loading ? (
-            <div className="text-center py-8">
-              <p className="text-gray-500">Cargando...</p>
-            </div>
-          ) : filteredAccounts.length === 0 ? (
-            <div className="text-center py-12">
-              {!hasInitialized ? (
-                <>
-                  <BookOpen className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    Plan de Cuentas No Inicializado
-                  </h3>
-                  <p className="text-gray-600 mb-4">
-                    Inicializa el plan de cuentas argentino estándar para comenzar
-                  </p>
-                  <Button onClick={initializePlan}>
-                    <Upload className="mr-2 h-4 w-4" />
-                    Inicializar Plan de Cuentas
-                  </Button>
-                </>
-              ) : (
-                <p className="text-gray-500">No se encontraron cuentas</p>
-              )}
-            </div>
-          ) : (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Código</TableHead>
-                    <TableHead>Nombre</TableHead>
-                    <TableHead>Tipo</TableHead>
-                    <TableHead>Nivel</TableHead>
-                    <TableHead className="text-center">Subcuentas</TableHead>
-                    <TableHead className="text-center">Asientos</TableHead>
-                    <TableHead className="text-center">Acepta Asientos</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredAccounts.map((account) => (
-                    <TableRow
-                      key={account.id}
-                      className="cursor-pointer hover:bg-gray-50"
-                    >
-                      <TableCell className="font-mono font-medium">
-                        {account.code}
-                      </TableCell>
-                      <TableCell>
-                        <span
-                          style={{ marginLeft: getLevelIndent(account.level) }}
-                          className={account.level === 1 ? 'font-bold' : account.level === 2 ? 'font-semibold' : ''}
-                        >
-                          {account.name}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={ACCOUNT_TYPE_COLORS[account.accountType]}>
-                          {ACCOUNT_TYPE_LABELS[account.accountType]}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{account.level}</TableCell>
-                      <TableCell className="text-center">
-                        {account._count.children > 0 && (
-                          <Badge variant="outline">{account._count.children}</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {account._count.journalEntryLines > 0 && (
-                          <Badge variant="outline">{account._count.journalEntryLines}</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {account.acceptsEntries ? (
-                          <Badge className="bg-green-100 text-green-700">Sí</Badge>
-                        ) : (
-                          <Badge variant="outline">No</Badge>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
         </CardContent>
       </Card>
-    </div>
-  )
-}
 
-function BookOpen({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
-      />
-    </svg>
-  )
+      <Card>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-muted/50 border-b">
+                <tr>
+                  <th className="p-3 text-left font-semibold">Código</th>
+                  <th className="p-3 text-left font-semibold">Nombre</th>
+                  <th className="p-3 text-left font-semibold">Tipo</th>
+                  <th className="p-3 text-right font-semibold">Debe</th>
+                  <th className="p-3 text-right font-semibold">Haber</th>
+                  <th className="p-3 text-right font-semibold">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length > 0 ? (
+                  filtered.map(account => (
+                    <AccountRow
+                      key={account.id}
+                      account={account}
+                      level={0}
+                      onToggle={toggleExpand}
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                      expanded={expanded}
+                    />
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                      No se encontraron cuentas
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Edit/Create Dialog */}
+      <Dialog open={editDialog} onOpenChange={setEditDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {editingAccount ? 'Editar Cuenta' : 'Nueva Cuenta'}
+            </DialogTitle>
+            <DialogDescription>
+              {editingAccount
+                ? 'Modifique los datos de la cuenta contable'
+                : 'Complete los datos para crear una nueva cuenta'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="code">Código *</Label>
+                <Input
+                  id="code"
+                  value={formData.code}
+                  onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                  placeholder="1.1.01.001"
+                  disabled={!!editingAccount}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="accountType">Tipo de Cuenta *</Label>
+                <Select
+                  value={formData.accountType}
+                  onValueChange={(value) => setFormData({ ...formData, accountType: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accountTypes.map(type => (
+                      <SelectItem key={type.value} value={type.value}>
+                        {type.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="name">Nombre *</Label>
+              <Input
+                id="name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="Nombre de la cuenta"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="category">Categoría (opcional)</Label>
+              <Input
+                id="category"
+                value={formData.category}
+                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                placeholder="CAJA_Y_BANCOS, CREDITOS_VENTAS, etc."
+              />
+            </div>
+
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="isDetailAccount"
+                  checked={formData.isDetailAccount}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, isDetailAccount: checked as boolean })
+                  }
+                />
+                <Label htmlFor="isDetailAccount" className="font-normal">
+                  Cuenta de detalle
+                </Label>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="acceptsEntries"
+                  checked={formData.acceptsEntries}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, acceptsEntries: checked as boolean })
+                  }
+                />
+                <Label htmlFor="acceptsEntries" className="font-normal">
+                  Acepta asientos
+                </Label>
+              </div>
+            </div>
+
+            {!formData.isDetailAccount && !formData.acceptsEntries && (
+              <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-md">
+                <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5" />
+                <div className="text-sm text-amber-800">
+                  <p className="font-medium">Cuenta de grupo</p>
+                  <p>Esta cuenta no aceptará asientos directos, solo servirá para agrupar otras cuentas.</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDialog(false)} disabled={saving}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSave} disabled={saving || !formData.code || !formData.name}>
+              {saving ? 'Guardando...' : 'Guardar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 }

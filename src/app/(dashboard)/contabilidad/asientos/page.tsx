@@ -61,7 +61,7 @@ const STATUS_COLORS: Record<string, string> = {
   VOIDED: 'bg-red-100 text-red-700',
 }
 
-const STATUS_ICONS: Record<string, any> = {
+const STATUS_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   DRAFT: Clock,
   POSTED: CheckCircle,
   VOIDED: XCircle,
@@ -73,11 +73,12 @@ export default function AsientosPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
-  const [page, setPage] = useState(1)
+  const [page] = useState(1)
   const [total, setTotal] = useState(0)
 
   useEffect(() => {
     fetchEntries()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, page])
 
   const fetchEntries = async () => {
@@ -127,9 +128,9 @@ export default function AsientosPage() {
 
       toast.success('Asiento confirmado exitosamente')
       fetchEntries()
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error:', error)
-      toast.error(error.message || 'Error al confirmar asiento')
+      toast.error(error instanceof Error ? error.message : 'Error al confirmar asiento')
     }
   }
 
@@ -150,9 +151,9 @@ export default function AsientosPage() {
 
       toast.success('Asiento eliminado exitosamente')
       fetchEntries()
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error:', error)
-      toast.error(error.message || 'Error al eliminar asiento')
+      toast.error(error instanceof Error ? error.message : 'Error al eliminar asiento')
     }
   }
 

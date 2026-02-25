@@ -9,8 +9,8 @@ export const chartOfAccountSchema = z.object({
     .min(3, 'El nombre debe tener al menos 3 caracteres')
     .max(200, 'El nombre no puede exceder 200 caracteres'),
   accountType: z.enum(['ACTIVO', 'PASIVO', 'PATRIMONIO_NETO', 'INGRESO', 'EGRESO'], {
-    message: 'Tipo de cuenta inválido',
-  } as any),
+    errorMap: () => ({ message: 'Tipo de cuenta inválido' }),
+  }),
   parentId: z.string().optional().nullable(),
   acceptsEntries: z.boolean().default(true),
 })

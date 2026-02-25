@@ -87,6 +87,7 @@ export default function CotizacionesPage() {
 
   useEffect(() => {
     fetchQuotes()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter])
 
   const fetchQuotes = async () => {
@@ -347,7 +348,7 @@ export default function CotizacionesPage() {
                             <DropdownMenuItem
                               onClick={(e) => {
                                 e.stopPropagation()
-                                router.push(`/cotizaciones/${quote.id}`)
+                                router.push(`/cotizaciones/${quote.id}/ver`)
                               }}
                             >
                               <Eye className="mr-2 h-4 w-4" />
@@ -356,7 +357,7 @@ export default function CotizacionesPage() {
                             <DropdownMenuItem
                               onClick={(e) => {
                                 e.stopPropagation()
-                                router.push(`/cotizaciones/${quote.id}/editar`)
+                                router.push(`/cotizaciones/${quote.id}`)
                               }}
                             >
                               <Edit className="mr-2 h-4 w-4" />

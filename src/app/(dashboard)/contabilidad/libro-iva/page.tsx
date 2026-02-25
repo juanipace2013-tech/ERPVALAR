@@ -12,16 +12,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Receipt, Download, Printer, Calendar, ShoppingCart, Store } from 'lucide-react'
+import { Download, Printer, Calendar, ShoppingCart, Store } from 'lucide-react'
 import { toast } from 'sonner'
 
 export default function LibroIVAPage() {

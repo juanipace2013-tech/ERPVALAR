@@ -80,7 +80,7 @@ async function main() {
     // Crear cliente
     console.log('💾 Creando cliente en la base de datos...')
     const customer = await prisma.customer.create({
-      data: customerData as any,
+      data: customerData,
       include: {
         salesPerson: {
           select: {

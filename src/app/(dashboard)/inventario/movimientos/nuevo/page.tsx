@@ -26,6 +26,7 @@ interface Product {
   unit: string
   averageCost: number | null
   lastCost: number | null
+  allowNegative: boolean
 }
 
 const movementTypeLabels: Record<string, string> = {
@@ -81,6 +82,7 @@ export default function NuevoMovimientoPage() {
         handleChange('unitCost', Number(suggestedCost))
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.productId, products])
 
   const fetchProducts = async () => {
@@ -96,7 +98,7 @@ export default function NuevoMovimientoPage() {
     }
   }
 
-  const handleChange = (field: string, value: any) => {
+  const handleChange = (field: string, value: string | number) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
   }
 
@@ -185,12 +187,12 @@ export default function NuevoMovimientoPage() {
         throw new Error(error.error || 'Error al crear el movimiento')
       }
 
-      const data = await response.json()
+      await response.json()
       toast.success('Movimiento registrado exitosamente')
       router.push(`/inventario/items/${formData.productId}`)
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error:', error)
-      toast.error(error.message || 'Error al crear el movimiento')
+      toast.error(error instanceof Error ? error.message : 'Error al crear el movimiento')
     } finally {
       setLoading(false)
     }

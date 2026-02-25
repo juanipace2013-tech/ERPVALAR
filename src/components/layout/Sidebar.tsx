@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useSession } from 'next-auth/react'
@@ -14,21 +15,32 @@ import {
   Settings,
   TrendingUp,
   DollarSign,
-  Banknote,
-  Landmark,
+  Truck,
+  Wallet,
+  PackageCheck,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react'
 
-interface NavItem {
+interface SubNavItem {
   title: string
   href: string
   icon: React.ComponentType<{ className?: string }>
   roles: string[]
 }
 
+interface NavItem {
+  title: string
+  href?: string
+  icon: React.ComponentType<{ className?: string }>
+  roles: string[]
+  subItems?: SubNavItem[]
+}
+
 const navItems: NavItem[] = [
   {
     title: 'Dashboard',
-    href: '/',
+    href: '/dashboard',
     icon: LayoutDashboard,
     roles: ['ADMIN', 'GERENTE', 'VENDEDOR', 'CONTADOR'],
   },
@@ -36,7 +48,21 @@ const navItems: NavItem[] = [
     title: 'Clientes',
     href: '/clientes',
     icon: Users,
-    roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
+    roles: ['ADMIN', 'GERENTE', 'VENDEDOR', 'CONTADOR'],
+    subItems: [
+      {
+        title: 'Facturas',
+        href: '/facturas',
+        icon: Receipt,
+        roles: ['ADMIN', 'GERENTE', 'CONTADOR'],
+      },
+    ],
+  },
+  {
+    title: 'Proveedores',
+    href: '/proveedores',
+    icon: Truck,
+    roles: ['ADMIN', 'GERENTE', 'CONTADOR'],
   },
   {
     title: 'Productos',
@@ -57,22 +83,10 @@ const navItems: NavItem[] = [
     roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
   },
   {
-    title: 'Facturas',
-    href: '/facturas',
-    icon: Receipt,
-    roles: ['ADMIN', 'GERENTE', 'CONTADOR'],
-  },
-  {
-    title: 'Cobros',
-    href: '/cobros',
-    icon: Banknote,
-    roles: ['ADMIN', 'GERENTE', 'CONTADOR'],
-  },
-  {
-    title: 'Tesorería',
-    href: '/tesoreria/cuentas',
-    icon: Landmark,
-    roles: ['ADMIN', 'CONTADOR'],
+    title: 'Remitos',
+    href: '/remitos',
+    icon: PackageCheck,
+    roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
   },
   {
     title: 'Inventario',
@@ -84,6 +98,12 @@ const navItems: NavItem[] = [
     title: 'Tipo de Cambio',
     href: '/tipo-cambio',
     icon: DollarSign,
+    roles: ['ADMIN', 'GERENTE', 'CONTADOR'],
+  },
+  {
+    title: 'Tesorería',
+    href: '/tesoreria',
+    icon: Wallet,
     roles: ['ADMIN', 'GERENTE', 'CONTADOR'],
   },
   {
@@ -103,6 +123,7 @@ const navItems: NavItem[] = [
 export function Sidebar() {
   const pathname = usePathname()
   const { data: session } = useSession()
+  const [expandedItems, setExpandedItems] = useState<string[]>(['Clientes'])
 
   const userRole = session?.user?.role
 
@@ -111,27 +132,106 @@ export function Sidebar() {
     userRole ? item.roles.includes(userRole) : false
   )
 
+  const toggleExpand = (title: string) => {
+    setExpandedItems((prev) =>
+      prev.includes(title)
+        ? prev.filter((item) => item !== title)
+        : [...prev, title]
+    )
+  }
+
   return (
     <aside className="w-64 border-r border-blue-200 bg-white/80 backdrop-blur-sm shadow-sm">
       <nav className="space-y-1 p-4">
         {visibleItems.map((item) => {
           const Icon = item.icon
+          const isExpanded = expandedItems.includes(item.title)
+          const hasSubItems = item.subItems && item.subItems.length > 0
           const isActive = pathname === item.href
+          const isParentActive = hasSubItems && item.subItems.some(sub => pathname.startsWith(sub.href))
+
+          // Filtrar sub-items por rol
+          const visibleSubItems = hasSubItems
+            ? item.subItems!.filter(subItem =>
+                userRole ? subItem.roles.includes(userRole) : false
+              )
+            : []
 
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200',
-                isActive
-                  ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md'
-                  : 'text-gray-700 hover:bg-blue-50 hover:text-blue-700'
+            <div key={item.title}>
+              {hasSubItems && visibleSubItems.length > 0 ? (
+                <>
+                  <button
+                    onClick={() => toggleExpand(item.title)}
+                    className={cn(
+                      'w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200',
+                      isParentActive
+                        ? 'bg-blue-50 text-blue-700'
+                        : 'text-gray-700 hover:bg-blue-50 hover:text-blue-700'
+                    )}
+                  >
+                    <Icon className="h-5 w-5" />
+                    <span className="flex-1 text-left">{item.title}</span>
+                    {isExpanded ? (
+                      <ChevronDown className="h-4 w-4" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4" />
+                    )}
+                  </button>
+                  {isExpanded && (
+                    <div className="mt-1 space-y-1 pl-4">
+                      {item.href && (
+                        <Link
+                          href={item.href}
+                          className={cn(
+                            'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200',
+                            isActive
+                              ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md'
+                              : 'text-gray-600 hover:bg-blue-50 hover:text-blue-700'
+                          )}
+                        >
+                          <Users className="h-4 w-4" />
+                          Listado
+                        </Link>
+                      )}
+                      {visibleSubItems.map((subItem) => {
+                        const SubIcon = subItem.icon
+                        const isSubActive = pathname === subItem.href
+
+                        return (
+                          <Link
+                            key={subItem.href}
+                            href={subItem.href}
+                            className={cn(
+                              'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200',
+                              isSubActive
+                                ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md'
+                                : 'text-gray-600 hover:bg-blue-50 hover:text-blue-700'
+                            )}
+                          >
+                            <SubIcon className="h-4 w-4" />
+                            {subItem.title}
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <Link
+                  href={item.href!}
+                  className={cn(
+                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200',
+                    isActive
+                      ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md'
+                      : 'text-gray-700 hover:bg-blue-50 hover:text-blue-700'
+                  )}
+                >
+                  <Icon className="h-5 w-5" />
+                  {item.title}
+                </Link>
               )}
-            >
-              <Icon className="h-5 w-5" />
-              {item.title}
-            </Link>
+            </div>
           )
         })}
       </nav>

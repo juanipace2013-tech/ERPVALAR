@@ -26,7 +26,7 @@ async function main() {
 
   for (let i = 1; i < lines.length; i++) {
     const values = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''))
-    const customer: any = {}
+    const customer: Record<string, string> = {}
     headers.forEach((header, index) => {
       customer[header] = values[index] || ''
     })
@@ -104,9 +104,9 @@ async function main() {
           data: {
             name: customer.name,
             businessName: customer.businessName || customer.name,
-            type: customer.type as any,
+            type: customer.type,
             cuit: customer.cuit,
-            taxCondition: customer.taxCondition as any,
+            taxCondition: customer.taxCondition,
             email: customer.email || null,
             phone: customer.phone || null,
             mobile: customer.mobile || null,
@@ -116,9 +116,9 @@ async function main() {
             province: customer.province || null,
             postalCode: customer.postalCode || null,
             country: customer.country || 'Argentina',
-            status: customer.status as any,
+            status: customer.status,
             creditLimit: customer.creditLimit ? parseFloat(customer.creditLimit) : null,
-            creditCurrency: customer.creditCurrency as any || 'ARS',
+            creditCurrency: customer.creditCurrency || 'ARS',
             paymentTerms: customer.paymentTerms ? parseInt(customer.paymentTerms) : 30,
             discount: customer.discount ? parseFloat(customer.discount) : 0,
             priceMultiplier: customer.priceMultiplier ? parseFloat(customer.priceMultiplier) : 1.0,

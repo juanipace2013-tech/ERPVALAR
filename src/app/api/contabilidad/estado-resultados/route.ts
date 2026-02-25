@@ -1,7 +1,6 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
-
 import { prisma } from '@/lib/prisma'
 
 // GET /api/contabilidad/estado-resultados - Obtener estado de resultados
@@ -37,7 +36,7 @@ export async function GET(request: NextRequest) {
     })
 
     // Construir filtro para movimientos
-    const where: any = {
+    const where: Record<string, unknown> = {
       journalEntry: {
         status: 'POSTED',
         date: {

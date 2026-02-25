@@ -4,6 +4,7 @@ import { auth } from '@/auth'
  * Get details of a specific stock movement
  */
 
+import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server';
 ;
 ;

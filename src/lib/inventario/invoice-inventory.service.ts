@@ -8,6 +8,7 @@ import { StockMovementType, InvoiceStatus, Prisma } from '@prisma/client';
 import { validateStockAvailability } from './stock.service';
 import { calculateCMV, getProductNames } from './cmv.service';
 import { createCMVJournalEntry } from '@/lib/contabilidad/journal-entry.helper';
+import { createSaleJournalEntry } from '@/lib/contabilidad/sale-accounting';
 import type { InvoiceWithInventoryResult } from './types';
 
 /**
@@ -200,8 +201,26 @@ export async function processInvoiceCreationWithInventory(
         }
       }
 
-      // STEP 6: Create CMV Journal Entry
-      const journalEntry = await createCMVJournalEntry(tx, {
+      // STEP 6A: Create Sale Journal Entry (using template system)
+      const saleJournalEntry = await createSaleJournalEntry(
+        {
+          id: invoice.id,
+          invoiceNumber: invoice.invoiceNumber,
+          invoiceType: invoice.invoiceType as 'A' | 'B' | 'C' | 'E',
+          customerId: invoice.customerId,
+          customerName: invoice.customer.name,
+          issueDate: invoice.issueDate,
+          subtotal: Number(invoice.subtotal),
+          taxAmount: Number(invoice.taxAmount),
+          total: Number(invoice.total),
+          currency: invoice.currency,
+        },
+        invoiceData.userId,
+        tx
+      );
+
+      // STEP 6B: Create CMV Journal Entry
+      const cmvJournalEntry = await createCMVJournalEntry(tx, {
         invoiceId: invoice.id,
         invoiceNumber: invoice.invoiceNumber,
         issueDate: invoice.issueDate,
@@ -209,6 +228,9 @@ export async function processInvoiceCreationWithInventory(
         currency: cmvData.currency,
         userId: invoiceData.userId,
       });
+
+      // Use CMV entry for linking to stock movements (backward compatibility)
+      const journalEntry = cmvJournalEntry;
 
       // STEP 7: Link journal entry to stock movements
       await tx.stockMovement.updateMany({
@@ -230,11 +252,12 @@ export async function processInvoiceCreationWithInventory(
           customerId: invoice.customerId,
           title: `Factura ${invoice.invoiceNumber} creada`,
           description:
-            `Se descontó stock automáticamente y generó asiento CMV por ${cmvData.totalCMV.toFixed(2)} ${cmvData.currency}`,
+            `Se descontó stock y generó 2 asientos contables: Venta (${saleJournalEntry.entryNumber}) y CMV ${cmvData.totalCMV.toFixed(2)} ${cmvData.currency} (${cmvJournalEntry.entryNumber})`,
           metadata: {
             cmvAmount: cmvData.totalCMV,
             itemsCount: invoice.items.length,
-            journalEntryNumber: journalEntry.entryNumber,
+            saleJournalEntryNumber: saleJournalEntry.entryNumber,
+            cmvJournalEntryNumber: cmvJournalEntry.entryNumber,
           },
         },
       });
@@ -327,8 +350,8 @@ export async function validateInvoiceForInventory(
 export async function getInvoiceInventoryPreview(
   items: InvoiceItemInput[]
 ): Promise<{
-  stockValidation: any;
-  cmvCalculation: any;
+  stockValidation: StockValidationResult;
+  cmvCalculation: CMVCalculation;
   productsInfo: Array<{
     productId: string;
     productName: string;

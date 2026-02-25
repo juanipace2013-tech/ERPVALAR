@@ -63,7 +63,7 @@ export default function NuevoItemPage() {
     }
   }
 
-  const handleChange = (field: string, value: any) => {
+  const handleChange = (field: string, value: string | number | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
   }
 
@@ -141,14 +141,16 @@ export default function NuevoItemPage() {
         // Mostrar errores de validación específicos
         if (responseData.details && Array.isArray(responseData.details)) {
           console.error('❌ DETALLES DE VALIDACIÓN:')
-          responseData.details.forEach((err: any) => {
+          responseData.details.forEach((err: { path: string[]; message: string; received?: unknown }) => {
             console.error(`  - Campo: ${err.path.join('.')}`)
             console.error(`    Mensaje: ${err.message}`)
-            console.error(`    Valor recibido:`, err.received)
+            if ('received' in err) {
+              console.error(`    Valor recibido:`, err.received)
+            }
           })
 
           const errorMessages = responseData.details
-            .map((err: any) => `• ${err.path.join('.')}: ${err.message}`)
+            .map((err: { path: string[]; message: string }) => `• ${err.path.join('.')}: ${err.message}`)
             .join('\n')
 
           toast.error(`Error de validación:\n${errorMessages}`, {
@@ -165,7 +167,7 @@ export default function NuevoItemPage() {
 
       toast.success('Producto creado exitosamente')
       router.push(`/inventario/items/${responseData.id}`)
-    } catch (error: any) {
+    } catch (error) {
       console.error('❌ Error completo:', error)
       // El error ya fue mostrado con toast.error arriba
     } finally {

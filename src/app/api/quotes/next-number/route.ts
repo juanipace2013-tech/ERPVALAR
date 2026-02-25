@@ -1,14 +1,13 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
-
 import { prisma } from '@/lib/prisma'
 
 /**
  * GET /api/quotes/next-number
  * Obtiene el próximo número de cotización disponible
  */
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     const session = await auth()
     if (!session) {

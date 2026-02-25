@@ -16,13 +16,12 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   ArrowLeft,
-  Package,
   History,
   Info,
   TrendingUp,
   TrendingDown,
   Calendar,
-  FileText,
+  Package,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -100,12 +99,14 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
 
   useEffect(() => {
     fetchProduct()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
   useEffect(() => {
     if (product) {
       fetchMovements()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product, page])
 
   const fetchProduct = async () => {

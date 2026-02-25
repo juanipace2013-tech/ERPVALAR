@@ -99,7 +99,7 @@ export async function createCMVJournalEntry(
     currency: Currency;
     userId: string;
   }
-): Promise<any> {
+): Promise<{ id: string; entryNumber: number }> {
   // Convert to ARS if needed
   let cmvAmountARS = data.cmvAmount;
   if (data.currency !== Currency.ARS) {
@@ -178,7 +178,7 @@ export async function createSalesJournalEntry(
     currency: Currency;
     userId: string;
   }
-): Promise<any> {
+): Promise<{ id: string; entryNumber: number }> {
   // TODO: Implement sales accounting entry
   // This would require additional account codes:
   // - 1.1.02 (Deudores por Ventas / Accounts Receivable)

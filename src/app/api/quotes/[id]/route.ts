@@ -1,7 +1,6 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
-
 import { prisma } from '@/lib/prisma'
 
 /**
@@ -29,6 +28,7 @@ export async function GET(
             name: true,
             businessName: true,
             cuit: true,
+            taxCondition: true,
             address: true,
             city: true,
             province: true,
@@ -83,6 +83,38 @@ export async function GET(
             },
           },
           orderBy: [{ itemNumber: 'asc' }, { isAlternative: 'asc' }],
+        },
+        deliveryNotes: {
+          select: {
+            id: true,
+            deliveryNumber: true,
+            date: true,
+            deliveryDate: true,
+            status: true,
+          },
+          orderBy: {
+            date: 'desc',
+          },
+        },
+        invoices: {
+          select: {
+            id: true,
+            invoiceNumber: true,
+            invoiceType: true,
+            issueDate: true,
+            total: true,
+            status: true,
+            afipStatus: true,
+            paymentStatus: true,
+          },
+          orderBy: {
+            issueDate: 'desc',
+          },
+        },
+        statusHistory: {
+          orderBy: {
+            createdAt: 'asc',
+          },
         },
       },
     })

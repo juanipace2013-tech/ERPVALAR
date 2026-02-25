@@ -4,6 +4,7 @@ import { auth } from '@/auth'
  * Get invoice details with related inventory and accounting data
  */
 
+import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server';
 ;
 ;

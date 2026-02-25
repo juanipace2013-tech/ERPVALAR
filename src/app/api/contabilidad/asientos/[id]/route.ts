@@ -1,10 +1,10 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
-
 import { prisma } from '@/lib/prisma'
 import { journalEntrySchema } from '@/lib/contabilidad/validations'
 import { z } from 'zod'
+import { JournalEntryStatus } from '@prisma/client'
 
 // GET /api/contabilidad/asientos/[id] - Obtener asiento por ID
 export async function GET(
@@ -131,7 +131,7 @@ export async function PUT(
       data: {
         date: new Date(validatedData.date),
         description: validatedData.description,
-        status: (validatedData as any).status || existing.status,
+        status: ((validatedData as Record<string, unknown>).status as JournalEntryStatus) || existing.status,
         lines: {
           create: validatedData.lines.map(line => ({
             accountId: line.accountId,
@@ -154,7 +154,7 @@ export async function PUT(
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Datos inválidos', details: (error as any).errors },
+        { error: 'Datos inválidos', details: error.issues },
         { status: 400 }
       )
     }

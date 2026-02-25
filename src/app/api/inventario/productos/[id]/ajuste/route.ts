@@ -4,6 +4,7 @@ import { auth } from '@/auth'
  * Adjust product stock to a specific quantity
  */
 
+import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server';
 ;
 ;
@@ -52,7 +53,7 @@ export async function POST(
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Datos inválidos', details: (error as any).errors },
+        { error: 'Datos inválidos', details: error.issues },
         { status: 400 }
       );
     }

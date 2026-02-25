@@ -53,7 +53,7 @@ const STATUS_COLORS: Record<string, string> = {
   VOIDED: 'bg-red-100 text-red-700',
 }
 
-const STATUS_ICONS: Record<string, any> = {
+const STATUS_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   DRAFT: Clock,
   POSTED: CheckCircle,
   VOIDED: XCircle,
@@ -79,6 +79,7 @@ export default function AsientoDetailPage() {
     if (id) {
       fetchEntry()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
   const fetchEntry = async () => {
@@ -117,10 +118,10 @@ export default function AsientoDetailPage() {
       }
 
       toast.success('Asiento confirmado exitosamente')
-      fetchEntry()
-    } catch (error: any) {
+      await fetchEntry()
+    } catch (error) {
       console.error('Error:', error)
-      toast.error(error.message || 'Error al confirmar asiento')
+      toast.error(error instanceof Error ? error.message : 'Error al confirmar asiento')
     }
   }
 
@@ -141,9 +142,9 @@ export default function AsientoDetailPage() {
 
       toast.success('Asiento eliminado exitosamente')
       router.push('/contabilidad/asientos')
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error:', error)
-      toast.error(error.message || 'Error al eliminar asiento')
+      toast.error(error instanceof Error ? error.message : 'Error al eliminar asiento')
     }
   }
 

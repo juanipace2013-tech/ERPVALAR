@@ -229,9 +229,9 @@ export default function ImportarItemsPage() {
         // Mostrar cuáles fallaron
         console.log('Productos fallidos:', result.errors)
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error:', error)
-      toast.error(error.message || 'Error al importar productos')
+      toast.error(error instanceof Error ? error.message : 'Error al importar productos')
     } finally {
       setImporting(false)
     }

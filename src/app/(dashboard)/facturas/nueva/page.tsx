@@ -104,6 +104,7 @@ export default function NuevaFacturaPage() {
   const [customerId, setCustomerId] = useState('')
   const [invoiceType, setInvoiceType] = useState<'A' | 'B' | 'C' | 'E'>('B')
   const [currency, setCurrency] = useState<'ARS' | 'USD' | 'EUR'>('ARS')
+  const [exchangeRate, setExchangeRate] = useState(1)
   const [issueDate, setIssueDate] = useState(new Date().toISOString().split('T')[0])
   const [dueDate, setDueDate] = useState(
     new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
@@ -119,6 +120,14 @@ export default function NuevaFacturaPage() {
     fetchCustomers()
     fetchProducts()
   }, [])
+
+  useEffect(() => {
+    if (currency === 'USD' || currency === 'EUR') {
+      fetchExchangeRate(currency)
+    } else {
+      setExchangeRate(1)
+    }
+  }, [currency])
 
   const fetchCustomers = async () => {
     try {
@@ -141,6 +150,20 @@ export default function NuevaFacturaPage() {
       }
     } catch (error) {
       console.error('Error fetching products:', error)
+    }
+  }
+
+  const fetchExchangeRate = async (curr: string) => {
+    try {
+      const response = await fetch(`/api/tipo-cambio?currency=${curr}`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.length > 0) {
+          setExchangeRate(Number(data[0].sellRate))
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching exchange rate:', error)
     }
   }
 
@@ -301,6 +324,7 @@ export default function NuevaFacturaPage() {
         invoiceType,
         customerId,
         currency,
+        exchangeRate,
         subtotal: totals.subtotal,
         taxAmount: totals.taxAmount,
         discount: totals.discount,
@@ -406,7 +430,7 @@ export default function NuevaFacturaPage() {
 
                 <div className="space-y-2">
                   <Label>Tipo de Factura *</Label>
-                  <Select value={invoiceType} onValueChange={(v: any) => setInvoiceType(v)}>
+                  <Select value={invoiceType} onValueChange={(v) => setInvoiceType(v as 'A' | 'B' | 'C' | 'E')}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -420,10 +444,10 @@ export default function NuevaFacturaPage() {
                 </div>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Moneda</Label>
-                  <Select value={currency} onValueChange={(v: any) => setCurrency(v)}>
+                  <Select value={currency} onValueChange={(v) => setCurrency(v as 'ARS' | 'USD' | 'EUR')}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -433,6 +457,20 @@ export default function NuevaFacturaPage() {
                       <SelectItem value="EUR">Euros (EUR)</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="exchangeRate">Tipo de Cambio</Label>
+                  <Input
+                    id="exchangeRate"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={exchangeRate}
+                    onChange={(e) => setExchangeRate(Number(e.target.value))}
+                    disabled={currency === 'ARS'}
+                    placeholder={currency === 'ARS' ? '1.00' : 'Tipo de cambio'}
+                  />
                 </div>
 
                 <div className="space-y-2">

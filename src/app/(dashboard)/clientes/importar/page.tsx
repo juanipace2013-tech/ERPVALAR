@@ -25,10 +25,17 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 
+interface CustomerData {
+  name: string
+  cuit: string
+  email?: string
+  [key: string]: string | undefined
+}
+
 interface ValidationResult {
   row: number
   status: 'valid' | 'error'
-  customer: any
+  customer: CustomerData
   error?: string
 }
 
@@ -38,9 +45,9 @@ export default function ImportCustomersPage() {
   const [parsing, setParsing] = useState(false)
   const [validating, setValidating] = useState(false)
   const [importing, setImporting] = useState(false)
-  const [parsedData, setParsedData] = useState<any[]>([])
+  const [parsedData, setParsedData] = useState<Record<string, string>[]>([])
   const [validationResults, setValidationResults] = useState<ValidationResult[]>([])
-  const [importResults, setImportResults] = useState<any>(null)
+  const [importResults, setImportResults] = useState<{ success: number; errors: number; results: ValidationResult[] } | null>(null)
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0]
@@ -74,10 +81,10 @@ export default function ImportCustomersPage() {
       const headers = lines[0].split(',').map((h) => h.trim())
 
       // Parsear datos
-      const data = []
+      const data: Record<string, string>[] = []
       for (let i = 1; i < lines.length; i++) {
         const values = lines[i].split(',').map((v) => v.trim().replace(/^"|"$/g, ''))
-        const row: any = {}
+        const row: Record<string, string> = {}
         headers.forEach((header, index) => {
           row[header] = values[index] || ''
         })
@@ -337,7 +344,7 @@ export default function ImportCustomersPage() {
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                {parsedData.length} registros cargados. Haz clic en "Validar Datos" para continuar.
+                {parsedData.length} registros cargados. Haz clic en &quot;Validar Datos&quot; para continuar.
               </AlertDescription>
             </Alert>
           )}

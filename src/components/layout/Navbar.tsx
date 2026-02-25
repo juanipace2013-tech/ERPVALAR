@@ -1,6 +1,6 @@
 'use client'
 
-import { signOut, useSession } from 'next-auth/react'
+import { useSession } from 'next-auth/react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -13,12 +13,13 @@ import {
 import { Button } from '@/components/ui/button'
 import { LogOut, User, Settings } from 'lucide-react'
 import { ROLE_LABELS } from '@/lib/constants'
+import { signOut } from '@/lib/auth-actions'
 
 export function Navbar() {
   const { data: session } = useSession()
 
   const handleLogout = async () => {
-    await signOut({ callbackUrl: '/login' })
+    await signOut()
   }
 
   const getInitials = (name: string) => {

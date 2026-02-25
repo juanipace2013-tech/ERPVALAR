@@ -1,7 +1,6 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
-
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
@@ -205,7 +204,7 @@ export async function POST(request: NextRequest) {
 }
 
 // GET /api/clientes/import - Descargar plantilla CSV
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     const session = await auth()
     if (!session) {

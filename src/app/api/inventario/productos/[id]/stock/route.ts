@@ -4,6 +4,7 @@ import { auth } from '@/auth'
  * Get stock history for a specific product
  */
 
+import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server';
 ;
 ;
@@ -48,7 +49,7 @@ export async function GET(
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Parámetros inválidos', details: (error as any).errors },
+        { error: 'Parámetros inválidos', details: error.issues },
         { status: 400 }
       );
     }

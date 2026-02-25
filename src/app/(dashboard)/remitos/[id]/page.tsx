@@ -468,15 +468,15 @@ export default function DeliveryNoteDetailPage() {
                       <TableRow key={item.id}>
                         <TableCell>
                           <div>
-                            <p className="font-medium">{item.product.name}</p>
-                            <p className="text-sm text-gray-500">SKU: {item.product.sku}</p>
-                            {item.product.brand && (
+                            <p className="font-medium">{item.product?.name || item.description}</p>
+                            <p className="text-sm text-gray-500">SKU: {item.product?.sku}</p>
+                            {item.product?.brand && (
                               <p className="text-sm text-gray-500">{item.product.brand}</p>
                             )}
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
-                          {item.quantity} {item.product.unit}
+                          {item.quantity} {item.product?.unit}
                         </TableCell>
                         <TableCell>
                           {item.warehouseLocation || <span className="text-gray-400">-</span>}

@@ -165,7 +165,7 @@ export default function QuoteDetailPage() {
   )
 
   // Stock data para items de la cotización
-  const quoteItemSkus = quote?.items?.map((item) => item.product.sku) || []
+  const quoteItemSkus = quote?.items?.map((item) => item.product?.sku).filter(Boolean) || []
   const { stockData: quoteStockData, loading: quoteStockLoading } = useColppyStock(
     quoteItemSkus,
     quoteItemSkus.length > 0

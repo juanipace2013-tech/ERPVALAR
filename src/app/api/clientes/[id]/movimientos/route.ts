@@ -80,7 +80,7 @@ export async function GET(
         dueDate: invoice.dueDate,
         paidDate: invoice.paidDate,
         items: invoice.items.map((item) => ({
-          product: item.product.name,
+          product: item.product?.name,
           quantity: item.quantity,
           unitPrice: Number(item.unitPrice),
           subtotal: Number(item.subtotal),

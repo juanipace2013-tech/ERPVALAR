@@ -233,7 +233,7 @@ export async function getExpenseDistribution(): Promise<ExpenseCategory[]> {
 
   invoices.forEach(invoice => {
     invoice.items.forEach(item => {
-      const categoryName = item.product.category?.name || 'Sin categoría'
+      const categoryName = item.product?.category?.name || 'Sin categoría'
       const itemTotal = Number(item.subtotal)
 
       categoryTotals.set(

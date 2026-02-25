@@ -325,9 +325,9 @@ export default function PublicQuotePage() {
                           <TableRow key={item.id}>
                             <TableCell>
                               <div>
-                                <p className="font-medium">{item.product.name}</p>
+                                <p className="font-medium">{item.product?.name || item.description}</p>
                                 <p className="text-sm text-gray-500">
-                                  SKU: {item.product.sku}
+                                  SKU: {item.product?.sku}
                                 </p>
                               </div>
                             </TableCell>

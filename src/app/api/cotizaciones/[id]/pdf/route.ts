@@ -99,7 +99,7 @@ export async function GET(
           }
 
           // Construir descripción con adicionales
-          let description = item.description || item.product.name
+          let description = item.description || item.product?.name
           if (item.isAlternative) {
             description = `Alternativa: ${description}`
           }
@@ -112,9 +112,9 @@ export async function GET(
 
           return {
             itemNumber: displayNumber,
-            code: item.product.sku || '',
+            code: item.product?.sku || '',
             description,
-            brand: item.product.brand || 'GENEBRE',
+            brand: item.product?.brand || 'GENEBRE',
             quantity: item.quantity,
             unitPrice: Number(item.unitPrice),
             totalPrice: Number(item.totalPrice),

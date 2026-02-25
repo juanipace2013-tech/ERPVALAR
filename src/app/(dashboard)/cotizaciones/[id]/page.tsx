@@ -97,6 +97,7 @@ interface Quote {
   date: string
   validUntil: string | null
   exchangeRate: number
+  multiplier: number
   currency: string
   terms: string | null
   notes: string | null
@@ -142,6 +143,12 @@ export default function QuoteDetailPage() {
   })
   const [itemFormLoading, setItemFormLoading] = useState(false)
 
+  // Multiplier
+  const [multiplierValue, setMultiplierValue] = useState('')
+  const [multiplierLoading, setMultiplierLoading] = useState(false)
+  const [showCustomMultiplier, setShowCustomMultiplier] = useState(false)
+  const [saveToCustomer, setSaveToCustomer] = useState(false)
+
   // Product search
   const [productSearch, setProductSearch] = useState('')
   const [refreshingStock, setRefreshingStock] = useState(false)
@@ -184,7 +191,7 @@ export default function QuoteDetailPage() {
   useEffect(() => {
     calculatePricePreview()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itemFormData.productId, itemFormData.quantity, itemFormData.additionals])
+  }, [itemFormData.productId, itemFormData.quantity, itemFormData.additionals, quote?.multiplier])
 
   // Búsqueda de productos con debounce (300ms)
   useEffect(() => {
@@ -208,6 +215,7 @@ export default function QuoteDetailPage() {
       }
       const data = await response.json()
       setQuote(data)
+      setMultiplierValue(Number(data.multiplier).toFixed(2))
     } catch (error) {
       console.error('Error:', error)
       toast.error('Error al cargar la cotización')
@@ -249,6 +257,41 @@ export default function QuoteDetailPage() {
       }
     } catch (error) {
       console.error('Error cargando descuentos:', error)
+    }
+  }
+
+  const handleMultiplierChange = async (newValue: string) => {
+    const numValue = parseFloat(newValue)
+    if (isNaN(numValue) || numValue < 0.5 || numValue > 3.0) {
+      toast.error('El multiplicador debe estar entre 0.50 y 3.00')
+      return
+    }
+
+    try {
+      setMultiplierLoading(true)
+      const response = await fetch(`/api/quotes/${quoteId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          multiplier: numValue,
+          saveMultiplierToCustomer: saveToCustomer,
+        }),
+      })
+
+      if (!response.ok) throw new Error('Error al actualizar multiplicador')
+
+      setMultiplierValue(numValue.toFixed(2))
+      setShowCustomMultiplier(false)
+      toast.success(`Multiplicador actualizado a ${numValue.toFixed(2)}x`)
+      if (saveToCustomer) {
+        toast.success('Multiplicador guardado en el cliente para futuras cotizaciones')
+      }
+      await fetchQuoteData()
+    } catch (error) {
+      console.error('Error:', error)
+      toast.error('Error al actualizar multiplicador')
+    } finally {
+      setMultiplierLoading(false)
     }
   }
 
@@ -306,7 +349,7 @@ export default function QuoteDetailPage() {
 
     // Aplicar fórmula VAL ARG
     const afterDiscount = subtotalWithAdditionals * (1 - brandDiscountPercent)
-    const customerMultiplier = Number(quote.customer.priceMultiplier)
+    const customerMultiplier = Number(quote.multiplier)
     const unitPrice = afterDiscount * customerMultiplier
     const totalPrice = unitPrice * itemFormData.quantity
 
@@ -623,9 +666,6 @@ export default function QuoteDetailPage() {
               <p className="font-medium">
                 {quote.customer.businessName || quote.customer.name}
               </p>
-              <p className="text-sm text-muted-foreground">
-                Multiplicador: {quote.customer.priceMultiplier}x
-              </p>
             </div>
             <div>
               <Label className="text-muted-foreground">Vendedor</Label>
@@ -651,6 +691,102 @@ export default function QuoteDetailPage() {
               <p className="font-medium font-mono">
                 USD 1 = ARS {Number(quote.exchangeRate).toFixed(2)}
               </p>
+            </div>
+            <div>
+              <Label className="text-muted-foreground">Multiplicador</Label>
+              {showCustomMultiplier ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0.50"
+                      max="3.00"
+                      value={multiplierValue}
+                      onChange={(e) => setMultiplierValue(e.target.value)}
+                      className="w-24 font-mono font-semibold h-8 text-sm"
+                      disabled={multiplierLoading}
+                    />
+                    <span className="text-sm text-muted-foreground">x</span>
+                    <Button
+                      size="sm"
+                      className="h-8 bg-blue-600 hover:bg-blue-700"
+                      onClick={() => handleMultiplierChange(multiplierValue)}
+                      disabled={multiplierLoading}
+                    >
+                      {multiplierLoading ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Save className="h-3 w-3" />
+                      )}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8"
+                      onClick={() => {
+                        setShowCustomMultiplier(false)
+                        setMultiplierValue(Number(quote.multiplier).toFixed(2))
+                      }}
+                      disabled={multiplierLoading}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={saveToCustomer}
+                      onChange={(e) => setSaveToCustomer(e.target.checked)}
+                      className="rounded"
+                    />
+                    Guardar en cliente para futuras cotizaciones
+                  </label>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <p className={`font-medium font-mono ${Number(quote.multiplier) > 1 ? 'text-amber-600' : ''}`}>
+                    {Number(quote.multiplier).toFixed(2)}x
+                  </p>
+                  {quote.status === 'DRAFT' && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0"
+                      onClick={() => setShowCustomMultiplier(true)}
+                      title="Cambiar multiplicador"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                  )}
+                  {Number(quote.multiplier) > 1 && (
+                    <span className="text-xs text-amber-600 font-medium">
+                      +{((Number(quote.multiplier) - 1) * 100).toFixed(0)}%
+                    </span>
+                  )}
+                </div>
+              )}
+              <div className="mt-1 flex flex-wrap gap-1">
+                {[1.00, 1.05, 1.10, 1.15, 1.20, 1.25, 1.30].map((val) => (
+                  <button
+                    key={val}
+                    type="button"
+                    className={`text-xs px-1.5 py-0.5 rounded border transition-colors ${
+                      Number(quote.multiplier).toFixed(2) === val.toFixed(2)
+                        ? 'bg-blue-100 border-blue-400 text-blue-700 font-semibold'
+                        : 'border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600'
+                    } ${quote.status !== 'DRAFT' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                    onClick={() => {
+                      if (quote.status === 'DRAFT') {
+                        handleMultiplierChange(val.toFixed(2))
+                      }
+                    }}
+                    disabled={quote.status !== 'DRAFT' || multiplierLoading}
+                  >
+                    {val.toFixed(2)}x
+                  </button>
+                ))}
+              </div>
             </div>
             <div>
               <Label className="text-muted-foreground">Estado</Label>
@@ -931,7 +1067,7 @@ export default function QuoteDetailPage() {
                           </div>
                         )}
                         <div className="flex justify-between text-sm">
-                          <span>× Multiplicador Cliente ({quote.customer.priceMultiplier}x):</span>
+                          <span>× Multiplicador ({Number(quote.multiplier).toFixed(2)}x):</span>
                           <span className="font-mono">
                             USD {pricePreview.unitPrice.toFixed(2)}
                           </span>

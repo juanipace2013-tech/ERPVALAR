@@ -873,6 +873,9 @@ model Quote {
   // Tipo de cambio USD->ARS del día
   exchangeRate    Decimal      @db.Decimal(12, 6)
 
+  // Multiplicador de precio para esta cotización (precargado del cliente)
+  multiplier      Decimal      @default(1.0) @db.Decimal(5, 3)
+
   // Estado y seguimiento
   statusUpdatedAt DateTime?
   statusUpdatedBy String?

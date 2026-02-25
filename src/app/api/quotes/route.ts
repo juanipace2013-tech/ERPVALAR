@@ -2,6 +2,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/prisma'
+import { getMultiplierForClient } from '@/lib/client-multipliers'
 
 /**
  * GET /api/quotes
@@ -103,14 +104,17 @@ export async function POST(request: NextRequest) {
             city: colppyCustomer.city || existingCustomer.city,
             province: colppyCustomer.province || existingCustomer.province,
             postalCode: colppyCustomer.postalCode || existingCustomer.postalCode,
-            priceMultiplier: colppyCustomer.priceMultiplier || existingCustomer.priceMultiplier,
+            // NO sobreescribir priceMultiplier: se gestiona manualmente por el usuario
             balance: colppyCustomer.saldo || existingCustomer.balance,
           },
         })
         customerId = updatedCustomer.id
         console.log('✅ Cliente actualizado desde Colppy:', updatedCustomer.name)
       } else {
-        // Crear nuevo cliente
+        // Crear nuevo cliente - buscar multiplicador preconfigurado por razón social
+        const razonSocial = colppyCustomer.businessName || colppyCustomer.name
+        const configuredMultiplier = getMultiplierForClient(razonSocial)
+
         const newCustomer = await prisma.customer.create({
           data: {
             name: colppyCustomer.name,
@@ -124,14 +128,14 @@ export async function POST(request: NextRequest) {
             city: colppyCustomer.city || null,
             province: colppyCustomer.province || null,
             postalCode: colppyCustomer.postalCode || null,
-            priceMultiplier: colppyCustomer.priceMultiplier || 1.0,
+            priceMultiplier: configuredMultiplier,
             balance: colppyCustomer.saldo || 0,
             status: 'ACTIVE',
             type: 'BUSINESS',
           },
         })
         customerId = newCustomer.id
-        console.log('✅ Cliente creado desde Colppy:', newCustomer.name)
+        console.log(`✅ Cliente creado desde Colppy: ${newCustomer.name} (multiplicador: ${configuredMultiplier}x)`)
       }
     }
 
@@ -166,6 +170,13 @@ export async function POST(request: NextRequest) {
 
     const quoteNumber = `VAL-${year}-${String(nextNumber).padStart(3, '0')}`
 
+    // Obtener multiplicador del cliente para precargar en la cotización
+    const customerForMultiplier = await prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { priceMultiplier: true },
+    })
+    const customerMultiplier = customerForMultiplier ? Number(customerForMultiplier.priceMultiplier) : 1.0
+
     // Crear cotización
     const quote = await prisma.quote.create({
       data: {
@@ -176,6 +187,7 @@ export async function POST(request: NextRequest) {
         date: new Date(body.date || Date.now()),
         exchangeRate: body.exchangeRate,
         currency: body.currency || 'USD',
+        multiplier: body.multiplier || customerMultiplier,
         subtotal: body.subtotal || 0,
         total: body.total || 0,
         validUntil: body.validUntil ? new Date(body.validUntil) : null,

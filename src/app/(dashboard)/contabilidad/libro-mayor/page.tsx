@@ -289,9 +289,9 @@ export default function LibroMayorPage() {
             new Date(movement.journalEntry.date).toLocaleDateString('es-AR'),
             movement.journalEntry.entryNumber.toString(),
             movement.journalEntry.description,
-            movement.debit > 0 ? movement.debit : '',
-            movement.credit > 0 ? movement.credit : '',
-            movement.balance,
+            movement.debit > 0 ? movement.debit.toString() : '',
+            movement.credit > 0 ? movement.credit.toString() : '',
+            movement.balance.toString(),
             movement.balanceNature === 'DEUDOR' ? 'D' : 'A',
           ])
         })
@@ -301,9 +301,9 @@ export default function LibroMayorPage() {
           '',
           '',
           'TOTALES',
-          data.totals!.debit,
-          data.totals!.credit,
-          data.totals!.balance,
+          data.totals!.debit.toString(),
+          data.totals!.credit.toString(),
+          data.totals!.balance.toString(),
           data.totals!.balanceNature === 'DEUDOR' ? 'D' : 'A',
         ])
 

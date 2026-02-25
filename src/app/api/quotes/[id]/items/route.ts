@@ -94,7 +94,8 @@ export async function POST(
 
     const subtotalWithAdditionals = listPrice + additionalsPrices
     const afterDiscount = subtotalWithAdditionals * (1 - brandDiscount)
-    const customerMultiplier = Number(quote.customer.priceMultiplier)
+    // Usar multiplicador de la cotización (precargado del cliente al crear)
+    const customerMultiplier = Number(quote.multiplier)
     const unitPrice = afterDiscount * customerMultiplier
     const quantity = body.quantity || 1
     const totalPrice = unitPrice * quantity

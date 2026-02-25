@@ -56,6 +56,7 @@ interface Quote {
   statusUpdatedAt: string | null
   customerResponse: string | null
   rejectionReason: string | null
+  responseDate: string | null
   customer: {
     id: string
     name: string
@@ -958,7 +959,7 @@ export default function QuoteViewPage() {
             total: quote.total,
             currency: quote.currency,
             exchangeRate: quote.exchangeRate,
-            notes: quote.notes,
+            notes: quote.notes ?? undefined,
           }}
           open={showColppyDialog}
           onOpenChange={setShowColppyDialog}

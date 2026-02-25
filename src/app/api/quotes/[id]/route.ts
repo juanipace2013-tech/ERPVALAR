@@ -153,21 +153,35 @@ export async function PUT(
     const { id } = await params
     const body = await request.json()
 
+    // Verificar si el multiplicador cambió para recalcular items
+    const multiplierChanged = body.multiplier !== undefined
+
+    const updateData: Record<string, unknown> = {}
+    if (body.status !== undefined) updateData.status = body.status
+    if (body.terms !== undefined) updateData.terms = body.terms
+    if (body.notes !== undefined) updateData.notes = body.notes
+    if (body.validUntil !== undefined) updateData.validUntil = body.validUntil ? new Date(body.validUntil) : null
+    if (body.exchangeRate !== undefined) updateData.exchangeRate = body.exchangeRate
+    if (body.multiplier !== undefined) updateData.multiplier = body.multiplier
+
     const quote = await prisma.quote.update({
       where: { id },
-      data: {
-        status: body.status,
-        terms: body.terms,
-        notes: body.notes,
-        validUntil: body.validUntil ? new Date(body.validUntil) : null,
-        exchangeRate: body.exchangeRate,
-      },
+      data: updateData,
       include: {
-        customer: true,
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            businessName: true,
+            priceMultiplier: true,
+          },
+        },
         salesPerson: true,
         items: {
           include: {
-            product: true,
+            product: {
+              include: { category: true },
+            },
             additionals: {
               include: {
                 product: true,
@@ -178,7 +192,80 @@ export async function PUT(
       },
     })
 
-    return NextResponse.json(quote)
+    // Si el multiplicador cambió, recalcular todos los items
+    if (multiplierChanged && quote.items.length > 0) {
+      const newMultiplier = Number(quote.multiplier)
+
+      for (const item of quote.items) {
+        const listPrice = Number(item.listPrice)
+        let additionalsPrices = 0
+        for (const add of item.additionals) {
+          additionalsPrices += Number(add.listPrice)
+        }
+
+        const subtotalWithAdditionals = listPrice + additionalsPrices
+        const brandDiscount = Number(item.brandDiscount)
+        const afterDiscount = subtotalWithAdditionals * (1 - brandDiscount)
+        const unitPrice = afterDiscount * newMultiplier
+        const totalPrice = unitPrice * item.quantity
+
+        await prisma.quoteItem.update({
+          where: { id: item.id },
+          data: {
+            customerMultiplier: newMultiplier,
+            unitPrice,
+            totalPrice,
+          },
+        })
+      }
+
+      // Recalcular totales de la cotización
+      const mainItems = await prisma.quoteItem.findMany({
+        where: { quoteId: id, isAlternative: false },
+      })
+      const total = mainItems.reduce((sum, item) => sum + Number(item.totalPrice), 0)
+      await prisma.quote.update({
+        where: { id },
+        data: { subtotal: total, total },
+      })
+
+      // Opcionalmente guardar en el Customer para próximas cotizaciones
+      if (body.saveMultiplierToCustomer) {
+        await prisma.customer.update({
+          where: { id: quote.customerId },
+          data: { priceMultiplier: newMultiplier },
+        })
+      }
+    }
+
+    // Recargar quote actualizado
+    const updatedQuote = await prisma.quote.findUnique({
+      where: { id },
+      include: {
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            businessName: true,
+            priceMultiplier: true,
+          },
+        },
+        salesPerson: true,
+        items: {
+          include: {
+            product: true,
+            additionals: {
+              include: {
+                product: true,
+              },
+            },
+          },
+          orderBy: [{ itemNumber: 'asc' }, { isAlternative: 'asc' }],
+        },
+      },
+    })
+
+    return NextResponse.json(updatedQuote)
   } catch (error) {
     console.error('Error updating quote:', error)
     return NextResponse.json(

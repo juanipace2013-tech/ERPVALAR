@@ -16,7 +16,7 @@ interface QuotePDFData {
     email: string
   }
   items: Array<{
-    itemNumber: number
+    itemNumber: string
     code: string
     description: string
     brand: string
@@ -24,6 +24,7 @@ interface QuotePDFData {
     unitPrice: number
     totalPrice: number
     deliveryTime: string
+    isAlternative?: boolean
   }>
   subtotal: number
   total: number
@@ -93,7 +94,7 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
 
   // Tabla de items
   const tableData = data.items.map(item => [
-    item.itemNumber.toString(),
+    item.itemNumber,
     item.code,
     `${item.description}\nMarca: ${item.brand}`,
     item.quantity.toString(),
@@ -132,6 +133,17 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
       4: { halign: 'right', cellWidth: 23 },
       5: { halign: 'right', cellWidth: 23 },
       6: { halign: 'center', cellWidth: 20 }
+    },
+    // Estilar alternativas con fondo gris claro y texto gris
+    didParseCell: (hookData) => {
+      if (hookData.section === 'body') {
+        const itemData = data.items[hookData.row.index]
+        if (itemData?.isAlternative) {
+          hookData.cell.styles.fillColor = [240, 244, 248]
+          hookData.cell.styles.textColor = [100, 116, 139]
+          hookData.cell.styles.fontStyle = 'italic'
+        }
+      }
     }
   })
 

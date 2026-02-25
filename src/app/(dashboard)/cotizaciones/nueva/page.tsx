@@ -210,6 +210,25 @@ export default function NuevaCotizacionPage() {
                     className="font-mono bg-gray-50"
                   />
                 </div>
+
+                {selectedCustomer && (
+                  <div className="space-y-2">
+                    <Label className="text-blue-900">Multiplicador del Cliente</Label>
+                    <p className={`font-mono font-semibold text-lg ${
+                      selectedCustomer.priceMultiplier > 1 ? 'text-amber-600' : 'text-gray-700'
+                    }`}>
+                      {Number(selectedCustomer.priceMultiplier).toFixed(2)}x
+                      {selectedCustomer.priceMultiplier > 1 && (
+                        <span className="text-sm ml-2">
+                          (+{((selectedCustomer.priceMultiplier - 1) * 100).toFixed(0)}%)
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Se precargará en la cotización. Editable luego.
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">

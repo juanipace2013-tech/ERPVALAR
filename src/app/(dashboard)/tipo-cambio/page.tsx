@@ -429,7 +429,7 @@ export default function TipoCambioPage() {
                     borderRadius: '8px',
                     padding: '8px'
                   }}
-                  formatter={(value: number) => [`$${value.toFixed(2)}`, 'Tipo de Cambio']}
+                  formatter={(value?: number) => [`$${(value ?? 0).toFixed(2)}`, 'Tipo de Cambio']}
                 />
                 <Line
                   type="monotone"

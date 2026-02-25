@@ -49,6 +49,7 @@ interface PurchaseInvoice {
   status: string
   paymentStatus: string
   voucherType: string
+  invoiceType: string
   cae: string | null
   caeExpirationDate: string | null
   paymentTerms: string | null

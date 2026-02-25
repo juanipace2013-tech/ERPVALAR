@@ -56,9 +56,7 @@ export async function GET(
               },
             },
           },
-          orderBy: {
-            itemNumber: 'asc',
-          },
+          orderBy: [{ itemNumber: 'asc' }, { isAlternative: 'asc' }],
         },
       },
     })
@@ -84,11 +82,27 @@ export async function GET(
         name: quote.salesPerson.name,
         email: quote.salesPerson.email || 'ventas@val-ar.com.ar',
       },
-      items: quote.items
-        .filter((item) => !item.isAlternative) // Solo items principales, sin alternativas
-        .map((item) => {
+      items: (() => {
+        // Tracking de índices de alternativas por itemNumber padre
+        const altCounters: Record<number, number> = {}
+
+        return quote.items.map((item) => {
+          // Calcular número de item para display
+          let displayNumber: string
+          if (item.isAlternative) {
+            if (!altCounters[item.itemNumber]) altCounters[item.itemNumber] = 0
+            const letter = String.fromCharCode(65 + altCounters[item.itemNumber])
+            altCounters[item.itemNumber]++
+            displayNumber = `${item.itemNumber}${letter}`
+          } else {
+            displayNumber = item.itemNumber.toString()
+          }
+
           // Construir descripción con adicionales
           let description = item.description || item.product.name
+          if (item.isAlternative) {
+            description = `Alternativa: ${description}`
+          }
 
           if (item.additionals.length > 0) {
             description += '\n' + item.additionals
@@ -97,7 +111,7 @@ export async function GET(
           }
 
           return {
-            itemNumber: item.itemNumber,
+            itemNumber: displayNumber,
             code: item.product.sku || '',
             description,
             brand: item.product.brand || 'GENEBRE',
@@ -105,8 +119,10 @@ export async function GET(
             unitPrice: Number(item.unitPrice),
             totalPrice: Number(item.totalPrice),
             deliveryTime: item.deliveryTime || 'Inmediato',
+            isAlternative: item.isAlternative,
           }
-        }),
+        })
+      })(),
       subtotal: Number(quote.subtotal),
       total: Number(quote.total),
       exchangeRate: Number(quote.exchangeRate),

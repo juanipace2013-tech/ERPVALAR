@@ -82,7 +82,8 @@ export async function PATCH(
 
     const subtotalWithAdditionals = listPrice + additionalsPrices
     const afterDiscount = subtotalWithAdditionals * (1 - brandDiscount)
-    const customerMultiplier = Number(existingItem.quote.customer.priceMultiplier)
+    // Usar multiplicador de la cotización (no del cliente)
+    const customerMultiplier = Number(existingItem.quote.multiplier)
     const unitPrice = afterDiscount * customerMultiplier
     const quantity = body.quantity !== undefined ? body.quantity : existingItem.quantity
     const totalPrice = unitPrice * quantity

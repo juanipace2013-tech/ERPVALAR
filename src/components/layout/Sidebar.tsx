@@ -20,6 +20,7 @@ import {
   PackageCheck,
   ChevronDown,
   ChevronRight,
+  ShieldCheck,
 } from 'lucide-react'
 
 interface SubNavItem {
@@ -73,6 +74,12 @@ const navItems: NavItem[] = [
     href: '/tipo-cambio',
     icon: DollarSign,
     roles: ['ADMIN', 'GERENTE', 'CONTADOR'],
+  },
+  {
+    title: 'Análisis BCRA',
+    href: '/analisis-crediticio',
+    icon: ShieldCheck,
+    roles: ['ADMIN', 'GERENTE', 'VENDEDOR', 'CONTADOR'],
   },
 ]
 

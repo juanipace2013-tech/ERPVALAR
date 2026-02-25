@@ -2176,3 +2176,16 @@ model CustomerReceipt {
   @@index([receiptDate])
   @@map("customer_receipts")
 }
+
+// ========================================
+// CACHE BCRA
+// ========================================
+
+model BcraCache {
+  id          String   @id @default(cuid())
+  cuit        String   @unique
+  data        Json
+  consultedAt DateTime @default(now())
+
+  @@map("bcra_cache")
+}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -36,6 +36,7 @@ import {
   Clock,
   Pencil,
   Download,
+  ShieldCheck,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber } from '@/lib/utils'
@@ -149,6 +150,10 @@ export default function QuoteViewPage() {
   const [customerResponse, setCustomerResponse] = useState('')
   const [showColppyDialog, setShowColppyDialog] = useState(false)
 
+  // BCRA indicator
+  const [bcraSemaforo, setBcraSemaforo] = useState<'verde' | 'amarillo' | 'rojo' | null>(null)
+  const bcraFetched = useRef(false)
+
   useEffect(() => {
     fetchQuote()
   }, [id])
@@ -164,6 +169,39 @@ export default function QuoteViewPage() {
 
       const data = await response.json()
       setQuote(data)
+      // Fetch BCRA indicator from session cache or API (background, no await)
+      if (!bcraFetched.current && data?.customer?.cuit) {
+        bcraFetched.current = true
+        const cuitClean = data.customer.cuit.replace(/\D/g, '')
+        if (cuitClean.length === 11) {
+          const cacheKey = `bcra_${cuitClean}`
+          try {
+            const cached = sessionStorage.getItem(cacheKey)
+            if (cached) {
+              const { semaforo, ts } = JSON.parse(cached)
+              if (Date.now() - ts < 24 * 60 * 60 * 1000) {
+                setBcraSemaforo(semaforo)
+                return
+              }
+            }
+          } catch { /* sessionStorage might be unavailable */ }
+          // Fetch in background without blocking
+          fetch(`/api/bcra/${cuitClean}`)
+            .then((r) => r.json())
+            .then((d) => {
+              if (d?.resumen?.semaforo) {
+                setBcraSemaforo(d.resumen.semaforo)
+                try {
+                  sessionStorage.setItem(
+                    cacheKey,
+                    JSON.stringify({ semaforo: d.resumen.semaforo, ts: Date.now() })
+                  )
+                } catch { /* ignore */ }
+              }
+            })
+            .catch(() => { /* silently fail */ })
+        }
+      }
     } catch (error) {
       console.error('Error:', error)
       toast.error('Error al cargar cotización')
@@ -718,7 +756,32 @@ export default function QuoteViewPage() {
           {/* Cliente */}
           <Card>
             <CardHeader>
-              <CardTitle>Cliente</CardTitle>
+              <CardTitle className="flex items-center justify-between">
+                <span>Cliente</span>
+                {bcraSemaforo && (
+                  <span
+                    title={`BCRA: ${bcraSemaforo === 'verde' ? 'Situación Normal' : bcraSemaforo === 'amarillo' ? 'Con Observaciones' : 'Situación Irregular'}`}
+                    className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${
+                      bcraSemaforo === 'verde'
+                        ? 'bg-green-100 text-green-700'
+                        : bcraSemaforo === 'amarillo'
+                        ? 'bg-yellow-100 text-yellow-700'
+                        : 'bg-red-100 text-red-700'
+                    }`}
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        bcraSemaforo === 'verde'
+                          ? 'bg-green-500'
+                          : bcraSemaforo === 'amarillo'
+                          ? 'bg-yellow-500'
+                          : 'bg-red-500'
+                      }`}
+                    />
+                    BCRA
+                  </span>
+                )}
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
@@ -743,6 +806,12 @@ export default function QuoteViewPage() {
               )}
               <Button variant="outline" className="w-full mt-2" asChild>
                 <Link href={`/clientes/${quote.customer.id}`}>Ver Cliente</Link>
+              </Button>
+              <Button variant="outline" className="w-full" asChild>
+                <Link href={`/analisis-crediticio?cuit=${quote.customer.cuit.replace(/\D/g, '')}`}>
+                  <ShieldCheck className="h-4 w-4 mr-2" />
+                  Consultar BCRA
+                </Link>
               </Button>
             </CardContent>
           </Card>

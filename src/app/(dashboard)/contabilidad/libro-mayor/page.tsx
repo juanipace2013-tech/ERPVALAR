@@ -24,6 +24,7 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { BookOpen, Download, Printer, Search } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatNumber } from '@/lib/utils'
 import * as XLSX from 'xlsx'
 
 interface Account {
@@ -489,7 +490,7 @@ export default function LibroMayorPage() {
                   <div>
                     <Label className="text-sm text-gray-600">Total Debe = Haber</Label>
                     <p className="text-2xl font-bold text-blue-700">
-                      ${data.accounts.reduce((sum, acc) => sum + acc.totals.debit, 0).toFixed(2)}
+                      ${formatNumber(data.accounts.reduce((sum, acc) => sum + acc.totals.debit, 0))}
                     </p>
                   </div>
                 </div>
@@ -544,13 +545,13 @@ export default function LibroMayorPage() {
                             {movement.journalEntry.description}
                           </TableCell>
                           <TableCell className="text-right font-mono">
-                            {movement.debit > 0 ? `$${Number(movement.debit).toFixed(2)}` : '-'}
+                            {movement.debit > 0 ? `$${formatNumber(Number(movement.debit))}` : '-'}
                           </TableCell>
                           <TableCell className="text-right font-mono">
-                            {movement.credit > 0 ? `$${Number(movement.credit).toFixed(2)}` : '-'}
+                            {movement.credit > 0 ? `$${formatNumber(Number(movement.credit))}` : '-'}
                           </TableCell>
                           <TableCell className="text-right font-mono font-semibold text-gray-900">
-                            ${movement.balance.toFixed(2)} <span className="text-xs text-gray-600">({movement.balanceNature === 'DEUDOR' ? 'D' : 'A'})</span>
+                            ${formatNumber(movement.balance)} <span className="text-xs text-gray-600">({movement.balanceNature === 'DEUDOR' ? 'D' : 'A'})</span>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -559,13 +560,13 @@ export default function LibroMayorPage() {
                           TOTALES
                         </TableCell>
                         <TableCell className="text-right font-mono">
-                          ${accountData.totals.debit.toFixed(2)}
+                          ${formatNumber(accountData.totals.debit)}
                         </TableCell>
                         <TableCell className="text-right font-mono">
-                          ${accountData.totals.credit.toFixed(2)}
+                          ${formatNumber(accountData.totals.credit)}
                         </TableCell>
                         <TableCell className="text-right font-mono text-gray-900">
-                          ${accountData.totals.balance.toFixed(2)} <span className="text-xs">({accountData.totals.balanceNature === 'DEUDOR' ? 'D' : 'A'})</span>
+                          ${formatNumber(accountData.totals.balance)} <span className="text-xs">({accountData.totals.balanceNature === 'DEUDOR' ? 'D' : 'A'})</span>
                         </TableCell>
                       </TableRow>
                     </TableBody>
@@ -640,13 +641,13 @@ export default function LibroMayorPage() {
                             )}
                           </TableCell>
                           <TableCell className="text-right font-mono">
-                            {movement.debit > 0 ? `$${Number(movement.debit).toFixed(2)}` : '-'}
+                            {movement.debit > 0 ? `$${formatNumber(Number(movement.debit))}` : '-'}
                           </TableCell>
                           <TableCell className="text-right font-mono">
-                            {movement.credit > 0 ? `$${Number(movement.credit).toFixed(2)}` : '-'}
+                            {movement.credit > 0 ? `$${formatNumber(Number(movement.credit))}` : '-'}
                           </TableCell>
                           <TableCell className="text-right font-mono font-semibold text-gray-900">
-                            ${movement.balance.toFixed(2)} <span className="text-xs text-gray-600">({movement.balanceNature === 'DEUDOR' ? 'D' : 'A'})</span>
+                            ${formatNumber(movement.balance)} <span className="text-xs text-gray-600">({movement.balanceNature === 'DEUDOR' ? 'D' : 'A'})</span>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -655,13 +656,13 @@ export default function LibroMayorPage() {
                           TOTALES
                         </TableCell>
                         <TableCell className="text-right font-mono">
-                          ${data.totals!.debit.toFixed(2)}
+                          ${formatNumber(data.totals!.debit)}
                         </TableCell>
                         <TableCell className="text-right font-mono">
-                          ${data.totals!.credit.toFixed(2)}
+                          ${formatNumber(data.totals!.credit)}
                         </TableCell>
                         <TableCell className="text-right font-mono text-gray-900">
-                          ${data.totals!.balance.toFixed(2)} <span className="text-xs">({data.totals!.balanceNature === 'DEUDOR' ? 'D' : 'A'})</span>
+                          ${formatNumber(data.totals!.balance)} <span className="text-xs">({data.totals!.balanceNature === 'DEUDOR' ? 'D' : 'A'})</span>
                         </TableCell>
                       </TableRow>
                     </TableBody>
@@ -680,19 +681,19 @@ export default function LibroMayorPage() {
                       <div>
                         <Label className="text-sm text-gray-600">Total Debe</Label>
                         <p className="text-2xl font-bold text-blue-700">
-                          ${data.totals!.debit.toFixed(2)}
+                          ${formatNumber(data.totals!.debit)}
                         </p>
                       </div>
                       <div>
                         <Label className="text-sm text-gray-600">Total Haber</Label>
                         <p className="text-2xl font-bold text-blue-700">
-                          ${data.totals!.credit.toFixed(2)}
+                          ${formatNumber(data.totals!.credit)}
                         </p>
                       </div>
                       <div>
                         <Label className="text-sm text-gray-600">Saldo Final</Label>
                         <p className="text-2xl font-bold text-gray-900">
-                          ${data.totals!.balance.toFixed(2)} <span className="text-base text-gray-600">({data.totals!.balanceNature === 'DEUDOR' ? 'D' : 'A'})</span>
+                          ${formatNumber(data.totals!.balance)} <span className="text-base text-gray-600">({data.totals!.balanceNature === 'DEUDOR' ? 'D' : 'A'})</span>
                         </p>
                       </div>
                     </div>

@@ -254,8 +254,8 @@ export default function DeliveryNoteDetailPage() {
   }
 
   const formatCurrency = (amount: number, currency: string = 'ARS') => {
-    const symbol = currency === 'USD' ? 'US$' : '$'
-    return `${symbol}${amount.toLocaleString('es-AR', {
+    const symbol = currency === 'USD' ? 'USD' : 'ARS'
+    return `${symbol} ${amount.toLocaleString('es-AR', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`
@@ -363,9 +363,11 @@ export default function DeliveryNoteDetailPage() {
                 </Button>
               )}
 
-            <Button variant="outline" disabled>
-              <Printer className="h-4 w-4 mr-2" />
-              Imprimir Remito
+            <Button variant="outline" asChild>
+              <Link href={`/remitos/${id}/imprimir`}>
+                <Printer className="h-4 w-4 mr-2" />
+                Imprimir Remito
+              </Link>
             </Button>
 
             {actionLoading && <Loader2 className="h-5 w-5 animate-spin text-blue-600" />}
@@ -468,15 +470,15 @@ export default function DeliveryNoteDetailPage() {
                       <TableRow key={item.id}>
                         <TableCell>
                           <div>
-                            <p className="font-medium">{item.product.name}</p>
-                            <p className="text-sm text-gray-500">SKU: {item.product.sku}</p>
-                            {item.product.brand && (
+                            <p className="font-medium">{item.product?.name || item.description}</p>
+                            <p className="text-sm text-gray-500">SKU: {item.product?.sku}</p>
+                            {item.product?.brand && (
                               <p className="text-sm text-gray-500">{item.product.brand}</p>
                             )}
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
-                          {item.quantity} {item.product.unit}
+                          {item.quantity} {item.product?.unit}
                         </TableCell>
                         <TableCell>
                           {item.warehouseLocation || <span className="text-gray-400">-</span>}

@@ -35,8 +35,10 @@ import {
   FileSpreadsheet,
   Clock,
   Pencil,
+  Download,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatNumber } from '@/lib/utils'
 import { SendQuoteDialog } from '@/components/quotes/SendQuoteDialog'
 import { SendToColppyDialog } from '@/components/quotes/SendToColppyDialog'
 
@@ -137,6 +139,7 @@ export default function QuoteViewPage() {
   const [quote, setQuote] = useState<Quote | null>(null)
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
+  const [pdfLoading, setPdfLoading] = useState(false)
 
   // Dialogs
   const [showSendDialog, setShowSendDialog] = useState(false)
@@ -201,6 +204,26 @@ export default function QuoteViewPage() {
   const handleEmailSent = () => {
     toast.success('Estado actualizado a Enviada')
     fetchQuote() // Recargar datos
+  }
+
+  const handleDownloadPDF = async () => {
+    if (!quote) return
+    try {
+      setPdfLoading(true)
+      const response = await fetch(`/api/cotizaciones/${id}/pdf`)
+      if (!response.ok) throw new Error()
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `Cotizacion-${quote.quoteNumber}.pdf`
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      toast.error('Error al generar PDF')
+    } finally {
+      setPdfLoading(false)
+    }
   }
 
   const handleAccept = () => {
@@ -278,8 +301,8 @@ export default function QuoteViewPage() {
   }
 
   const formatCurrency = (amount: number) => {
-    const symbol = quote?.currency === 'USD' ? 'US$' : '$'
-    return `${symbol}${amount.toLocaleString('es-AR', {
+    const symbol = quote?.currency === 'USD' ? 'USD' : 'ARS'
+    return `${symbol} ${amount.toLocaleString('es-AR', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`
@@ -355,11 +378,13 @@ export default function QuoteViewPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" asChild>
-            <Link href={`/cotizaciones/${quote.id}/pdf`}>
-              <FileText className="h-4 w-4 mr-2" />
-              Ver PDF
-            </Link>
+          <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={pdfLoading}>
+            {pdfLoading ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4 mr-2" />
+            )}
+            Descargar PDF
           </Button>
         </div>
       </div>
@@ -371,7 +396,7 @@ export default function QuoteViewPage() {
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-2">
-            {/* BORRADOR - puede enviar o editar */}
+            {/* BORRADOR - puede enviar, editar, aceptar o rechazar */}
             {quote.status === 'DRAFT' && (
               <>
                 <Button onClick={handleSend} disabled={actionLoading} className="bg-blue-600 hover:bg-blue-700">
@@ -383,6 +408,14 @@ export default function QuoteViewPage() {
                     <Pencil className="h-4 w-4 mr-2" />
                     Editar Cotización
                   </Link>
+                </Button>
+                <Button onClick={handleAccept} disabled={actionLoading} className="bg-green-600 hover:bg-green-700">
+                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                  Marcar como Aceptada
+                </Button>
+                <Button variant="destructive" onClick={handleReject} disabled={actionLoading}>
+                  <XCircle className="h-4 w-4 mr-2" />
+                  Marcar como Rechazada
                 </Button>
               </>
             )}
@@ -534,7 +567,7 @@ export default function QuoteViewPage() {
                   <div>
                     <p className="text-sm text-gray-600">Tipo de Cambio</p>
                     <p className="font-semibold">
-                      ${Number(quote.exchangeRate).toFixed(2)}
+                      ${formatNumber(quote.exchangeRate)}
                     </p>
                   </div>
                 )}
@@ -585,9 +618,15 @@ export default function QuoteViewPage() {
                           <TableCell>{item.itemNumber}</TableCell>
                           <TableCell>
                             <div>
-                              <p className="font-medium">{item.product.name}</p>
+                              <p className="font-medium">
+                                {item.product?.name || item.description || 'Item manual'}
+                              </p>
                               <p className="text-sm text-gray-500">
-                                SKU: {item.product.sku}
+                                {item.product
+                                  ? `SKU: ${item.product.sku}`
+                                  : item.manualSku
+                                    ? `Código: ${item.manualSku}`
+                                    : 'Sin código'}
                               </p>
                             </div>
                           </TableCell>

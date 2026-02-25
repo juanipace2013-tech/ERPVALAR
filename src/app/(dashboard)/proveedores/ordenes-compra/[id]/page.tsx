@@ -36,6 +36,7 @@ import {
   CheckCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatNumber } from '@/lib/utils'
 
 interface PurchaseOrder {
   id: string
@@ -498,10 +499,10 @@ export default function PurchaseOrderDetailPage() {
                       {formatCurrency(item.unitCost)}
                     </TableCell>
                     <TableCell className="text-right">
-                      {Number(item.discount).toFixed(2)}%
+                      {formatNumber(item.discount)}%
                     </TableCell>
                     <TableCell className="text-right">
-                      {Number(item.taxRate).toFixed(2)}%
+                      {formatNumber(item.taxRate)}%
                     </TableCell>
                     <TableCell className="text-right font-semibold">
                       {formatCurrency(item.subtotal)}

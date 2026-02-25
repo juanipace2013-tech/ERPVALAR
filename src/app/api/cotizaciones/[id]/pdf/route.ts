@@ -81,6 +81,7 @@ export async function GET(
       salesPerson: {
         name: quote.salesPerson.name,
         email: quote.salesPerson.email || 'ventas@val-ar.com.ar',
+        phone: quote.salesPerson.phone || undefined,
       },
       items: (() => {
         // Tracking de índices de alternativas por itemNumber padre
@@ -99,7 +100,7 @@ export async function GET(
           }
 
           // Construir descripción con adicionales
-          let description = item.description || item.product.name
+          let description = item.description || item.product?.name || 'Item manual'
           if (item.isAlternative) {
             description = `Alternativa: ${description}`
           }
@@ -112,9 +113,9 @@ export async function GET(
 
           return {
             itemNumber: displayNumber,
-            code: item.product.sku || '',
+            code: item.product?.sku || item.manualSku || '',
             description,
-            brand: item.product.brand || 'GENEBRE',
+            brand: item.product?.brand || item.manualBrand || '-',
             quantity: item.quantity,
             unitPrice: Number(item.unitPrice),
             totalPrice: Number(item.totalPrice),

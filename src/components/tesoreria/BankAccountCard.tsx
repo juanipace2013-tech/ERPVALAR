@@ -2,7 +2,7 @@
 
 import { Button } from '@/components/ui/button'
 import { Info } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, formatNumber } from '@/lib/utils'
 
 interface BankAccount {
   id: string

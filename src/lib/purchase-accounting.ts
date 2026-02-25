@@ -128,7 +128,7 @@ export async function generatePurchaseInvoiceJournalEntry(invoiceId: string) {
 
   if (Math.abs(totalDebit - totalCredit) > 0.01) {
     throw new Error(
-      `Asiento desbalanceado: Debe ${totalDebit.toFixed(2)} vs Haber ${totalCredit.toFixed(2)}`
+      `Asiento desbalanceado: Debe ${totalDebit.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} vs Haber ${totalCredit.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     );
   }
 

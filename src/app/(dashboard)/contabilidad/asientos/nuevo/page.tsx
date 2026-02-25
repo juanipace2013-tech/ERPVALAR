@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Plus, Trash2, ArrowLeft, Save } from 'lucide-react'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
+import { formatNumber } from '@/lib/utils'
 import Link from 'next/link'
 
 interface Account {
@@ -312,19 +313,19 @@ export default function NuevoAsientoPage() {
                     <div>
                       <Label className="text-sm text-gray-600">Total Debe</Label>
                       <p className="text-2xl font-bold text-gray-900">
-                        ${getTotalDebit().toFixed(2)}
+                        ${formatNumber(getTotalDebit())}
                       </p>
                     </div>
                     <div>
                       <Label className="text-sm text-gray-600">Total Haber</Label>
                       <p className="text-2xl font-bold text-gray-900">
-                        ${getTotalCredit().toFixed(2)}
+                        ${formatNumber(getTotalCredit())}
                       </p>
                     </div>
                     <div>
                       <Label className="text-sm text-gray-600">Diferencia</Label>
                       <p className={`text-2xl font-bold ${isBalanced() ? 'text-green-700' : 'text-red-700'}`}>
-                        ${Math.abs(getDifference()).toFixed(2)}
+                        ${formatNumber(Math.abs(getDifference()))}
                       </p>
                       {isBalanced() ? (
                         <p className="text-sm text-green-600 mt-1">✓ Asiento balanceado</p>

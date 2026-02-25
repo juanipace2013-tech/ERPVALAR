@@ -5,7 +5,7 @@ import { prisma } from '@/lib/prisma'
 
 /**
  * POST /api/quotes/[id]/items
- * Agregar item a cotización
+ * Agregar item a cotización (catálogo o manual)
  */
 export async function POST(
   request: NextRequest,
@@ -38,7 +38,70 @@ export async function POST(
       )
     }
 
-    // Obtener producto con categoría
+    // Determinar itemNumber
+    let itemNumber = 10
+    if (body.isAlternative && body.alternativeToItemId) {
+      const parentItem = quote.items.find(
+        (i) => i.id === body.alternativeToItemId
+      )
+      if (parentItem) {
+        itemNumber = parentItem.itemNumber
+      }
+    } else {
+      const maxItem = quote.items
+        .filter((i) => !i.isAlternative)
+        .sort((a, b) => b.itemNumber - a.itemNumber)[0]
+      if (maxItem) {
+        itemNumber = maxItem.itemNumber + 10
+      }
+    }
+
+    // ── ITEM MANUAL (sin producto del catálogo) ──
+    if (!body.productId) {
+      if (!body.description) {
+        return NextResponse.json(
+          { error: 'La descripción es obligatoria para items manuales' },
+          { status: 400 }
+        )
+      }
+      const manualPrice = Number(body.manualUnitPrice) || 0
+      const quantity = body.quantity || 1
+      const customerMultiplier = Number(quote.multiplier) || 1
+      const manualUnitPrice = manualPrice * customerMultiplier
+
+      const manualData: any = {
+        quote: { connect: { id: quoteId } },
+        itemNumber,
+        manualSku: body.manualSku || null,
+        manualBrand: body.manualBrand || null,
+        description: body.description,
+        quantity,
+        listPrice: manualPrice,
+        brandDiscount: 0,
+        customerMultiplier,
+        unitPrice: manualUnitPrice,
+        totalPrice: manualUnitPrice * quantity,
+        deliveryTime: body.deliveryTime || 'A confirmar',
+        isAlternative: body.isAlternative || false,
+      }
+      if (body.alternativeToItemId) {
+        manualData.alternativeToItemId = body.alternativeToItemId
+      }
+
+      const item = await prisma.quoteItem.create({
+        data: manualData,
+        include: {
+          product: true,
+          additionals: { include: { product: true } },
+        },
+      })
+
+      await recalculateQuoteTotals(quoteId)
+      console.log('✅ Item manual agregado:', item.id)
+      return NextResponse.json(item, { status: 201 })
+    }
+
+    // ── ITEM DE CATÁLOGO ──
     const product = await prisma.product.findUnique({
       where: { id: body.productId },
       include: { category: true },
@@ -54,7 +117,6 @@ export async function POST(
     // Obtener descuento de marca
     let brandDiscount = 0
     if (product.brand) {
-      // 1. Buscar por brand + productType exacto
       let brandDiscountData = await prisma.brandDiscount.findUnique({
         where: {
           brand_productType: {
@@ -63,7 +125,6 @@ export async function POST(
           }
         }
       })
-      // 2. Si no encuentra, buscar solo por brand (productType null)
       if (!brandDiscountData) {
         brandDiscountData = await prisma.brandDiscount.findFirst({
           where: { brand: product.brand, productType: null }
@@ -74,13 +135,9 @@ export async function POST(
       }
     }
 
-    // Calcular precios según fórmula VAL ARG:
-    // Precio Final = (Precio Lista + Sum(Adicionales)) × (1 - Descuento Marca) × Multiplicador Cliente
-
     const listPrice = Number(product.listPriceUSD || 0)
     let additionalsPrices = 0
 
-    // Sumar precios de adicionales si existen
     if (body.additionals && body.additionals.length > 0) {
       for (const add of body.additionals) {
         const addProduct = await prisma.product.findUnique({
@@ -94,33 +151,11 @@ export async function POST(
 
     const subtotalWithAdditionals = listPrice + additionalsPrices
     const afterDiscount = subtotalWithAdditionals * (1 - brandDiscount)
-    // Usar multiplicador de la cotización (precargado del cliente al crear)
     const customerMultiplier = Number(quote.multiplier)
     const unitPrice = afterDiscount * customerMultiplier
     const quantity = body.quantity || 1
     const totalPrice = unitPrice * quantity
 
-    // Determinar itemNumber
-    let itemNumber = 10
-    if (body.isAlternative && body.alternativeToItemId) {
-      // Es alternativa, usar el mismo número base
-      const parentItem = quote.items.find(
-        (i) => i.id === body.alternativeToItemId
-      )
-      if (parentItem) {
-        itemNumber = parentItem.itemNumber
-      }
-    } else {
-      // Es item principal, buscar el mayor número y sumar 10
-      const maxItem = quote.items
-        .filter((i) => !i.isAlternative)
-        .sort((a, b) => b.itemNumber - a.itemNumber)[0]
-      if (maxItem) {
-        itemNumber = maxItem.itemNumber + 10
-      }
-    }
-
-    // Crear item
     const item = await prisma.quoteItem.create({
       data: {
         quoteId,
@@ -149,14 +184,11 @@ export async function POST(
       include: {
         product: true,
         additionals: {
-          include: {
-            product: true,
-          },
+          include: { product: true },
         },
       },
     })
 
-    // Recalcular totales de la cotización
     await recalculateQuoteTotals(quoteId)
 
     console.log('✅ Item agregado:', item.id)
@@ -181,7 +213,7 @@ async function recalculateQuoteTotals(quoteId: string) {
   const items = await prisma.quoteItem.findMany({
     where: {
       quoteId,
-      isAlternative: false, // Solo items principales, no alternativas
+      isAlternative: false,
     },
   })
 

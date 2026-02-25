@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label'
 import { Download, Printer, Calendar } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatNumber } from '@/lib/utils'
 
 interface BalanceItem {
   account: {
@@ -175,14 +176,14 @@ export default function BalanceGeneralPage() {
                             {item.account.code} - {item.account.name}
                           </span>
                           <span className="font-mono text-sm">
-                            ${item.balance.toFixed(2)}
+                            ${formatNumber(item.balance)}
                           </span>
                         </div>
                       ))}
                       <div className="pt-3 mt-3 border-t-2 border-blue-600 flex justify-between font-bold text-lg">
                         <span>TOTAL ACTIVO</span>
                         <span className="font-mono text-blue-700">
-                          ${data.totals.activo.toFixed(2)}
+                          ${formatNumber(data.totals.activo)}
                         </span>
                       </div>
                     </div>
@@ -215,14 +216,14 @@ export default function BalanceGeneralPage() {
                               {item.account.code} - {item.account.name}
                             </span>
                             <span className="font-mono text-sm">
-                              ${item.balance.toFixed(2)}
+                              ${formatNumber(item.balance)}
                             </span>
                           </div>
                         ))}
                         <div className="pt-2 border-t flex justify-between font-semibold">
                           <span>Total Pasivo</span>
                           <span className="font-mono">
-                            ${data.totals.pasivo.toFixed(2)}
+                            ${formatNumber(data.totals.pasivo)}
                           </span>
                         </div>
                       </div>
@@ -253,7 +254,7 @@ export default function BalanceGeneralPage() {
                               {item.account.code} - {item.account.name}
                             </span>
                             <span className="font-mono text-sm">
-                              ${item.balance.toFixed(2)}
+                              ${formatNumber(item.balance)}
                             </span>
                           </div>
                         ))}
@@ -265,14 +266,14 @@ export default function BalanceGeneralPage() {
                             <span className={`font-mono text-sm ${
                               data.resultadoEjercicio >= 0 ? 'text-green-700' : 'text-red-700'
                             }`}>
-                              ${data.resultadoEjercicio.toFixed(2)}
+                              ${formatNumber(data.resultadoEjercicio)}
                             </span>
                           </div>
                         )}
                         <div className="pt-2 border-t flex justify-between font-semibold">
                           <span>Total Patrimonio Neto</span>
                           <span className="font-mono">
-                            ${(data.totals.patrimonioNeto + data.resultadoEjercicio).toFixed(2)}
+                            ${formatNumber(data.totals.patrimonioNeto + data.resultadoEjercicio)}
                           </span>
                         </div>
                       </div>
@@ -283,7 +284,7 @@ export default function BalanceGeneralPage() {
                   <div className="pt-3 border-t-2 border-red-600 flex justify-between font-bold text-lg">
                     <span>TOTAL PASIVO + PN</span>
                     <span className="font-mono text-red-700">
-                      ${data.totals.pasivoPatrimonio.toFixed(2)}
+                      ${formatNumber(data.totals.pasivoPatrimonio)}
                     </span>
                   </div>
                 </div>
@@ -309,13 +310,13 @@ export default function BalanceGeneralPage() {
                         </p>
                       ) : (
                         <p className="text-lg font-bold text-red-700">
-                          ✗ Diferencia: ${Math.abs(data.totals.activo - data.totals.pasivoPatrimonio).toFixed(2)}
+                          ✗ Diferencia: ${formatNumber(Math.abs(data.totals.activo - data.totals.pasivoPatrimonio))}
                         </p>
                       )}
                     </div>
                     <div className="text-right font-mono">
                       <p className="text-sm text-gray-600">Activo</p>
-                      <p className="text-xl font-bold">${data.totals.activo.toFixed(2)}</p>
+                      <p className="text-xl font-bold">${formatNumber(data.totals.activo)}</p>
                     </div>
                   </div>
                 </CardContent>

@@ -5,6 +5,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { Info, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useState } from 'react'
+import { formatNumber } from '@/lib/utils'
 import {
   Tooltip as UITooltip,
   TooltipContent,
@@ -39,11 +40,11 @@ export function DonutChart({ title, data, tooltipText }: DonutChartProps) {
 
   const formatCurrency = (value: number) => {
     if (value >= 1000000) {
-      return `${(value / 1000000).toFixed(2)}M`
+      return `${formatNumber(value / 1000000, 1)}M`
     } else if (value >= 1000) {
-      return `${(value / 1000).toFixed(0)}K`
+      return `${formatNumber(value / 1000, 0)}K`
     }
-    return value.toFixed(0)
+    return formatNumber(value, 0)
   }
 
   const CustomLabel = ({ cx, cy }: { cx: number; cy: number }) => {
@@ -129,7 +130,7 @@ export function DonutChart({ title, data, tooltipText }: DonutChartProps) {
                   </span>
                 </div>
                 <span className="font-medium text-gray-900">
-                  {item.percentage.toFixed(2)}%
+                  {formatNumber(item.percentage)}%
                 </span>
               </div>
             )

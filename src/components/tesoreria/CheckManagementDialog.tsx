@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
+import { formatNumber } from '@/lib/utils'
 import {
   Dialog,
   DialogContent,

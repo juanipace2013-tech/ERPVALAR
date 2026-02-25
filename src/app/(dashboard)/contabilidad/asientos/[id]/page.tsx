@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, CheckCircle, XCircle, Clock, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useRouter, useParams } from 'next/navigation'
+import { formatNumber } from '@/lib/utils'
 import Link from 'next/link'
 
 interface JournalEntryLine {
@@ -291,10 +292,10 @@ export default function AsientoDetailPage() {
                       {line.description || '-'}
                     </TableCell>
                     <TableCell className="text-right font-mono">
-                      {line.debit > 0 ? `$${Number(line.debit).toFixed(2)}` : '-'}
+                      {line.debit > 0 ? `$${formatNumber(Number(line.debit))}` : '-'}
                     </TableCell>
                     <TableCell className="text-right font-mono">
-                      {line.credit > 0 ? `$${Number(line.credit).toFixed(2)}` : '-'}
+                      {line.credit > 0 ? `$${formatNumber(Number(line.credit))}` : '-'}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -304,10 +305,10 @@ export default function AsientoDetailPage() {
                     TOTALES
                   </TableCell>
                   <TableCell className="text-right font-mono">
-                    ${getTotalDebit().toFixed(2)}
+                    ${formatNumber(getTotalDebit())}
                   </TableCell>
                   <TableCell className="text-right font-mono">
-                    ${getTotalCredit().toFixed(2)}
+                    ${formatNumber(getTotalCredit())}
                   </TableCell>
                 </TableRow>
               </TableBody>

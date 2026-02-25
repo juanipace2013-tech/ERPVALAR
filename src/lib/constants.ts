@@ -74,15 +74,15 @@ export const IVA_RATES = {
 // ========================================
 
 export const CURRENCIES = [
-  { value: 'ARS', label: 'Peso Argentino (ARS)', symbol: '$' },
-  { value: 'USD', label: 'Dólar Estadounidense (USD)', symbol: 'US$' },
-  { value: 'EUR', label: 'Euro (EUR)', symbol: '€' },
+  { value: 'ARS', label: 'Peso Argentino (ARS)', symbol: 'ARS' },
+  { value: 'USD', label: 'Dólar Estadounidense (USD)', symbol: 'USD' },
+  { value: 'EUR', label: 'Euro (EUR)', symbol: 'EUR' },
 ]
 
-export const CURRENCY_SYMBOLS = {
-  ARS: '$',
-  USD: 'US$',
-  EUR: '€',
+export const CURRENCY_SYMBOLS: Record<string, string> = {
+  ARS: 'ARS',
+  USD: 'USD',
+  EUR: 'EUR',
 }
 
 // ========================================

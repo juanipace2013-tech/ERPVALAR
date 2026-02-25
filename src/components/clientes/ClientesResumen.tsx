@@ -21,6 +21,7 @@ import {
   RefreshCw,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatNumber } from '@/lib/utils'
 
 interface CustomerSummary {
   totalCustomers: number
@@ -143,7 +144,7 @@ export function ClientesResumen() {
                   {summary.newThisMonth}
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
-                  +{((summary.newThisMonth / summary.totalCustomers) * 100).toFixed(1)}% del total
+                  +{formatNumber((summary.newThisMonth / summary.totalCustomers) * 100, 1)}% del total
                 </p>
               </div>
               <TrendingUp className="h-10 w-10 text-green-600" />

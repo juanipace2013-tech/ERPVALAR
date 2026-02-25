@@ -366,10 +366,11 @@ export default function NuevaFacturaPage() {
   }
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('es-AR', {
-      style: 'currency',
-      currency: currency || 'ARS',
-    }).format(amount)
+    const symbol = (currency || 'ARS') === 'USD' ? 'USD' : 'ARS'
+    return `${symbol} ${amount.toLocaleString('es-AR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`
   }
 
   const totals = calculateTotals()

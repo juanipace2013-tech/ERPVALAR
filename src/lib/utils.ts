@@ -47,7 +47,23 @@ export function formatCUIT(cuit: string): string {
 }
 
 /**
+ * Formatea un número con formato argentino (punto miles, coma decimales)
+ * Ejemplo: formatNumber(2359.43) → "2.359,43"
+ */
+export function formatNumber(
+  amount: number | string,
+  decimals: number = 2
+): string {
+  const num = typeof amount === 'string' ? parseFloat(amount) : amount
+  return num.toLocaleString('es-AR', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })
+}
+
+/**
  * Formatea un número como moneda argentina
+ * Ejemplo: formatCurrency(2359.43, 'USD') → "USD 2.359,43"
  */
 export function formatCurrency(
   amount: number | string,
@@ -56,9 +72,9 @@ export function formatCurrency(
   const num = typeof amount === 'string' ? parseFloat(amount) : amount
 
   const currencySymbols = {
-    ARS: '$',
-    USD: 'US$',
-    EUR: '€',
+    ARS: 'ARS',
+    USD: 'USD',
+    EUR: 'EUR',
   }
 
   return `${currencySymbols[currency]} ${num.toLocaleString('es-AR', {

@@ -25,6 +25,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Loader2, CheckCircle2, XCircle, FileText, Building2, Calendar, DollarSign } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatNumber } from '@/lib/utils'
 
 interface Quote {
   id: string
@@ -142,8 +143,8 @@ export default function PublicQuotePage() {
   }
 
   const formatCurrency = (amount: number) => {
-    const symbol = quote?.currency === 'USD' ? 'US$' : '$'
-    return `${symbol}${amount.toLocaleString('es-AR', {
+    const symbol = quote?.currency === 'USD' ? 'USD' : 'ARS'
+    return `${symbol} ${amount.toLocaleString('es-AR', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`
@@ -294,7 +295,7 @@ export default function PublicQuotePage() {
                       <DollarSign className="h-5 w-5 text-gray-400 mt-0.5" />
                       <div>
                         <p className="text-sm text-gray-600">Tipo de Cambio</p>
-                        <p className="font-semibold">${Number(quote.exchangeRate).toFixed(2)}</p>
+                        <p className="font-semibold">${formatNumber(quote.exchangeRate)}</p>
                       </div>
                     </div>
                   )}
@@ -325,9 +326,9 @@ export default function PublicQuotePage() {
                           <TableRow key={item.id}>
                             <TableCell>
                               <div>
-                                <p className="font-medium">{item.product.name}</p>
+                                <p className="font-medium">{item.product?.name || item.description}</p>
                                 <p className="text-sm text-gray-500">
-                                  SKU: {item.product.sku}
+                                  SKU: {item.product?.sku}
                                 </p>
                               </div>
                             </TableCell>

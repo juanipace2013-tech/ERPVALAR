@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import { LOGO_BASE64 } from '@/lib/logo-base64'
 
 interface QuotePDFData {
   quoteNumber: string
@@ -14,6 +15,7 @@ interface QuotePDFData {
   salesPerson: {
     name: string
     email: string
+    phone?: string
   }
   items: Array<{
     itemNumber: string
@@ -33,37 +35,75 @@ interface QuotePDFData {
   validityDays: number
 }
 
-export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
-  const doc = new jsPDF()
+const PAGE_WIDTH = 210
+const PAGE_HEIGHT = 297
+const MARGIN_LEFT = 10
+const MARGIN_RIGHT = 10
+const MARGIN_BOTTOM = 20
+const USABLE_BOTTOM = PAGE_HEIGHT - MARGIN_BOTTOM
+const CONTINUATION_TOP = 20 // Top margin for continuation pages (space for header text)
+const BLUE: [number, number, number] = [0, 102, 204]
 
-  // Convertir logo a base64
-  let logoBase64: string
-  try {
-    logoBase64 = await fetch('/logo-valarg.png')
-      .then(res => res.blob())
-      .then(blob => new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onloadend = () => resolve(reader.result as string)
-        reader.onerror = reject
-        reader.readAsDataURL(blob)
-      }))
-  } catch (error) {
-    console.error('Error cargando logo:', error)
-    // Continuar sin logo si falla
-    logoBase64 = ''
+function fmtUSD(n: number): string {
+  return `USD ${n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+function formatDate(date: Date): string {
+  return new Intl.DateTimeFormat('es-AR', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric'
+  }).format(date)
+}
+
+/**
+ * Final pass: adds "Página X de Y" footer on ALL pages,
+ * and continuation header text (no logo) on tracked continuation pages.
+ */
+function addPageNumbersAndHeaders(
+  doc: jsPDF,
+  quoteNumber: string,
+  continuationPages: number[]
+) {
+  const totalPages = doc.getNumberOfPages()
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i)
+    // Footer — all pages
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(130, 130, 130)
+    doc.text(
+      `Página ${i} de ${totalPages}`,
+      PAGE_WIDTH / 2,
+      PAGE_HEIGHT - 8,
+      { align: 'center' }
+    )
+    // Continuation header — NO logo, just text top-right
+    if (continuationPages.includes(i)) {
+      doc.setFontSize(9)
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(100, 100, 100)
+      doc.text(
+        `Oferta: ${quoteNumber} — Continuación (Pág ${i} de ${totalPages})`,
+        PAGE_WIDTH - MARGIN_RIGHT,
+        12,
+        { align: 'right' }
+      )
+    }
   }
+  doc.setTextColor(0, 0, 0)
+}
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // PÁGINA 1 - COTIZACIÓN
-  // ═══════════════════════════════════════════════════════════════════════
+const RIGHT_COL = 108 // X start for right column (vendedor)
 
+/** Dibuja header de primera página: logo, datos empresa, cliente + vendedor */
+function drawFirstPageHeader(doc: jsPDF, data: QuotePDFData): number {
   // Logo
-  if (logoBase64) {
-    doc.addImage(logoBase64, 'PNG', 10, 10, 60, 18)
-  }
+  doc.addImage(LOGO_BASE64, 'PNG', MARGIN_LEFT, 10, 45, 13.5)
 
   // Header derecho
   doc.setFontSize(10)
+  doc.setTextColor(0, 0, 0)
   doc.text(formatDate(data.date), 200, 15, { align: 'right' })
   doc.setFont('helvetica', 'bold')
   doc.text(`Oferta: ${data.quoteNumber}`, 200, 20, { align: 'right' })
@@ -71,40 +111,93 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
 
   // Datos de VAL ARG
   doc.setFontSize(9)
-  doc.text('14 de Julio 175, C.P: 1427 - C.A.B.A.', 10, 35)
-  doc.text('Teléfono: + 54 11 4551-3343 | 4552-2874', 10, 40)
-  doc.text('VAL ARG S.R.L. CUIT: 30-71537357-9', 10, 45)
+  doc.text('14 de Julio 175, C.P: 1427 - C.A.B.A.', MARGIN_LEFT, 35)
+  doc.text('Teléfono: + 54 11 4551-3343 | 4552-2874', MARGIN_LEFT, 40)
+  doc.text('VAL ARG S.R.L. CUIT: 30-71537357-9', MARGIN_LEFT, 45)
 
-  // Cliente
+  // Separador horizontal
+  doc.setDrawColor(200, 200, 200)
+  doc.setLineWidth(0.3)
+  doc.line(MARGIN_LEFT, 50, PAGE_WIDTH - MARGIN_RIGHT, 50)
+
+  // ── Etiquetas de sección ──
+  doc.setFontSize(7)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(120, 120, 120)
+  doc.text('CLIENTE', MARGIN_LEFT, 54)
+  doc.text('VENDEDOR', RIGHT_COL, 54)
+
+  // Línea vertical separadora entre columnas
+  doc.setDrawColor(220, 220, 220)
+  doc.line(RIGHT_COL - 3, 50, RIGHT_COL - 3, 80)
+
+  // ── Columna izquierda: Cliente ──
   doc.setFontSize(11)
   doc.setFont('helvetica', 'bold')
-  doc.text((data.customer.legalName || data.customer.name).toUpperCase(), 10, 55)
+  doc.setTextColor(0, 0, 0)
+  doc.text((data.customer.legalName || data.customer.name).toUpperCase(), MARGIN_LEFT, 59)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
+  let y = 64
   if (data.customer.taxId) {
-    doc.text(`CUIT: ${data.customer.taxId}`, 10, 60)
+    doc.text(`CUIT: ${data.customer.taxId}`, MARGIN_LEFT, y)
+    y += 5
   }
   if (data.customer.address) {
-    doc.text(`Dirección: ${data.customer.address}`, 10, 65)
+    doc.text(`Dirección: ${data.customer.address}`, MARGIN_LEFT, y)
+    y += 5
   }
+
+  // ── Columna derecha: Vendedor ──
+  doc.setFontSize(10)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(0, 0, 0)
+  doc.text(data.salesPerson.name, RIGHT_COL, 59)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  doc.text(`Email: ${data.salesPerson.email}`, RIGHT_COL, 64)
+  if (data.salesPerson.phone) {
+    doc.text(`Tel: ${data.salesPerson.phone}`, RIGHT_COL, 69)
+  }
+
+  // Separador horizontal inferior
+  doc.setDrawColor(200, 200, 200)
+  doc.setLineWidth(0.3)
+  doc.line(MARGIN_LEFT, y + 3, PAGE_WIDTH - MARGIN_RIGHT, y + 3)
 
   // Intro
   doc.setFontSize(10)
-  doc.text('Por medio de la presente tenemos el agrado de cotizarles los siguientes ítems:', 10, 77)
+  doc.setTextColor(0, 0, 0)
+  doc.text('Por medio de la presente tenemos el agrado de cotizarles los siguientes ítems:', MARGIN_LEFT, y + 10)
 
-  // Tabla de items
+  return y + 18 // startY para la tabla
+}
+
+export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
+  const doc = new jsPDF()
+
+  // Track which PDF pages are "continuation" pages (no logo, just text header)
+  const continuationPages: number[] = []
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // PÁGINA 1+ — COTIZACIÓN CON TABLA PAGINADA
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const tableStartY = drawFirstPageHeader(doc, data)
+
+  // Tabla de items — autoTable maneja paginación automáticamente
   const tableData = data.items.map(item => [
     item.itemNumber,
     item.code,
     `${item.description}\nMarca: ${item.brand}`,
     item.quantity.toString(),
-    `USD ${item.unitPrice.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-    `USD ${item.totalPrice.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    fmtUSD(item.unitPrice),
+    fmtUSD(item.totalPrice),
     item.deliveryTime
   ])
 
   autoTable(doc, {
-    startY: 85,
+    startY: tableStartY,
     head: [[
       'Item',
       'Código',
@@ -117,7 +210,7 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
     body: tableData,
     theme: 'grid',
     headStyles: {
-      fillColor: [0, 102, 204], // Azul VAL ARG
+      fillColor: BLUE,
       textColor: 255,
       fontSize: 9,
       halign: 'center'
@@ -134,7 +227,12 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
       5: { halign: 'right', cellWidth: 23 },
       6: { halign: 'center', cellWidth: 20 }
     },
-    // Estilar alternativas con fondo gris claro y texto gris
+    // top: space for continuation header text on pages 2+
+    // startY overrides top on page 1
+    margin: { left: MARGIN_LEFT, right: MARGIN_RIGHT, bottom: MARGIN_BOTTOM, top: CONTINUATION_TOP },
+    // NEVER split a row across pages — move entire row to next page
+    rowPageBreak: 'avoid',
+    // Style alternative items
     didParseCell: (hookData) => {
       if (hookData.section === 'body') {
         const itemData = data.items[hookData.row.index]
@@ -144,21 +242,78 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
           hookData.cell.styles.fontStyle = 'italic'
         }
       }
+    },
+    // Track continuation pages (headers drawn in final pass with page totals)
+    didDrawPage: (hookData) => {
+      if (hookData.pageNumber > 1) {
+        continuationPages.push(doc.getNumberOfPages())
+      }
     }
   })
 
-  // Total
+  // ═══════════════════════════════════════════════════════════════════════
+  // SUBTOTAL / TOTAL — alineados bajo columna "Precio (Total)"
+  // ═══════════════════════════════════════════════════════════════════════
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const finalY = (doc as any).lastAutoTable.finalY + 10
+  let curY = (doc as any).lastAutoTable.finalY
+
+  // Verificar si hay espacio para subtotal/total + condiciones (~80mm)
+  const spaceNeeded = 75
+  if (curY + spaceNeeded > USABLE_BOTTOM) {
+    doc.addPage()
+    continuationPages.push(doc.getNumberOfPages())
+    curY = CONTINUATION_TOP
+  }
+
+  // Coordenadas X: columna "Precio Total" va de x≈147 a x≈170
+  const totalsLeft = 124
+  const totalsRight = 170
+
+  // Línea separadora bajo la tabla
+  doc.setDrawColor(...BLUE)
+  doc.setLineWidth(0.5)
+  doc.line(totalsLeft, curY + 2, totalsRight, curY + 2)
+
+  // Subtotal
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(0, 0, 0)
+  doc.text('Subtotal:', totalsLeft + 6, curY + 8)
+  doc.text(fmtUSD(data.subtotal), totalsRight - 1, curY + 8, { align: 'right' })
+
+  // Línea separadora antes del total
+  doc.setDrawColor(...BLUE)
+  doc.setLineWidth(0.8)
+  doc.line(totalsLeft, curY + 11, totalsRight, curY + 11)
+
+  // Total
   doc.setFontSize(11)
   doc.setFont('helvetica', 'bold')
-  doc.text('Total', 140, finalY)
-  doc.text(`USD ${data.total.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 195, finalY, { align: 'right' })
+  doc.text('Total:', totalsLeft + 6, curY + 17)
+  doc.text(fmtUSD(data.total), totalsRight - 1, curY + 17, { align: 'right' })
 
-  // Condiciones comerciales
+  // Línea final
+  doc.setLineWidth(0.3)
+  doc.line(totalsLeft, curY + 19, totalsRight, curY + 19)
+
+  curY += 25
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CONDICIONES COMERCIALES + FIRMA
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // Verificar espacio (~60mm para condiciones + firma)
+  if (curY + 60 > USABLE_BOTTOM) {
+    doc.addPage()
+    continuationPages.push(doc.getNumberOfPages())
+    curY = CONTINUATION_TOP
+  }
+
   doc.setFontSize(10)
   doc.setFont('helvetica', 'bold')
-  doc.text('Condiciones comerciales:', 10, finalY + 10)
+  doc.setTextColor(0, 0, 0)
+  doc.text('Condiciones comerciales:', MARGIN_LEFT, curY + 3)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
 
@@ -172,50 +327,56 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
     'correspondiente a dicha diferencia.'
   ]
 
-  let yPos = finalY + 15
+  curY += 8
   conditions.forEach(line => {
-    doc.text(line, 10, yPos)
-    yPos += 5
+    doc.text(line, MARGIN_LEFT, curY)
+    curY += 5
   })
 
   // Firma
-  doc.text('Sin otro particular, le saluda muy atentamente', 10, yPos + 10)
+  curY += 5
+  if (curY + 40 > USABLE_BOTTOM) {
+    doc.addPage()
+    continuationPages.push(doc.getNumberOfPages())
+    curY = CONTINUATION_TOP
+  }
+
+  doc.text('Sin otro particular, le saluda muy atentamente', MARGIN_LEFT, curY)
   doc.setFont('helvetica', 'bold')
-  doc.text(data.salesPerson.name, 10, yPos + 20)
+  doc.text(data.salesPerson.name, MARGIN_LEFT, curY + 10)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
-  doc.text('Office: + 54 (11) 4552-2874 | 4551-3343', 10, yPos + 25)
-  doc.text('www.val-ar.com.ar', 10, yPos + 30)
-  doc.text(data.salesPerson.email, 10, yPos + 35)
+  doc.text('Office: + 54 (11) 4552-2874 | 4551-3343', MARGIN_LEFT, curY + 15)
+  doc.text('www.val-ar.com.ar', MARGIN_LEFT, curY + 20)
+  doc.text(data.salesPerson.email, MARGIN_LEFT, curY + 25)
 
   // ═══════════════════════════════════════════════════════════════════════
-  // PÁGINA 2 - TÉRMINOS Y CONDICIONES (OBLIGATORIA)
+  // PÁGINA FINAL — TÉRMINOS Y CONDICIONES (SIEMPRE NUEVA PÁGINA)
   // ═══════════════════════════════════════════════════════════════════════
 
   doc.addPage()
 
-  // Logo
-  if (logoBase64) {
-    doc.addImage(logoBase64, 'PNG', 10, 10, 60, 18)
-  }
+  // Logo (only on T&C page and page 1)
+  doc.addImage(LOGO_BASE64, 'PNG', MARGIN_LEFT, 10, 45, 13.5)
 
   // Header
   doc.setFontSize(11)
   doc.setFont('helvetica', 'bold')
-  doc.text('VAL ARG S.R.L.', 10, 40)
+  doc.setTextColor(0, 0, 0)
+  doc.text('VAL ARG S.R.L.', MARGIN_LEFT, 40)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
-  doc.text('14 de Julio 175, Ciudad Autónoma de Buenos Aires (CP 1427)', 10, 45)
-  doc.text('Teléfono +54 11 4551-3343', 10, 50)
+  doc.text('14 de Julio 175, Ciudad Autónoma de Buenos Aires (CP 1427)', MARGIN_LEFT, 45)
+  doc.text('Teléfono +54 11 4551-3343', MARGIN_LEFT, 50)
 
   // Título
   doc.setFontSize(12)
   doc.setFont('helvetica', 'bold')
-  doc.text('Términos y Condiciones Generales de Cotización de Precios de Materiales', 10, 60)
+  doc.text('Términos y Condiciones Generales de Cotización de Precios de Materiales', MARGIN_LEFT, 60)
 
   // Secciones
   doc.setFontSize(10)
-  let currentY = 70
+  let termsY = 70
 
   const sections = [
     {
@@ -250,29 +411,27 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
 
   sections.forEach(section => {
     doc.setFont('helvetica', 'bold')
-    doc.text(section.title, 10, currentY)
-    currentY += 5
+    doc.setFontSize(10)
+    doc.text(section.title, MARGIN_LEFT, termsY)
+    termsY += 5
 
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(8)
-    const lines = doc.splitTextToSize(section.content, 190)
-    doc.text(lines, 10, currentY)
-    currentY += lines.length * 3.5 + 3
+    const lines = doc.splitTextToSize(section.content, PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT)
+    doc.text(lines, MARGIN_LEFT, termsY)
+    termsY += lines.length * 3.5 + 3
   })
 
-  // Footer
+  // Footer T&C
   doc.setFontSize(8)
   doc.setFont('helvetica', 'normal')
-  doc.text('14 de Julio 175 - C.P: 1427 - C.A.B.A.', 105, 285, { align: 'center' })
-  doc.text('TE:(011) 4551-3343 | 4552-2874', 105, 290, { align: 'center' })
+  doc.text('14 de Julio 175 - C.P: 1427 - C.A.B.A.', PAGE_WIDTH / 2, 285, { align: 'center' })
+  doc.text('TE:(011) 4551-3343 | 4552-2874', PAGE_WIDTH / 2, 290, { align: 'center' })
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // FINAL PASS: page numbers on ALL pages + continuation headers
+  // ═══════════════════════════════════════════════════════════════════════
+  addPageNumbersAndHeaders(doc, data.quoteNumber, continuationPages)
 
   return doc.output('blob')
-}
-
-function formatDate(date: Date): string {
-  return new Intl.DateTimeFormat('es-AR', {
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric'
-  }).format(date)
 }

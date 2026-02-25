@@ -930,8 +930,12 @@ model QuoteItem {
   quoteId               String
   itemNumber            Int                    // 10, 20, 30, 40... (incrementos de 10)
 
-  productId             String
-  description           String?                // Override de descripción
+  productId             String?                // Nullable para items manuales
+  description           String?                // Override o descripción manual
+
+  // Campos para items manuales (sin producto en catálogo)
+  manualSku             String?                // Código libre para item manual
+  manualBrand           String?                // Marca libre para item manual
 
   quantity              Int
 
@@ -955,7 +959,7 @@ model QuoteItem {
   updatedAt             DateTime               @updatedAt
 
   quote                 Quote                  @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  product               Product                @relation(fields: [productId], references: [id])
+  product               Product?               @relation(fields: [productId], references: [id])
   alternativeToItem     QuoteItem?             @relation("ItemAlternatives", fields: [alternativeToItemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   alternatives          QuoteItem[]            @relation("ItemAlternatives")
   additionals           QuoteItemAdditional[]

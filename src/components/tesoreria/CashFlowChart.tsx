@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Loader2 } from 'lucide-react'
+import { formatNumber } from '@/lib/utils'
 import {
   Area,
   AreaChart,

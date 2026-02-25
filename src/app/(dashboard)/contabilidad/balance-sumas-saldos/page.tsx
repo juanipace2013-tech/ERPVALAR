@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { BarChart3, Download, Printer, Calendar } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatNumber } from '@/lib/utils'
 
 interface BalanceItem {
   account: {
@@ -237,16 +238,16 @@ export default function BalanceSumasSaldosPage() {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right font-mono">
-                            ${item.sums.debit.toFixed(2)}
+                            ${formatNumber(item.sums.debit)}
                           </TableCell>
                           <TableCell className="text-right font-mono">
-                            ${item.sums.credit.toFixed(2)}
+                            ${formatNumber(item.sums.credit)}
                           </TableCell>
                           <TableCell className="text-right font-mono font-semibold text-blue-700">
-                            {item.balance.debit > 0 ? `$${item.balance.debit.toFixed(2)}` : '-'}
+                            {item.balance.debit > 0 ? `$${formatNumber(item.balance.debit)}` : '-'}
                           </TableCell>
                           <TableCell className="text-right font-mono font-semibold text-green-700">
-                            {item.balance.credit > 0 ? `$${item.balance.credit.toFixed(2)}` : '-'}
+                            {item.balance.credit > 0 ? `$${formatNumber(item.balance.credit)}` : '-'}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -256,16 +257,16 @@ export default function BalanceSumasSaldosPage() {
                           TOTALES
                         </TableCell>
                         <TableCell className="text-right font-mono text-lg">
-                          ${data.totals.sums.debit.toFixed(2)}
+                          ${formatNumber(data.totals.sums.debit)}
                         </TableCell>
                         <TableCell className="text-right font-mono text-lg">
-                          ${data.totals.sums.credit.toFixed(2)}
+                          ${formatNumber(data.totals.sums.credit)}
                         </TableCell>
                         <TableCell className="text-right font-mono text-lg text-blue-700">
-                          ${data.totals.balance.debit.toFixed(2)}
+                          ${formatNumber(data.totals.balance.debit)}
                         </TableCell>
                         <TableCell className="text-right font-mono text-lg text-green-700">
-                          ${data.totals.balance.credit.toFixed(2)}
+                          ${formatNumber(data.totals.balance.credit)}
                         </TableCell>
                       </TableRow>
                     </TableBody>
@@ -287,7 +288,7 @@ export default function BalanceSumasSaldosPage() {
                         </p>
                       ) : (
                         <p className="text-lg font-bold text-red-700">
-                          ✗ Diferencia: ${Math.abs(data.totals.sums.debit - data.totals.sums.credit).toFixed(2)}
+                          ✗ Diferencia: ${formatNumber(Math.abs(data.totals.sums.debit - data.totals.sums.credit))}
                         </p>
                       )}
                     </CardContent>
@@ -306,7 +307,7 @@ export default function BalanceSumasSaldosPage() {
                         </p>
                       ) : (
                         <p className="text-lg font-bold text-red-700">
-                          ✗ Diferencia: ${Math.abs(data.totals.balance.debit - data.totals.balance.credit).toFixed(2)}
+                          ✗ Diferencia: ${formatNumber(Math.abs(data.totals.balance.debit - data.totals.balance.credit))}
                         </p>
                       )}
                     </CardContent>

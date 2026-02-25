@@ -27,6 +27,7 @@ import {
   LineChart,
   Line
 } from 'recharts'
+import { formatNumber } from '@/lib/utils'
 
 interface DashboardClientProps {
   userName: string
@@ -127,7 +128,7 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
                   ) : (
                     <ArrowDownRight className="h-3 w-3" />
                   )}
-                  {Math.abs(metrics.cotizacionesMes.cambioVsMesAnterior).toFixed(1)}%
+                  {formatNumber(Math.abs(metrics.cotizacionesMes.cambioVsMesAnterior), 1)}%
                 </div>
               )}
             </div>
@@ -144,7 +145,7 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-gray-900">
-              {metrics.tasaConversion.porcentaje.toFixed(1)}%
+              {formatNumber(metrics.tasaConversion.porcentaje, 1)}%
             </div>
             <p className="text-sm text-gray-600 mt-2">
               {metrics.tasaConversion.aceptadas} de {metrics.tasaConversion.resueltas} resueltas
@@ -426,7 +427,7 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
                           borderRadius: '6px',
                           fontSize: '12px'
                         }}
-                        formatter={(value: number) => [`$${value.toFixed(2)}`, 'Tipo de cambio']}
+                        formatter={(value: number) => [`$${formatNumber(value)}`, 'Tipo de cambio']}
                       />
                       <Line
                         type="monotone"

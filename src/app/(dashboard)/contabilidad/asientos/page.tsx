@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/badge'
 import { Plus, Search, FileText, CheckCircle, XCircle, Clock } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
+import { formatNumber } from '@/lib/utils'
 import { useRouter } from 'next/navigation'
 
 interface JournalEntryLine {
@@ -274,10 +275,10 @@ export default function AsientosPage() {
                           {entry.description}
                         </TableCell>
                         <TableCell className="text-right font-mono">
-                          ${getTotalDebit(entry.lines).toFixed(2)}
+                          ${formatNumber(getTotalDebit(entry.lines))}
                         </TableCell>
                         <TableCell className="text-right font-mono">
-                          ${getTotalCredit(entry.lines).toFixed(2)}
+                          ${formatNumber(getTotalCredit(entry.lines))}
                         </TableCell>
                         <TableCell className="text-center">
                           <Badge variant="outline">{entry._count.lines}</Badge>

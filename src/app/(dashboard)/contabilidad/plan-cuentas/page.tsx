@@ -32,6 +32,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { formatNumber } from '@/lib/utils';
 
 interface ChartOfAccount {
   id: string;
@@ -104,10 +105,10 @@ function AccountRow({ account, level = 0, onToggle, onEdit, onDelete, expanded }
           </Badge>
         </td>
         <td className="p-3 text-right font-mono">
-          {account.isDetailAccount ? Number(account.debitBalance).toFixed(2) : '-'}
+          {account.isDetailAccount ? formatNumber(Number(account.debitBalance)) : '-'}
         </td>
         <td className="p-3 text-right font-mono">
-          {account.isDetailAccount ? Number(account.creditBalance).toFixed(2) : '-'}
+          {account.isDetailAccount ? formatNumber(Number(account.creditBalance)) : '-'}
         </td>
         <td className="p-3 text-right">
           <div className="flex items-center justify-end gap-1">

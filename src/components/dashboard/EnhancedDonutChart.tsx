@@ -12,6 +12,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import html2canvas from 'html2canvas'
+import { formatNumber } from '@/lib/utils'
 
 interface ExpenseData {
   category: string
@@ -106,11 +107,11 @@ export function EnhancedDonutChart({
 
   const formatCurrency = (value: number) => {
     if (value >= 1000000) {
-      return `${(value / 1000000).toFixed(2)}M`
+      return `${formatNumber(value / 1000000, 1)}M`
     } else if (value >= 1000) {
-      return `${(value / 1000).toFixed(0)}K`
+      return `${formatNumber(value / 1000, 0)}K`
     }
-    return value.toFixed(0)
+    return formatNumber(value, 0)
   }
 
   const CustomLabel = ({ cx, cy }: { cx: number; cy: number }) => {
@@ -218,7 +219,7 @@ export function EnhancedDonutChart({
                   </span>
                 </div>
                 <span className="font-medium text-gray-900">
-                  {item.percentage.toFixed(2)}%
+                  {formatNumber(item.percentage)}%
                 </span>
               </div>
             )

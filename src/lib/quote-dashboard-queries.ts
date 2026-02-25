@@ -292,6 +292,7 @@ export async function getProductosMasCotizados(): Promise<ProductoMasCotizado[]>
   const productoMap = new Map<string, { sku: string; nombre: string; veces: number; cantidad: number }>()
 
   items.forEach(item => {
+    if (!item.product || !item.productId) return
     const key = item.productId
     const existing = productoMap.get(key) || {
       sku: item.product.sku,

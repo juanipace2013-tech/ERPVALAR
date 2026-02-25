@@ -133,8 +133,8 @@ export async function applyJournalTemplate(
       const difference = Math.abs(totalDebit - totalCredit);
       if (difference > 0.01) {
         throw new Error(
-          `Asiento desbalanceado: Debe ${totalDebit.toFixed(2)} ≠ Haber ${totalCredit.toFixed(2)} ` +
-          `(Diferencia: ${difference.toFixed(2)})`
+          `Asiento desbalanceado: Debe ${totalDebit.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ≠ Haber ${totalCredit.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ` +
+          `(Diferencia: ${difference.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
         );
       }
     }

@@ -252,7 +252,7 @@ export async function processInvoiceCreationWithInventory(
           customerId: invoice.customerId,
           title: `Factura ${invoice.invoiceNumber} creada`,
           description:
-            `Se descontó stock y generó 2 asientos contables: Venta (${saleJournalEntry.entryNumber}) y CMV ${cmvData.totalCMV.toFixed(2)} ${cmvData.currency} (${cmvJournalEntry.entryNumber})`,
+            `Se descontó stock y generó 2 asientos contables: Venta (${saleJournalEntry.entryNumber}) y CMV ${cmvData.totalCMV.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cmvData.currency} (${cmvJournalEntry.entryNumber})`,
           metadata: {
             cmvAmount: cmvData.totalCMV,
             itemsCount: invoice.items.length,

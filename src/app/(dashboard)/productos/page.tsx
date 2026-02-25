@@ -16,6 +16,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Package, Plus, Search, AlertTriangle, CheckCircle2, Loader2, ChevronUp, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatNumber } from '@/lib/utils'
 import { useColppyStock } from '@/hooks/useColppyStock'
 
 interface Product {
@@ -407,7 +408,7 @@ export default function ProductosPage() {
                         </TableCell>
                         <TableCell className="text-right font-mono font-semibold">
                           {product.listPriceUSD
-                            ? `USD ${Number(product.listPriceUSD).toFixed(2)}`
+                            ? `USD ${formatNumber(product.listPriceUSD)}`
                             : '-'}
                         </TableCell>
                         <TableCell>

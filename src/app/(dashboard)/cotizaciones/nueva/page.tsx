@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft, Save, Loader2, DollarSign } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatNumber } from '@/lib/utils'
 import { ColppyCustomerSearch, type ColppyCustomer } from '@/components/ColppyCustomerSearch'
 
 interface Product {
@@ -217,7 +218,7 @@ export default function NuevaCotizacionPage() {
                     <p className={`font-mono font-semibold text-lg ${
                       selectedCustomer.priceMultiplier > 1 ? 'text-amber-600' : 'text-gray-700'
                     }`}>
-                      {Number(selectedCustomer.priceMultiplier).toFixed(2)}x
+                      {formatNumber(selectedCustomer.priceMultiplier)}x
                       {selectedCustomer.priceMultiplier > 1 && (
                         <span className="text-sm ml-2">
                           (+{((selectedCustomer.priceMultiplier - 1) * 100).toFixed(0)}%)

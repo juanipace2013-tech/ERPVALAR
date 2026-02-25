@@ -94,6 +94,7 @@ export default function InventarioPage() {
     return new Intl.NumberFormat('es-AR', {
       style: 'currency',
       currency: 'ARS',
+      currencyDisplay: 'code',
     }).format(amount)
   }
 

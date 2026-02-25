@@ -45,8 +45,8 @@ export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
   const rejectUrl = `${emailConfig.appUrl}/public/quotes/${publicToken}/reject`;
 
   // Formatear datos para el template
-  const currencySymbol = quote.currency === 'USD' ? 'US$' : '$';
-  const formattedTotal = `${currencySymbol}${Number(quote.total).toLocaleString('es-AR', {
+  const currencySymbol = quote.currency === 'USD' ? 'USD' : 'ARS';
+  const formattedTotal = `${currencySymbol} ${Number(quote.total).toLocaleString('es-AR', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   })}`;

@@ -28,6 +28,7 @@ import {
   CreditCard,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatNumber } from '@/lib/utils'
 import {
   Dialog,
   DialogContent,
@@ -885,13 +886,13 @@ export default function PurchaseInvoiceDetailPage() {
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
-                          {Number(item.quantity).toFixed(2)}
+                          {formatNumber(item.quantity)}
                         </TableCell>
                         <TableCell className="text-right">
                           {formatCurrency(item.listPrice)}
                         </TableCell>
                         <TableCell className="text-right">
-                          {Number(item.discountPercent).toFixed(2)}%
+                          {formatNumber(item.discountPercent)}%
                         </TableCell>
                         <TableCell className="text-right">
                           {formatCurrency(item.unitPrice)}
@@ -924,7 +925,7 @@ export default function PurchaseInvoiceDetailPage() {
                     {invoice.generalDiscount > 0 && (
                       <div className="flex justify-between">
                         <span className="text-gray-600">
-                          Descuento General ({Number(invoice.generalDiscount).toFixed(2)}%):
+                          Descuento General ({formatNumber(invoice.generalDiscount)}%):
                         </span>
                         <span className="font-semibold text-red-600">
                           -{formatCurrency(invoice.discountAmount)}
@@ -984,7 +985,7 @@ export default function PurchaseInvoiceDetailPage() {
                       <TableRow key={tax.id}>
                         <TableCell>{tax.taxType}</TableCell>
                         <TableCell className="text-right">
-                          {Number(tax.rate).toFixed(2)}%
+                          {formatNumber(tax.rate)}%
                         </TableCell>
                         <TableCell className="text-right">
                           {formatCurrency(tax.baseAmount)}
@@ -1026,7 +1027,7 @@ export default function PurchaseInvoiceDetailPage() {
                         <TableCell>{perception.perceptionType}</TableCell>
                         <TableCell>{perception.regulation || '-'}</TableCell>
                         <TableCell className="text-right">
-                          {Number(perception.rate).toFixed(2)}%
+                          {formatNumber(perception.rate)}%
                         </TableCell>
                         <TableCell className="text-right">
                           {formatCurrency(perception.baseAmount)}

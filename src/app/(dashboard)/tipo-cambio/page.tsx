@@ -40,6 +40,7 @@ import {
   TrendingDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatNumber } from '@/lib/utils'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 interface ExchangeRate {
@@ -122,7 +123,7 @@ export default function TipoCambioPage() {
 
       const data = await response.json()
       toast.success(
-        `Tipo de cambio actualizado: $${data.bcraData.rate.toFixed(2)} (${new Date(
+        `Tipo de cambio actualizado: $${formatNumber(data.bcraData.rate)} (${new Date(
           data.bcraData.date
         ).toLocaleDateString('es-AR')})`
       )
@@ -376,7 +377,7 @@ export default function TipoCambioPage() {
                     Tipo de Cambio USD Actual
                   </p>
                   <p className="text-3xl font-bold text-blue-900">
-                    ${Number(currentUSDRate.rate).toFixed(2)}
+                    ${formatNumber(currentUSDRate.rate)}
                   </p>
                   <div className="flex items-center gap-2 mt-1">
                     <Badge className={sourceColors[currentUSDRate.source]}>
@@ -429,7 +430,7 @@ export default function TipoCambioPage() {
                     borderRadius: '8px',
                     padding: '8px'
                   }}
-                  formatter={(value?: number) => [`$${(value ?? 0).toFixed(2)}`, 'Tipo de Cambio']}
+                  formatter={(value?: number) => [`$${formatNumber(value ?? 0)}`, 'Tipo de Cambio']}
                 />
                 <Line
                   type="monotone"
@@ -507,7 +508,7 @@ export default function TipoCambioPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <span className="font-mono text-lg font-semibold">
-                            ${Number(rate.rate).toFixed(2)}
+                            ${formatNumber(rate.rate)}
                           </span>
                         </TableCell>
                         <TableCell>
@@ -526,7 +527,7 @@ export default function TipoCambioPage() {
                                 <TrendingDown className="h-4 w-4" />
                               ) : null}
                               <span className="font-semibold">
-                                {variation > 0 ? '+' : ''}{variation.toFixed(2)}%
+                                {variation > 0 ? '+' : ''}{formatNumber(variation)}%
                               </span>
                             </div>
                           ) : (

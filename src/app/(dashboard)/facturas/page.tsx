@@ -106,10 +106,11 @@ export default function FacturasPage() {
   }
 
   const formatCurrency = (amount: number, currency: string) => {
-    return new Intl.NumberFormat('es-AR', {
-      style: 'currency',
-      currency: currency || 'ARS',
-    }).format(amount)
+    const symbol = (currency || 'ARS') === 'USD' ? 'USD' : 'ARS'
+    return `${symbol} ${amount.toLocaleString('es-AR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`
   }
 
   const totalAmount = invoices

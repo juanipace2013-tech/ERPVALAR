@@ -3,7 +3,7 @@ import { QuoteStatus, DeliveryNoteStatus } from '@prisma/client';
 
 // Transiciones permitidas de estado para cotizaciones
 const ALLOWED_TRANSITIONS: Record<QuoteStatus, QuoteStatus[]> = {
-  DRAFT: ['SENT', 'CANCELLED'],
+  DRAFT: ['SENT', 'ACCEPTED', 'REJECTED', 'CANCELLED'],
   SENT: ['ACCEPTED', 'REJECTED', 'EXPIRED', 'CANCELLED'],
   ACCEPTED: ['CONVERTED', 'CANCELLED'],
   REJECTED: [],
@@ -160,7 +160,7 @@ export async function generateDeliveryNoteFromQuote(
             .filter(item => !item.isAlternative) // Solo items principales
             .map(item => ({
               productId: item.productId,
-              description: item.description || item.product.name,
+              description: item.description || item.product?.name,
               quantity: item.quantity
             }))
         }
@@ -445,7 +445,7 @@ export async function generateInvoiceFromQuote(
 
               return {
                 productId: item.productId,
-                description: item.description || item.product.name,
+                description: item.description || item.product?.name,
                 quantity: item.quantity,
                 unitPrice: Number(item.unitPrice),
                 discount: 0,

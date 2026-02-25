@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { Calendar, FileText, Download, Printer } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatNumber } from '@/lib/utils'
 
 interface JournalEntryLine {
   id: string
@@ -281,10 +282,10 @@ export default function LibroDiarioPage() {
                               {line.description || '-'}
                             </TableCell>
                             <TableCell className="text-right font-mono">
-                              {line.debit > 0 ? `$${Number(line.debit).toFixed(2)}` : '-'}
+                              {line.debit > 0 ? `$${formatNumber(Number(line.debit))}` : '-'}
                             </TableCell>
                             <TableCell className="text-right font-mono">
-                              {line.credit > 0 ? `$${Number(line.credit).toFixed(2)}` : '-'}
+                              {line.credit > 0 ? `$${formatNumber(Number(line.credit))}` : '-'}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -294,10 +295,10 @@ export default function LibroDiarioPage() {
                             Totales del Asiento
                           </TableCell>
                           <TableCell className="text-right font-mono">
-                            ${getTotalDebit(entry.lines).toFixed(2)}
+                            ${formatNumber(getTotalDebit(entry.lines))}
                           </TableCell>
                           <TableCell className="text-right font-mono">
-                            ${getTotalCredit(entry.lines).toFixed(2)}
+                            ${formatNumber(getTotalCredit(entry.lines))}
                           </TableCell>
                         </TableRow>
                       </TableBody>
@@ -319,13 +320,13 @@ export default function LibroDiarioPage() {
                     <div>
                       <Label className="text-sm text-gray-600">Total Debe</Label>
                       <p className="text-2xl font-bold text-blue-700">
-                        ${getGrandTotalDebit().toFixed(2)}
+                        ${formatNumber(getGrandTotalDebit())}
                       </p>
                     </div>
                     <div>
                       <Label className="text-sm text-gray-600">Total Haber</Label>
                       <p className="text-2xl font-bold text-blue-700">
-                        ${getGrandTotalCredit().toFixed(2)}
+                        ${formatNumber(getGrandTotalCredit())}
                       </p>
                     </div>
                   </div>
@@ -335,7 +336,7 @@ export default function LibroDiarioPage() {
                     </p>
                   ) : (
                     <p className="text-sm text-red-600 mt-4 text-center">
-                      ✗ Diferencia: ${Math.abs(getGrandTotalDebit() - getGrandTotalCredit()).toFixed(2)}
+                      ✗ Diferencia: ${formatNumber(Math.abs(getGrandTotalDebit() - getGrandTotalCredit()))}
                     </p>
                   )}
                 </CardContent>

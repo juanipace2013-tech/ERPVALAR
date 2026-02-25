@@ -168,6 +168,7 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
     return new Intl.NumberFormat('es-AR', {
       style: 'currency',
       currency: 'ARS',
+      currencyDisplay: 'code',
       minimumFractionDigits: 2,
     }).format(amount)
   }

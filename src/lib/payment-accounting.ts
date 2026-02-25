@@ -36,7 +36,7 @@ export async function registerPurchasePayment(data: {
 
   if (Number(amount) > Number(invoice.balance)) {
     throw new Error(
-      `El monto excede el saldo pendiente de $${Number(invoice.balance).toFixed(2)}`
+      `El monto excede el saldo pendiente de $${Number(invoice.balance).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     );
   }
 

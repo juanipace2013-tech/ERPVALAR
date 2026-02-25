@@ -13,6 +13,7 @@ import {
   ComposedChart
 } from 'recharts'
 import { Info } from 'lucide-react'
+import { formatNumber } from '@/lib/utils'
 import {
   Tooltip as UITooltip,
   TooltipContent,
@@ -46,11 +47,11 @@ export function BarChartWithLine({
 }: BarChartWithLineProps) {
   const formatCurrency = (value: number) => {
     if (value >= 1000000) {
-      return `$${(value / 1000000).toFixed(1)}M`
+      return `$${formatNumber(value / 1000000, 1)}M`
     } else if (value >= 1000) {
-      return `$${(value / 1000).toFixed(0)}K`
+      return `$${formatNumber(value / 1000, 0)}K`
     }
-    return `$${value.toFixed(0)}`
+    return `$${formatNumber(value, 0)}`
   }
 
   return (

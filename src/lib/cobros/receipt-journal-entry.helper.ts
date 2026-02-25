@@ -102,7 +102,7 @@ export async function createReceiptJournalEntry(
   const totalCredit = lines.reduce((s, l) => s + l.credit, 0)
   if (Math.abs(totalDebit - totalCredit) > 0.02) {
     throw new Error(
-      `Asiento desbalanceado: Debe=${totalDebit.toFixed(2)}, Haber=${totalCredit.toFixed(2)}`
+      `Asiento desbalanceado: Debe=${totalDebit.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}, Haber=${totalCredit.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     )
   }
 

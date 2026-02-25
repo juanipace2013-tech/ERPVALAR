@@ -35,6 +35,7 @@ import {
   Search,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatNumber } from '@/lib/utils'
 import { useColppyStock, refreshInventoryCache } from '@/hooks/useColppyStock'
 import { StockBadge, StockWarning } from '@/components/StockBadge'
 
@@ -62,8 +63,10 @@ interface Additional {
 interface QuoteItem {
   id: string
   itemNumber: number
-  productId: string
-  product: Product
+  productId: string | null
+  product: Product | null
+  manualSku: string | null
+  manualBrand: string | null
   description: string | null
   quantity: number
   listPrice: number
@@ -117,6 +120,11 @@ interface ItemFormData {
     productId: string
     listPrice: number
   }>
+  // Manual item fields
+  isManual: boolean
+  manualSku: string
+  manualBrand: string
+  manualUnitPrice: string
 }
 
 export default function QuoteDetailPage() {
@@ -140,6 +148,10 @@ export default function QuoteDetailPage() {
     isAlternative: false,
     alternativeToItemId: null,
     additionals: [],
+    isManual: false,
+    manualSku: '',
+    manualBrand: '',
+    manualUnitPrice: '',
   })
   const [itemFormLoading, setItemFormLoading] = useState(false)
 
@@ -148,6 +160,12 @@ export default function QuoteDetailPage() {
   const [multiplierLoading, setMultiplierLoading] = useState(false)
   const [showCustomMultiplier, setShowCustomMultiplier] = useState(false)
   const [saveToCustomer, setSaveToCustomer] = useState(false)
+
+  // Exchange rate
+  const [exchangeRateValue, setExchangeRateValue] = useState('')
+  const [exchangeRateLoading, setExchangeRateLoading] = useState(false)
+  const [showEditExchangeRate, setShowEditExchangeRate] = useState(false)
+  const [currentTCLoading, setCurrentTCLoading] = useState(false)
 
   // Product search
   const [productSearch, setProductSearch] = useState('')
@@ -165,7 +183,7 @@ export default function QuoteDetailPage() {
   )
 
   // Stock data para items de la cotización
-  const quoteItemSkus = quote?.items?.map((item) => item.product.sku) || []
+  const quoteItemSkus = quote?.items?.filter((item) => item.product).map((item) => item.product!.sku) || []
   const { stockData: quoteStockData, loading: quoteStockLoading } = useColppyStock(
     quoteItemSkus,
     quoteItemSkus.length > 0
@@ -216,6 +234,7 @@ export default function QuoteDetailPage() {
       const data = await response.json()
       setQuote(data)
       setMultiplierValue(Number(data.multiplier).toFixed(2))
+      setExchangeRateValue(Number(data.exchangeRate).toFixed(2))
     } catch (error) {
       console.error('Error:', error)
       toast.error('Error al cargar la cotización')
@@ -282,7 +301,7 @@ export default function QuoteDetailPage() {
 
       setMultiplierValue(numValue.toFixed(2))
       setShowCustomMultiplier(false)
-      toast.success(`Multiplicador actualizado a ${numValue.toFixed(2)}x`)
+      toast.success(`Multiplicador actualizado a ${formatNumber(numValue)}x`)
       if (saveToCustomer) {
         toast.success('Multiplicador guardado en el cliente para futuras cotizaciones')
       }
@@ -292,6 +311,53 @@ export default function QuoteDetailPage() {
       toast.error('Error al actualizar multiplicador')
     } finally {
       setMultiplierLoading(false)
+    }
+  }
+
+  const handleExchangeRateChange = async (newValue: string) => {
+    const numValue = parseFloat(newValue)
+    if (isNaN(numValue) || numValue <= 0) {
+      toast.error('El tipo de cambio debe ser mayor a 0')
+      return
+    }
+    try {
+      setExchangeRateLoading(true)
+      const response = await fetch(`/api/quotes/${quoteId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ exchangeRate: numValue }),
+      })
+      if (!response.ok) throw new Error()
+      setExchangeRateValue(numValue.toFixed(2))
+      setShowEditExchangeRate(false)
+      toast.success(`Tipo de cambio actualizado a ARS ${formatNumber(numValue)}`)
+      await fetchQuoteData()
+    } catch {
+      toast.error('Error al actualizar tipo de cambio')
+    } finally {
+      setExchangeRateLoading(false)
+    }
+  }
+
+  const handleFetchCurrentTC = async () => {
+    try {
+      setCurrentTCLoading(true)
+      const response = await fetch('/api/tipo-cambio')
+      if (!response.ok) throw new Error()
+      const data = await response.json()
+      const usdArs = (data.rates || []).find(
+        (r: { fromCurrency: string; toCurrency: string; rate: number }) =>
+          r.fromCurrency === 'USD' && r.toCurrency === 'ARS'
+      )
+      if (usdArs) {
+        setExchangeRateValue(Number(usdArs.rate).toFixed(2))
+      } else {
+        toast.error('No se encontró TC USD/ARS vigente')
+      }
+    } catch {
+      toast.error('Error al obtener tipo de cambio actual')
+    } finally {
+      setCurrentTCLoading(false)
     }
   }
 
@@ -365,26 +431,33 @@ export default function QuoteDetailPage() {
   }
 
   const handleAddItem = async () => {
-    if (!itemFormData.productId || !selectedProduct) {
-      toast.error('Debe seleccionar un producto')
-      return
-    }
-
     try {
       setItemFormLoading(true)
 
-      const payload = {
-        productId: itemFormData.productId,
-        quantity: itemFormData.quantity,
-        description: itemFormData.description || selectedProduct.name,
-        deliveryTime: itemFormData.deliveryTime,
-        isAlternative: itemFormData.isAlternative,
-        alternativeToItemId: itemFormData.alternativeToItemId,
-        additionals: itemFormData.additionals.map((add) => ({
-          productId: add.productId,
-          listPrice: add.listPrice,
-        })),
-      }
+      const payload = itemFormData.isManual
+        ? {
+            productId: null,
+            manualSku: itemFormData.manualSku || null,
+            manualBrand: itemFormData.manualBrand || null,
+            description: itemFormData.description,
+            manualUnitPrice: parseFloat(itemFormData.manualUnitPrice),
+            quantity: itemFormData.quantity,
+            deliveryTime: itemFormData.deliveryTime || 'A confirmar',
+            isAlternative: itemFormData.isAlternative,
+            alternativeToItemId: itemFormData.alternativeToItemId,
+          }
+        : {
+            productId: itemFormData.productId,
+            quantity: itemFormData.quantity,
+            description: itemFormData.description || selectedProduct?.name,
+            deliveryTime: itemFormData.deliveryTime,
+            isAlternative: itemFormData.isAlternative,
+            alternativeToItemId: itemFormData.alternativeToItemId,
+            additionals: itemFormData.additionals.map((add) => ({
+              productId: add.productId,
+              listPrice: add.listPrice,
+            })),
+          }
 
       const response = await fetch(`/api/quotes/${quoteId}/items`, {
         method: 'POST',
@@ -431,34 +504,46 @@ export default function QuoteDetailPage() {
 
   const handleOpenEditDialog = (item: QuoteItem) => {
     setEditingItemId(item.id)
-    setSelectedProduct(item.product) // Cargar el producto del item
+    const isManual = !item.productId
+    setSelectedProduct(item.product)
     setItemFormData({
-      productId: item.productId,
+      productId: item.productId || '',
       quantity: item.quantity,
       description: item.description || '',
-      deliveryTime: item.deliveryTime || 'Inmediato',
+      deliveryTime: item.deliveryTime || (isManual ? 'A confirmar' : 'Inmediato'),
       isAlternative: item.isAlternative,
       alternativeToItemId: item.alternativeToItemId,
       additionals: item.additionals.map(add => ({
         productId: add.productId,
         listPrice: Number(add.listPrice),
       })),
+      isManual,
+      manualSku: item.manualSku || '',
+      manualBrand: item.manualBrand || '',
+      manualUnitPrice: isManual ? String(Number(item.unitPrice).toFixed(2)) : '',
     })
     setShowItemDialog(true)
   }
 
   const handleSaveItem = async () => {
-    if (!itemFormData.productId) {
+    if (itemFormData.isManual) {
+      if (!itemFormData.description.trim()) {
+        toast.error('La descripción es obligatoria para items manuales')
+        return
+      }
+      const price = parseFloat(itemFormData.manualUnitPrice)
+      if (isNaN(price) || price <= 0) {
+        toast.error('El precio unitario debe ser mayor a 0')
+        return
+      }
+    } else if (!itemFormData.productId) {
       toast.error('Debe seleccionar un producto')
       return
     }
 
-    // Si estamos editando, llamar a handleEditItem
     if (editingItemId) {
       return handleEditItem()
     }
-
-    // Si no, es agregar nuevo item
     return handleAddItem()
   }
 
@@ -468,20 +553,26 @@ export default function QuoteDetailPage() {
     try {
       setItemFormLoading(true)
 
-      if (!selectedProduct) {
-        throw new Error('Producto no encontrado')
-      }
-
-      const payload = {
-        productId: itemFormData.productId,
-        quantity: itemFormData.quantity,
-        description: itemFormData.description || selectedProduct.name,
-        deliveryTime: itemFormData.deliveryTime,
-        additionals: itemFormData.additionals.map((add) => ({
-          productId: add.productId,
-          listPrice: add.listPrice,
-        })),
-      }
+      const payload = itemFormData.isManual
+        ? {
+            isManual: true,
+            manualSku: itemFormData.manualSku || null,
+            manualBrand: itemFormData.manualBrand || null,
+            description: itemFormData.description,
+            manualUnitPrice: parseFloat(itemFormData.manualUnitPrice),
+            quantity: itemFormData.quantity,
+            deliveryTime: itemFormData.deliveryTime,
+          }
+        : {
+            productId: itemFormData.productId,
+            quantity: itemFormData.quantity,
+            description: itemFormData.description || selectedProduct?.name,
+            deliveryTime: itemFormData.deliveryTime,
+            additionals: itemFormData.additionals.map((add) => ({
+              productId: add.productId,
+              listPrice: add.listPrice,
+            })),
+          }
 
       const response = await fetch(`/api/quotes/items/${editingItemId}`, {
         method: 'PATCH',
@@ -553,6 +644,10 @@ export default function QuoteDetailPage() {
       isAlternative: false,
       alternativeToItemId: null,
       additionals: [],
+      isManual: false,
+      manualSku: '',
+      manualBrand: '',
+      manualUnitPrice: '',
     })
     setProductSearch('')
   }
@@ -688,9 +783,69 @@ export default function QuoteDetailPage() {
             </div>
             <div>
               <Label className="text-muted-foreground">Tipo de Cambio</Label>
-              <p className="font-medium font-mono">
-                USD 1 = ARS {Number(quote.exchangeRate).toFixed(2)}
-              </p>
+              {showEditExchangeRate ? (
+                <div className="space-y-2 mt-1">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="1"
+                      value={exchangeRateValue}
+                      onChange={(e) => setExchangeRateValue(e.target.value)}
+                      className="w-28 font-mono h-8 text-sm"
+                      disabled={exchangeRateLoading || currentTCLoading}
+                      placeholder="Ej: 1390.00"
+                    />
+                    <Button
+                      size="sm"
+                      className="h-8 bg-blue-600 hover:bg-blue-700"
+                      onClick={() => handleExchangeRateChange(exchangeRateValue)}
+                      disabled={exchangeRateLoading || currentTCLoading}
+                    >
+                      {exchangeRateLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8"
+                      onClick={() => {
+                        setShowEditExchangeRate(false)
+                        setExchangeRateValue(Number(quote.exchangeRate).toFixed(2))
+                      }}
+                      disabled={exchangeRateLoading}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    onClick={handleFetchCurrentTC}
+                    disabled={exchangeRateLoading || currentTCLoading}
+                  >
+                    {currentTCLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                    Usar TC actual
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <p className="font-medium font-mono">
+                    USD 1 = ARS {formatNumber(quote.exchangeRate)}
+                  </p>
+                  {quote.status === 'DRAFT' && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0"
+                      onClick={() => setShowEditExchangeRate(true)}
+                      title="Cambiar tipo de cambio"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
             <div>
               <Label className="text-muted-foreground">Multiplicador</Label>
@@ -746,7 +901,7 @@ export default function QuoteDetailPage() {
               ) : (
                 <div className="flex items-center gap-2">
                   <p className={`font-medium font-mono ${Number(quote.multiplier) > 1 ? 'text-amber-600' : ''}`}>
-                    {Number(quote.multiplier).toFixed(2)}x
+                    {formatNumber(quote.multiplier)}x
                   </p>
                   {quote.status === 'DRAFT' && (
                     <Button
@@ -783,7 +938,7 @@ export default function QuoteDetailPage() {
                     }}
                     disabled={quote.status !== 'DRAFT' || multiplierLoading}
                   >
-                    {val.toFixed(2)}x
+                    {formatNumber(val)}x
                   </button>
                 ))}
               </div>
@@ -825,14 +980,138 @@ export default function QuoteDetailPage() {
                         : 'Agregar Item'}
                   </DialogTitle>
                   <DialogDescription>
-                    {editingItemId
-                      ? 'Modifique los datos del item. El precio se recalculará automáticamente.'
-                      : 'Complete los datos del item. El precio se calcula automáticamente.'}
+                    {itemFormData.isManual
+                      ? 'Item sin producto en catálogo. El precio ingresado es el precio final (sin multiplicador).'
+                      : editingItemId
+                        ? 'Modifique los datos del item. El precio se recalculará automáticamente.'
+                        : 'Complete los datos del item. El precio se calcula automáticamente.'}
                   </DialogDescription>
                 </DialogHeader>
 
                 <div className="space-y-6">
-                  {/* Product Search */}
+                  {/* Mode toggle */}
+                  {!itemFormData.isAlternative && (
+                    <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+                      <button
+                        type="button"
+                        className={`flex-1 py-2 text-sm font-medium transition-colors ${
+                          !itemFormData.isManual
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white text-gray-600 hover:bg-gray-50'
+                        }`}
+                        onClick={() => setItemFormData({ ...itemFormData, isManual: false })}
+                      >
+                        Buscar en Catálogo
+                      </button>
+                      <button
+                        type="button"
+                        className={`flex-1 py-2 text-sm font-medium transition-colors ${
+                          itemFormData.isManual
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-white text-gray-600 hover:bg-gray-50'
+                        }`}
+                        onClick={() => setItemFormData({ ...itemFormData, isManual: true, productId: '' })}
+                      >
+                        Item Manual
+                      </button>
+                    </div>
+                  )}
+
+                  {/* ── MANUAL ITEM FORM ── */}
+                  {itemFormData.isManual && (
+                    <div className="space-y-4 p-4 border border-purple-200 rounded-lg bg-purple-50">
+                      <p className="text-xs text-purple-700 font-medium">
+                        Fabricación especial o artículo no listado.
+                        {Number(quote.multiplier) > 1 && (
+                          <span className="ml-1 text-amber-700">
+                            Se aplica el multiplicador del cliente ({formatNumber(quote.multiplier)}x).
+                          </span>
+                        )}
+                      </p>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-1">
+                          <Label>Descripción <span className="text-red-500">*</span></Label>
+                          <Input
+                            value={itemFormData.description}
+                            onChange={(e) => setItemFormData({ ...itemFormData, description: e.target.value })}
+                            placeholder="Ej: Válvula especial DN200 PN40..."
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Precio Unitario USD <span className="text-red-500">*</span></Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={itemFormData.manualUnitPrice}
+                            onChange={(e) => setItemFormData({ ...itemFormData, manualUnitPrice: e.target.value })}
+                            placeholder="0.00"
+                            className="font-mono"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>SKU / Código (opcional)</Label>
+                          <Input
+                            value={itemFormData.manualSku}
+                            onChange={(e) => setItemFormData({ ...itemFormData, manualSku: e.target.value })}
+                            placeholder="Ej: FAB-001"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Marca (opcional)</Label>
+                          <Input
+                            value={itemFormData.manualBrand}
+                            onChange={(e) => setItemFormData({ ...itemFormData, manualBrand: e.target.value })}
+                            placeholder="Ej: GENEBRE"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Cantidad</Label>
+                          <Input
+                            type="number"
+                            min="1"
+                            value={itemFormData.quantity}
+                            onChange={(e) => setItemFormData({ ...itemFormData, quantity: parseInt(e.target.value) || 1 })}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Plazo de Entrega</Label>
+                          <Input
+                            value={itemFormData.deliveryTime}
+                            onChange={(e) => setItemFormData({ ...itemFormData, deliveryTime: e.target.value })}
+                            placeholder="Ej: A confirmar, 30 días..."
+                          />
+                        </div>
+                      </div>
+                      {itemFormData.manualUnitPrice && parseFloat(itemFormData.manualUnitPrice) > 0 && (() => {
+                        const listP = parseFloat(itemFormData.manualUnitPrice)
+                        const mult = Number(quote.multiplier) || 1
+                        const unitP = listP * mult
+                        const totalP = unitP * itemFormData.quantity
+                        return (
+                          <div className="space-y-1 border-t border-purple-200 pt-2 text-sm">
+                            <div className="flex justify-between text-muted-foreground">
+                              <span>Precio Lista:</span>
+                              <span className="font-mono">USD {formatNumber(listP)}</span>
+                            </div>
+                            {mult > 1 && (
+                              <div className="flex justify-between text-amber-700">
+                                <span>× Multiplicador ({formatNumber(mult)}x):</span>
+                                <span className="font-mono">USD {formatNumber(unitP)}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between font-semibold text-purple-800 border-t border-purple-200 pt-1">
+                              <span>Total ({itemFormData.quantity} ud):</span>
+                              <span className="font-mono">USD {formatNumber(totalP)}</span>
+                            </div>
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  )}
+
+                  {/* ── CATALOG SEARCH ── */}
+                  {!itemFormData.isManual && (<>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label>Buscar Producto</Label>
@@ -909,7 +1188,7 @@ export default function QuoteDetailPage() {
                             </div>
                             <div className="text-right">
                               <p className="font-mono font-semibold">
-                                USD {product.listPriceUSD ? Number(product.listPriceUSD).toFixed(2) : '0.00'}
+                                USD {product.listPriceUSD ? formatNumber(product.listPriceUSD) : '0,00'}
                               </p>
                             </div>
                           </div>
@@ -926,7 +1205,7 @@ export default function QuoteDetailPage() {
                         {selectedProduct.name}
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        SKU: {selectedProduct.sku} | USD {Number(selectedProduct.listPriceUSD || 0).toFixed(2)}
+                        SKU: {selectedProduct.sku} | USD {formatNumber(selectedProduct.listPriceUSD || 0)}
                       </p>
                     </div>
                   )}
@@ -1007,7 +1286,7 @@ export default function QuoteDetailPage() {
                             {products.map((product) => (
                               <SelectItem key={product.id} value={product.id}>
                                 {product.name} - USD{' '}
-                                {product.listPriceUSD ? Number(product.listPriceUSD).toFixed(2) : '0.00'}
+                                {product.listPriceUSD ? formatNumber(product.listPriceUSD) : '0,00'}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -1037,21 +1316,21 @@ export default function QuoteDetailPage() {
                         <div className="flex justify-between text-sm">
                           <span>Precio Lista:</span>
                           <span className="font-mono">
-                            USD {pricePreview.listPrice.toFixed(2)}
+                            USD {formatNumber(pricePreview.listPrice)}
                           </span>
                         </div>
                         {pricePreview.additionalsTotal > 0 && (
                           <div className="flex justify-between text-sm">
                             <span>+ Adicionales:</span>
                             <span className="font-mono">
-                              USD {pricePreview.additionalsTotal.toFixed(2)}
+                              USD {formatNumber(pricePreview.additionalsTotal)}
                             </span>
                           </div>
                         )}
                         <div className="flex justify-between text-sm font-medium">
                           <span>Subtotal:</span>
                           <span className="font-mono">
-                            USD {pricePreview.subtotalWithAdditionals.toFixed(2)}
+                            USD {formatNumber(pricePreview.subtotalWithAdditionals)}
                           </span>
                         </div>
                         {pricePreview.brandDiscount > 0 && (
@@ -1059,17 +1338,17 @@ export default function QuoteDetailPage() {
                             <span>- Descuento Marca ({pricePreview.brandDiscount}%):</span>
                             <span className="font-mono">
                               USD{' '}
-                              {(
+                              {formatNumber(
                                 pricePreview.subtotalWithAdditionals -
                                 pricePreview.afterDiscount
-                              ).toFixed(2)}
+                              )}
                             </span>
                           </div>
                         )}
                         <div className="flex justify-between text-sm">
-                          <span>× Multiplicador ({Number(quote.multiplier).toFixed(2)}x):</span>
+                          <span>× Multiplicador ({formatNumber(quote.multiplier)}x):</span>
                           <span className="font-mono">
-                            USD {pricePreview.unitPrice.toFixed(2)}
+                            USD {formatNumber(pricePreview.unitPrice)}
                           </span>
                         </div>
                         <div className="border-t-2 border-blue-300 pt-2 mt-2">
@@ -1077,12 +1356,12 @@ export default function QuoteDetailPage() {
                             <span>Precio Total ({itemFormData.quantity} ud):</span>
                             <div className="text-right">
                               <div className="font-mono">
-                                USD {pricePreview.totalPrice.toFixed(2)}
+                                USD {formatNumber(pricePreview.totalPrice)}
                               </div>
                               <div className="text-sm font-normal text-muted-foreground">
                                 ARS{' '}
-                                {(pricePreview.totalPrice * Number(quote.exchangeRate)).toFixed(
-                                  2
+                                {formatNumber(
+                                  pricePreview.totalPrice * Number(quote.exchangeRate)
                                 )}
                               </div>
                             </div>
@@ -1091,6 +1370,7 @@ export default function QuoteDetailPage() {
                       </CardContent>
                     </Card>
                   )}
+                  </>)}
 
                   {/* Actions */}
                   <div className="flex justify-end gap-2">
@@ -1107,8 +1387,8 @@ export default function QuoteDetailPage() {
                     </Button>
                     <Button
                       onClick={handleSaveItem}
-                      disabled={!itemFormData.productId || itemFormLoading}
-                      className="bg-blue-600 hover:bg-blue-700"
+                      disabled={itemFormLoading || (!itemFormData.isManual && !itemFormData.productId)}
+                      className={itemFormData.isManual ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'}
                     >
                       {itemFormLoading ? (
                         <>
@@ -1165,28 +1445,37 @@ export default function QuoteDetailPage() {
                               </span>
                               <div>
                                 <p className="font-semibold text-lg">
-                                  {mainItem.product.name}
+                                  {mainItem.product?.name || mainItem.description || 'Item manual'}
                                 </p>
                                 <p className="text-sm text-muted-foreground">
-                                  SKU: {mainItem.product.sku}
-                                  {mainItem.product.brand &&
-                                    ` | Marca: ${mainItem.product.brand}`}
+                                  {mainItem.product
+                                    ? `SKU: ${mainItem.product.sku}${mainItem.product.brand ? ` | Marca: ${mainItem.product.brand}` : ''}`
+                                    : `${mainItem.manualSku ? `Código: ${mainItem.manualSku}` : ''}${mainItem.manualBrand ? ` | Marca: ${mainItem.manualBrand}` : ''}`
+                                  }
                                 </p>
-                                <div className="mt-1">
-                                  <StockBadge
-                                    sku={mainItem.product.sku}
-                                    stock={quoteStockData[mainItem.product.sku]?.stock}
-                                    found={quoteStockData[mainItem.product.sku]?.found}
-                                    loading={quoteStockLoading}
-                                    showQuantity={true}
-                                    size="sm"
-                                  />
-                                </div>
+                                {!mainItem.product && (
+                                  <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-medium">
+                                    Item Manual
+                                  </span>
+                                )}
+                                {mainItem.product && (
+                                  <div className="mt-1">
+                                    <StockBadge
+                                      sku={mainItem.product.sku}
+                                      stock={quoteStockData[mainItem.product.sku]?.stock}
+                                      found={quoteStockData[mainItem.product.sku]?.found}
+                                      loading={quoteStockLoading}
+                                      showQuantity={true}
+                                      size="sm"
+                                    />
+                                  </div>
+                                )}
                               </div>
                             </div>
 
                             {mainItem.description &&
-                              mainItem.description !== mainItem.product.name && (
+                              (!mainItem.product || mainItem.description !== mainItem.product.name) &&
+                              !!mainItem.product && (
                                 <p className="text-sm text-muted-foreground mb-2">
                                   {mainItem.description}
                                 </p>
@@ -1201,14 +1490,14 @@ export default function QuoteDetailPage() {
                                 {mainItem.additionals.map((add, idx) => (
                                   <p key={idx} className="text-sm text-muted-foreground">
                                     + {add.product?.name} (USD{' '}
-                                    {Number(add.listPrice).toFixed(2)})
+                                    {formatNumber(add.listPrice)})
                                   </p>
                                 ))}
                               </div>
                             )}
 
                             {/* Stock Warning */}
-                            {quoteStockData[mainItem.product.sku]?.found &&
+                            {mainItem.product && quoteStockData[mainItem.product.sku]?.found &&
                               quoteStockData[mainItem.product.sku]?.stock !== undefined &&
                               mainItem.quantity > quoteStockData[mainItem.product.sku].stock && (
                                 <div className="mt-2 ml-12">
@@ -1226,7 +1515,7 @@ export default function QuoteDetailPage() {
                                   Cantidad:
                                 </span>
                                 <span className="ml-2 font-medium">
-                                  {mainItem.quantity} {mainItem.product.unit}
+                                  {mainItem.quantity} {mainItem.product?.unit || 'UN'}
                                 </span>
                               </div>
                               <div>
@@ -1234,7 +1523,7 @@ export default function QuoteDetailPage() {
                                   Precio Lista:
                                 </span>
                                 <span className="ml-2 font-mono">
-                                  USD {Number(mainItem.listPrice).toFixed(2)}
+                                  USD {formatNumber(mainItem.listPrice)}
                                 </span>
                               </div>
                               {mainItem.brandDiscount > 0 && (
@@ -1252,7 +1541,7 @@ export default function QuoteDetailPage() {
                                   Multiplicador:
                                 </span>
                                 <span className="ml-2 font-medium">
-                                  {Number(mainItem.customerMultiplier).toFixed(2)}x
+                                  {formatNumber(mainItem.customerMultiplier)}x
                                 </span>
                               </div>
                               <div>
@@ -1272,7 +1561,7 @@ export default function QuoteDetailPage() {
                                 Precio Unitario
                               </p>
                               <p className="text-lg font-mono font-semibold text-blue-900">
-                                USD {Number(mainItem.unitPrice).toFixed(2)}
+                                USD {formatNumber(mainItem.unitPrice)}
                               </p>
                             </div>
                             <div>
@@ -1280,13 +1569,13 @@ export default function QuoteDetailPage() {
                                 Total
                               </p>
                               <p className="text-xl font-mono font-bold text-blue-900">
-                                USD {Number(mainItem.totalPrice).toFixed(2)}
+                                USD {formatNumber(mainItem.totalPrice)}
                               </p>
                               <p className="text-sm text-muted-foreground">
                                 ARS{' '}
-                                {(
+                                {formatNumber(
                                   Number(mainItem.totalPrice) * Number(quote.exchangeRate)
-                                ).toFixed(2)}
+                                )}
                               </p>
                             </div>
                             <div className="flex gap-1">
@@ -1335,22 +1624,24 @@ export default function QuoteDetailPage() {
                                       {mainItem.itemNumber}
                                       {String.fromCharCode(65 + altIdx)}
                                     </span>
-                                    <p className="font-medium">{alt.product.name}</p>
+                                    <p className="font-medium">{alt.product?.name || alt.description || 'Item manual'}</p>
                                   </div>
                                   <p className="text-xs text-muted-foreground">
-                                    SKU: {alt.product.sku}
+                                    {alt.product ? `SKU: ${alt.product.sku}` : alt.manualSku ? `Código: ${alt.manualSku}` : ''}
                                   </p>
-                                  <div className="mt-1">
-                                    <StockBadge
-                                      sku={alt.product.sku}
-                                      stock={quoteStockData[alt.product.sku]?.stock}
-                                      found={quoteStockData[alt.product.sku]?.found}
-                                      loading={quoteStockLoading}
-                                      showQuantity={true}
-                                      size="sm"
-                                    />
-                                  </div>
-                                  {quoteStockData[alt.product.sku]?.found &&
+                                  {alt.product && (
+                                    <div className="mt-1">
+                                      <StockBadge
+                                        sku={alt.product.sku}
+                                        stock={quoteStockData[alt.product.sku]?.stock}
+                                        found={quoteStockData[alt.product.sku]?.found}
+                                        loading={quoteStockLoading}
+                                        showQuantity={true}
+                                        size="sm"
+                                      />
+                                    </div>
+                                  )}
+                                  {alt.product && quoteStockData[alt.product.sku]?.found &&
                                     quoteStockData[alt.product.sku]?.stock !== undefined &&
                                     alt.quantity > quoteStockData[alt.product.sku].stock && (
                                       <div className="mt-1">
@@ -1363,7 +1654,7 @@ export default function QuoteDetailPage() {
                                 </div>
                                 <div className="text-right">
                                   <p className="font-mono font-semibold">
-                                    USD {Number(alt.totalPrice).toFixed(2)}
+                                    USD {formatNumber(alt.totalPrice)}
                                   </p>
                                   <Button
                                     size="sm"
@@ -1393,15 +1684,15 @@ export default function QuoteDetailPage() {
             <div className="flex justify-between text-lg">
               <span className="text-muted-foreground">Subtotal:</span>
               <span className="font-mono font-semibold">
-                USD {Number(quote.subtotal).toFixed(2)}
+                USD {formatNumber(quote.subtotal)}
               </span>
             </div>
             <div className="flex justify-between text-2xl font-bold text-blue-900 border-t-2 pt-2">
               <span>Total:</span>
               <div className="text-right">
-                <div className="font-mono">USD {Number(quote.total).toFixed(2)}</div>
+                <div className="font-mono">USD {formatNumber(quote.total)}</div>
                 <div className="text-lg font-normal text-muted-foreground">
-                  ARS {totalInARS.toFixed(2)}
+                  ARS {formatNumber(totalInARS)}
                 </div>
               </div>
             </div>

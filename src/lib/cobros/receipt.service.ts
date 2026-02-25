@@ -271,9 +271,9 @@ export async function approveReceipt(receiptId: string, userId: string) {
     const diff = Math.abs(totalApplied - (totalCobrado + totalWithholdings))
     if (diff > 0.02) {
       throw new Error(
-        `El recibo no cuadra: Facturas aplicadas ($${totalApplied.toFixed(2)}) ` +
-        `debe igualar Cobrado ($${totalCobrado.toFixed(2)}) + Retenciones ($${totalWithholdings.toFixed(2)}). ` +
-        `Diferencia: $${diff.toFixed(2)}`
+        `El recibo no cuadra: Facturas aplicadas ($${totalApplied.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) ` +
+        `debe igualar Cobrado ($${totalCobrado.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) + Retenciones ($${totalWithholdings.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}). ` +
+        `Diferencia: $${diff.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
       )
     }
 
@@ -368,8 +368,8 @@ async function validateInvoiceApplications(
     const remaining = Number(invoice.total) - Number(invoice.paidAmount)
     if (app.appliedAmount > remaining + 0.02) {
       throw new Error(
-        `El monto a aplicar ($${app.appliedAmount.toFixed(2)}) supera el saldo ` +
-        `de la factura ${invoice.invoiceNumber} ($${remaining.toFixed(2)})`
+        `El monto a aplicar ($${app.appliedAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) supera el saldo ` +
+        `de la factura ${invoice.invoiceNumber} ($${remaining.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
       )
     }
   }

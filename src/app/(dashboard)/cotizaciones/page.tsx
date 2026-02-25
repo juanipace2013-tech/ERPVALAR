@@ -127,6 +127,22 @@ export default function CotizacionesPage() {
     fetchQuotes()
   }
 
+  const handleDownloadPDF = async (quoteId: string, quoteNumber: string) => {
+    try {
+      const response = await fetch(`/api/cotizaciones/${quoteId}/pdf`)
+      if (!response.ok) throw new Error()
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `Cotizacion-${quoteNumber}.pdf`
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      toast.error('Error al generar PDF')
+    }
+  }
+
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       handleSearch()
@@ -249,32 +265,35 @@ export default function CotizacionesPage() {
               )}
             </div>
           ) : (
-            <div className="rounded-lg border border-blue-100 overflow-hidden">
-              <Table>
+            <div className="rounded-lg border border-blue-100 overflow-hidden overflow-x-auto">
+              <Table className="min-w-[1100px]">
                 <TableHeader>
                   <TableRow className="bg-blue-50 hover:bg-blue-50">
-                    <TableHead className="font-semibold text-blue-900">
+                    <TableHead className="min-w-[130px] font-semibold text-blue-900">
                       Nº Cotización
                     </TableHead>
-                    <TableHead className="font-semibold text-blue-900">
+                    <TableHead className="min-w-[200px] font-semibold text-blue-900">
                       Cliente
                     </TableHead>
-                    <TableHead className="font-semibold text-blue-900">
+                    <TableHead className="min-w-[120px] font-semibold text-blue-900">
                       Fecha
                     </TableHead>
-                    <TableHead className="font-semibold text-blue-900">
+                    <TableHead className="min-w-[120px] font-semibold text-blue-900">
                       Vendedor
                     </TableHead>
-                    <TableHead className="text-right font-semibold text-blue-900">
+                    <TableHead className="min-w-[130px] text-right font-semibold text-blue-900">
                       Total
                     </TableHead>
-                    <TableHead className="font-semibold text-blue-900">
+                    <TableHead className="min-w-[90px] font-semibold text-blue-900">
                       Estado
                     </TableHead>
-                    <TableHead className="font-semibold text-blue-900">
+                    <TableHead className="min-w-[110px] font-semibold text-blue-900">
                       Vigencia
                     </TableHead>
-                    <TableHead className="text-right font-semibold text-blue-900">
+                    <TableHead className="w-[60px] font-semibold text-blue-900">
+                      Ver
+                    </TableHead>
+                    <TableHead className="w-[60px] text-right font-semibold text-blue-900">
                       Acciones
                     </TableHead>
                   </TableRow>
@@ -331,6 +350,21 @@ export default function CotizacionesPage() {
                           <span className="text-sm text-muted-foreground">-</span>
                         )}
                       </TableCell>
+                      <TableCell>
+                        <Link
+                          href={`/cotizaciones/${quote.id}/ver`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-100"
+                            title="Ver detalle"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        </Link>
+                      </TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -345,15 +379,6 @@ export default function CotizacionesPage() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuLabel>Acciones</DropdownMenuLabel>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                router.push(`/cotizaciones/${quote.id}/ver`)
-                              }}
-                            >
-                              <Eye className="mr-2 h-4 w-4" />
-                              Ver detalle
-                            </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={(e) => {
                                 e.stopPropagation()
@@ -376,7 +401,7 @@ export default function CotizacionesPage() {
                             <DropdownMenuItem
                               onClick={(e) => {
                                 e.stopPropagation()
-                                toast.info('Generación de PDF próximamente')
+                                handleDownloadPDF(quote.id, quote.quoteNumber)
                               }}
                             >
                               <FileDown className="mr-2 h-4 w-4" />

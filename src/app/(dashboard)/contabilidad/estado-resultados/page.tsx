@@ -15,6 +15,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { PieChart, Download, Printer, Calendar, TrendingUp, TrendingDown } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatNumber } from '@/lib/utils'
 
 interface ResultadoItem {
   account: {
@@ -204,7 +205,7 @@ export default function EstadoResultadosPage() {
                                 </span>
                               </TableCell>
                               <TableCell className="text-right font-mono text-green-700">
-                                ${item.amount.toFixed(2)}
+                                ${formatNumber(item.amount)}
                               </TableCell>
                             </TableRow>
                           ))}
@@ -213,7 +214,7 @@ export default function EstadoResultadosPage() {
                               Total Ingresos
                             </TableCell>
                             <TableCell className="text-right font-mono text-green-700 text-lg">
-                              ${data.totals.ingresos.toFixed(2)}
+                              ${formatNumber(data.totals.ingresos)}
                             </TableCell>
                           </TableRow>
                         </TableBody>
@@ -255,7 +256,7 @@ export default function EstadoResultadosPage() {
                                 </span>
                               </TableCell>
                               <TableCell className="text-right font-mono text-red-700">
-                                ${item.amount.toFixed(2)}
+                                ${formatNumber(item.amount)}
                               </TableCell>
                             </TableRow>
                           ))}
@@ -264,7 +265,7 @@ export default function EstadoResultadosPage() {
                               Total Egresos
                             </TableCell>
                             <TableCell className="text-right font-mono text-red-700 text-lg">
-                              ${data.totals.egresos.toFixed(2)}
+                              ${formatNumber(data.totals.egresos)}
                             </TableCell>
                           </TableRow>
                         </TableBody>
@@ -292,7 +293,7 @@ export default function EstadoResultadosPage() {
                           <p className={`text-3xl font-bold ${
                             data.totals.resultado >= 0 ? 'text-green-700' : 'text-red-700'
                           }`}>
-                            ${data.totals.resultado.toFixed(2)}
+                            ${formatNumber(data.totals.resultado)}
                           </p>
                         </div>
                       </div>
@@ -302,7 +303,7 @@ export default function EstadoResultadosPage() {
                         </p>
                         <p className="text-sm font-medium text-gray-700 mt-1">
                           {data.totals.ingresos > 0
-                            ? `${((Math.abs(data.totals.resultado) / data.totals.ingresos) * 100).toFixed(1)}% de ingresos`
+                            ? `${formatNumber((Math.abs(data.totals.resultado) / data.totals.ingresos) * 100, 1)}% de ingresos`
                             : '-'}
                         </p>
                       </div>
@@ -317,16 +318,16 @@ export default function EstadoResultadosPage() {
                     <div className="space-y-2 font-mono text-sm">
                       <div className="flex justify-between">
                         <span>Ingresos:</span>
-                        <span className="text-green-700">+ ${data.totals.ingresos.toFixed(2)}</span>
+                        <span className="text-green-700">+ ${formatNumber(data.totals.ingresos)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Egresos:</span>
-                        <span className="text-red-700">- ${data.totals.egresos.toFixed(2)}</span>
+                        <span className="text-red-700">- ${formatNumber(data.totals.egresos)}</span>
                       </div>
                       <div className="border-t pt-2 flex justify-between font-bold text-base">
                         <span>Resultado:</span>
                         <span className={data.totals.resultado >= 0 ? 'text-green-700' : 'text-red-700'}>
-                          ${data.totals.resultado.toFixed(2)}
+                          ${formatNumber(data.totals.resultado)}
                         </span>
                       </div>
                     </div>

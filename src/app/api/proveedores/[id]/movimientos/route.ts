@@ -74,7 +74,7 @@ export async function GET(
         credit: 0,
         balance: 0, // Se calculará después
         items: order.items.map(item => ({
-          product: `${item.product.sku} - ${item.product.name}`,
+          product: `${item.product?.sku} - ${item.product?.name}`,
           quantity: item.quantity,
           unitCost: Number(item.unitCost),
           subtotal: Number(item.subtotal),

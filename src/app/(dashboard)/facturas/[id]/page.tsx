@@ -115,8 +115,8 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   }
 
   const formatCurrency = (amount: number, currency: string = 'ARS') => {
-    const symbol = currency === 'USD' ? 'US$' : '$'
-    return `${symbol}${amount.toLocaleString('es-AR', {
+    const symbol = currency === 'USD' ? 'USD' : 'ARS'
+    return `${symbol} ${amount.toLocaleString('es-AR', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`
@@ -185,13 +185,17 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
 
       {/* Actions */}
       <div className="flex gap-2 mb-6">
-        <Button variant="outline">
-          <Printer className="h-4 w-4 mr-2" />
-          Imprimir
+        <Button variant="outline" asChild>
+          <Link href={`/facturas/${id}/imprimir`}>
+            <Printer className="h-4 w-4 mr-2" />
+            Imprimir
+          </Link>
         </Button>
-        <Button variant="outline">
-          <Download className="h-4 w-4 mr-2" />
-          Descargar PDF
+        <Button variant="outline" asChild>
+          <Link href={`/facturas/${id}/imprimir`}>
+            <Download className="h-4 w-4 mr-2" />
+            Descargar PDF
+          </Link>
         </Button>
         <Button variant="outline">
           <Mail className="h-4 w-4 mr-2" />

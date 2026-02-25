@@ -157,8 +157,8 @@ export async function POST(
         deliveryTime: undefined,
         additionals: [],
       })) || quote.items.map((item) => ({
-        productName: item.product.name,
-        productSku: item.product.sku,
+        productName: item.product?.name || item.description || 'Item manual',
+        productSku: item.product?.sku || item.manualSku || '',
         quantity: item.quantity,
         unitPrice: Number(item.unitPrice),
         iva: 21,

@@ -93,7 +93,7 @@ export function formatBalance(
 ): string {
   const { showNature = true, showSign = false, colored = false } = options;
 
-  let formatted = `$${amount.toFixed(2)}`;
+  let formatted = `$${amount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   if (showNature) {
     formatted += ` (${nature === 'DEUDOR' ? 'D' : 'A'})`;

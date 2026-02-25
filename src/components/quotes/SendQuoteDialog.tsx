@@ -43,8 +43,8 @@ export function SendQuoteDialog({
   const [sending, setSending] = useState(false)
 
   const formatCurrency = (amount: number) => {
-    const symbol = quote.currency === 'USD' ? 'US$' : '$'
-    return `${symbol}${amount.toLocaleString('es-AR', {
+    const symbol = quote.currency === 'USD' ? 'USD' : 'ARS'
+    return `${symbol} ${amount.toLocaleString('es-AR', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`

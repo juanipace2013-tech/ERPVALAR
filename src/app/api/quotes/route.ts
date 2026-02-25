@@ -77,6 +77,72 @@ export async function POST(request: NextRequest) {
 
     console.log('📥 Creando cotización:', body)
 
+    // Si se envió un cliente de Colppy, hacer upsert en la base de datos local
+    let customerId = body.customerId
+
+    if (body.colppyCustomer) {
+      const colppyCustomer = body.colppyCustomer
+
+      // Buscar o crear el cliente por CUIT
+      const existingCustomer = await prisma.customer.findFirst({
+        where: { cuit: colppyCustomer.cuit },
+      })
+
+      if (existingCustomer) {
+        // Actualizar datos del cliente existente
+        const updatedCustomer = await prisma.customer.update({
+          where: { id: existingCustomer.id },
+          data: {
+            name: colppyCustomer.name,
+            businessName: colppyCustomer.businessName,
+            taxCondition: colppyCustomer.taxCondition,
+            email: colppyCustomer.email || existingCustomer.email,
+            phone: colppyCustomer.phone || existingCustomer.phone,
+            mobile: colppyCustomer.mobile || existingCustomer.mobile,
+            address: colppyCustomer.address || existingCustomer.address,
+            city: colppyCustomer.city || existingCustomer.city,
+            province: colppyCustomer.province || existingCustomer.province,
+            postalCode: colppyCustomer.postalCode || existingCustomer.postalCode,
+            priceMultiplier: colppyCustomer.priceMultiplier || existingCustomer.priceMultiplier,
+            balance: colppyCustomer.saldo || existingCustomer.balance,
+          },
+        })
+        customerId = updatedCustomer.id
+        console.log('✅ Cliente actualizado desde Colppy:', updatedCustomer.name)
+      } else {
+        // Crear nuevo cliente
+        const newCustomer = await prisma.customer.create({
+          data: {
+            name: colppyCustomer.name,
+            businessName: colppyCustomer.businessName,
+            cuit: colppyCustomer.cuit,
+            taxCondition: colppyCustomer.taxCondition,
+            email: colppyCustomer.email || null,
+            phone: colppyCustomer.phone || null,
+            mobile: colppyCustomer.mobile || null,
+            address: colppyCustomer.address || null,
+            city: colppyCustomer.city || null,
+            province: colppyCustomer.province || null,
+            postalCode: colppyCustomer.postalCode || null,
+            priceMultiplier: colppyCustomer.priceMultiplier || 1.0,
+            balance: colppyCustomer.saldo || 0,
+            status: 'ACTIVE',
+            type: 'BUSINESS',
+          },
+        })
+        customerId = newCustomer.id
+        console.log('✅ Cliente creado desde Colppy:', newCustomer.name)
+      }
+    }
+
+    // Validar que tenemos un customerId
+    if (!customerId) {
+      return NextResponse.json(
+        { error: 'Debe proporcionar customerId o colppyCustomer' },
+        { status: 400 }
+      )
+    }
+
     // Generar número de cotización
     const year = new Date().getFullYear()
     const lastQuote = await prisma.quote.findFirst({
@@ -104,7 +170,7 @@ export async function POST(request: NextRequest) {
     const quote = await prisma.quote.create({
       data: {
         quoteNumber,
-        customerId: body.customerId,
+        customerId,
         salesPersonId: session.user.id,
         opportunityId: body.opportunityId,
         date: new Date(body.date || Date.now()),

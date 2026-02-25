@@ -1,4 +1,3 @@
-import { auth } from '@/auth'
 /**
  * API Endpoint: /api/inventario/productos/[id]/ajuste
  * Adjust product stock to a specific quantity

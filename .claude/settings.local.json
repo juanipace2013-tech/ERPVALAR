@@ -44,7 +44,11 @@
       "Bash(head:*)",
       "Bash(lsof:*)",
       "Bash(test:*)",
-      "Bash(\"/c/Users/santi/crm-valarg/src/app/api/contabilidad/plan-cuentas/[id]/route.ts\":*)"
+      "Bash(\"/c/Users/santi/crm-valarg/src/app/api/contabilidad/plan-cuentas/[id]/route.ts\":*)",
+      "Bash(tail:*)",
+      "Bash(for:*)",
+      "Bash(do npx tsx scripts/clean-categories.ts)",
+      "Bash(cat:*)"
     ]
   }
 }

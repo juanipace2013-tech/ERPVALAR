@@ -21,6 +21,9 @@ export async function GET(request: NextRequest) {
     const categoryId = searchParams.get('categoryId') || ''
     const supplierId = searchParams.get('supplierId') || ''
     const type = searchParams.get('type') || '' // Nuevo filtro por tipo
+    const letter = searchParams.get('letter') || '' // Filtro alfabético
+    const orderBy = searchParams.get('orderBy') || 'sku' // Campo de ordenamiento
+    const order = searchParams.get('order') || 'asc' // Dirección (asc/desc)
 
     const skip = (page - 1) * limit
 
@@ -33,6 +36,14 @@ export async function GET(request: NextRequest) {
         { name: { contains: search, mode: 'insensitive' } },
         { brand: { contains: search, mode: 'insensitive' } },
       ]
+    }
+
+    // Filtro alfabético por primera letra del SKU
+    if (letter && letter !== 'ALL') {
+      where.sku = {
+        startsWith: letter,
+        mode: 'insensitive'
+      }
     }
 
     if (status) {
@@ -51,6 +62,11 @@ export async function GET(request: NextRequest) {
       where.type = type
     }
 
+    // Construir orderBy dinámico
+    const validOrderFields = ['sku', 'name', 'brand', 'listPriceUSD', 'createdAt']
+    const orderField = validOrderFields.includes(orderBy) ? orderBy : 'sku'
+    const orderDirection = order === 'desc' ? 'desc' : 'asc'
+
     // Obtener productos con paginación
     const [products, total] = await Promise.all([
       prisma.product.findMany({
@@ -58,7 +74,7 @@ export async function GET(request: NextRequest) {
         skip,
         take: limit,
         orderBy: {
-          createdAt: 'desc',
+          [orderField]: orderDirection,
         },
         include: {
           category: {

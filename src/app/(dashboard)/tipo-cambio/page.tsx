@@ -36,8 +36,11 @@ import {
   Loader2,
   Calendar,
   Building2,
+  TrendingUp,
+  TrendingDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 interface ExchangeRate {
   id: string
@@ -82,14 +85,21 @@ export default function TipoCambioPage() {
   const fetchExchangeRates = async () => {
     try {
       setLoading(true)
-      const response = await fetch('/api/tipo-cambio')
+      // Obtener TODO el historial (no solo los vigentes)
+      const response = await fetch('/api/tipo-cambio?history=true')
 
       if (!response.ok) {
         throw new Error('Error al cargar tipos de cambio')
       }
 
       const data = await response.json()
-      setExchangeRates(data.rates || [])
+      // Filtrar solo USD → ARS y ordenar por fecha descendente
+      const usdArsRates = (data.rates || [])
+        .filter((r: ExchangeRate) => r.fromCurrency === 'USD' && r.toCurrency === 'ARS')
+        .sort((a: ExchangeRate, b: ExchangeRate) =>
+          new Date(b.validFrom).getTime() - new Date(a.validFrom).getTime()
+        )
+      setExchangeRates(usdArsRates)
     } catch (error) {
       console.error('Error:', error)
       toast.error('Error al cargar tipos de cambio')
@@ -192,10 +202,24 @@ export default function TipoCambioPage() {
     })
   }
 
+  // Calcular variación porcentual respecto al registro anterior
+  const calculateVariation = (currentRate: number, index: number): number | null => {
+    if (index >= exchangeRates.length - 1) return null // No hay registro anterior
+    const previousRate = Number(exchangeRates[index + 1].rate)
+    return ((currentRate - previousRate) / previousRate) * 100
+  }
+
+  // Preparar datos para el gráfico (últimos 30 registros, invertidos para mostrar cronológicamente)
+  const chartData = exchangeRates
+    .slice(0, 30)
+    .reverse()
+    .map(rate => ({
+      date: new Date(rate.validFrom).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }),
+      valor: Number(rate.rate),
+    }))
+
   // Obtener el tipo de cambio USD más reciente
-  const currentUSDRate = exchangeRates.find(
-    (rate) => rate.fromCurrency === 'USD' && rate.toCurrency === 'ARS'
-  )
+  const currentUSDRate = exchangeRates[0]
 
   return (
     <div className="space-y-6">
@@ -375,14 +399,60 @@ export default function TipoCambioPage() {
         </Card>
       )}
 
+      {/* Chart */}
+      {exchangeRates.length > 1 && (
+        <Card className="border-blue-200">
+          <CardHeader>
+            <CardTitle className="text-blue-900">Evolución del Tipo de Cambio</CardTitle>
+            <CardDescription>
+              Últimos {Math.min(30, exchangeRates.length)} registros
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={250}>
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e0e7ff" />
+                <XAxis
+                  dataKey="date"
+                  stroke="#64748b"
+                  style={{ fontSize: '12px' }}
+                />
+                <YAxis
+                  stroke="#64748b"
+                  style={{ fontSize: '12px' }}
+                  domain={['auto', 'auto']}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#fff',
+                    border: '1px solid #dbeafe',
+                    borderRadius: '8px',
+                    padding: '8px'
+                  }}
+                  formatter={(value: number) => [`$${value.toFixed(2)}`, 'Tipo de Cambio']}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="valor"
+                  stroke="#2563eb"
+                  strokeWidth={2}
+                  dot={{ fill: '#2563eb', r: 4 }}
+                  activeDot={{ r: 6 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Exchange Rates Table */}
       <Card className="border-blue-200">
         <CardHeader>
           <CardTitle className="text-blue-900">
-            Historial de Tipos de Cambio
+            Historial de Tipos de Cambio USD → ARS
           </CardTitle>
           <CardDescription>
-            Todos los tipos de cambio registrados en el sistema
+            Registro completo ordenado por fecha (más reciente primero)
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -406,7 +476,7 @@ export default function TipoCambioPage() {
                 <TableHeader>
                   <TableRow className="bg-blue-50 hover:bg-blue-50">
                     <TableHead className="font-semibold text-blue-900">
-                      Monedas
+                      Fecha
                     </TableHead>
                     <TableHead className="text-right font-semibold text-blue-900">
                       Tipo de Cambio
@@ -414,71 +484,58 @@ export default function TipoCambioPage() {
                     <TableHead className="font-semibold text-blue-900">
                       Origen
                     </TableHead>
-                    <TableHead className="font-semibold text-blue-900">
-                      Vigencia Desde
-                    </TableHead>
-                    <TableHead className="font-semibold text-blue-900">
-                      Vigencia Hasta
-                    </TableHead>
-                    <TableHead className="font-semibold text-blue-900">
-                      Última Actualización
+                    <TableHead className="text-right font-semibold text-blue-900">
+                      Variación
                     </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {exchangeRates.map((rate) => (
-                    <TableRow
-                      key={rate.id}
-                      className="hover:bg-blue-50 transition-colors"
-                    >
-                      <TableCell className="font-medium">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-blue-700">
-                            {rate.fromCurrency}
-                          </span>
-                          <span className="text-muted-foreground">→</span>
-                          <span className="font-mono text-blue-700">
-                            {rate.toCurrency}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <span className="font-mono text-lg font-semibold">
-                          {Number(rate.rate).toFixed(6)}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={sourceColors[rate.source]}>
-                          {sourceLabels[rate.source]}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Calendar className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm">
-                            {formatDate(rate.validFrom)}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {rate.validUntil ? (
+                  {exchangeRates.map((rate, index) => {
+                    const variation = calculateVariation(Number(rate.rate), index)
+                    return (
+                      <TableRow
+                        key={rate.id}
+                        className="hover:bg-blue-50 transition-colors"
+                      >
+                        <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
                             <Calendar className="h-4 w-4 text-muted-foreground" />
                             <span className="text-sm">
-                              {formatDate(rate.validUntil)}
+                              {formatDate(rate.validFrom)}
                             </span>
                           </div>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm text-muted-foreground">
-                          {formatDateTime(rate.updatedAt)}
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <span className="font-mono text-lg font-semibold">
+                            ${Number(rate.rate).toFixed(2)}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={sourceColors[rate.source]}>
+                            {sourceLabels[rate.source]}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {variation !== null ? (
+                            <div className={`flex items-center justify-end gap-1 ${
+                              variation > 0 ? 'text-red-600' : variation < 0 ? 'text-green-600' : 'text-gray-600'
+                            }`}>
+                              {variation > 0 ? (
+                                <TrendingUp className="h-4 w-4" />
+                              ) : variation < 0 ? (
+                                <TrendingDown className="h-4 w-4" />
+                              ) : null}
+                              <span className="font-semibold">
+                                {variation > 0 ? '+' : ''}{variation.toFixed(2)}%
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">Base</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
                 </TableBody>
               </Table>
             </div>

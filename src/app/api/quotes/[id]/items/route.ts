@@ -38,9 +38,10 @@ export async function POST(
       )
     }
 
-    // Obtener producto
+    // Obtener producto con categoría
     const product = await prisma.product.findUnique({
       where: { id: body.productId },
+      include: { category: true },
     })
 
     if (!product) {
@@ -53,9 +54,21 @@ export async function POST(
     // Obtener descuento de marca
     let brandDiscount = 0
     if (product.brand) {
-      const brandDiscountData = await prisma.brandDiscount.findUnique({
-        where: { brand: product.brand },
+      // 1. Buscar por brand + productType exacto
+      let brandDiscountData = await prisma.brandDiscount.findUnique({
+        where: {
+          brand_productType: {
+            brand: product.brand,
+            productType: product.category?.name || ''
+          }
+        }
       })
+      // 2. Si no encuentra, buscar solo por brand (productType null)
+      if (!brandDiscountData) {
+        brandDiscountData = await prisma.brandDiscount.findFirst({
+          where: { brand: product.brand, productType: null }
+        })
+      }
       if (brandDiscountData) {
         brandDiscount = Number(brandDiscountData.discountPercent) / 100
       }

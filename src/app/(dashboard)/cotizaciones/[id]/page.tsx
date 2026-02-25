@@ -31,8 +31,12 @@ import {
   Package,
   X,
   Pencil,
+  RefreshCw,
+  Search,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useColppyStock, refreshInventoryCache } from '@/hooks/useColppyStock'
+import { StockBadge, StockWarning } from '@/components/StockBadge'
 
 interface Product {
   id: string
@@ -140,6 +144,25 @@ export default function QuoteDetailPage() {
 
   // Product search
   const [productSearch, setProductSearch] = useState('')
+  const [refreshingStock, setRefreshingStock] = useState(false)
+  const [searchResults, setSearchResults] = useState<typeof products>([])
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+
+  // Stock data hook - consultar stock de productos filtrados
+  const filteredProductSkus = searchResults.map((p) => p.sku)
+
+  const { stockData, loading: stockLoading } = useColppyStock(
+    filteredProductSkus,
+    searchResults.length > 0 && showItemDialog
+  )
+
+  // Stock data para items de la cotización
+  const quoteItemSkus = quote?.items?.map((item) => item.product.sku) || []
+  const { stockData: quoteStockData, loading: quoteStockLoading } = useColppyStock(
+    quoteItemSkus,
+    quoteItemSkus.length > 0
+  )
 
   // Price preview
   const [pricePreview, setPricePreview] = useState({
@@ -154,7 +177,6 @@ export default function QuoteDetailPage() {
 
   useEffect(() => {
     fetchQuoteData()
-    fetchProducts()
     fetchBrandDiscounts()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteId])
@@ -163,6 +185,19 @@ export default function QuoteDetailPage() {
     calculatePricePreview()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemFormData.productId, itemFormData.quantity, itemFormData.additionals])
+
+  // Búsqueda de productos con debounce (300ms)
+  useEffect(() => {
+    if (productSearch.length >= 2) {
+      const timeoutId = setTimeout(() => {
+        searchProducts(productSearch)
+      }, 300)
+      return () => clearTimeout(timeoutId)
+    } else {
+      setSearchResults([])
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productSearch])
 
   const fetchQuoteData = async () => {
     try {
@@ -182,15 +217,26 @@ export default function QuoteDetailPage() {
     }
   }
 
-  const fetchProducts = async () => {
+  const searchProducts = async (query: string) => {
     try {
-      const response = await fetch('/api/productos?limit=1000')
+      setSearchLoading(true)
+      const params = new URLSearchParams({
+        search: query,
+        limit: '20',
+        status: 'ACTIVE',
+      })
+      const response = await fetch(`/api/productos?${params.toString()}`)
       if (response.ok) {
         const data = await response.json()
-        setProducts(data.products || [])
+        setSearchResults(data.products || [])
+      } else {
+        setSearchResults([])
       }
     } catch (error) {
-      console.error('Error cargando productos:', error)
+      console.error('Error buscando productos:', error)
+      setSearchResults([])
+    } finally {
+      setSearchLoading(false)
     }
   }
 
@@ -203,6 +249,23 @@ export default function QuoteDetailPage() {
       }
     } catch (error) {
       console.error('Error cargando descuentos:', error)
+    }
+  }
+
+  const handleRefreshStock = async () => {
+    try {
+      setRefreshingStock(true)
+      const result = await refreshInventoryCache()
+      if (result.success) {
+        toast.success(`Stock actualizado: ${result.total} items en cache`)
+      } else {
+        toast.error('Error al actualizar stock')
+      }
+    } catch (error) {
+      console.error('Error refreshing stock:', error)
+      toast.error('Error al actualizar stock')
+    } finally {
+      setRefreshingStock(false)
     }
   }
 
@@ -220,26 +283,22 @@ export default function QuoteDetailPage() {
       return
     }
 
-    const product = products.find((p) => p.id === itemFormData.productId)
-    if (!product) return
+    if (!selectedProduct) return
 
-    const listPrice = Number(product.listPriceUSD || 0)
+    const listPrice = Number(selectedProduct.listPriceUSD || 0)
 
-    // Sumar adicionales
+    // Sumar adicionales (usar el precio guardado en add.listPrice)
     let additionalsTotal = 0
     for (const add of itemFormData.additionals) {
-      const addProduct = products.find((p) => p.id === add.productId)
-      if (addProduct && addProduct.listPriceUSD) {
-        additionalsTotal += Number(addProduct.listPriceUSD)
-      }
+      additionalsTotal += Number(add.listPrice || 0)
     }
 
     const subtotalWithAdditionals = listPrice + additionalsTotal
 
     // Obtener descuento de marca
     let brandDiscountPercent = 0
-    if (product.brand) {
-      const discount = brandDiscounts.find((d) => d.brand === product.brand)
+    if (selectedProduct.brand) {
+      const discount = brandDiscounts.find((d) => d.brand === selectedProduct.brand)
       if (discount) {
         brandDiscountPercent = Number(discount.discountPercent) / 100
       }
@@ -263,7 +322,7 @@ export default function QuoteDetailPage() {
   }
 
   const handleAddItem = async () => {
-    if (!itemFormData.productId) {
+    if (!itemFormData.productId || !selectedProduct) {
       toast.error('Debe seleccionar un producto')
       return
     }
@@ -271,15 +330,10 @@ export default function QuoteDetailPage() {
     try {
       setItemFormLoading(true)
 
-      const product = products.find((p) => p.id === itemFormData.productId)
-      if (!product) {
-        throw new Error('Producto no encontrado')
-      }
-
       const payload = {
         productId: itemFormData.productId,
         quantity: itemFormData.quantity,
-        description: itemFormData.description || product.name,
+        description: itemFormData.description || selectedProduct.name,
         deliveryTime: itemFormData.deliveryTime,
         isAlternative: itemFormData.isAlternative,
         alternativeToItemId: itemFormData.alternativeToItemId,
@@ -334,6 +388,7 @@ export default function QuoteDetailPage() {
 
   const handleOpenEditDialog = (item: QuoteItem) => {
     setEditingItemId(item.id)
+    setSelectedProduct(item.product) // Cargar el producto del item
     setItemFormData({
       productId: item.productId,
       quantity: item.quantity,
@@ -370,15 +425,14 @@ export default function QuoteDetailPage() {
     try {
       setItemFormLoading(true)
 
-      const product = products.find((p) => p.id === itemFormData.productId)
-      if (!product) {
+      if (!selectedProduct) {
         throw new Error('Producto no encontrado')
       }
 
       const payload = {
         productId: itemFormData.productId,
         quantity: itemFormData.quantity,
-        description: itemFormData.description || product.name,
+        description: itemFormData.description || selectedProduct.name,
         deliveryTime: itemFormData.deliveryTime,
         additionals: itemFormData.additionals.map((add) => ({
           productId: add.productId,
@@ -447,6 +501,7 @@ export default function QuoteDetailPage() {
 
   const resetItemForm = () => {
     setEditingItemId(null)
+    setSelectedProduct(null)
     setItemFormData({
       productId: '',
       quantity: 1,
@@ -468,12 +523,8 @@ export default function QuoteDetailPage() {
     setShowItemDialog(true)
   }
 
-  const filteredProducts = products.filter(
-    (p) =>
-      p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
-      p.sku.toLowerCase().includes(productSearch.toLowerCase()) ||
-      (p.brand && p.brand.toLowerCase().includes(productSearch.toLowerCase()))
-  )
+  // Productos filtrados vienen del servidor
+  const filteredProducts = searchResults
 
   // Agrupar items por número base (principal + alternativas)
   const groupedItems = quote?.items.reduce((acc, item) => {
@@ -647,15 +698,45 @@ export default function QuoteDetailPage() {
                 <div className="space-y-6">
                   {/* Product Search */}
                   <div className="space-y-2">
-                    <Label>Buscar Producto</Label>
+                    <div className="flex items-center justify-between">
+                      <Label>Buscar Producto</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRefreshStock}
+                        disabled={refreshingStock}
+                        className="text-xs"
+                      >
+                        <RefreshCw className={`h-3 w-3 mr-1 ${refreshingStock ? 'animate-spin' : ''}`} />
+                        Actualizar Stock
+                      </Button>
+                    </div>
                     <Input
-                      placeholder="Buscar por SKU, nombre o marca..."
+                      placeholder="Buscar por SKU, nombre o marca... (mín. 2 caracteres)"
                       value={productSearch}
                       onChange={(e) => setProductSearch(e.target.value)}
                       className="mb-2"
                     />
                     <div className="max-h-48 overflow-y-auto border rounded-md">
-                      {filteredProducts.slice(0, 20).map((product) => (
+                      {searchLoading ? (
+                        <div className="p-8 text-center text-muted-foreground">
+                          <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+                          <p className="text-sm">Buscando productos...</p>
+                        </div>
+                      ) : productSearch.length >= 2 && filteredProducts.length === 0 ? (
+                        <div className="p-8 text-center text-muted-foreground">
+                          <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                          <p className="text-sm">No se encontraron productos</p>
+                          <p className="text-xs">Intenta con otro término de búsqueda</p>
+                        </div>
+                      ) : productSearch.length < 2 ? (
+                        <div className="p-8 text-center text-muted-foreground">
+                          <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                          <p className="text-sm">Escribe al menos 2 caracteres para buscar</p>
+                        </div>
+                      ) : null}
+                      {!searchLoading && filteredProducts.map((product) => (
                         <div
                           key={product.id}
                           className={`p-3 cursor-pointer hover:bg-blue-50 border-b last:border-b-0 ${
@@ -664,6 +745,7 @@ export default function QuoteDetailPage() {
                               : ''
                           }`}
                           onClick={() => {
+                            setSelectedProduct(product)
                             setItemFormData({
                               ...itemFormData,
                               productId: product.id,
@@ -672,13 +754,22 @@ export default function QuoteDetailPage() {
                             setProductSearch('')
                           }}
                         >
-                          <div className="flex items-center justify-between">
-                            <div>
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
                               <p className="font-medium">{product.name}</p>
                               <p className="text-sm text-muted-foreground">
                                 SKU: {product.sku}
                                 {product.brand && ` | Marca: ${product.brand}`}
                               </p>
+                              <div className="mt-1">
+                                <StockBadge
+                                  sku={product.sku}
+                                  stock={stockData[product.sku]?.stock}
+                                  found={stockData[product.sku]?.found}
+                                  loading={stockLoading}
+                                  size="sm"
+                                />
+                              </div>
                             </div>
                             <div className="text-right">
                               <p className="font-mono font-semibold">
@@ -692,14 +783,14 @@ export default function QuoteDetailPage() {
                   </div>
 
                   {/* Selected Product */}
-                  {itemFormData.productId && (
+                  {itemFormData.productId && selectedProduct && (
                     <div className="p-4 bg-blue-50 rounded-md">
                       <Label className="text-blue-900">Producto Seleccionado</Label>
                       <p className="font-medium">
-                        {
-                          products.find((p) => p.id === itemFormData.productId)
-                            ?.name
-                        }
+                        {selectedProduct.name}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        SKU: {selectedProduct.sku} | USD {Number(selectedProduct.listPriceUSD || 0).toFixed(2)}
                       </p>
                     </div>
                   )}
@@ -945,6 +1036,16 @@ export default function QuoteDetailPage() {
                                   {mainItem.product.brand &&
                                     ` | Marca: ${mainItem.product.brand}`}
                                 </p>
+                                <div className="mt-1">
+                                  <StockBadge
+                                    sku={mainItem.product.sku}
+                                    stock={quoteStockData[mainItem.product.sku]?.stock}
+                                    found={quoteStockData[mainItem.product.sku]?.found}
+                                    loading={quoteStockLoading}
+                                    showQuantity={true}
+                                    size="sm"
+                                  />
+                                </div>
                               </div>
                             </div>
 
@@ -969,6 +1070,18 @@ export default function QuoteDetailPage() {
                                 ))}
                               </div>
                             )}
+
+                            {/* Stock Warning */}
+                            {quoteStockData[mainItem.product.sku]?.found &&
+                              quoteStockData[mainItem.product.sku]?.stock !== undefined &&
+                              mainItem.quantity > quoteStockData[mainItem.product.sku].stock && (
+                                <div className="mt-2 ml-12">
+                                  <StockWarning
+                                    requested={mainItem.quantity}
+                                    available={quoteStockData[mainItem.product.sku].stock}
+                                  />
+                                </div>
+                              )}
 
                             {/* Price Breakdown */}
                             <div className="mt-3 ml-12 grid grid-cols-2 gap-2 text-sm">
@@ -1091,6 +1204,26 @@ export default function QuoteDetailPage() {
                                   <p className="text-xs text-muted-foreground">
                                     SKU: {alt.product.sku}
                                   </p>
+                                  <div className="mt-1">
+                                    <StockBadge
+                                      sku={alt.product.sku}
+                                      stock={quoteStockData[alt.product.sku]?.stock}
+                                      found={quoteStockData[alt.product.sku]?.found}
+                                      loading={quoteStockLoading}
+                                      showQuantity={true}
+                                      size="sm"
+                                    />
+                                  </div>
+                                  {quoteStockData[alt.product.sku]?.found &&
+                                    quoteStockData[alt.product.sku]?.stock !== undefined &&
+                                    alt.quantity > quoteStockData[alt.product.sku].stock && (
+                                      <div className="mt-1">
+                                        <StockWarning
+                                          requested={alt.quantity}
+                                          available={quoteStockData[alt.product.sku].stock}
+                                        />
+                                      </div>
+                                    )}
                                 </div>
                                 <div className="text-right">
                                   <p className="font-mono font-semibold">

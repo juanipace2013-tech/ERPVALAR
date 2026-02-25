@@ -1,4 +1,3 @@
-import { auth } from '@/auth'
 /**
  * API Endpoint: /api/inventario/movimientos/[id]
  * Get details of a specific stock movement

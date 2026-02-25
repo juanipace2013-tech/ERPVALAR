@@ -1,0 +1,57 @@
+🚀 Iniciando importación de productos...
+
+📁 Leyendo archivo: C:\Users\santi\crm-valarg\data\Prototipo_Oferta.xltx
+✅ Hoja "Precio Lista" encontrada
+
+📊 Total de filas: 12926
+   Fila 1: Vacía
+   Fila 2: Headers
+   Fila 3+: Datos (12924 filas de datos)
+
+🔄 Procesando PRODUCTOS...
+
+✅ Productos a importar: 12883
+✅ Tipos únicos (columna C): 14
+   Tipos encontrados:
+     - ACCESORIOS-GE
+     - ACCESORIOS-WINTERS
+     - ACTUADOR
+     - CUCHILLA
+     - ELECTROVALVULAS
+     - LATON
+     - MANOMETRO
+     - MANOMETROS
+     - PRESOSTATO
+     - PVC
+     - REPUESTOS
+     - RIEGO
+     - SANITARIA
+     - VALVULA
+
+💰 Procesando DESCUENTOS (columnas G, H, I)...
+
+   PVC                  + ASTRAL               = 35%
+   PVC                  + AZUD                 = 35%
+   PVC                  + CEPEX                = 35%
+   PVC                  + ERA                  = 35%
+   PVC                  + OTROS                = 35%
+   PVC                  + SIN MARCA ASIGNADA   = 35%
+   PVC                  + PLASTICO BVI CORP    = 35%
+   PVC                  + RAIN BIRD            = 35%
+   PVC                  + SAB S.P.A.           = 35%
+   MANOMETRO            + WINTERS              = 40%
+   TERMOMETRO           + WINTERS              = 40%
+   TRANSMISORES         + WINTERS              = 40%
+   ACCESORIOS-WINTERS   + WINTERS              = 40%
+   VALV AGUJA           + WINTERS              = 40%
+
+✅ Descuentos encontrados: 14
+
+📂 Creando categorías...
+✅ 14 categorías creadas/actualizadas
+
+💰 Importando descuentos por tipo+marca...
+✅ 14 descuentos creados
+✅ 0 descuentos actualizados
+
+📦 Importando productos...

@@ -68,7 +68,8 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     }
   })
 
-  // Facturas por cobrar: sum(total - paidAmount) de facturas no pagadas
+  // Facturas por cobrar: sum(balance) de facturas no pagadas
+  // balance = saldo pendiente (lo que falta cobrar)
   const pendingInvoices = await prisma.invoice.aggregate({
     where: {
       status: {
@@ -76,13 +77,11 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
       }
     },
     _sum: {
-      total: true,
-      paidAmount: true
+      balance: true
     }
   })
 
-  const invoicesToCollect =
-    Number(pendingInvoices._sum.total || 0) - Number(pendingInvoices._sum.paidAmount || 0)
+  const invoicesToCollect = Number(pendingInvoices._sum.balance || 0)
 
   // Calcular variaciones
   const salesChangeValue =

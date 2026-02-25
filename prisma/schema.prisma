@@ -666,6 +666,10 @@ model Product {
   supplierId      String?       // Proveedor principal del producto
   brand           String?
 
+  // Integración con Colppy
+  colppyItemId    Int?          // ID del item en inventario de Colppy
+  colppyCode      String?       // Código en Colppy (para verificación)
+
   // Stock (stock total calculado)
   stockQuantity   Int           @default(0)
   minStock        Int           @default(0)
@@ -714,6 +718,8 @@ model Product {
   @@index([categoryId])
   @@index([supplierId])
   @@index([status])
+  @@index([colppyItemId])
+  @@index([colppyCode])
   @@map("products")
 }
 
@@ -876,6 +882,11 @@ model Quote {
   responseDate         DateTime?
   rejectionReason      String?   @db.Text
 
+  // Integración con Colppy
+  colppyInvoiceId      String?   @db.Text
+  colppyDeliveryNoteId String?   @db.Text
+  colppySyncedAt       DateTime?
+
   // Totales (en USD)
   subtotal        Decimal      @default(0) @db.Decimal(15, 2)
   total           Decimal      @default(0) @db.Decimal(15, 2)
@@ -905,6 +916,9 @@ model Quote {
   @@index([quoteNumber])
   @@index([date])
   @@index([validUntil])
+  @@index([colppyInvoiceId])
+  @@index([colppyDeliveryNoteId])
+  @@index([colppySyncedAt])
   @@map("quotes")
 }
 
@@ -972,12 +986,14 @@ model QuoteItemAdditional {
 // Descuentos por marca
 model BrandDiscount {
   id               String   @id @default(cuid())
-  brand            String   @unique  // GENEBRE, WINTERS, CEPEX, etc.
+  brand            String              // GENEBRE, WINTERS, CEPEX, etc.
+  productType      String?             // Tipo de producto (PVC, MANOMETRO, etc.)
   discountPercent  Decimal  @db.Decimal(5, 2)  // 0-100 (ej: 15 = 15%)
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
+  @@unique([brand, productType])  // único por combinación brand+tipo
   @@index([brand])
   @@map("brand_discounts")
 }

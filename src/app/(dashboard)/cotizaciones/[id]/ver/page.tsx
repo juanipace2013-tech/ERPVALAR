@@ -38,6 +38,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { SendQuoteDialog } from '@/components/quotes/SendQuoteDialog'
+import { SendToColppyDialog } from '@/components/quotes/SendToColppyDialog'
 
 interface Quote {
   id: string
@@ -142,6 +143,7 @@ export default function QuoteViewPage() {
   const [rejectionReason, setRejectionReason] = useState('')
   const [showAcceptDialog, setShowAcceptDialog] = useState(false)
   const [customerResponse, setCustomerResponse] = useState('')
+  const [showColppyDialog, setShowColppyDialog] = useState(false)
 
   useEffect(() => {
     fetchQuote()
@@ -409,6 +411,10 @@ export default function QuoteViewPage() {
             {/* ACEPTADA - lista para facturar */}
             {quote.status === 'ACCEPTED' && (
               <>
+                <Button onClick={() => setShowColppyDialog(true)} disabled={actionLoading} className="bg-blue-600 hover:bg-blue-700">
+                  <Send className="h-4 w-4 mr-2" />
+                  Enviar a Colppy
+                </Button>
                 <Button onClick={handleGenerateInvoice} disabled={actionLoading} className="bg-purple-600 hover:bg-purple-700">
                   <FileSpreadsheet className="h-4 w-4 mr-2" />
                   Generar Factura
@@ -928,6 +934,40 @@ export default function QuoteViewPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog: Enviar a Colppy */}
+      {quote && (
+        <SendToColppyDialog
+          quote={{
+            id: quote.id,
+            quoteNumber: quote.quoteNumber,
+            customer: {
+              name: quote.customer.name,
+              cuit: quote.customer.cuit,
+              taxCondition: quote.customer.taxCondition,
+              idCondicionPago: (quote.customer as any).idCondicionPago,
+            },
+            items: quote.items.map((item: any) => ({
+              id: item.id,
+              productSku: item.product?.sku || '',
+              description: item.description || item.product?.name || '',
+              quantity: item.quantity || 0,
+              unitPrice: item.unitPrice || 0,
+              iva: 21,
+            })),
+            total: quote.total,
+            currency: quote.currency,
+            exchangeRate: quote.exchangeRate,
+            notes: quote.notes,
+          }}
+          open={showColppyDialog}
+          onOpenChange={setShowColppyDialog}
+          onSent={() => {
+            toast.success('Enviado a Colppy exitosamente')
+            fetchQuote()
+          }}
+        />
+      )}
     </div>
   )
 }

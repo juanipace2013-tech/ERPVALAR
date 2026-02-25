@@ -7,21 +7,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { ArrowLeft, Save, Loader2, DollarSign } from 'lucide-react'
 import { toast } from 'sonner'
-
-interface Customer {
-  id: string
-  name: string
-  priceMultiplier: number
-}
+import { ColppyCustomerSearch, type ColppyCustomer } from '@/components/ColppyCustomerSearch'
 
 interface Product {
   id: string
@@ -41,15 +29,21 @@ export default function NuevaCotizacionPage() {
   const [loading, setLoading] = useState(false)
   const [quoteNumber, setQuoteNumber] = useState('')
   const [exchangeRate, setExchangeRate] = useState(0)
-  const [customers, setCustomers] = useState<Customer[]>([])
+  const [selectedCustomer, setSelectedCustomer] = useState<ColppyCustomer | null>(null)
   const [_products, setProducts] = useState<Product[]>([])
   const [_brandDiscounts, setBrandDiscounts] = useState<BrandDiscount[]>([])
 
+  // Calcular fecha de vigencia: hoy + 5 días
+  const getDefaultValidUntil = () => {
+    const date = new Date()
+    date.setDate(date.getDate() + 5)
+    return date.toISOString().split('T')[0] // yyyy-mm-dd
+  }
+
   const [formData, setFormData] = useState({
-    customerId: '',
-    terms: 'Pago: 50% anticipo, 50% contra entrega. Entrega: 15 días hábiles.',
+    terms: '',
     notes: '',
-    validUntil: '',
+    validUntil: getDefaultValidUntil(),
   })
 
   useEffect(() => {
@@ -74,13 +68,6 @@ export default function NuevaCotizacionPage() {
         }
       }
 
-      // Obtener clientes
-      const custRes = await fetch('/api/clientes')
-      if (custRes.ok) {
-        const data = await custRes.json()
-        setCustomers(data.customers || [])
-      }
-
       // Obtener productos
       const prodRes = await fetch('/api/productos?limit=100')
       if (prodRes.ok) {
@@ -100,10 +87,30 @@ export default function NuevaCotizacionPage() {
     }
   }
 
+  // Manejar selección de cliente y autocompletar condición de pago
+  const handleCustomerSelect = (customer: ColppyCustomer | null) => {
+    setSelectedCustomer(customer)
+
+    if (customer) {
+      // Autocompletar condición de pago desde Colppy
+      const condicionTexto = customer.paymentTerms || 'Contado'
+      setFormData(prev => ({
+        ...prev,
+        terms: `Condición de pago: ${condicionTexto}. Precios válidos por 5 días corridos desde la fecha de emisión.`,
+      }))
+    } else {
+      // Si se deselecciona el cliente, limpiar términos
+      setFormData(prev => ({
+        ...prev,
+        terms: '',
+      }))
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!formData.customerId) {
+    if (!selectedCustomer) {
       toast.error('Debe seleccionar un cliente')
       return
     }
@@ -112,7 +119,7 @@ export default function NuevaCotizacionPage() {
       setLoading(true)
 
       const quoteData = {
-        customerId: formData.customerId,
+        colppyCustomer: selectedCustomer, // Enviar datos del cliente de Colppy
         exchangeRate,
         currency: 'USD',
         terms: formData.terms,
@@ -182,28 +189,14 @@ export default function NuevaCotizacionPage() {
               <CardTitle className="text-blue-900">Información General</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="customerId" className="text-blue-900">
-                    Cliente <span className="text-red-500">*</span>
-                  </Label>
-                  <Select
-                    value={formData.customerId}
-                    onValueChange={(value) =>
-                      setFormData({ ...formData, customerId: value })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar cliente..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {customers.map((customer) => (
-                        <SelectItem key={customer.id} value={customer.id}>
-                          {customer.name} (Mult: {customer.priceMultiplier}x)
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+              <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-2">
+                <div className="lg:col-span-2">
+                  <ColppyCustomerSearch
+                    value={selectedCustomer}
+                    onChange={handleCustomerSelect}
+                    placeholder="Buscar cliente por nombre o CUIT en Colppy..."
+                    disabled={loading}
+                  />
                 </div>
 
                 <div className="space-y-2">
@@ -232,6 +225,9 @@ export default function NuevaCotizacionPage() {
                       setFormData({ ...formData, validUntil: e.target.value })
                     }
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Por defecto 5 días. Modificable según acuerdo con el cliente.
+                  </p>
                 </div>
 
                 <div className="space-y-2">
@@ -265,6 +261,9 @@ export default function NuevaCotizacionPage() {
                   rows={3}
                   placeholder="Condiciones comerciales y de entrega..."
                 />
+                <p className="text-xs text-muted-foreground">
+                  Precargado desde Colppy. Podés editarlo según el acuerdo con el cliente.
+                </p>
               </div>
 
               <div className="space-y-2">

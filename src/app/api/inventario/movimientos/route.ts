@@ -1,4 +1,3 @@
-import { auth } from '@/auth'
 /**
  * API Endpoint: /api/inventario/movimientos
  * Handles CRUD operations for stock movements

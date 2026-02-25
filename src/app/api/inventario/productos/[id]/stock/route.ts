@@ -1,4 +1,3 @@
-import { auth } from '@/auth'
 /**
  * API Endpoint: /api/inventario/productos/[id]/stock
  * Get stock history for a specific product

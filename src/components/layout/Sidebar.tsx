@@ -45,47 +45,15 @@ const navItems: NavItem[] = [
     roles: ['ADMIN', 'GERENTE', 'VENDEDOR', 'CONTADOR'],
   },
   {
-    title: 'Clientes',
-    href: '/clientes',
-    icon: Users,
-    roles: ['ADMIN', 'GERENTE', 'VENDEDOR', 'CONTADOR'],
-    subItems: [
-      {
-        title: 'Facturas',
-        href: '/facturas',
-        icon: Receipt,
-        roles: ['ADMIN', 'GERENTE', 'CONTADOR'],
-      },
-    ],
-  },
-  {
-    title: 'Proveedores',
-    href: '/proveedores',
-    icon: Truck,
-    roles: ['ADMIN', 'GERENTE', 'CONTADOR'],
-  },
-  {
-    title: 'Productos',
-    href: '/productos',
-    icon: Package,
-    roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
-  },
-  {
-    title: 'Oportunidades',
-    href: '/oportunidades',
-    icon: TrendingUp,
-    roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
-  },
-  {
     title: 'Cotizaciones',
     href: '/cotizaciones',
     icon: FileText,
     roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
   },
   {
-    title: 'Remitos',
-    href: '/remitos',
-    icon: PackageCheck,
+    title: 'Productos',
+    href: '/productos',
+    icon: Package,
     roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
   },
   {
@@ -100,30 +68,12 @@ const navItems: NavItem[] = [
     icon: DollarSign,
     roles: ['ADMIN', 'GERENTE', 'CONTADOR'],
   },
-  {
-    title: 'Tesorería',
-    href: '/tesoreria',
-    icon: Wallet,
-    roles: ['ADMIN', 'GERENTE', 'CONTADOR'],
-  },
-  {
-    title: 'Contabilidad',
-    href: '/contabilidad',
-    icon: DollarSign,
-    roles: ['ADMIN', 'GERENTE', 'CONTADOR'],
-  },
-  {
-    title: 'Configuración',
-    href: '/configuracion',
-    icon: Settings,
-    roles: ['ADMIN'],
-  },
 ]
 
 export function Sidebar() {
   const pathname = usePathname()
   const { data: session } = useSession()
-  const [expandedItems, setExpandedItems] = useState<string[]>(['Clientes'])
+  const [expandedItems, setExpandedItems] = useState<string[]>([])
 
   const userRole = session?.user?.role
 

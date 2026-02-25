@@ -70,6 +70,7 @@ const RadioGroupItem = React.forwardRef<HTMLInputElement, RadioGroupItemProps>(
           className="sr-only"
           value={value}
           checked={isChecked}
+          readOnly
           {...props}
         />
       </button>

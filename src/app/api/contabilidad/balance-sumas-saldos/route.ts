@@ -26,20 +26,23 @@ export async function GET(request: NextRequest) {
     })
 
     // Construir filtro para movimientos
-    const where: Record<string, unknown> = {
-      journalEntry: {
-        status: 'POSTED',
-      },
+    const journalEntryFilter: Record<string, unknown> = {
+      status: 'POSTED',
     }
 
     if (startDate || endDate) {
-      where.journalEntry.date = {}
+      const dateFilter: Record<string, Date> = {}
       if (startDate) {
-        where.journalEntry.date.gte = new Date(startDate)
+        dateFilter.gte = new Date(startDate)
       }
       if (endDate) {
-        where.journalEntry.date.lte = new Date(endDate)
+        dateFilter.lte = new Date(endDate)
       }
+      journalEntryFilter.date = dateFilter
+    }
+
+    const where = {
+      journalEntry: journalEntryFilter,
     }
 
     // Obtener todos los movimientos

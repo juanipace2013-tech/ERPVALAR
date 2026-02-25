@@ -328,7 +328,7 @@ export function BankAccountDialog({ open, onOpenChange, account, onSuccess }: Ba
                   step="0.01"
                   value={formData.currencyBalance || ''}
                   onChange={(e) =>
-                    handleChange('currencyBalance', parseFloat(e.target.value) || null)
+                    handleChange('currencyBalance', parseFloat(e.target.value) || 0)
                   }
                 />
               </div>

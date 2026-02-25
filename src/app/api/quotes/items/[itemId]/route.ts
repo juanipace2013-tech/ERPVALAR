@@ -56,7 +56,7 @@ export async function PATCH(
     // Obtener descuento de marca
     let brandDiscount = 0
     if (product.brand) {
-      const brandDiscountData = await prisma.brandDiscount.findUnique({
+      const brandDiscountData = await prisma.brandDiscount.findFirst({
         where: { brand: product.brand },
       })
       if (brandDiscountData) {

@@ -79,13 +79,14 @@ export async function POST(request: NextRequest) {
           receiptNumber,
           date: new Date(date),
           customerId,
+          userId: session.user.id,
           bankAccountId,
           collectionMethod,
           amount,
           currency: 'ARS',
           description,
           checkNumber,
-          status: 'COMPLETED',
+          status: 'APROBADO',
         },
       })
 
@@ -131,7 +132,7 @@ export async function POST(request: NextRequest) {
       success: true,
       receipt: {
         ...result.receipt,
-        amount: parseFloat(result.receipt.amount.toString()),
+        amount: result.receipt.amount ? parseFloat(result.receipt.amount.toString()) : 0,
         date: result.receipt.date.toISOString(),
       },
     })

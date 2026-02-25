@@ -58,7 +58,8 @@ export async function GET(
     })
 
     // Combinar y ordenar movimientos
-    const movements: Array<{ type: string; amount: number; date: Date; reference?: string; notes?: string }> = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const movements: any[] = []
 
     // Agregar órdenes de compra (débito - lo que debemos)
     for (const order of purchaseOrders) {

@@ -175,7 +175,7 @@ export function EnhancedBarChart({
               tickFormatter={formatCurrency}
             />
             <Tooltip
-              formatter={(value: number) => formatCurrency(value)}
+              formatter={(value) => formatCurrency(Number(value ?? 0))}
               contentStyle={{
                 backgroundColor: '#fff',
                 border: '1px solid #e5e7eb',

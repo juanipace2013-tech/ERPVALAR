@@ -167,7 +167,7 @@ export async function generatePurchaseInvoiceJournalEntry(invoiceId: string) {
 
   // Actualizar saldos de las cuentas
   for (const line of entry.lines) {
-    if (line.debit > 0) {
+    if (Number(line.debit) > 0) {
       await prisma.chartOfAccount.update({
         where: { id: line.accountId },
         data: {
@@ -177,7 +177,7 @@ export async function generatePurchaseInvoiceJournalEntry(invoiceId: string) {
         },
       });
     }
-    if (line.credit > 0) {
+    if (Number(line.credit) > 0) {
       await prisma.chartOfAccount.update({
         where: { id: line.accountId },
         data: {
@@ -238,13 +238,13 @@ export async function updateInventoryFromPurchase(invoiceId: string) {
           quantity: Number(item.quantity),
           unitCost: Number(item.unitPrice),
           totalCost: Number(item.subtotal),
-          currency: invoice.currency,
+          currency: invoice.currency as any,
           reference: invoice.invoiceNumber,
           notes: `Compra ${invoice.invoiceNumber} - ${invoice.supplier.name}`,
           date: invoice.invoiceDate,
           userId: invoice.createdBy,
-          stockBefore: item.product.stockQuantity,
-          stockAfter: item.product.stockQuantity + Number(item.quantity),
+          stockBefore: item.product!.stockQuantity,
+          stockAfter: item.product!.stockQuantity + Number(item.quantity),
         },
       });
     }

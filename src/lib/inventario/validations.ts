@@ -11,7 +11,7 @@ import { StockMovementType, Currency } from '@prisma/client';
 export const stockMovementSchema = z.object({
   productId: z.string().min(1, 'ID de producto requerido'),
   type: z.nativeEnum(StockMovementType, {
-    errorMap: () => ({ message: 'Tipo de movimiento inválido' }),
+    message: 'Tipo de movimiento inválido',
   }),
   quantity: z
     .number()

@@ -20,35 +20,35 @@ export function ClientesProveedoresTab({ settings, onUpdate }: ClientesProveedor
   const [saving, setSaving] = useState(false)
   const [formData, setFormData] = useState({
     // Clientes
-    customerDefaultAccount: settings.customerDefaultAccount || '',
-    customerAdvanceAccount: settings.customerAdvanceAccount || '',
-    customerInterestAccount: settings.customerInterestAccount || '',
-    customerDiscountAccount: settings.customerDiscountAccount || '',
-    customerExchangeAccount: settings.customerExchangeAccount || '',
+    customerDefaultAccount: (settings.customerDefaultAccount as string) || '',
+    customerAdvanceAccount: (settings.customerAdvanceAccount as string) || '',
+    customerInterestAccount: (settings.customerInterestAccount as string) || '',
+    customerDiscountAccount: (settings.customerDiscountAccount as string) || '',
+    customerExchangeAccount: (settings.customerExchangeAccount as string) || '',
 
     // Proveedores
-    supplierDefaultAccount: settings.supplierDefaultAccount || '',
-    supplierAdvanceAccount: settings.supplierAdvanceAccount || '',
-    supplierInterestAccount: settings.supplierInterestAccount || '',
-    supplierDiscountAccount: settings.supplierDiscountAccount || '',
-    supplierExchangeAccount: settings.supplierExchangeAccount || '',
+    supplierDefaultAccount: (settings.supplierDefaultAccount as string) || '',
+    supplierAdvanceAccount: (settings.supplierAdvanceAccount as string) || '',
+    supplierInterestAccount: (settings.supplierInterestAccount as string) || '',
+    supplierDiscountAccount: (settings.supplierDiscountAccount as string) || '',
+    supplierExchangeAccount: (settings.supplierExchangeAccount as string) || '',
 
     // Avisos de vencimiento
-    invoiceReminder1Enabled: settings.invoiceReminder1Enabled ?? true,
-    invoiceReminder1Days: settings.invoiceReminder1Days || 1,
-    invoiceReminder1Before: settings.invoiceReminder1Before || false,
+    invoiceReminder1Enabled: (settings.invoiceReminder1Enabled as boolean) ?? true,
+    invoiceReminder1Days: (settings.invoiceReminder1Days as number) || 1,
+    invoiceReminder1Before: (settings.invoiceReminder1Before as boolean) || false,
 
-    invoiceReminder2Enabled: settings.invoiceReminder2Enabled ?? true,
-    invoiceReminder2Days: settings.invoiceReminder2Days || 7,
-    invoiceReminder2Before: settings.invoiceReminder2Before || false,
+    invoiceReminder2Enabled: (settings.invoiceReminder2Enabled as boolean) ?? true,
+    invoiceReminder2Days: (settings.invoiceReminder2Days as number) || 7,
+    invoiceReminder2Before: (settings.invoiceReminder2Before as boolean) || false,
 
-    invoiceReminder3Enabled: settings.invoiceReminder3Enabled ?? true,
-    invoiceReminder3Days: settings.invoiceReminder3Days || 10,
-    invoiceReminder3Before: settings.invoiceReminder3Before || false,
+    invoiceReminder3Enabled: (settings.invoiceReminder3Enabled as boolean) ?? true,
+    invoiceReminder3Days: (settings.invoiceReminder3Days as number) || 10,
+    invoiceReminder3Before: (settings.invoiceReminder3Before as boolean) || false,
 
     // Envío automático
-    autoSendReceipts: settings.autoSendReceipts ?? true,
-    autoSendPaymentOrders: settings.autoSendPaymentOrders ?? false,
+    autoSendReceipts: (settings.autoSendReceipts as boolean) ?? true,
+    autoSendPaymentOrders: (settings.autoSendPaymentOrders as boolean) ?? false,
   })
 
   const handleChange = (field: string, value: string | number | boolean) => {

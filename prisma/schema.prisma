@@ -65,6 +65,7 @@ model User {
 
   // Customer relations
   customerReceipts  CustomerReceipt[]
+  receipts          Receipt[]
 
   @@index([email])
   @@index([role])
@@ -1205,6 +1206,7 @@ model Invoice {
   taxAmount       Decimal       @db.Decimal(12, 2)
   discount        Decimal       @default(0) @db.Decimal(12, 2)
   total           Decimal       @db.Decimal(12, 2)
+  paidAmount      Decimal       @default(0) @db.Decimal(12, 2) // Monto cobrado
   balance         Decimal       @default(0) @db.Decimal(12, 2) // Saldo pendiente
 
   // Tipo de cambio para contabilidad (solo si currency != ARS)
@@ -1241,6 +1243,7 @@ model Invoice {
   ivaBooks        IVABook[]
   taxWithholdings TaxWithholding[]
   customerReceipts CustomerReceipt[]
+  receiptInvoiceApplications ReceiptInvoiceApplication[]
 
   // Inventory relations
   stockMovements  StockMovement[]
@@ -1474,6 +1477,7 @@ model ChartOfAccount {
   journalEntryTemplateLines JournalEntryTemplateLine[]
   purchaseInvoiceItems PurchaseInvoiceItem[]
   purchaseInvoicePerceptions PurchaseInvoicePerception[]
+  treasuryAccounts TreasuryAccount[]
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -1594,7 +1598,9 @@ model JournalEntry {
   // Relación con documentos
   invoiceId       String?
   paymentId       String?
+  receiptId       String?         @unique
   purchaseInvoice PurchaseInvoice?
+  receipt         Receipt?        @relation(fields: [receiptId], references: [id])
 
   // Plantilla aplicada
   templateCode    String?             // Código de plantilla utilizada
@@ -1618,6 +1624,7 @@ model JournalEntry {
   @@index([status])
   @@index([userId])
   @@index([invoiceId])
+  @@index([receiptId])
   @@map("journal_entries")
 }
 
@@ -2094,43 +2101,178 @@ model Payment {
   @@map("payments")
 }
 
+// ========================================
+// CUENTAS DE TESORERÍA
+// ========================================
+
+enum TreasuryAccountType {
+  BANCO_CUENTA_CORRIENTE
+  BANCO_CAJA_AHORRO
+  CAJA
+  VALORES_A_DEPOSITAR
+}
+
+model TreasuryAccount {
+  id                String               @id @default(cuid())
+  name              String
+  type              TreasuryAccountType
+  bankName          String?
+  accountNumber     String?
+  chartOfAccountId  String
+  chartOfAccount    ChartOfAccount       @relation(fields: [chartOfAccountId], references: [id])
+  isActive          Boolean              @default(true)
+
+  receiptPaymentMethods ReceiptPaymentMethod[]
+
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@index([chartOfAccountId])
+  @@index([isActive])
+  @@map("treasury_accounts")
+}
+
+// ========================================
+// RECIBOS DE COBRO
+// ========================================
+
+enum ReceiptStatus {
+  BORRADOR
+  APROBADO
+  ANULADO
+}
+
+enum ReceiptPaymentType {
+  TRANSFERENCIA
+  CHEQUE
+  EFECTIVO
+  DEPOSITO
+  OTROS
+}
+
 model Receipt {
   id                String          @id @default(cuid())
   receiptNumber     String          @unique
+  pointOfSale       String          @default("0001")
   date              DateTime        @default(now())
 
-  // De quién se cobra
-  customerId        String?
-  customer          Customer?       @relation(fields: [customerId], references: [id])
+  // Cliente
+  customerId        String
+  customer          Customer        @relation(fields: [customerId], references: [id])
 
-  // Método de cobro
-  bankAccountId     String?
-  bankAccount       BankAccount?    @relation(fields: [bankAccountId], references: [id])
-
-  collectionMethod  PaymentMethod
-
-  // Monto
-  amount            Decimal         @db.Decimal(15, 2)
-  currency          String          @default("ARS")
+  // Usuario que creó el recibo
+  userId            String
+  user              User            @relation(fields: [userId], references: [id])
 
   // Detalles
   description       String?
-  checkNumber       String?
 
   // Estado
-  status            PaymentStatus   @default(PENDING)
+  status            ReceiptStatus   @default(BORRADOR)
+
+  // Totales calculados
+  totalApplied      Decimal         @default(0) @db.Decimal(15, 2)
+  totalWithholdings Decimal         @default(0) @db.Decimal(15, 2)
+  totalToCobrar     Decimal         @default(0) @db.Decimal(15, 2)
+  totalCobrado      Decimal         @default(0) @db.Decimal(15, 2)
+
+  // Relación con asiento contable (se vincula al aprobar)
+  journalEntry      JournalEntry?
+
+  // Relaciones hijas
+  invoiceApplications ReceiptInvoiceApplication[]
+  withholdingGroups   ReceiptWithholdingGroup[]
+  paymentMethods      ReceiptPaymentMethod[]
+
+  // Campos legacy (tesorería simple)
+  bankAccountId     String?
+  bankAccount       BankAccount?    @relation(fields: [bankAccountId], references: [id])
+  collectionMethod  PaymentMethod?
+  amount            Decimal?        @db.Decimal(15, 2)
+  currency          String          @default("ARS")
+  checkNumber       String?
 
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 
   @@index([receiptNumber])
+  @@index([pointOfSale])
   @@index([customerId])
+  @@index([userId])
   @@index([bankAccountId])
   @@index([date])
+  @@index([status])
   @@map("receipts")
 }
 
-// Cobros a clientes (con integración contable)
+model ReceiptInvoiceApplication {
+  id            String   @id @default(cuid())
+  receiptId     String
+  receipt       Receipt  @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  invoiceId     String
+  invoice       Invoice  @relation(fields: [invoiceId], references: [id])
+  invoiceTotal  Decimal  @default(0) @db.Decimal(15, 2)
+  appliedAmount Decimal  @db.Decimal(15, 2)
+
+  createdAt     DateTime @default(now())
+
+  @@index([receiptId])
+  @@index([invoiceId])
+  @@map("receipt_invoice_applications")
+}
+
+model ReceiptWithholdingGroup {
+  id          String                  @id @default(cuid())
+  receiptId   String
+  receipt     Receipt                 @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  groupType   String                  // IIBB, IVA, SUSS, GANANCIAS
+  totalAmount Decimal                 @default(0) @db.Decimal(15, 2)
+
+  lines       ReceiptWithholdingLine[]
+
+  createdAt   DateTime                @default(now())
+
+  @@index([receiptId])
+  @@map("receipt_withholding_groups")
+}
+
+model ReceiptWithholdingLine {
+  id                  String                @id @default(cuid())
+  groupId             String
+  group               ReceiptWithholdingGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  withholdingType     String                // IIBB_CABA, IVA, SUSS, GANANCIAS, etc.
+  jurisdictionLabel   String?
+  certificateNumber   String?
+  amount              Decimal               @db.Decimal(15, 2)
+
+  createdAt           DateTime              @default(now())
+
+  @@index([groupId])
+  @@map("receipt_withholding_lines")
+}
+
+model ReceiptPaymentMethod {
+  id                String             @id @default(cuid())
+  receiptId         String
+  receipt           Receipt            @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  treasuryAccountId String
+  treasuryAccount   TreasuryAccount    @relation(fields: [treasuryAccountId], references: [id])
+  paymentType       ReceiptPaymentType
+  amount            Decimal            @db.Decimal(15, 2)
+  checkNumber       String?
+  checkDate         DateTime?
+  checkBank         String?
+  reference         String?
+  notes             String?
+
+  createdAt         DateTime           @default(now())
+
+  @@index([receiptId])
+  @@index([treasuryAccountId])
+  @@map("receipt_payment_methods")
+}
+
+// Cobros a clientes (legacy - integración simple)
 model CustomerReceipt {
   id            String        @id @default(cuid())
   customerId    String

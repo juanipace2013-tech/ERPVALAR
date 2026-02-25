@@ -27,7 +27,7 @@ export async function GET(
     const dateTo = searchParams.get('dateTo')
 
     // Construir filtros
-    const where: Record<string, unknown> = { bankAccountId: id }
+    const where: any = { bankAccountId: id }
 
     if (dateFrom || dateTo) {
       where.date = {}

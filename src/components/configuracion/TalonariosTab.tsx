@@ -168,7 +168,7 @@ export function TalonariosTab() {
     setIsNew(true)
   }
 
-  const handleFieldChange = (field: keyof Talonario, value: string | number) => {
+  const handleFieldChange = (field: keyof Talonario, value: string | number | boolean) => {
     if (!selectedTalonario) return
     setSelectedTalonario({
       ...selectedTalonario,

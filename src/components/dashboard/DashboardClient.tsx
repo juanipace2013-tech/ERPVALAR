@@ -426,7 +426,7 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
                           borderRadius: '6px',
                           fontSize: '12px'
                         }}
-                        formatter={(value: number) => [`$${value.toFixed(2)}`, 'Tipo de cambio']}
+                        formatter={(value) => [`$${Number(value ?? 0).toFixed(2)}`, 'Tipo de cambio']}
                       />
                       <Line
                         type="monotone"

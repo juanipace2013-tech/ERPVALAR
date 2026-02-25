@@ -162,10 +162,10 @@ export function BankOperationDialog({ open, onOpenChange, bankAccountId, onSucce
 
       onSuccess()
       onOpenChange(false)
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: 'Error',
-        description: error.message || 'No se pudo registrar la operación',
+        description: error?.message || 'No se pudo registrar la operación',
         variant: 'destructive',
       })
     } finally {

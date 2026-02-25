@@ -704,6 +704,7 @@ export async function sendQuoteToColppy(
     quoteNumber: string;
     currency: string;
     exchangeRate: number | null;
+    notes?: string | null;
     customer: {
       name: string;
       cuit: string;

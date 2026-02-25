@@ -9,7 +9,7 @@ import { validateStockAvailability } from './stock.service';
 import { calculateCMV, getProductNames } from './cmv.service';
 import { createCMVJournalEntry } from '@/lib/contabilidad/journal-entry.helper';
 import { createSaleJournalEntry } from '@/lib/contabilidad/sale-accounting';
-import type { InvoiceWithInventoryResult } from './types';
+import type { InvoiceWithInventoryResult, StockValidationResult, CMVCalculation } from './types';
 
 /**
  * Invoice item for processing
@@ -265,7 +265,7 @@ export async function processInvoiceCreationWithInventory(
       // Return complete result
       return {
         invoice,
-        movements,
+        movements: movements as any,
         journalEntry,
       };
     },

@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
         expectedDate: body.expectedDate ? new Date(body.expectedDate) : null,
         notes: body.notes || null,
         items: {
-          create: body.items.map((item: { productId: string; quantity: number; unitCost: number; notes?: string }) => ({
+          create: body.items.map((item: { productId: string; quantity: number; unitCost: number; discount?: number; taxRate?: number; description?: string; notes?: string }) => ({
             productId: item.productId,
             quantity: item.quantity,
             receivedQty: 0,

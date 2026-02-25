@@ -66,7 +66,7 @@ export function CheckManagementDialog({ open, onOpenChange }: CheckManagementDia
         setChecks(data.checks || [])
       }
     } catch (_error) {
-      console.error('Error loading checks:', error)
+      console.error('Error loading checks:', _error)
       toast({
         title: 'Error',
         description: 'No se pudieron cargar los cheques',

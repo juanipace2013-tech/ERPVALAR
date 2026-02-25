@@ -50,21 +50,22 @@ interface DatosGeneralesTabProps {
 export function DatosGeneralesTab({ settings, onUpdate }: DatosGeneralesTabProps) {
   const { toast } = useToast()
   const [saving, setSaving] = useState(false)
+  const s = settings as Record<string, string>
   const [formData, setFormData] = useState({
-    name: settings.name || '',
-    legalName: settings.legalName || '',
-    address: settings.address || '',
-    city: settings.city || '',
-    province: settings.province || 'CABA',
-    postalCode: settings.postalCode || '',
-    country: settings.country || 'Argentina',
-    phone: settings.phone || '',
-    email: settings.email || '',
-    cbu: settings.cbu || '',
-    taxId: settings.taxId || '',
-    iibbNumber: settings.iibbNumber || '',
-    logoWidth: settings.logoWidth || '',
-    logoHeight: settings.logoHeight || '',
+    name: s.name || '',
+    legalName: s.legalName || '',
+    address: s.address || '',
+    city: s.city || '',
+    province: s.province || 'CABA',
+    postalCode: s.postalCode || '',
+    country: s.country || 'Argentina',
+    phone: s.phone || '',
+    email: s.email || '',
+    cbu: s.cbu || '',
+    taxId: s.taxId || '',
+    iibbNumber: s.iibbNumber || '',
+    logoWidth: s.logoWidth || '',
+    logoHeight: s.logoHeight || '',
   })
 
   const handleChange = (field: string, value: string) => {
@@ -261,10 +262,10 @@ export function DatosGeneralesTab({ settings, onUpdate }: DatosGeneralesTabProps
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-4">
-            {settings.logoUrl && (
+            {(settings.logoUrl as string) && (
               <div className="border rounded p-4 bg-gray-50">
                 <img
-                  src={settings.logoUrl}
+                  src={settings.logoUrl as string}
                   alt="Logo actual"
                   className="max-h-24 object-contain"
                 />

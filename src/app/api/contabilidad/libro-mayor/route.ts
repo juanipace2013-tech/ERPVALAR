@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
           })
 
           // Calcular saldos correctamente (siempre positivos)
-          let runningBalance = { amount: 0, nature: 'DEUDOR' as const }
+          let runningBalance = { amount: 0, nature: 'DEUDOR' as 'DEUDOR' | 'ACREEDOR' }
           const movementsWithBalance = movements.map((movement) => {
             const debit = Number(movement.debit)
             const credit = Number(movement.credit)
@@ -173,7 +173,7 @@ export async function GET(request: NextRequest) {
     })
 
     // Calcular saldos correctamente (siempre positivos)
-    let runningBalance = { amount: 0, nature: 'DEUDOR' as const }
+    let runningBalance = { amount: 0, nature: 'DEUDOR' as 'DEUDOR' | 'ACREEDOR' }
     const movementsWithBalance = movements.map((movement) => {
       const debit = Number(movement.debit)
       const credit = Number(movement.credit)

@@ -61,9 +61,9 @@ export async function POST(
     });
 
     return NextResponse.json({
+      ...result,
       success: true,
       message: 'Email enviado correctamente',
-      ...result
     });
 
   } catch (error) {

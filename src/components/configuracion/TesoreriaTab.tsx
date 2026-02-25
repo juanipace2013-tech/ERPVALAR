@@ -81,8 +81,8 @@ export function TesoreriaTab({ settings, onUpdate }: TesoreriaTabProps) {
   const [dialogOpen, setDialogOpen] = useState(false)
 
   const [configData, setConfigData] = useState({
-    valuesToDepositAccount: settings.valuesToDepositAccount || '',
-    deferredChecksAccount: settings.deferredChecksAccount || '',
+    valuesToDepositAccount: (settings.valuesToDepositAccount as string) || '',
+    deferredChecksAccount: (settings.deferredChecksAccount as string) || '',
   })
 
   const [newChequera, setNewChequera] = useState({
@@ -109,7 +109,7 @@ export function TesoreriaTab({ settings, onUpdate }: TesoreriaTabProps) {
         }
       }
     } catch (_error) {
-      console.error('Error loading chequeras:', error)
+      console.error('Error loading chequeras:', _error)
       toast({
         title: 'Error',
         description: 'No se pudieron cargar las chequeras',

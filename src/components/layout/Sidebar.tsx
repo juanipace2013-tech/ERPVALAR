@@ -98,7 +98,7 @@ export function Sidebar() {
           const isExpanded = expandedItems.includes(item.title)
           const hasSubItems = item.subItems && item.subItems.length > 0
           const isActive = pathname === item.href
-          const isParentActive = hasSubItems && item.subItems.some(sub => pathname.startsWith(sub.href))
+          const isParentActive = hasSubItems && item.subItems!.some(sub => pathname.startsWith(sub.href))
 
           // Filtrar sub-items por rol
           const visibleSubItems = hasSubItems

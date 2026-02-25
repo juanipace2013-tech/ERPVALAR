@@ -32,24 +32,24 @@ export function DatosImpositivosTab({ settings, onUpdate }: DatosImpositivosTabP
   const { toast } = useToast()
   const [saving, setSaving] = useState(false)
   const [formData, setFormData] = useState({
-    taxCondition: settings.taxCondition || 'RESPONSABLE_INSCRIPTO',
-    fiscalDebitAccount: settings.fiscalDebitAccount || '',
-    fiscalCreditAccount: settings.fiscalCreditAccount || '',
+    taxCondition: (settings.taxCondition as string) || 'RESPONSABLE_INSCRIPTO',
+    fiscalDebitAccount: (settings.fiscalDebitAccount as string) || '',
+    fiscalCreditAccount: (settings.fiscalCreditAccount as string) || '',
 
-    isWithholdingAgent: settings.isWithholdingAgent || false,
-    withholdingGananciasAccount: settings.withholdingGananciasAccount || '',
-    withholdingIVA: settings.withholdingIVA || false,
-    withholdingIVAAccount: settings.withholdingIVAAccount || '',
-    withholdingIIBB: settings.withholdingIIBB || false,
-    withholdingIIBBAccount: settings.withholdingIIBBAccount || '',
-    withholdingARBA: settings.withholdingARBA || false,
-    autoCalculateAGIP: settings.autoCalculateAGIP || false,
+    isWithholdingAgent: (settings.isWithholdingAgent as boolean) || false,
+    withholdingGananciasAccount: (settings.withholdingGananciasAccount as string) || '',
+    withholdingIVA: (settings.withholdingIVA as boolean) || false,
+    withholdingIVAAccount: (settings.withholdingIVAAccount as string) || '',
+    withholdingIIBB: (settings.withholdingIIBB as boolean) || false,
+    withholdingIIBBAccount: (settings.withholdingIIBBAccount as string) || '',
+    withholdingARBA: (settings.withholdingARBA as boolean) || false,
+    autoCalculateAGIP: (settings.autoCalculateAGIP as boolean) || false,
 
-    retentionGananciasAccount: settings.retentionGananciasAccount || '',
-    retentionIVAAccount: settings.retentionIVAAccount || '',
-    retentionSUSSAccount: settings.retentionSUSSAccount || '',
+    retentionGananciasAccount: (settings.retentionGananciasAccount as string) || '',
+    retentionIVAAccount: (settings.retentionIVAAccount as string) || '',
+    retentionSUSSAccount: (settings.retentionSUSSAccount as string) || '',
 
-    perceptionIVAAccount: settings.perceptionIVAAccount || '',
+    perceptionIVAAccount: (settings.perceptionIVAAccount as string) || '',
   })
 
   const handleChange = (field: string, value: string | number | boolean) => {

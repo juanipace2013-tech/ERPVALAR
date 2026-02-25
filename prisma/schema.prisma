@@ -1072,7 +1072,7 @@ enum DeliveryNoteStatus {
 
 model DeliveryNote {
   id                String             @id @default(cuid())
-  deliveryNumber    String             @unique  // 0001-00000001
+  deliveryNumber    String             @unique  // RE 0002-XXXXXXXX
 
   // Origen
   quoteId           String?
@@ -1097,7 +1097,18 @@ model DeliveryNote {
 
   // Transporte
   carrier           String?            // Transportista
+  transportAddress  String?            // Dirección del transporte
   trackingNumber    String?            // Número de seguimiento
+
+  // Orden de compra / referencia cliente
+  purchaseOrder     String?            // OC del cliente
+
+  // Totales
+  totalAmountARS    Decimal?           @db.Decimal(15,2)  // Total sin IVA en ARS
+  exchangeRate      Decimal?           @db.Decimal(12,6)  // Tipo de cambio usado
+
+  // Bultos
+  bultos            Int?
 
   // Responsables
   preparedBy        String?            // Quién preparó el pedido
@@ -1130,11 +1141,13 @@ model DeliveryNoteItem {
   deliveryNoteId    String
   deliveryNote      DeliveryNote  @relation(fields: [deliveryNoteId], references: [id], onDelete: Cascade)
 
-  productId         String
-  product           Product       @relation(fields: [productId], references: [id])
+  productId         String?
+  product           Product?      @relation(fields: [productId], references: [id])
 
+  sku               String?       // SKU manual (si no hay producto)
   description       String
-  quantity          Int
+  quantity          Decimal       @db.Decimal(10,2)
+  unit              String        @default("UN")
 
   // Ubicación en depósito
   warehouseLocation String?

@@ -20,6 +20,11 @@ export async function POST(
       deliveryProvince,
       deliveryPostalCode,
       carrier,
+      transportAddress,
+      purchaseOrder,
+      bultos,
+      totalAmountARS,
+      exchangeRate,
       notes
     } = body;
 
@@ -29,6 +34,11 @@ export async function POST(
       deliveryProvince,
       deliveryPostalCode,
       carrier,
+      transportAddress,
+      purchaseOrder,
+      bultos,
+      totalAmountARS,
+      exchangeRate,
       notes
     });
 

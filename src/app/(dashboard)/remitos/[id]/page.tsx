@@ -77,14 +77,16 @@ interface DeliveryNote {
   } | null
   items: Array<{
     id: string
-    productId: string
+    productId: string | null
+    sku: string | null
+    unit: string
     product: {
       id: string
       sku: string
       name: string
       brand: string | null
       unit: string
-    }
+    } | null
     description: string
     quantity: number
     warehouseLocation: string | null
@@ -470,15 +472,17 @@ export default function DeliveryNoteDetailPage() {
                       <TableRow key={item.id}>
                         <TableCell>
                           <div>
-                            <p className="font-medium">{item.product?.name || item.description}</p>
-                            <p className="text-sm text-gray-500">SKU: {item.product?.sku}</p>
+                            <p className="font-medium">{item.description || item.product?.name}</p>
+                            {(item.sku || item.product?.sku) && (
+                              <p className="text-sm text-gray-500">SKU: {item.sku || item.product?.sku}</p>
+                            )}
                             {item.product?.brand && (
                               <p className="text-sm text-gray-500">{item.product.brand}</p>
                             )}
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
-                          {item.quantity} {item.product?.unit}
+                          {Number(item.quantity)} {item.unit || item.product?.unit || 'UN'}
                         </TableCell>
                         <TableCell>
                           {item.warehouseLocation || <span className="text-gray-400">-</span>}
@@ -496,7 +500,7 @@ export default function DeliveryNoteDetailPage() {
                 <div className="flex justify-between items-center">
                   <span className="font-semibold">Total de Items:</span>
                   <span className="text-lg font-bold">
-                    {deliveryNote.items.reduce((sum, item) => sum + item.quantity, 0)} unidades
+                    {deliveryNote.items.reduce((sum, item) => sum + Number(item.quantity), 0)} unidades
                   </span>
                 </div>
               </div>

@@ -250,31 +250,6 @@ export default function QuoteViewPage() {
     setRejectionReason('')
   }
 
-  const handleGenerateDeliveryNote = async () => {
-    try {
-      setActionLoading(true)
-      const response = await fetch(`/api/quotes/${id}/generate-delivery-note`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Error al generar remito')
-      }
-
-      const deliveryNote = await response.json()
-      toast.success('Remito generado correctamente')
-      router.push(`/remitos/${deliveryNote.id}`)
-    } catch (error) {
-      console.error('Error:', error)
-      toast.error(error instanceof Error ? error.message : 'Error al generar remito')
-    } finally {
-      setActionLoading(false)
-    }
-  }
-
   const handleGenerateInvoice = async () => {
     try {
       setActionLoading(true)
@@ -453,7 +428,7 @@ export default function QuoteViewPage() {
                   <FileSpreadsheet className="h-4 w-4 mr-2" />
                   Generar Factura
                 </Button>
-                <Button onClick={handleGenerateDeliveryNote} disabled={actionLoading} variant="outline">
+                <Button onClick={() => router.push(`/remitos/nuevo?quoteId=${id}`)} variant="outline">
                   <Package className="h-4 w-4 mr-2" />
                   Generar Remito
                 </Button>

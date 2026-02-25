@@ -88,19 +88,19 @@ export async function updateQuoteStatus(
  */
 async function generateDeliveryNumber(): Promise<string> {
   const lastDeliveryNote = await prisma.deliveryNote.findFirst({
-    orderBy: { deliveryNumber: 'desc' },
+    orderBy: { createdAt: 'desc' },
     select: { deliveryNumber: true }
   });
 
   if (!lastDeliveryNote) {
-    return '0001-00000001';
+    return 'RE 0002-00000001';
   }
 
-  // Formato: 0001-00000001 (punto de venta - número)
-  const [pointOfSale, numberStr] = lastDeliveryNote.deliveryNumber.split('-');
-  const number = parseInt(numberStr) + 1;
+  // Formato: RE 0002-XXXXXXXX
+  const match = lastDeliveryNote.deliveryNumber.match(/(\d+)$/);
+  const number = match ? parseInt(match[1]) + 1 : 1;
 
-  return `${pointOfSale}-${String(number).padStart(8, '0')}`;
+  return `RE 0002-${String(number).padStart(8, '0')}`;
 }
 
 /**
@@ -114,6 +114,11 @@ export async function generateDeliveryNoteFromQuote(
     deliveryProvince?: string;
     deliveryPostalCode?: string;
     carrier?: string;
+    transportAddress?: string;
+    purchaseOrder?: string;
+    bultos?: number;
+    totalAmountARS?: number;
+    exchangeRate?: number;
     notes?: string;
   }
 ) {
@@ -153,15 +158,22 @@ export async function generateDeliveryNoteFromQuote(
         deliveryProvince: data?.deliveryProvince || quote.customer.province || null,
         deliveryPostalCode: data?.deliveryPostalCode || quote.customer.postalCode || null,
         carrier: data?.carrier || null,
+        transportAddress: data?.transportAddress || null,
+        purchaseOrder: data?.purchaseOrder || null,
+        bultos: data?.bultos || null,
+        totalAmountARS: data?.totalAmountARS || null,
+        exchangeRate: data?.exchangeRate || null,
         notes: data?.notes || null,
         status: 'PENDING',
         items: {
           create: quote.items
             .filter(item => !item.isAlternative) // Solo items principales
             .map(item => ({
-              productId: item.productId,
-              description: item.description || item.product?.name,
-              quantity: item.quantity
+              productId: item.productId || null,
+              sku: item.product?.sku || item.manualSku || null,
+              description: item.description || item.product?.name || 'Item',
+              quantity: item.quantity,
+              unit: item.product?.unit || 'UN',
             }))
         }
       },

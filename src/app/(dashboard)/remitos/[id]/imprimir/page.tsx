@@ -18,7 +18,7 @@ async function getDeliveryNote(id: string) {
           address: true,
           city: true,
           province: true,
-          ivaCondition: true,
+          taxCondition: true,
         },
       },
       quote: {
@@ -67,8 +67,8 @@ export default async function DeliveryNotePrintPage({ params }: PageProps) {
     year: 'numeric',
   })
 
-  const ivaLabel = dn.customer.ivaCondition
-    ? ivaLabels[dn.customer.ivaCondition] || dn.customer.ivaCondition
+  const ivaLabel = dn.customer.taxCondition
+    ? ivaLabels[dn.customer.taxCondition] || dn.customer.taxCondition
     : ''
 
   const totalARS = dn.totalAmountARS ? Number(dn.totalAmountARS) : null

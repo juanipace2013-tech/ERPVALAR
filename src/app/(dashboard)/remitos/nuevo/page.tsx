@@ -43,7 +43,7 @@ interface Quote {
     address: string | null
     city: string | null
     province: string | null
-    ivaCondition: string | null
+    taxCondition: string | null
   }
   items: QuoteItem[]
   exchangeRate?: { rate: number } | null
@@ -178,8 +178,8 @@ export default function NuevoRemitoPage() {
               )}
             </div>
             <div>
-              {quote.customer.ivaCondition && (
-                <p className="text-gray-500">IVA: {quote.customer.ivaCondition}</p>
+              {quote.customer.taxCondition && (
+                <p className="text-gray-500">IVA: {quote.customer.taxCondition}</p>
               )}
               <Badge variant="outline" className="mt-1">
                 {quote.currency} {Number(quote.totalAmount).toLocaleString('es-AR', { minimumFractionDigits: 2 })}

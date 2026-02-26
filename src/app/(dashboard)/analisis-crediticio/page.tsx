@@ -103,7 +103,10 @@ interface BcraResult {
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 
 function formatPeriodo(p: string): string {
-  const [year, month] = p.split('-')
+  // El BCRA devuelve "YYYYMM" (ej: "202512"), no "YYYY-MM"
+  const clean = p.replace('-', '')
+  const year = clean.substring(0, 4)
+  const month = clean.substring(4, 6)
   return `${MESES[parseInt(month) - 1]} ${year.slice(2)}`
 }
 

@@ -1,3 +1,5 @@
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
+
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
@@ -21,16 +23,29 @@ function calcularSemaforo(
   return 'verde'
 }
 
-async function fetchBcra(url: string) {
+async function fetchBCRA(endpoint: string) {
   try {
-    const res = await fetch(url, {
+    const url = `${BCRA_BASE}/${endpoint}`
+    console.log('Fetching BCRA:', url)
+
+    const response = await fetch(url, {
       headers: { Accept: 'application/json' },
       cache: 'no-store',
     })
-    const data = await res.json()
-    return data
-  } catch {
-    return null
+
+    console.log('BCRA response status:', response.status)
+
+    const text = await response.text()
+    console.log('BCRA response body:', text.substring(0, 200))
+
+    if (!text) {
+      return { status: 404, errorMessages: ['Respuesta vacía del BCRA'] }
+    }
+
+    return JSON.parse(text)
+  } catch (error) {
+    console.error('BCRA fetch error:', error)
+    return { status: 500, errorMessages: [`Error al consultar BCRA: ${error}`] }
   }
 }
 
@@ -55,33 +70,53 @@ export async function GET(
   }
 
   // Fetch 3 endpoints in parallel
-  const [deudas, historicas, cheques] = await Promise.allSettled([
-    fetchBcra(`${BCRA_BASE}/Deudas/${cuit}`),
-    fetchBcra(`${BCRA_BASE}/Deudas/Historicas/${cuit}`),
-    fetchBcra(`${BCRA_BASE}/Deudas/ChequesRechazados/${cuit}`),
+  const [deudas, historicas, cheques] = await Promise.all([
+    fetchBCRA(`Deudas/${cuit}`),
+    fetchBCRA(`Deudas/Historicas/${cuit}`),
+    fetchBCRA(`Deudas/ChequesRechazados/${cuit}`),
   ])
 
-  const deudasData = deudas.status === 'fulfilled' ? deudas.value : null
-  const historicasData = historicas.status === 'fulfilled' ? historicas.value : null
-  const chequesData = cheques.status === 'fulfilled' ? cheques.value : null
+  console.log('BCRA Deudas response:', JSON.stringify(deudas, null, 2))
 
-  // Compute resumen from deudas
-  const entidades: any[] =
-    deudasData?.status === 200 ? deudasData?.results?.entidades ?? [] : []
+  // ── Extraer entidades del período más reciente ───────────────────────────────
+  // La API devuelve results.periodos[].entidades, no results.entidades directamente
+  const periodos: any[] =
+    deudas?.status === 200 ? deudas?.results?.periodos ?? [] : []
+
+  const periodosOrdenados = [...periodos].sort((a, b) =>
+    a.periodo.localeCompare(b.periodo)
+  )
+  const periodoActual = periodosOrdenados[periodosOrdenados.length - 1]
+  const entidadesRaw: any[] = periodoActual?.entidades ?? []
+
+  // Mapear al formato esperado por el frontend
+  // El BCRA devuelve "entidad" como string (nombre), no como número
+  const entidadesMapped = entidadesRaw.map((e: any) => ({
+    entidad: typeof e.entidad === 'number' ? e.entidad : 0,
+    entidadNombre: typeof e.entidad === 'string' ? e.entidad : undefined,
+    situacion: e.situacion,
+    monto: e.monto,
+    diasAtrasoPago: e.diasAtrasoPago === 'N/A' ? null : e.diasAtrasoPago,
+    refinanciaciones: e.refinanciaciones,
+    recategorizacionObligacion: e.recategorizacionOblig,
+    situacionJuridica: e.situacionJuridica,
+    procesoJudicial: e.procesoJud,
+  }))
 
   const situacionPeor =
-    entidades.length > 0
-      ? Math.max(...entidades.map((e: any) => Number(e.situacion) || 1))
+    entidadesMapped.length > 0
+      ? Math.max(...entidadesMapped.map((e: any) => Number(e.situacion) || 1))
       : 0
 
-  const montoTotalDeuda = entidades.reduce(
-    (sum: number, e: any) => sum + (Number(e.monto) || 0),
+  // Los montos del BCRA están en miles de pesos → multiplicar × 1000
+  const montoTotalDeuda = entidadesMapped.reduce(
+    (sum: number, e: any) => sum + (Number(e.monto) || 0) * 1000,
     0
   )
 
-  // Count cheques rechazados
+  // ── Cheques rechazados ────────────────────────────────────────────────────────
   const causales: any[] =
-    chequesData?.status === 200 ? chequesData?.results?.causales ?? [] : []
+    cheques?.status === 200 ? cheques?.results?.causales ?? [] : []
 
   let cantidadChequesRechazados = 0
   for (const causal of causales) {
@@ -98,21 +133,35 @@ export async function GET(
       : calcularSemaforo(situacionPeor, cantidadChequesRechazados)
 
   const denominacion =
-    deudasData?.results?.denominacion ||
-    historicasData?.results?.denominacion ||
-    chequesData?.results?.denominacion ||
+    deudas?.results?.denominacion ||
+    historicas?.results?.denominacion ||
+    cheques?.results?.denominacion ||
     ''
+
+  // ── Construir respuesta con entidades aplanadas ───────────────────────────────
+  // El frontend espera deudas.results.entidades (no periodos[].entidades)
+  const deudasTransformed =
+    deudas?.status === 200
+      ? {
+          status: deudas.status,
+          results: {
+            denominacion: deudas.results?.denominacion,
+            periodoInformacion: periodoActual?.periodo,
+            entidades: entidadesMapped,
+          },
+        }
+      : deudas
 
   const result = {
     cuit: formatCuit(cuit),
     denominacion,
-    deudas: deudasData,
-    historicas: historicasData,
-    cheques: chequesData,
+    deudas: deudasTransformed,
+    historicas,
+    cheques,
     resumen: {
       situacionPeor,
       montoTotalDeuda,
-      cantidadEntidades: entidades.length,
+      cantidadEntidades: entidadesMapped.length,
       cantidadChequesRechazados,
       semaforo,
     },

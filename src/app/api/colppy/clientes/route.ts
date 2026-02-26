@@ -212,13 +212,33 @@ function mapCustomers(data: any[]): CachedCustomer[] {
     '45': 'a 45 Días',
     '60': 'a 60 Días',
     '90': 'a 90 Días',
+    '120': 'a 120 Días',
   };
+
+  // === DIAGNÓSTICO: Log del primer cliente para descubrir campos reales ===
+  if (data && data.length > 0) {
+    console.log('=== COLPPY CUSTOMER RAW FIELDS (primer cliente) ===');
+    console.log(JSON.stringify(data[0], null, 2));
+    console.log('=== FIN RAW FIELDS ===');
+  }
 
   return (data || []).map((c: any) => {
     const name = c.NombreFantasia || c.RazonSocial || '';
     const businessName = c.RazonSocial || '';
     const cuit = c.CUIT || '';
-    const idCondicionPago = c.idCondicionPago || '0';
+
+    // Intentar múltiples nombres posibles para la condición de pago
+    const idCondicionPago = String(
+      c.idCondicionPago
+      || c.IdCondicionPago
+      || c.condicionPago
+      || c.CondicionPago
+      || c.condPago
+      || c.PaymentTerms
+      || c.paymentTerms
+      || c.idCondPago
+      || '0'
+    );
 
     return {
       id: c.idCliente,
@@ -257,10 +277,32 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const search = (searchParams.get('search') || '').trim().toLowerCase();
     const limit = parseInt(searchParams.get('limit') || '20');
+    const all = searchParams.get('all') === 'true';
+    const id = searchParams.get('id') || '';
 
     // Cargar cache si es necesario (puede tardar ~2 seg la primera vez)
     const allCustomers = loadAllCustomers();
 
+    // Modo: buscar por Colppy ID
+    if (id) {
+      const customer = allCustomers.find((c) => c.colppyId === id || c.id === id);
+      return NextResponse.json({
+        customers: customer ? [customer] : [],
+        total: customer ? 1 : 0,
+        cached: true,
+      });
+    }
+
+    // Modo: retornar TODOS los clientes (para listado completo)
+    if (all) {
+      return NextResponse.json({
+        customers: allCustomers,
+        total: allCustomers.length,
+        cached: true,
+      });
+    }
+
+    // Modo estándar: búsqueda con mínimo 2 caracteres
     if (search.length < 2) {
       return NextResponse.json({
         customers: [],

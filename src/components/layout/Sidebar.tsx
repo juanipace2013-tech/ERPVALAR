@@ -46,6 +46,12 @@ const navItems: NavItem[] = [
     roles: ['ADMIN', 'GERENTE', 'VENDEDOR', 'CONTADOR'],
   },
   {
+    title: 'Clientes',
+    href: '/clientes',
+    icon: Users,
+    roles: ['ADMIN', 'GERENTE', 'VENDEDOR', 'CONTADOR'],
+  },
+  {
     title: 'Cotizaciones',
     href: '/cotizaciones',
     icon: FileText,

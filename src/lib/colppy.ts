@@ -73,6 +73,7 @@ export interface SendToColppyResult {
   facturaId?: string;
   facturaNumber?: string;
   error?: string;
+  customerPaymentTermsDays?: number; // Días de pago del cliente en Colppy, para sincronizar a DB local
 }
 
 // ============================================================================
@@ -296,12 +297,28 @@ export async function colppyFindCustomerByCUIT(
 
     const cliente = response.response.data[0];
 
+    // === DIAGNÓSTICO: Log de todos los campos del cliente de Colppy ===
+    console.log('=== CAMPOS DEL CLIENTE EN COLPPY ===');
+    console.log(JSON.stringify(cliente, null, 2));
+    console.log('=== FIN CAMPOS CLIENTE ===');
+
+    // Intentar múltiples nombres posibles para la condición de pago
+    const idCondicionPago = cliente.idCondicionPago
+      || cliente.IdCondicionPago
+      || cliente.condicionPago
+      || cliente.CondicionPago
+      || cliente.condPago
+      || cliente.PaymentTerms
+      || cliente.paymentTerms
+      || cliente.idCondPago
+      || '0';
+
     return {
       idEntidad: cliente.idCliente || cliente.id,
       razonSocial: cliente.RazonSocial || cliente.NombreFantasia,
       cuit: cliente.CUIT,
       condicionIva: cliente.CondicionIVA || 'RESPONSABLE_INSCRIPTO',
-      idCondicionPago: cliente.idCondicionPago || '0',
+      idCondicionPago: String(idCondicionPago),
     };
   } catch (error: any) {
     throw new Error(`Error al buscar cliente en Colppy: ${error.message}`);
@@ -797,7 +814,10 @@ export async function sendQuoteToColppy(
     const fecha = formatDateColppy(new Date());
 
     // 7. Ejecutar acciones según opción seleccionada
-    const result: SendToColppyResult = { success: true };
+    const result: SendToColppyResult = {
+      success: true,
+      customerPaymentTermsDays: parseInt(customer.idCondicionPago || '0') || 0,
+    };
 
     if (options.action === 'remito' || options.action === 'remito-factura') {
       const remito = await colppyCreateDeliveryNote(session, {

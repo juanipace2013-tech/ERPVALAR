@@ -209,6 +209,20 @@ export async function POST(
       data: updateData,
     });
 
+    // 11b. Sincronizar paymentTerms del cliente desde Colppy a DB local
+    if (result.customerPaymentTermsDays != null && quote.customerId) {
+      try {
+        await prisma.customer.update({
+          where: { id: quote.customerId },
+          data: { paymentTerms: result.customerPaymentTermsDays },
+        });
+        console.log(`[Colppy Sync] paymentTerms=${result.customerPaymentTermsDays} guardado para cliente ${quote.customerId}`);
+      } catch (syncErr: any) {
+        // No bloquear la operación principal si falla el sync
+        console.warn(`[Colppy Sync] Error al sincronizar paymentTerms: ${syncErr.message}`);
+      }
+    }
+
     // 12. Crear registro en QuoteStatusHistory
     await prisma.quoteStatusHistory.create({
       data: {

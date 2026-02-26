@@ -202,6 +202,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Sincronizar paymentTerms del cliente desde Colppy a DB local
+    if (colppyResult.customerPaymentTermsDays != null && quote.customerId) {
+      try {
+        await prisma.customer.update({
+          where: { id: quote.customerId },
+          data: { paymentTerms: colppyResult.customerPaymentTermsDays },
+        });
+        console.log(`[Colppy Sync] paymentTerms=${colppyResult.customerPaymentTermsDays} guardado para cliente ${quote.customerId}`);
+      } catch (syncErr: any) {
+        console.warn(`[Colppy Sync] Error al sincronizar paymentTerms: ${syncErr.message}`);
+      }
+    }
+
     // Registrar en BD: crear InvoiceItems para tracking de cantidades parciales
     const now = new Date()
 

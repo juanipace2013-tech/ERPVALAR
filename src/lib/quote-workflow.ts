@@ -5,16 +5,17 @@ import { QuoteStatus, DeliveryNoteStatus } from '@prisma/client';
 const ALLOWED_TRANSITIONS: Record<QuoteStatus, QuoteStatus[]> = {
   DRAFT: ['SENT', 'ACCEPTED', 'REJECTED', 'CANCELLED'],
   SENT: ['ACCEPTED', 'REJECTED', 'EXPIRED', 'CANCELLED'],
-  ACCEPTED: ['CONVERTED', 'CANCELLED'],
+  ACCEPTED: ['CONVERTED', 'CANCELLED', 'DRAFT'],
   REJECTED: [],
   EXPIRED: [],
-  CANCELLED: [],
-  CONVERTED: []
+  CANCELLED: ['DRAFT'],
+  CONVERTED: ['ACCEPTED'],
 };
 
 interface UpdateQuoteStatusData {
   customerResponse?: string;
   rejectionReason?: string;
+  revertReason?: string;
 }
 
 /**
@@ -41,6 +42,46 @@ export async function updateQuoteStatus(
     );
   }
 
+  // Determinar si es una reversión
+  const isRevert = (
+    (quote.status === 'CONVERTED' && newStatus === 'ACCEPTED') ||
+    (quote.status === 'ACCEPTED' && newStatus === 'DRAFT') ||
+    (quote.status === 'CANCELLED' && newStatus === 'DRAFT')
+  );
+
+  // Determinar notas para el historial
+  const historyNotes = data?.revertReason || data?.customerResponse || data?.rejectionReason || null;
+
+  // Construir datos de actualización
+  const updateData: any = {
+    status: newStatus,
+    statusUpdatedAt: new Date(),
+    statusUpdatedBy: userId,
+  };
+
+  // Campos estándar para transiciones normales
+  if (newStatus === 'ACCEPTED' || newStatus === 'REJECTED') {
+    if (!isRevert) {
+      updateData.responseDate = new Date();
+    }
+  }
+  if (data?.customerResponse) updateData.customerResponse = data.customerResponse;
+  if (data?.rejectionReason) updateData.rejectionReason = data.rejectionReason;
+
+  // Limpieza de campos en reversiones
+  if (quote.status === 'CONVERTED' && newStatus === 'ACCEPTED') {
+    // Revertir CONVERTED → ACCEPTED: limpiar campos de Colppy
+    updateData.colppyInvoiceId = null;
+    updateData.colppyDeliveryNoteId = null;
+    updateData.colppySyncedAt = null;
+  }
+
+  if ((quote.status === 'ACCEPTED' || quote.status === 'CANCELLED') && newStatus === 'DRAFT') {
+    // Revertir a DRAFT: limpiar respuesta del cliente
+    updateData.responseDate = null;
+    updateData.customerResponse = null;
+  }
+
   // Actualizar estado en una transacción
   const updated = await prisma.$transaction(async (tx) => {
     // Crear registro en historial
@@ -50,24 +91,14 @@ export async function updateQuoteStatus(
         fromStatus: quote.status,
         toStatus: newStatus,
         changedBy: userId,
-        notes: data?.customerResponse || data?.rejectionReason || null
+        notes: historyNotes,
       }
     });
 
     // Actualizar cotización
     return tx.quote.update({
       where: { id: quoteId },
-      data: {
-        status: newStatus,
-        statusUpdatedAt: new Date(),
-        statusUpdatedBy: userId,
-        responseDate:
-          newStatus === 'ACCEPTED' || newStatus === 'REJECTED'
-            ? new Date()
-            : undefined,
-        customerResponse: data?.customerResponse || undefined,
-        rejectionReason: data?.rejectionReason || undefined
-      },
+      data: updateData,
       include: {
         customer: true,
         salesPerson: true,

@@ -264,12 +264,14 @@ export default function ClientesPage() {
   // ─── Click handler ──────────────────────────────────────────────────────────
 
   const handleCustomerClick = (customer: ColppyCustomer) => {
-    const cleanCuit = customer.cuit?.replace(/\D/g, '')
-    if (cleanCuit && cleanCuit.length === 11) {
-      router.push(`/clientes/${cleanCuit}`)
+    // Usar colppyId como identificador principal (más confiable que CUIT)
+    const colppyId = customer.colppyId || customer.id
+    if (colppyId) {
+      router.push(`/clientes/${colppyId}`)
     } else {
-      // Fallback: usar id de Colppy
-      router.push(`/clientes/${customer.colppyId || customer.id}`)
+      // Fallback: usar CUIT sin guiones
+      const cleanCuit = customer.cuit?.replace(/\D/g, '')
+      router.push(`/clientes/${cleanCuit}`)
     }
   }
 

@@ -15,7 +15,7 @@ export async function POST(
 
     const { id } = await params;
     const body = await request.json();
-    const { status, customerResponse, rejectionReason } = body;
+    const { status, customerResponse, rejectionReason, revertReason } = body;
 
     if (!status) {
       return NextResponse.json(
@@ -39,7 +39,8 @@ export async function POST(
       session.user.id,
       {
         customerResponse,
-        rejectionReason
+        rejectionReason,
+        revertReason,
       }
     );
 

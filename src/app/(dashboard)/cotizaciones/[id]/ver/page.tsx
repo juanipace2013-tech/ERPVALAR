@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import {
   ArrowLeft,
   Loader2,
@@ -37,6 +38,10 @@ import {
   Pencil,
   Download,
   ShieldCheck,
+  Undo2,
+  Ban,
+  RotateCcw,
+  AlertTriangle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber } from '@/lib/utils'
@@ -149,6 +154,12 @@ export default function QuoteViewPage() {
   const [showAcceptDialog, setShowAcceptDialog] = useState(false)
   const [customerResponse, setCustomerResponse] = useState('')
   const [showColppyDialog, setShowColppyDialog] = useState(false)
+
+  // Revert dialog
+  const [showRevertDialog, setShowRevertDialog] = useState(false)
+  const [revertTarget, setRevertTarget] = useState<string>('')
+  const [revertReason, setRevertReason] = useState('')
+  const [revertReasonCustom, setRevertReasonCustom] = useState('')
 
   // BCRA indicator
   const [bcraSemaforo, setBcraSemaforo] = useState<'verde' | 'amarillo' | 'rojo' | null>(null)
@@ -286,6 +297,48 @@ export default function QuoteViewPage() {
     changeStatus('REJECTED', { rejectionReason })
     setShowRejectDialog(false)
     setRejectionReason('')
+  }
+
+  const openRevertDialog = (target: string) => {
+    setRevertTarget(target)
+    setRevertReason('')
+    setRevertReasonCustom('')
+    setShowRevertDialog(true)
+  }
+
+  const confirmRevert = () => {
+    const reason = revertReason === 'otro' ? revertReasonCustom : revertReason
+    if (!reason.trim()) {
+      toast.error('Debe seleccionar un motivo')
+      return
+    }
+    changeStatus(revertTarget, { revertReason: reason })
+    setShowRevertDialog(false)
+    setRevertReason('')
+    setRevertReasonCustom('')
+  }
+
+  const revertDialogConfig: Record<string, { title: string; description: string; icon: string; color: string }> = {
+    ACCEPTED: {
+      title: 'Revertir a Aceptada',
+      description: 'La cotización volverá al estado Aceptada. Se limpiarán los datos de Colppy (factura/remito) asociados y volverá a aparecer en el tablero de facturación.',
+      icon: 'undo',
+      color: 'amber',
+    },
+    DRAFT: {
+      title: revertTarget === 'DRAFT' && quote?.status === 'CANCELLED' ? 'Reactivar Cotización' : 'Revertir a Borrador',
+      description: revertTarget === 'DRAFT' && quote?.status === 'CANCELLED'
+        ? 'La cotización será reactivada y volverá al estado Borrador. Podrá ser editada y re-enviada.'
+        : 'La cotización volverá al estado Borrador. Podrá ser editada nuevamente.',
+      icon: 'undo',
+      color: 'amber',
+    },
+    CANCELLED: {
+      title: 'Cancelar Cotización',
+      description: 'La cotización será cancelada. Podrá ser reactivada posteriormente si es necesario.',
+      icon: 'ban',
+      color: 'red',
+    },
   }
 
   const handleGenerateInvoice = async () => {
@@ -470,6 +523,15 @@ export default function QuoteViewPage() {
                   <Package className="h-4 w-4 mr-2" />
                   Generar Remito
                 </Button>
+                <div className="w-px h-8 bg-gray-300 mx-1" />
+                <Button variant="outline" onClick={() => openRevertDialog('DRAFT')} disabled={actionLoading}>
+                  <Undo2 className="h-4 w-4 mr-2" />
+                  Revertir a Borrador
+                </Button>
+                <Button variant="outline" onClick={() => openRevertDialog('CANCELLED')} disabled={actionLoading} className="text-red-600 border-red-200 hover:bg-red-50">
+                  <Ban className="h-4 w-4 mr-2" />
+                  Cancelar Cotización
+                </Button>
               </>
             )}
 
@@ -497,16 +559,26 @@ export default function QuoteViewPage() {
               </>
             )}
 
-            {/* CONVERTIDA - ya tiene factura/remito */}
+            {/* CONVERTIDA - ya tiene factura/remito, pero se puede revertir */}
             {quote.status === 'CONVERTED' && (
-              <div className="text-sm text-gray-600 py-2">
-                Esta cotización ya fue convertida en factura o remito.
-              </div>
+              <>
+                <div className="text-sm text-gray-600 py-2 mr-4">
+                  Esta cotización ya fue convertida en factura o remito.
+                </div>
+                <Button variant="outline" onClick={() => openRevertDialog('ACCEPTED')} disabled={actionLoading}>
+                  <Undo2 className="h-4 w-4 mr-2" />
+                  Revertir a Aceptada
+                </Button>
+              </>
             )}
 
-            {/* CANCELADA - permitir duplicar */}
+            {/* CANCELADA - permitir reactivar o duplicar */}
             {quote.status === 'CANCELLED' && (
               <>
+                <Button variant="outline" onClick={() => openRevertDialog('DRAFT')} disabled={actionLoading}>
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  Reactivar Cotización
+                </Button>
                 <Button variant="outline" asChild>
                   <Link href={`/cotizaciones/nueva?duplicateFrom=${quote.id}`}>
                     <FileText className="h-4 w-4 mr-2" />
@@ -1014,6 +1086,105 @@ export default function QuoteViewPage() {
               {actionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               <XCircle className="h-4 w-4 mr-2" />
               Confirmar Rechazo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Revertir Estado */}
+      <Dialog open={showRevertDialog} onOpenChange={setShowRevertDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {revertTarget === 'CANCELLED' ? (
+                <Ban className="h-5 w-5 text-red-600" />
+              ) : revertTarget === 'DRAFT' && quote.status === 'CANCELLED' ? (
+                <RotateCcw className="h-5 w-5 text-amber-600" />
+              ) : (
+                <Undo2 className="h-5 w-5 text-amber-600" />
+              )}
+              {revertDialogConfig[revertTarget]?.title || 'Cambiar Estado'}
+            </DialogTitle>
+            <DialogDescription>
+              {revertDialogConfig[revertTarget]?.description || ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className={`p-3 rounded-lg border ${revertTarget === 'CANCELLED' ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
+              <div className="flex items-start gap-2">
+                <AlertTriangle className={`h-4 w-4 mt-0.5 ${revertTarget === 'CANCELLED' ? 'text-red-600' : 'text-amber-600'}`} />
+                <div className="text-sm">
+                  <p className={revertTarget === 'CANCELLED' ? 'text-red-800' : 'text-amber-800'}>
+                    Cotización: {quote.quoteNumber}
+                  </p>
+                  <p className={revertTarget === 'CANCELLED' ? 'text-red-800' : 'text-amber-800'}>
+                    Cliente: {quote.customer.name}
+                  </p>
+                  <p className={`font-medium mt-1 ${revertTarget === 'CANCELLED' ? 'text-red-900' : 'text-amber-900'}`}>
+                    {statusLabels[quote.status]} → {statusLabels[revertTarget] || revertTarget}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-sm font-semibold">Motivo *</Label>
+              <RadioGroup value={revertReason} onValueChange={(val) => { setRevertReason(val); if (val !== 'otro') setRevertReasonCustom(''); }} className="mt-2 space-y-2">
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="Cliente canceló OC" id="r1" />
+                  <Label htmlFor="r1" className="font-normal cursor-pointer">Cliente canceló OC</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="Error de carga" id="r2" />
+                  <Label htmlFor="r2" className="font-normal cursor-pointer">Error de carga</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="Cambio de condiciones" id="r3" />
+                  <Label htmlFor="r3" className="font-normal cursor-pointer">Cambio de condiciones</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="Cambio de precios" id="r4" />
+                  <Label htmlFor="r4" className="font-normal cursor-pointer">Cambio de precios</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="Duplicada" id="r5" />
+                  <Label htmlFor="r5" className="font-normal cursor-pointer">Duplicada</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="otro" id="r6" />
+                  <Label htmlFor="r6" className="font-normal cursor-pointer">Otro</Label>
+                </div>
+              </RadioGroup>
+              {revertReason === 'otro' && (
+                <Textarea
+                  value={revertReasonCustom}
+                  onChange={(e) => setRevertReasonCustom(e.target.value)}
+                  placeholder="Especifique el motivo..."
+                  rows={3}
+                  className="mt-2"
+                />
+              )}
+              <p className="text-xs text-gray-500 mt-2">
+                Este motivo se guardará en el historial de la cotización
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRevertDialog(false)} disabled={actionLoading}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={confirmRevert}
+              disabled={actionLoading || !revertReason || (revertReason === 'otro' && !revertReasonCustom.trim())}
+              className={revertTarget === 'CANCELLED' ? 'bg-red-600 hover:bg-red-700' : ''}
+              variant={revertTarget === 'CANCELLED' ? 'destructive' : 'default'}
+            >
+              {actionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {revertTarget === 'CANCELLED' ? (
+                <><Ban className="h-4 w-4 mr-2" />Confirmar Cancelación</>
+              ) : (
+                <>Confirmar</>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

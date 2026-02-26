@@ -842,8 +842,9 @@ export async function sendQuoteToColppy(
       const idCondicionPago = options.condicionPago || mapCondicionPago(customer.idCondicionPago || '0');
 
       // Calcular días de vencimiento desde la condición de pago
+      // Soporta tanto texto ("a 30 Dias") como numérico ("30")
       const condicionPagoMap: Record<string, number> = {
-        'Contado': 0,
+        'Contado': 5,       // +5 días para dar tiempo al cliente
         'a 7 Dias': 7,
         'a 15 Dias': 15,
         'a 30 Dias': 30,
@@ -851,8 +852,23 @@ export async function sendQuoteToColppy(
         'a 60 Dias': 60,
         'a 90 Dias': 90,
         'a 120 Dias': 120,
+        // Fallback con claves numéricas por si llega el ID en vez del texto
+        '0': 5,
+        '7': 7,
+        '15': 15,
+        '30': 30,
+        '45': 45,
+        '60': 60,
+        '90': 90,
+        '120': 120,
       };
-      const diasVto = condicionPagoMap[idCondicionPago] || parseInt(customer.idCondicionPago || '0');
+
+      // Usar ?? en vez de || para que 0 no sea tratado como falsy
+      const diasVto = (condicionPagoMap[idCondicionPago]
+        ?? parseInt(customer.idCondicionPago || '0'))
+        || 5; // fallback mínimo de 5 días
+
+      console.log(`[Colppy Factura] condicionPago="${idCondicionPago}", diasVto=${diasVto}, customer.idCondicionPago="${customer.idCondicionPago}"`);
 
       // Calcular fecha de vencimiento
       const fechaVtoDate = new Date();
@@ -899,6 +915,8 @@ export async function sendQuoteToColppy(
 
       const totalIVA = netoGravado * 0.21;
       const totalFactura = netoGravado + totalIVA;
+
+      console.log(`[Colppy Factura] fechaFactura="${fechaFactura}", fechaVto="${fechaVto}"`);
 
       const factura = await colppyCreateInvoice(session, {
         descripcion: options.descripcion || `Cotización ${quote.quoteNumber}`,

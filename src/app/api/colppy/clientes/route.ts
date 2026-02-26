@@ -259,7 +259,7 @@ function mapCustomers(data: any[]): CachedCustomer[] {
       priceMultiplier: 1.0,
       paymentTerms: paymentTermsMap[idCondicionPago] || 'Contado',
       paymentTermsDays: parseInt(idCondicionPago) || 0,
-      searchText: `${name} ${cuit} ${businessName}`.toLowerCase(),
+      searchText: `${name} ${cuit} ${cuit.replace(/\D/g, '')} ${businessName}`.toLowerCase(),
     };
   });
 }

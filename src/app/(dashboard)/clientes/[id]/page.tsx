@@ -39,6 +39,11 @@ function isCUIT(value: string): boolean {
   return /^\d{11}$/.test(clean)
 }
 
+function isColppyId(value: string): boolean {
+  // Colppy IDs son numéricos pero NO son 11 dígitos (esos son CUITs)
+  return /^\d+$/.test(value) && value.length !== 11
+}
+
 // ─── Página ──────────────────────────────────────────────────────────────────
 
 export default function ClienteDetailPage() {
@@ -56,17 +61,31 @@ export default function ClienteDetailPage() {
     setError('')
 
     try {
-      if (isCUIT(rawId)) {
+      if (isColppyId(rawId)) {
+        // ─── Búsqueda por Colppy ID (numérico, no 11 dígitos) ──────────
+        const colppyRes = await fetch(`/api/colppy/clientes?id=${rawId}`)
+        if (!colppyRes.ok) throw new Error('Error buscando en Colppy')
+        const colppyData = await colppyRes.json()
+
+        const match = (colppyData.customers || [])[0]
+        if (match) {
+          setCustomer(match)
+          const matchCuit = match.cuit?.replace(/\D/g, '') || ''
+          setCuit(matchCuit)
+        } else {
+          throw new Error('Cliente no encontrado en Colppy')
+        }
+      } else if (isCUIT(rawId)) {
         // ─── Búsqueda por CUIT ────────────────────────────────────────────
         const cleanCuit = rawId.replace(/\D/g, '')
         setCuit(cleanCuit)
 
-        // Buscar en cache de Colppy por CUIT
+        // Buscar en cache de Colppy por CUIT (usar searchText que incluye CUIT sin guiones)
         const colppyRes = await fetch(`/api/colppy/clientes?search=${cleanCuit}&limit=5`)
         if (!colppyRes.ok) throw new Error('Error buscando en Colppy')
         const colppyData = await colppyRes.json()
 
-        // Buscar match exacto por CUIT
+        // Buscar match exacto por CUIT (comparar sin guiones)
         const match = (colppyData.customers || []).find(
           (c: ColppyCustomer) => c.cuit?.replace(/\D/g, '') === cleanCuit
         )

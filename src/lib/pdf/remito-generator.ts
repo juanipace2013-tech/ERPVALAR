@@ -115,11 +115,11 @@ function drawRemitoCopy(doc: jsPDF, data: RemitoPDFData, copyLabel: string) {
   doc.setFontSize(7)
   doc.setTextColor(...GRAY)
   doc.text('CUIT: 30-71537357-9', ML + 4, headerY + 24)
-  doc.text('Ing. Brutos: 901-043862-2', ML + 4, headerY + 28)
-  doc.text('Inicio de Act.: 01/03/2019', ML + 4, headerY + 32)
-  doc.text('14 de Julio 175, C.P: 1427 – C.A.B.A.', ML + 4, headerY + 36)
-  doc.text('Tel: +54 11 4551-3343 / 4552-2874', ML + 4, headerY + 40)
-  doc.text('www.val-ar.com.ar', ML + 4, headerY + 44)
+  doc.text('IVA: RESPONSABLE INSCRIPTO', ML + 4, headerY + 28)
+  doc.text('Ingresos Brutos: 901-715373579', ML + 4, headerY + 32)
+  doc.text('Inicio de Act.: 04/10/2016', ML + 4, headerY + 36)
+  doc.text('14 de Julio 175, C.P: 1427 – C.A.B.A.', ML + 4, headerY + 40)
+  doc.text('Tel: +54 11 4551-3343 / 4552-2874', ML + 4, headerY + 44)
 
   // ── Centro: Letra "R" ──
   const centerMidX = centerX + centerBoxW / 2

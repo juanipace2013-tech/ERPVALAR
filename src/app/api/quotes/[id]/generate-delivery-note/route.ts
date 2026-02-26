@@ -23,8 +23,6 @@ export async function POST(
       transportAddress,
       purchaseOrder,
       bultos,
-      totalAmountARS,
-      exchangeRate,
       notes
     } = body;
 
@@ -37,8 +35,6 @@ export async function POST(
       transportAddress,
       purchaseOrder,
       bultos,
-      totalAmountARS,
-      exchangeRate,
       notes
     });
 

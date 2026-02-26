@@ -39,6 +39,7 @@ import {
   MoreHorizontal,
   Filter,
   Plus,
+  CheckCircle2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -65,6 +66,7 @@ interface DeliveryNote {
     id: string
     invoiceNumber: string
   }>
+  signedDocUrl: string | null
 }
 
 const statusLabels: Record<string, string> = {
@@ -295,6 +297,7 @@ export default function RemitosPage() {
                     <TableHead>Cotización</TableHead>
                     <TableHead className="text-right">Items</TableHead>
                     <TableHead>Estado</TableHead>
+                    <TableHead className="text-center">Firmado</TableHead>
                     <TableHead>Factura</TableHead>
                     <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
@@ -338,6 +341,13 @@ export default function RemitosPage() {
                         <Badge className={statusColors[dn.status]}>
                           {statusLabels[dn.status]}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {dn.signedDocUrl ? (
+                          <CheckCircle2 className="h-4 w-4 text-green-600 mx-auto" />
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         {dn.invoices.length > 0 ? (

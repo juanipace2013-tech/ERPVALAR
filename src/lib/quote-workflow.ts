@@ -86,7 +86,7 @@ export async function updateQuoteStatus(
 /**
  * Genera un número de remito secuencial
  */
-async function generateDeliveryNumber(): Promise<string> {
+export async function generateDeliveryNumber(): Promise<string> {
   const lastDeliveryNote = await prisma.deliveryNote.findFirst({
     orderBy: { createdAt: 'desc' },
     select: { deliveryNumber: true }
@@ -117,8 +117,6 @@ export async function generateDeliveryNoteFromQuote(
     transportAddress?: string;
     purchaseOrder?: string;
     bultos?: number;
-    totalAmountARS?: number;
-    exchangeRate?: number;
     notes?: string;
   }
 ) {
@@ -147,6 +145,13 @@ export async function generateDeliveryNoteFromQuote(
 
   // Crear remito en transacción
   const deliveryNote = await prisma.$transaction(async (tx) => {
+    // Calcular valor declarado: subtotal USD × tipo de cambio = ARS sin IVA
+    const quoteExchangeRate = Number(quote.exchangeRate) || 1;
+    const quoteSubtotal = Number(quote.subtotal);
+    const calculatedTotalAmountARS = quote.currency === 'USD'
+      ? quoteSubtotal * quoteExchangeRate
+      : quoteSubtotal;
+
     const newDeliveryNote = await tx.deliveryNote.create({
       data: {
         deliveryNumber,
@@ -161,8 +166,8 @@ export async function generateDeliveryNoteFromQuote(
         transportAddress: data?.transportAddress || null,
         purchaseOrder: data?.purchaseOrder || null,
         bultos: data?.bultos || null,
-        totalAmountARS: data?.totalAmountARS || null,
-        exchangeRate: data?.exchangeRate || null,
+        totalAmountARS: calculatedTotalAmountARS,
+        exchangeRate: quoteExchangeRate,
         notes: data?.notes || null,
         status: 'PENDING',
         items: {

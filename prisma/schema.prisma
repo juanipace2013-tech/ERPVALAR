@@ -1119,6 +1119,11 @@ model DeliveryNote {
   notes             String?            @db.Text
   internalNotes     String?            @db.Text
 
+  // Remito firmado escaneado
+  signedDocUrl      String?
+  signedDocName     String?
+  signedAt          DateTime?
+
   // Items
   items             DeliveryNoteItem[]
 

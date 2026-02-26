@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -41,6 +41,9 @@ import {
   FileSpreadsheet,
   Download,
   Clock,
+  Upload,
+  ExternalLink,
+  RefreshCw,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { generateRemitoPDF, type RemitoPDFData } from '@/lib/pdf/remito-generator'
@@ -66,6 +69,9 @@ interface DeliveryNote {
   receivedBy: string | null
   notes: string | null
   internalNotes: string | null
+  signedDocUrl: string | null
+  signedDocName: string | null
+  signedAt: string | null
   customer: {
     id: string
     name: string
@@ -134,9 +140,12 @@ export default function DeliveryNoteDetailPage() {
   const router = useRouter()
   const id = params?.id as string
 
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   const [deliveryNote, setDeliveryNote] = useState<DeliveryNote | null>(null)
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
+  const [uploadLoading, setUploadLoading] = useState(false)
 
   // Dialogs
   const [showStatusDialog, setShowStatusDialog] = useState(false)
@@ -317,6 +326,59 @@ export default function DeliveryNoteDetailPage() {
     }
   }
 
+  const handleUploadSigned = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf']
+    if (!allowedTypes.includes(file.type)) {
+      toast.error('Tipo de archivo no permitido. Solo JPG, PNG o PDF.')
+      return
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('El archivo excede el límite de 10MB.')
+      return
+    }
+
+    try {
+      setUploadLoading(true)
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const response = await fetch(`/api/delivery-notes/${id}/upload-signed`, {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Error al subir archivo')
+      }
+
+      const updated = await response.json()
+      setDeliveryNote((prev) =>
+        prev
+          ? {
+              ...prev,
+              signedDocUrl: updated.signedDocUrl,
+              signedDocName: updated.signedDocName,
+              signedAt: updated.signedAt,
+            }
+          : prev
+      )
+      toast.success('Remito firmado adjuntado correctamente')
+    } catch (error) {
+      console.error('Error:', error)
+      toast.error(error instanceof Error ? error.message : 'Error al subir archivo')
+    } finally {
+      setUploadLoading(false)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -424,8 +486,61 @@ export default function DeliveryNoteDetailPage() {
               Descargar PDF
             </Button>
 
+            {/* Signed document upload/view */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".jpg,.jpeg,.png,.pdf"
+              className="hidden"
+              onChange={handleUploadSigned}
+            />
+
+            {deliveryNote.signedDocUrl ? (
+              <>
+                <Button
+                  variant="outline"
+                  className="border-green-300 text-green-700 hover:bg-green-50"
+                  onClick={() => window.open(deliveryNote.signedDocUrl!, '_blank')}
+                >
+                  <CheckCircle2 className="h-4 w-4 mr-2 text-green-600" />
+                  Ver Remito Firmado
+                  <ExternalLink className="h-3 w-3 ml-1" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadLoading}
+                >
+                  <RefreshCw className="h-4 w-4 mr-1" />
+                  Reemplazar
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadLoading}
+              >
+                {uploadLoading ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4 mr-2" />
+                )}
+                Adjuntar Remito Firmado
+              </Button>
+            )}
+
             {actionLoading && <Loader2 className="h-5 w-5 animate-spin text-blue-600" />}
           </div>
+
+          {/* Signed doc info */}
+          {deliveryNote.signedDocUrl && deliveryNote.signedAt && (
+            <p className="text-xs text-gray-500 mt-3">
+              Adjuntado el {formatDate(deliveryNote.signedAt)}
+              {deliveryNote.signedDocName && ` — ${deliveryNote.signedDocName}`}
+            </p>
+          )}
         </CardContent>
       </Card>
 

@@ -223,7 +223,7 @@ export async function generateDeliveryNoteFromQuote(
 /**
  * Determina el tipo de factura según la condición IVA del cliente
  */
-function determineInvoiceType(taxCondition: string): 'A' | 'B' | 'C' | 'E' {
+export function determineInvoiceType(taxCondition: string): 'A' | 'B' | 'C' | 'E' {
   switch (taxCondition) {
     case 'RESPONSABLE_INSCRIPTO':
       return 'A';
@@ -242,7 +242,7 @@ function determineInvoiceType(taxCondition: string): 'A' | 'B' | 'C' | 'E' {
 /**
  * Genera número de factura
  */
-async function generateInvoiceNumber(
+export async function generateInvoiceNumber(
   pointOfSale: string,
   invoiceType: 'A' | 'B' | 'C' | 'E'
 ): Promise<string> {
@@ -462,6 +462,7 @@ export async function generateInvoiceFromQuote(
 
               return {
                 productId: item.productId,
+                quoteItemId: item.id,
                 description: item.description || item.product?.name,
                 quantity: item.quantity,
                 unitPrice: Number(item.unitPrice),

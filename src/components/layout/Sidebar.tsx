@@ -58,6 +58,12 @@ const navItems: NavItem[] = [
     roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
   },
   {
+    title: 'Facturación',
+    href: '/facturacion',
+    icon: Receipt,
+    roles: ['ADMIN', 'GERENTE', 'VENDEDOR', 'CONTADOR'],
+  },
+  {
     title: 'Productos',
     href: '/productos',
     icon: Package,

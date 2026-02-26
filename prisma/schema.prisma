@@ -963,6 +963,7 @@ model QuoteItem {
   alternativeToItem     QuoteItem?             @relation("ItemAlternatives", fields: [alternativeToItemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   alternatives          QuoteItem[]            @relation("ItemAlternatives")
   additionals           QuoteItemAdditional[]
+  invoiceItems          InvoiceItem[]
 
   @@index([quoteId])
   @@index([productId])
@@ -1285,6 +1286,7 @@ model InvoiceItem {
   id          String  @id @default(cuid())
   invoiceId   String
   productId   String
+  quoteItemId String?
 
   quantity    Int
   unitPrice   Decimal @db.Decimal(12, 2)
@@ -1294,11 +1296,13 @@ model InvoiceItem {
 
   description String?
 
-  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  product     Product @relation(fields: [productId], references: [id])
+  invoice     Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  product     Product   @relation(fields: [productId], references: [id])
+  quoteItem   QuoteItem? @relation(fields: [quoteItemId], references: [id])
 
   @@index([invoiceId])
   @@index([productId])
+  @@index([quoteItemId])
   @@map("invoice_items")
 }
 

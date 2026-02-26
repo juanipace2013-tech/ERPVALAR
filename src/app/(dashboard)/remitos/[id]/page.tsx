@@ -40,9 +40,11 @@ import {
   Truck,
   FileSpreadsheet,
   Printer,
+  Download,
   Clock,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { generateRemitoPDF, type RemitoPDFData } from '@/lib/pdf/remito-generator'
 
 interface DeliveryNote {
   id: string
@@ -55,7 +57,11 @@ interface DeliveryNote {
   deliveryProvince: string | null
   deliveryPostalCode: string | null
   carrier: string | null
+  transportAddress: string | null
   trackingNumber: string | null
+  purchaseOrder: string | null
+  totalAmountARS: string | number | null
+  bultos: number | null
   preparedBy: string | null
   deliveredBy: string | null
   receivedBy: string | null
@@ -69,6 +75,9 @@ interface DeliveryNote {
     email: string | null
     phone: string | null
     address: string | null
+    city: string | null
+    province: string | null
+    taxCondition: string | null
   }
   quote: {
     id: string
@@ -263,6 +272,52 @@ export default function DeliveryNoteDetailPage() {
     })}`
   }
 
+  const handleDownloadPDF = () => {
+    if (!deliveryNote) return
+    try {
+      const pdfData: RemitoPDFData = {
+        deliveryNumber: deliveryNote.deliveryNumber,
+        date: new Date(deliveryNote.date),
+        customer: {
+          name: deliveryNote.customer.name,
+          businessName: deliveryNote.customer.businessName,
+          cuit: deliveryNote.customer.cuit,
+          address: deliveryNote.customer.address,
+          city: deliveryNote.customer.city,
+          province: deliveryNote.customer.province,
+          taxCondition: deliveryNote.customer.taxCondition,
+        },
+        items: deliveryNote.items.map((item) => ({
+          sku: item.sku || item.product?.sku || null,
+          description: item.description || item.product?.name || '',
+          quantity: Number(item.quantity),
+          unit: item.unit || item.product?.unit || 'UN',
+        })),
+        carrier: deliveryNote.carrier,
+        transportAddress: deliveryNote.transportAddress,
+        purchaseOrder: deliveryNote.purchaseOrder,
+        bultos: deliveryNote.bultos,
+        totalAmountARS: deliveryNote.totalAmountARS
+          ? Number(deliveryNote.totalAmountARS)
+          : null,
+        notes: deliveryNote.notes,
+      }
+      const blob = generateRemitoPDF(pdfData)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Remito-${deliveryNote.deliveryNumber.replace(/\s/g, '-')}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast.success('PDF generado correctamente')
+    } catch (error) {
+      console.error('Error generating PDF:', error)
+      toast.error('Error al generar el PDF')
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -364,6 +419,11 @@ export default function DeliveryNoteDetailPage() {
                   Generar Factura
                 </Button>
               )}
+
+            <Button variant="outline" onClick={handleDownloadPDF}>
+              <Download className="h-4 w-4 mr-2" />
+              Descargar PDF
+            </Button>
 
             <Button variant="outline" asChild>
               <Link href={`/remitos/${id}/imprimir`}>

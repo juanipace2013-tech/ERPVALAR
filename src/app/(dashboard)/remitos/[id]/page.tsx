@@ -39,7 +39,6 @@ import {
   CheckCircle2,
   Truck,
   FileSpreadsheet,
-  Printer,
   Download,
   Clock,
 } from 'lucide-react'
@@ -423,13 +422,6 @@ export default function DeliveryNoteDetailPage() {
             <Button variant="outline" onClick={handleDownloadPDF}>
               <Download className="h-4 w-4 mr-2" />
               Descargar PDF
-            </Button>
-
-            <Button variant="outline" asChild>
-              <Link href={`/remitos/${id}/imprimir`}>
-                <Printer className="h-4 w-4 mr-2" />
-                Imprimir Remito
-              </Link>
             </Button>
 
             {actionLoading && <Loader2 className="h-5 w-5 animate-spin text-blue-600" />}

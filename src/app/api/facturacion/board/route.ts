@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
       },
       include: {
         customer: {
-          select: { id: true, name: true, cuit: true },
+          select: { id: true, name: true, cuit: true, taxCondition: true, paymentTerms: true },
         },
         salesPerson: {
           select: { id: true, name: true },
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
             product: { select: { sku: true, name: true } },
             invoiceItems: {
               include: {
-                invoice: { select: { status: true } },
+                invoice: { select: { status: true, notes: true, createdAt: true } },
               },
             },
           },
@@ -70,6 +70,11 @@ export async function GET(request: NextRequest) {
 
         const remainingQuantity = item.quantity - invoicedQuantity
 
+        // Determinar si este ítem fue enviado a Colppy (tiene invoiceItems DRAFT)
+        const sentToColppy = item.invoiceItems.some(
+          (ii) => ii.invoice.status === 'DRAFT' && ii.invoice.notes?.includes('Colppy')
+        )
+
         return {
           id: item.id,
           itemNumber: item.itemNumber,
@@ -83,6 +88,7 @@ export async function GET(request: NextRequest) {
           deliveryTime: item.deliveryTime,
           isInStock: isItemInStock(item.deliveryTime),
           isAlternative: item.isAlternative,
+          sentToColppy,
         }
       })
 
@@ -101,6 +107,12 @@ export async function GET(request: NextRequest) {
       const readyItemsCount = processedItems.filter((i) => i.isInStock).length
       const totalItemsCount = processedItems.length
 
+      // Determinar estado Colppy de la cotización
+      const colppySyncedAt = quote.colppySyncedAt
+        ? quote.colppySyncedAt.toISOString()
+        : null
+      const colppyInvoiceId = quote.colppyInvoiceId || null
+
       boardCards.push({
         id: quote.id,
         quoteNumber: quote.quoteNumber,
@@ -110,6 +122,7 @@ export async function GET(request: NextRequest) {
         total: Number(quote.total),
         exchangeRate: Number(quote.exchangeRate),
         terms: quote.terms,
+        notes: quote.notes,
         date: quote.date.toISOString(),
         readyItemsCount,
         totalItemsCount,
@@ -121,6 +134,9 @@ export async function GET(request: NextRequest) {
         ),
         items: processedItems,
         column,
+        // Estado Colppy
+        colppySyncedAt,
+        colppyInvoiceId,
       })
     }
 

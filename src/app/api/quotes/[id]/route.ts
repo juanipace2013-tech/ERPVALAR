@@ -35,6 +35,7 @@ export async function GET(
             email: true,
             phone: true,
             priceMultiplier: true,
+            paymentTerms: true,
           },
         },
         salesPerson: {

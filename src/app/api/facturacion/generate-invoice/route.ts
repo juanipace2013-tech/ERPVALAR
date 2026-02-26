@@ -1,12 +1,35 @@
+/**
+ * API Endpoint: POST /api/facturacion/generate-invoice
+ * Envía ítems seleccionados como BORRADOR a Colppy.
+ * Reutiliza sendQuoteToColppy() — misma lógica que el módulo de Cotizaciones.
+ *
+ * Acepta el mismo payload que SendToColppyDialog produce:
+ *   { quoteId, items, action, editedData }
+ *
+ * NO crea la factura final: el usuario la revisa y confirma en Colppy.
+ */
+
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { determineInvoiceType, generateInvoiceNumber } from '@/lib/quote-workflow'
+import { sendQuoteToColppy, type SendToColppyOptions } from '@/lib/colppy'
 
 interface InvoiceItemRequest {
   quoteItemId: string
   quantity: number
 }
+
+interface EditableItem {
+  id: string
+  sku: string
+  descripcion: string
+  cantidad: number
+  precioUnitario: number
+  iva: number
+  comentario: string
+}
+
+type ColppyAction = 'remito-factura' | 'remito' | 'factura-cuenta-corriente' | 'factura-contado'
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,15 +42,18 @@ export async function POST(request: NextRequest) {
     const {
       quoteId,
       items: requestedItems,
-      pointOfSale = '0001',
-      dueDate,
-      notes,
+      action,
+      editedData,
     } = body as {
       quoteId: string
       items: InvoiceItemRequest[]
-      pointOfSale?: string
-      dueDate?: string
-      notes?: string
+      action?: ColppyAction
+      editedData?: {
+        items: EditableItem[]
+        condicionPago: string
+        puntoVenta: string
+        descripcion: string
+      }
     }
 
     if (!quoteId || !requestedItems?.length) {
@@ -37,7 +63,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Obtener cotización con ítems e invoiceItems existentes
+    // Obtener cotización con ítems, additionals, producto y customer
     const quote = await prisma.quote.findUnique({
       where: { id: quoteId },
       include: {
@@ -46,6 +72,11 @@ export async function POST(request: NextRequest) {
           where: { isAlternative: false },
           include: {
             product: true,
+            additionals: {
+              include: {
+                product: true,
+              },
+            },
             invoiceItems: {
               include: {
                 invoice: { select: { status: true } },
@@ -67,10 +98,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validar cada ítem solicitado
-    const invoiceItemsData = []
-    let subtotal = 0
+    // Validar exchangeRate si currency = USD
+    if (quote.currency === 'USD' && !quote.exchangeRate) {
+      return NextResponse.json(
+        { error: 'La cotización en USD debe tener un tipo de cambio definido' },
+        { status: 400 }
+      )
+    }
 
+    // Validar cada ítem solicitado
     for (const req of requestedItems) {
       const quoteItem = quote.items.find((i) => i.id === req.quoteItemId)
       if (!quoteItem) {
@@ -80,7 +116,6 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Calcular cantidad ya facturada
       const alreadyInvoiced = quoteItem.invoiceItems
         .filter((ii) => ii.invoice.status !== 'CANCELLED')
         .reduce((sum, ii) => sum + ii.quantity, 0)
@@ -102,33 +137,80 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         )
       }
-
-      const itemUnitPrice = Number(quoteItem.unitPrice)
-      const itemSubtotal = itemUnitPrice * req.quantity
-
-      invoiceItemsData.push({
-        productId: quoteItem.productId,
-        quoteItemId: quoteItem.id,
-        description: quoteItem.description || quoteItem.product?.name,
-        quantity: req.quantity,
-        unitPrice: itemUnitPrice,
-        discount: 0,
-        itemSubtotal,
-      })
-
-      subtotal += itemSubtotal
     }
 
-    // Determinar tipo de factura y calcular impuestos
-    const invoiceType = determineInvoiceType(quote.customer.taxCondition || '')
-    const taxRate = invoiceType === 'A' ? 0.21 : 0
-    const taxAmount = subtotal * taxRate
-    const total = subtotal + taxAmount
+    // Construir datos para Colppy
+    // Si hay editedData del dialog, usar esos datos (el usuario pudo editar)
+    // Si no, usar los datos originales de la cotización
+    const colppyItems = editedData
+      ? editedData.items.map((item) => ({
+          productName: item.descripcion,
+          productSku: item.sku,
+          quantity: item.cantidad,
+          unitPrice: item.precioUnitario,
+          iva: item.iva,
+          comentario: item.comentario,
+          deliveryTime: undefined as string | undefined,
+          additionals: [] as Array<{ name: string; unitPrice: number }>,
+        }))
+      : requestedItems.map((req) => {
+          const quoteItem = quote.items.find((i) => i.id === req.quoteItemId)!
+          return {
+            productName: quoteItem.product?.name || quoteItem.description || 'Item manual',
+            productSku: quoteItem.product?.sku || quoteItem.manualSku || '',
+            quantity: req.quantity,
+            unitPrice: Number(quoteItem.unitPrice),
+            iva: 21,
+            comentario: `Cotización ${quote.quoteNumber}${quote.notes ? ' / ' + quote.notes : ''}`,
+            deliveryTime: quoteItem.deliveryTime || undefined,
+            additionals: quoteItem.additionals.map((additional) => ({
+              name: additional.product.name,
+              unitPrice: Number(additional.listPrice),
+            })),
+          }
+        })
 
-    const invoiceNumber = await generateInvoiceNumber(pointOfSale, invoiceType)
+    // Enviar a Colppy usando la función existente
+    const colppyAction = action || 'factura-cuenta-corriente'
+    const colppyOptions: SendToColppyOptions = {
+      action: colppyAction,
+      condicionPago: editedData?.condicionPago || undefined,
+      puntoVenta: editedData?.puntoVenta || undefined,
+      descripcion: editedData?.descripcion || `Cotización ${quote.quoteNumber} (parcial: ${colppyItems.length} ítems)`,
+    }
 
-    // Crear factura en transacción
-    const invoice = await prisma.$transaction(async (tx) => {
+    const colppyResult = await sendQuoteToColppy(colppyOptions, {
+      id: quote.id,
+      quoteNumber: quote.quoteNumber,
+      currency: quote.currency,
+      exchangeRate: quote.exchangeRate ? Number(quote.exchangeRate) : null,
+      customer: {
+        name: quote.customer.name,
+        cuit: quote.customer.cuit,
+        taxCondition: quote.customer.taxCondition || '',
+        address: quote.customer.address || undefined,
+        phone: quote.customer.phone || undefined,
+        email: quote.customer.email || undefined,
+      },
+      items: colppyItems,
+    })
+
+    if (!colppyResult.success) {
+      return NextResponse.json(
+        { error: `Error al enviar a Colppy: ${colppyResult.error}` },
+        { status: 500 }
+      )
+    }
+
+    // Registrar en BD: crear InvoiceItems para tracking de cantidades parciales
+    const now = new Date()
+
+    await prisma.$transaction(async (tx) => {
+      const invoiceNumber = `BORRADOR-COLPPY-${colppyResult.facturaNumber || colppyResult.remitoNumber || Date.now()}`
+      const invoiceType = quote.customer.taxCondition === 'RESPONSABLE_INSCRIPTO' ? 'A' : 'B'
+
+      const subtotal = colppyItems.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0)
+
       const newInvoice = await tx.invoice.create({
         data: {
           invoiceNumber,
@@ -141,37 +223,50 @@ export async function POST(request: NextRequest) {
           currency: quote.currency,
           exchangeRate: quote.exchangeRate,
           subtotal,
-          taxAmount,
+          taxAmount: 0,
           discount: 0,
-          total,
-          balance: total,
-          issueDate: new Date(),
-          dueDate: dueDate
-            ? new Date(dueDate)
-            : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-          notes: notes || null,
+          total: subtotal,
+          balance: subtotal,
+          issueDate: now,
+          dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          notes: `Borrador enviado a Colppy el ${now.toLocaleString('es-AR')}. ${colppyResult.facturaNumber ? `Factura: ${colppyResult.facturaNumber}` : ''} ${colppyResult.remitoNumber ? `Remito: ${colppyResult.remitoNumber}` : ''}`.trim(),
           afipStatus: 'PENDING',
           paymentStatus: 'UNPAID',
           items: {
-            create: invoiceItemsData.map((item) => ({
-              productId: item.productId,
-              quoteItemId: item.quoteItemId,
-              description: item.description,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              discount: 0,
-              taxRate: taxRate * 100,
-              subtotal: item.itemSubtotal + item.itemSubtotal * taxRate,
-            })),
+            create: requestedItems.map((req) => {
+              const quoteItem = quote.items.find((qi) => qi.id === req.quoteItemId)!
+              return {
+                productId: quoteItem.productId || null,
+                quoteItemId: quoteItem.id,
+                description: quoteItem.description || quoteItem.product?.name || 'Item',
+                quantity: req.quantity,
+                unitPrice: Number(quoteItem.unitPrice),
+                discount: 0,
+                taxRate: 21,
+                subtotal: Number(quoteItem.unitPrice) * req.quantity,
+              }
+            }),
           },
-        },
-        include: {
-          items: true,
-          customer: true,
         },
       })
 
-      // Verificar si TODOS los ítems de la cotización están ahora completamente facturados
+      // Actualizar Quote con datos de Colppy
+      const updateData: any = {
+        colppySyncedAt: now,
+      }
+      if (colppyResult.facturaId) {
+        updateData.colppyInvoiceId = colppyResult.facturaId
+      }
+      if (colppyResult.remitoId) {
+        updateData.colppyDeliveryNoteId = colppyResult.remitoId
+      }
+
+      await tx.quote.update({
+        where: { id: quoteId },
+        data: updateData,
+      })
+
+      // Verificar si TODOS los ítems están ahora completamente facturados
       const allQuoteItems = await tx.quoteItem.findMany({
         where: { quoteId: quote.id, isAlternative: false },
         include: {
@@ -195,7 +290,7 @@ export async function POST(request: NextRequest) {
           where: { id: quoteId },
           data: {
             status: 'CONVERTED',
-            statusUpdatedAt: new Date(),
+            statusUpdatedAt: now,
             statusUpdatedBy: session.user!.id!,
           },
         })
@@ -206,19 +301,35 @@ export async function POST(request: NextRequest) {
             fromStatus: 'ACCEPTED',
             toStatus: 'CONVERTED',
             changedBy: session.user!.id!,
-            notes: `Factura ${invoiceNumber} generada (facturación completa)`,
+            notes: `Enviado a Colppy (${colppyAction}). ${colppyResult.facturaNumber ? `Factura: ${colppyResult.facturaNumber}` : ''} ${colppyResult.remitoNumber ? `Remito: ${colppyResult.remitoNumber}` : ''} (facturación completa)`.trim(),
+          },
+        })
+      } else {
+        await tx.quoteStatusHistory.create({
+          data: {
+            quoteId,
+            fromStatus: 'ACCEPTED',
+            toStatus: 'ACCEPTED',
+            changedBy: session.user!.id!,
+            notes: `Facturación parcial enviada a Colppy (${colppyAction}). ${colppyResult.facturaNumber ? `Factura: ${colppyResult.facturaNumber}` : ''} ${colppyResult.remitoNumber ? `Remito: ${colppyResult.remitoNumber}` : ''} (${requestedItems.length} ítems)`.trim(),
           },
         })
       }
-
-      return newInvoice
     })
 
-    return NextResponse.json(invoice)
-  } catch (error) {
-    console.error('Error generating partial invoice:', error)
+    return NextResponse.json({
+      success: true,
+      message: 'Enviado a Colppy exitosamente',
+      remitoId: colppyResult.remitoId,
+      remitoNumber: colppyResult.remitoNumber,
+      facturaId: colppyResult.facturaId,
+      facturaNumber: colppyResult.facturaNumber,
+      sentAt: now.toISOString(),
+    })
+  } catch (error: any) {
+    console.error('Error generating invoice for Colppy:', error)
     return NextResponse.json(
-      { error: 'Error al generar factura' },
+      { error: error.message || 'Error al enviar a Colppy' },
       { status: 500 }
     )
   }

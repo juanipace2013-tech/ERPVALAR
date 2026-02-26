@@ -1029,7 +1029,9 @@ export default function QuoteViewPage() {
               name: quote.customer.name,
               cuit: quote.customer.cuit,
               taxCondition: quote.customer.taxCondition,
-              idCondicionPago: (quote.customer as any).idCondicionPago,
+              idCondicionPago: (quote.customer as any).paymentTerms != null
+                ? String((quote.customer as any).paymentTerms)
+                : undefined,
             },
             items: quote.items.map((item: any) => ({
               id: item.id,

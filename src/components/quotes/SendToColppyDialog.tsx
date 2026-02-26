@@ -2,6 +2,9 @@
  * Componente: SendToColppyDialog
  * Dialog para enviar cotizaciones a Colppy (remitos y facturas)
  * Con tabla editable de items y configuración pre-envío
+ *
+ * Reutilizable: se puede usar desde Cotizaciones (default) y desde
+ * Facturación (con onSend custom para facturación parcial).
  */
 
 'use client';
@@ -30,16 +33,38 @@ import { toast } from 'sonner';
 import { Send, Package, FileSpreadsheet, CheckCircle2, Loader2, AlertTriangle, Edit } from 'lucide-react';
 
 // ============================================================================
-// TIPOS
+// TIPOS (exportados para reutilización)
 // ============================================================================
 
-interface QuoteItem {
+export interface QuoteItem {
   id: string;
   productSku: string;
   description: string;
   quantity: number;
   unitPrice: number;
   iva: number;
+}
+
+export type ColppyAction = 'remito-factura' | 'remito' | 'factura-cuenta-corriente' | 'factura-contado';
+
+export interface EditableItem {
+  id: string;
+  sku: string;
+  descripcion: string;
+  cantidad: number;
+  precioUnitario: number;
+  iva: number;
+  comentario: string;
+}
+
+export interface ColppySendPayload {
+  action: ColppyAction;
+  editedData: {
+    items: EditableItem[];
+    condicionPago: string;
+    puntoVenta: string;
+    descripcion: string;
+  };
 }
 
 interface SendToColppyDialogProps {
@@ -61,18 +86,12 @@ interface SendToColppyDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSent: () => void;
-}
-
-type Action = 'remito-factura' | 'remito' | 'factura-cuenta-corriente' | 'factura-contado';
-
-interface EditableItem {
-  id: string;
-  sku: string;
-  descripcion: string;
-  cantidad: number;
-  precioUnitario: number;
-  iva: number;
-  comentario: string;
+  /** Optional custom send handler. If provided, overrides the default
+   *  POST /api/quotes/{id}/send-to-colppy call.
+   *  Should throw on error; resolved value is ignored. */
+  onSend?: (payload: ColppySendPayload) => Promise<void>;
+  /** Optional subtitle shown under the description */
+  subtitle?: string;
 }
 
 // ============================================================================
@@ -84,8 +103,10 @@ export function SendToColppyDialog({
   open,
   onOpenChange,
   onSent,
+  onSend,
+  subtitle,
 }: SendToColppyDialogProps) {
-  const [selectedAction, setSelectedAction] = useState<Action>('remito-factura');
+  const [selectedAction, setSelectedAction] = useState<ColppyAction>('remito-factura');
   const [sending, setSending] = useState(false);
 
   // Estados editables
@@ -93,6 +114,18 @@ export function SendToColppyDialog({
   const [condicionPago, setCondicionPago] = useState('Contado');
   const [puntoVenta, setPuntoVenta] = useState('0003');
   const [descripcionFactura, setDescripcionFactura] = useState('');
+
+  // Mapeo de días a texto de condición de pago
+  const condicionMap: Record<string, string> = {
+    '0': 'Contado',
+    '7': 'a 7 Dias',
+    '15': 'a 15 Dias',
+    '30': 'a 30 Dias',
+    '45': 'a 45 Dias',
+    '60': 'a 60 Dias',
+    '90': 'a 90 Dias',
+    '120': 'a 120 Dias',
+  };
 
   // Inicializar datos cuando se abre el dialog
   useEffect(() => {
@@ -111,18 +144,36 @@ export function SendToColppyDialog({
         }))
       );
 
-      // Inicializar condición de pago
-      const condicionMap: Record<string, string> = {
-        '0': 'Contado',
-        '7': 'a 7 Dias',
-        '15': 'a 15 Dias',
-        '30': 'a 30 Dias',
-        '45': 'a 45 Dias',
-        '60': 'a 60 Dias',
-        '90': 'a 90 Dias',
-        '120': 'a 120 Dias',
-      };
-      setCondicionPago(condicionMap[quote.customer.idCondicionPago || '0'] || 'Contado');
+      // Inicializar condición de pago: primero usar el valor del prop si existe
+      if (quote.customer.idCondicionPago && quote.customer.idCondicionPago !== '0') {
+        setCondicionPago(condicionMap[quote.customer.idCondicionPago] || 'Contado');
+      } else {
+        // Si no hay valor del prop o es "0", intentar obtenerlo desde la cache de Colppy
+        setCondicionPago('Contado'); // default mientras carga
+        const cuit = quote.customer.cuit?.replace(/\D/g, '');
+        if (cuit && cuit.length >= 7) {
+          fetch(`/api/colppy/clientes?search=${cuit}&limit=5`)
+            .then((r) => r.json())
+            .then((data) => {
+              if (data.customers?.length > 0) {
+                // Buscar match exacto de CUIT (sin guiones)
+                const match = data.customers.find(
+                  (c: any) => c.cuit?.replace(/\D/g, '') === cuit
+                ) || data.customers[0];
+                if (match.paymentTermsDays != null && match.paymentTermsDays > 0) {
+                  const days = String(match.paymentTermsDays);
+                  const mapped = condicionMap[days];
+                  if (mapped) {
+                    setCondicionPago(mapped);
+                  }
+                }
+              }
+            })
+            .catch(() => {
+              // Silenciar error, mantener "Contado" como default
+            });
+        }
+      }
 
       // Inicializar descripción
       setDescripcionFactura(`Cotización ${quote.quoteNumber}`);
@@ -154,45 +205,56 @@ export function SendToColppyDialog({
     }).format(amount);
   };
 
+  // Construir payload
+  const buildPayload = (): ColppySendPayload => ({
+    action: selectedAction,
+    editedData: {
+      items,
+      condicionPago,
+      puntoVenta,
+      descripcion: descripcionFactura,
+    },
+  });
+
   // Handler para enviar a Colppy
   const handleSend = async () => {
     setSending(true);
 
     try {
-      const response = await fetch(`/api/quotes/${quote.id}/send-to-colppy`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          action: selectedAction,
-          editedData: {
-            items,
-            condicionPago,
-            puntoVenta,
-            descripcion: descripcionFactura,
+      const payload = buildPayload();
+
+      if (onSend) {
+        // Usar handler custom (facturación parcial, etc.)
+        await onSend(payload);
+      } else {
+        // Handler default: POST /api/quotes/{id}/send-to-colppy
+        const response = await fetch(`/api/quotes/${quote.id}/send-to-colppy`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
           },
-        }),
-      });
+          body: JSON.stringify(payload),
+        });
 
-      const data = await response.json();
+        const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Error al enviar a Colppy');
+        if (!response.ok) {
+          throw new Error(data.error || 'Error al enviar a Colppy');
+        }
+
+        // Construir mensaje de éxito
+        const successParts: string[] = [];
+        if (data.remitoNumber) {
+          successParts.push(`Remito: ${data.remitoNumber}`);
+        }
+        if (data.facturaNumber) {
+          successParts.push(`Factura: ${data.facturaNumber}`);
+        }
+
+        toast.success('Enviado a Colppy', {
+          description: successParts.join(' | '),
+        });
       }
-
-      // Construir mensaje de éxito
-      const successParts: string[] = [];
-      if (data.remitoNumber) {
-        successParts.push(`Remito: ${data.remitoNumber}`);
-      }
-      if (data.facturaNumber) {
-        successParts.push(`Factura: ${data.facturaNumber}`);
-      }
-
-      toast.success('Enviado a Colppy', {
-        description: successParts.join(' | '),
-      });
 
       // Cerrar dialog y notificar
       onOpenChange(false);
@@ -224,6 +286,9 @@ export function SendToColppyDialog({
           </DialogTitle>
           <DialogDescription>
             Revisa y ajusta los datos antes de crear el borrador en Colppy
+            {subtitle && (
+              <span className="block mt-1 text-blue-600 font-medium">{subtitle}</span>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -312,7 +377,7 @@ export function SendToColppyDialog({
                   <th className="text-left p-2 font-medium">SKU</th>
                   <th className="text-left p-2 font-medium">Descripción</th>
                   <th className="text-right p-2 font-medium">Cant.</th>
-                  <th className="text-right p-2 font-medium">Precio Unit USD</th>
+                  <th className="text-right p-2 font-medium">Precio Unit {quote.currency}</th>
                   <th className="text-right p-2 font-medium">IVA %</th>
                   <th className="text-left p-2 font-medium">Comentario</th>
                   <th className="text-right p-2 font-medium">Subtotal</th>
@@ -400,7 +465,7 @@ export function SendToColppyDialog({
         {/* Opciones de envío */}
         <div className="space-y-3">
           <Label className="text-base font-semibold">Selecciona una opción:</Label>
-          <RadioGroup value={selectedAction} onValueChange={(value) => setSelectedAction(value as Action)}>
+          <RadioGroup value={selectedAction} onValueChange={(value) => setSelectedAction(value as ColppyAction)}>
             {/* Opción 1: Remito + Factura (Recomendado) */}
             <div className="flex items-start space-x-3 rounded-lg border border-blue-300 bg-blue-50 p-4">
               <RadioGroupItem value="remito-factura" id="remito-factura" className="mt-1" />

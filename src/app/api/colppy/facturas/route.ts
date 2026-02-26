@@ -2,7 +2,19 @@
  * API Endpoint: GET /api/colppy/facturas
  * Lista facturas de venta de un cliente desde Colppy
  *
- * Params: ?idCliente=XXX&fechaDesde=YYYY-MM-DD&fechaHasta=YYYY-MM-DD
+ * Campos reales de Colppy (descubiertos vía debug):
+ * - idFactura, nroFactura (ya formateado "0003-00013881")
+ * - idTipoFactura ("0"=A, etc), idTipoComprobante ("4"=Factura, "5"=ND, "6"=NC)
+ * - fechaFactura (YYYY-MM-DD), fechaPago (fecha vencimiento, YYYY-MM-DD)
+ * - totalFactura, totalaplicado (monto pagado)
+ * - idEstadoFactura ("3"=pendiente, "5"=pagada)
+ * - idCondicionPago ("0"=contado, "30"=30 días, etc)
+ * - idMoneda ("1"=pesos), valorCambio, rate
+ * - netoGravado, totalIVA, cae, fechaFe
+ *
+ * Saldo = totalFactura - totalaplicado (no existe campo saldo separado)
+ *
+ * Params: ?idCliente=XXX
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -11,10 +23,6 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-
-// ============================================================================
-// CONFIGURACIÓN (misma que colppy/clientes)
-// ============================================================================
 
 const COLPPY_ENDPOINT = 'https://login.colppy.com/lib/frontera2/service.php';
 const COLPPY_USER = process.env.COLPPY_USER || '';
@@ -32,17 +40,20 @@ function md5(text: string): string {
 interface ColppyFactura {
   idFactura: string;
   numero: string;
-  tipo: string;
-  tipoComprobante: string;
-  fecha: string;
-  fechaVto: string;
+  tipo: string;           // "A", "B", "C", etc.
+  tipoComprobante: string; // "4"=Factura, "5"=ND, "6"=NC
+  fecha: string;           // fechaFactura
+  fechaVto: string;        // fechaPago (vencimiento)
   total: number;
-  saldo: number;
-  estado: string;
+  saldo: number;           // totalFactura - totalaplicado
+  estado: string;          // "Pagada", "Pendiente", "Vencida"
   moneda: string;
   tipoCambio: number;
   condicionPago: string;
   descripcion: string;
+  cae: string;
+  netoGravado: number;
+  totalIVA: number;
 }
 
 const facturaCache: Map<string, { data: ColppyFactura[]; timestamp: number }> = new Map();
@@ -60,10 +71,10 @@ function callColppy(payload: any): any {
   try {
     tempFile = path.join(os.tmpdir(), `colppy-fact-${Date.now()}.json`);
     fs.writeFileSync(tempFile, JSON.stringify(payload), 'utf-8');
-    const cmd = `curl -s -X POST "${COLPPY_ENDPOINT}" -H "Content-Type: application/json" -d @"${tempFile}" --max-time 30 -L`;
+    const cmd = `curl -s -X POST "${COLPPY_ENDPOINT}" -H "Content-Type: application/json" -d @"${tempFile}" --max-time 60 -L`;
     const result = execSync(cmd, {
       encoding: 'utf-8',
-      timeout: 35000,
+      timeout: 65000,
       maxBuffer: 20 * 1024 * 1024,
     });
     return JSON.parse(result);
@@ -97,29 +108,71 @@ function getSession(): string {
 }
 
 // ============================================================================
-// MAPEO DE FACTURAS
+// MAPEO DE FACTURAS (campos reales de Colppy)
 // ============================================================================
+
+// Mapeo de idTipoFactura a letra
+const tipoFacturaMap: Record<string, string> = {
+  '0': 'A',
+  '1': 'B',
+  '2': 'C',
+  '3': 'E',
+  '4': 'M',
+  '5': 'T',
+};
+
+// Mapeo de idMoneda
+const monedaMap: Record<string, string> = {
+  '0': 'USD',
+  '1': 'ARS',
+  '2': 'EUR',
+};
+
+// Mapeo condición de pago
+const condicionPagoMap: Record<string, string> = {
+  '0': 'Contado',
+  '7': 'a 7 Días',
+  '15': 'a 15 Días',
+  '30': 'a 30 Días',
+  '45': 'a 45 Días',
+  '60': 'a 60 Días',
+  '90': 'a 90 Días',
+  '120': 'a 120 Días',
+};
 
 function mapFacturas(data: any[]): ColppyFactura[] {
   return (data || []).map((f: any) => {
-    const nro1 = f.nroFactura1 || f.NroFactura1 || '';
-    const nro2 = f.nroFactura2 || f.NroFactura2 || '';
-    const numero = nro1 && nro2 ? `${String(nro1).padStart(4, '0')}-${String(nro2).padStart(8, '0')}` : (f.nroFactura || f.NumeroFactura || '');
+    const total = parseFloat(f.totalFactura || '0');
+    const aplicado = parseFloat(f.totalaplicado || '0');
+    const saldo = Math.max(0, total - aplicado);
+
+    // Determinar estado basado en datos reales
+    // idEstadoFactura: "3"=pendiente, "5"=pagada/cobrada
+    let estado = 'Pendiente';
+    if (f.idEstadoFactura === '5' || saldo <= 0) {
+      estado = 'Pagada';
+    }
+
+    const tipoLetra = tipoFacturaMap[f.idTipoFactura] || 'A';
+    const moneda = monedaMap[f.idMoneda] || 'ARS';
 
     return {
-      idFactura: String(f.idFactura || f.id || ''),
-      numero,
-      tipo: f.idTipoFactura || f.TipoFactura || '',
-      tipoComprobante: f.idTipoComprobante || f.TipoComprobante || '',
-      fecha: f.fechaFactura || f.FechaFactura || '',
-      fechaVto: f.fechaVto || f.FechaVto || '',
-      total: parseFloat(f.totalFactura || f.TotalFactura || '0'),
-      saldo: parseFloat(f.saldoFactura || f.SaldoFactura || f.totalFactura || f.TotalFactura || '0'),
-      estado: f.idEstadoFactura || f.EstadoFactura || 'Pendiente',
-      moneda: f.moneda || f.Moneda || 'Peso argentino',
-      tipoCambio: parseFloat(f.tipoCambio || f.TipoCambio || '1'),
-      condicionPago: f.idCondicionPago || f.CondicionPago || '',
-      descripcion: f.descripcion || f.Descripcion || '',
+      idFactura: String(f.idFactura || ''),
+      numero: f.nroFactura || '',
+      tipo: tipoLetra,
+      tipoComprobante: f.idTipoComprobante || '4',
+      fecha: f.fechaFactura || '',
+      fechaVto: f.fechaPago || f.fechaFactura || '', // fechaPago es el vencimiento en Colppy
+      total,
+      saldo,
+      estado,
+      moneda,
+      tipoCambio: parseFloat(f.rate || f.valorCambio || '1'),
+      condicionPago: condicionPagoMap[f.idCondicionPago] || f.idCondicionPago || '',
+      descripcion: f.descripcion || '',
+      cae: f.cae || '',
+      netoGravado: parseFloat(f.netoGravado || '0'),
+      totalIVA: parseFloat(f.totalIVA || '0'),
     };
   });
 }
@@ -127,6 +180,23 @@ function mapFacturas(data: any[]): ColppyFactura[] {
 // ============================================================================
 // ENDPOINT
 // ============================================================================
+
+function fetchFacturasFromColppy(claveSesion: string, passwordMD5: string, idCliente: string): any {
+  return callColppy({
+    auth: { usuario: COLPPY_USER, password: passwordMD5 },
+    service: { provision: 'FacturaVenta', operacion: 'listar_facturasventa' },
+    parameters: {
+      sesion: { usuario: COLPPY_USER, claveSesion },
+      idEmpresa: COLPPY_ID_EMPRESA,
+      start: 0,
+      limit: 1000,
+      filter: [
+        { field: 'idCliente', op: '=', value: idCliente },
+      ],
+      order: { field: ['idFactura'], order: 'desc' },
+    },
+  });
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -154,54 +224,17 @@ export async function GET(request: NextRequest) {
     const claveSesion = getSession();
     const passwordMD5 = md5(COLPPY_PASSWORD);
 
-    // Construir filtros
-    const filters: any[] = [
-      { field: 'idCliente', op: '=', value: idCliente },
-    ];
-
-    const response = callColppy({
-      auth: { usuario: COLPPY_USER, password: passwordMD5 },
-      service: { provision: 'FacturaVenta', operacion: 'listar_facturaventa' },
-      parameters: {
-        sesion: { usuario: COLPPY_USER, claveSesion },
-        idEmpresa: COLPPY_ID_EMPRESA,
-        start: 0,
-        limit: 1000,
-        filter: filters,
-        order: [{ field: 'fechaFactura', dir: 'desc' }],
-      },
-    });
-
-    // Log de descubrimiento en primera llamada
-    if (!facturaCache.has('_logged')) {
-      console.log('[Colppy] Respuesta facturas (muestra):', JSON.stringify(response?.response?.data?.[0] || response?.response, null, 2).substring(0, 2000));
-      facturaCache.set('_logged', { data: [], timestamp: Date.now() });
-    }
+    let response = fetchFacturasFromColppy(claveSesion, passwordMD5, idCliente);
 
     if (response.result?.estado !== 0 || !response.response?.success) {
       // Reintentar con nueva sesión
       cachedSession = null;
       const newSession = getSession();
-      const retry = callColppy({
-        auth: { usuario: COLPPY_USER, password: md5(COLPPY_PASSWORD) },
-        service: { provision: 'FacturaVenta', operacion: 'listar_facturaventa' },
-        parameters: {
-          sesion: { usuario: COLPPY_USER, claveSesion: newSession },
-          idEmpresa: COLPPY_ID_EMPRESA,
-          start: 0,
-          limit: 1000,
-          filter: filters,
-          order: [{ field: 'fechaFactura', dir: 'desc' }],
-        },
-      });
+      response = fetchFacturasFromColppy(newSession, md5(COLPPY_PASSWORD), idCliente);
 
-      if (retry.result?.estado !== 0) {
-        throw new Error(retry.result?.mensaje || 'Error cargando facturas');
+      if (response.result?.estado !== 0) {
+        throw new Error(response.result?.mensaje || 'Error cargando facturas');
       }
-
-      const facturas = mapFacturas(retry.response?.data || []);
-      facturaCache.set(idCliente, { data: facturas, timestamp: Date.now() });
-      return NextResponse.json({ facturas, total: facturas.length, cached: false });
     }
 
     const facturas = mapFacturas(response.response?.data || []);

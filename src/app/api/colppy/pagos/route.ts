@@ -1,6 +1,14 @@
 /**
  * API Endpoint: GET /api/colppy/pagos
- * Lista recibos/pagos de un cliente desde Colppy
+ * Lista pagos/cobros de un cliente desde Colppy
+ *
+ * NOTA: Colppy NO tiene endpoint separado de recibos/cobros de clientes.
+ * Las provisiones Recibo, Cobranza, CobroCliente NO existen en esta API.
+ *
+ * ESTRATEGIA: Derivar pagos de las facturas que tienen totalaplicado > 0.
+ * Una factura con totalaplicado > 0 indica que se registró un cobro.
+ * Si totalaplicado == totalFactura, la factura está completamente pagada.
+ * Las notas de crédito (idTipoComprobante "6") se muestran como ajustes.
  *
  * Params: ?idCliente=XXX
  */
@@ -20,10 +28,6 @@ const COLPPY_ID_EMPRESA = process.env.COLPPY_ID_EMPRESA || '';
 function md5(text: string): string {
   return crypto.createHash('md5').update(text).digest('hex');
 }
-
-// ============================================================================
-// CACHE POR CLIENTE
-// ============================================================================
 
 interface ColppyPago {
   idRecibo: string;
@@ -47,10 +51,10 @@ function callColppy(payload: any): any {
   try {
     tempFile = path.join(os.tmpdir(), `colppy-pago-${Date.now()}.json`);
     fs.writeFileSync(tempFile, JSON.stringify(payload), 'utf-8');
-    const cmd = `curl -s -X POST "${COLPPY_ENDPOINT}" -H "Content-Type: application/json" -d @"${tempFile}" --max-time 30 -L`;
+    const cmd = `curl -s -X POST "${COLPPY_ENDPOINT}" -H "Content-Type: application/json" -d @"${tempFile}" --max-time 60 -L`;
     const result = execSync(cmd, {
       encoding: 'utf-8',
-      timeout: 35000,
+      timeout: 65000,
       maxBuffer: 20 * 1024 * 1024,
     });
     return JSON.parse(result);
@@ -84,28 +88,73 @@ function getSession(): string {
 }
 
 // ============================================================================
-// MAPEO DE PAGOS
+// MAPEO
 // ============================================================================
 
-function mapPagos(data: any[]): ColppyPago[] {
-  return (data || []).map((p: any) => {
-    const nro1 = p.nroRecibo1 || p.NroRecibo1 || p.nroFactura1 || '';
-    const nro2 = p.nroRecibo2 || p.NroRecibo2 || p.nroFactura2 || '';
-    const numero = nro1 && nro2
-      ? `${String(nro1).padStart(4, '0')}-${String(nro2).padStart(8, '0')}`
-      : (p.nroRecibo || p.NumeroRecibo || p.numero || '');
+const monedaMap: Record<string, string> = {
+  '0': 'USD', '1': 'ARS', '2': 'EUR',
+};
 
-    return {
-      idRecibo: String(p.idRecibo || p.id || ''),
-      numero,
-      fecha: p.fechaRecibo || p.FechaRecibo || p.fecha || '',
-      monto: parseFloat(p.totalRecibo || p.TotalRecibo || p.monto || p.total || '0'),
-      moneda: p.moneda || p.Moneda || 'Peso argentino',
-      medioPago: p.medioPago || p.MedioPago || p.formaPago || p.FormaPago || '',
-      facturaAsociada: p.facturaAsociada || p.nroFacturaAsociada || '',
-      descripcion: p.descripcion || p.Descripcion || p.observaciones || '',
-    };
-  });
+const tipoFacturaMap: Record<string, string> = {
+  '0': 'A', '1': 'B', '2': 'C', '3': 'E',
+};
+
+function derivePagosFromFacturas(facturasData: any[]): ColppyPago[] {
+  const pagos: ColppyPago[] = [];
+
+  for (const f of facturasData) {
+    const aplicado = parseFloat(f.totalaplicado || '0');
+    if (aplicado <= 0) continue;
+
+    const tipoComp = f.idTipoComprobante || '4';
+    const tipoLetra = tipoFacturaMap[f.idTipoFactura] || 'A';
+    const moneda = monedaMap[f.idMoneda] || 'ARS';
+    const total = parseFloat(f.totalFactura || '0');
+
+    // Notas de crédito son ajustes/compensaciones
+    const isNotaCredito = ['6', '8', '13'].includes(tipoComp);
+
+    if (isNotaCredito) {
+      // NC con totalaplicado > 0 significa que se aplicó como pago
+      pagos.push({
+        idRecibo: `nc-${f.idFactura}`,
+        numero: f.nroFactura || '',
+        fecha: f.record_update_ts ? f.record_update_ts.split(' ')[0] : f.fechaFactura || '',
+        monto: aplicado,
+        moneda,
+        medioPago: 'Nota de Crédito',
+        facturaAsociada: `NC ${tipoLetra} ${f.nroFactura || ''}`,
+        descripcion: `Nota de Crédito ${tipoLetra} ${f.nroFactura} aplicada`,
+      });
+      continue;
+    }
+
+    // Facturas con cobros
+    const isParcial = aplicado < total * 0.999; // margen para redondeo
+
+    // Usar record_update_ts como fecha aprox de cobro
+    const fechaPago = f.record_update_ts
+      ? f.record_update_ts.split(' ')[0]
+      : f.fechaFactura || '';
+
+    pagos.push({
+      idRecibo: `pago-${f.idFactura}`,
+      numero: f.nroFactura || '',
+      fecha: fechaPago,
+      monto: aplicado,
+      moneda,
+      medioPago: isParcial ? 'Pago parcial' : 'Pago total',
+      facturaAsociada: `FC ${tipoLetra} ${f.nroFactura || ''}`,
+      descripcion: isParcial
+        ? `Cobro parcial FC ${tipoLetra} ${f.nroFactura}`
+        : `Cobro total FC ${tipoLetra} ${f.nroFactura}`,
+    });
+  }
+
+  // Ordenar por fecha desc
+  pagos.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+
+  return pagos;
 }
 
 // ============================================================================
@@ -138,72 +187,44 @@ export async function GET(request: NextRequest) {
     const claveSesion = getSession();
     const passwordMD5 = md5(COLPPY_PASSWORD);
 
-    const filters = [
-      { field: 'idCliente', op: '=', value: idCliente },
-    ];
-
-    // Intentar con listar_recibo primero
-    let response: any;
-    let operacion = 'listar_recibo';
-
-    try {
-      response = callColppy({
-        auth: { usuario: COLPPY_USER, password: passwordMD5 },
-        service: { provision: 'Recibo', operacion },
-        parameters: {
-          sesion: { usuario: COLPPY_USER, claveSesion },
-          idEmpresa: COLPPY_ID_EMPRESA,
-          start: 0,
-          limit: 500,
-          filter: filters,
-          order: [{ field: 'fechaRecibo', dir: 'desc' }],
-        },
-      });
-    } catch {
-      // Si falla, intentar con Cobranza
-      operacion = 'listar_cobranza';
-      response = callColppy({
-        auth: { usuario: COLPPY_USER, password: passwordMD5 },
-        service: { provision: 'Cobranza', operacion },
-        parameters: {
-          sesion: { usuario: COLPPY_USER, claveSesion },
-          idEmpresa: COLPPY_ID_EMPRESA,
-          start: 0,
-          limit: 500,
-          filter: filters,
-          order: [{ field: 'fecha', dir: 'desc' }],
-        },
-      });
-    }
-
-    // Log de descubrimiento
-    if (!pagoCache.has('_logged')) {
-      console.log(`[Colppy] Respuesta pagos (${operacion}, muestra):`, JSON.stringify(response?.response?.data?.[0] || response?.response, null, 2).substring(0, 2000));
-      pagoCache.set('_logged', { data: [], timestamp: Date.now() });
-    }
+    let response = callColppy({
+      auth: { usuario: COLPPY_USER, password: passwordMD5 },
+      service: { provision: 'FacturaVenta', operacion: 'listar_facturasventa' },
+      parameters: {
+        sesion: { usuario: COLPPY_USER, claveSesion },
+        idEmpresa: COLPPY_ID_EMPRESA,
+        start: 0,
+        limit: 1000,
+        filter: [{ field: 'idCliente', op: '=', value: idCliente }],
+        order: { field: ['idFactura'], order: 'desc' },
+      },
+    });
 
     if (response.result?.estado !== 0 || !response.response?.success) {
-      // Reintentar con nueva sesión
       cachedSession = null;
       const newSession = getSession();
       response = callColppy({
         auth: { usuario: COLPPY_USER, password: md5(COLPPY_PASSWORD) },
-        service: { provision: 'Recibo', operacion: 'listar_recibo' },
+        service: { provision: 'FacturaVenta', operacion: 'listar_facturasventa' },
         parameters: {
           sesion: { usuario: COLPPY_USER, claveSesion: newSession },
           idEmpresa: COLPPY_ID_EMPRESA,
           start: 0,
-          limit: 500,
-          filter: filters,
-          order: [{ field: 'fechaRecibo', dir: 'desc' }],
+          limit: 1000,
+          filter: [{ field: 'idCliente', op: '=', value: idCliente }],
+          order: { field: ['idFactura'], order: 'desc' },
         },
       });
+
+      if (response.result?.estado !== 0) {
+        throw new Error(response.result?.mensaje || 'Error cargando facturas para derivar pagos');
+      }
     }
 
-    const pagos = mapPagos(response?.response?.data || []);
+    const pagos = derivePagosFromFacturas(response.response?.data || []);
     pagoCache.set(idCliente, { data: pagos, timestamp: Date.now() });
 
-    console.log(`[Colppy] ${pagos.length} pagos cargados para cliente ${idCliente}`);
+    console.log(`[Colppy] ${pagos.length} pagos derivados para cliente ${idCliente}`);
 
     return NextResponse.json({ pagos, total: pagos.length, cached: false });
   } catch (error: any) {

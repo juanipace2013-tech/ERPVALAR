@@ -36,7 +36,7 @@ async function fetchBCRA(endpoint: string) {
     console.log('BCRA response status:', response.status)
 
     const text = await response.text()
-    console.log('BCRA response body:', text.substring(0, 200))
+    console.log('BCRA response body:', text.substring(0, 300))
 
     if (!text) {
       return { status: 404, errorMessages: ['Respuesta vacía del BCRA'] }
@@ -76,12 +76,10 @@ export async function GET(
     fetchBCRA(`Deudas/ChequesRechazados/${cuit}`),
   ])
 
-  console.log('BCRA Deudas response:', JSON.stringify(deudas, null, 2))
-
   // ── Extraer entidades del período más reciente ───────────────────────────────
-  // La API devuelve results.periodos[].entidades, no results.entidades directamente
+  // La API devuelve results.periodos[].entidades (no results.entidades directamente)
   const periodos: any[] =
-    deudas?.status === 200 ? deudas?.results?.periodos ?? [] : []
+    deudas?.status === 200 ? (deudas?.results?.periodos ?? []) : []
 
   const periodosOrdenados = [...periodos].sort((a, b) =>
     a.periodo.localeCompare(b.periodo)
@@ -89,8 +87,7 @@ export async function GET(
   const periodoActual = periodosOrdenados[periodosOrdenados.length - 1]
   const entidadesRaw: any[] = periodoActual?.entidades ?? []
 
-  // Mapear al formato esperado por el frontend
-  // El BCRA devuelve "entidad" como string (nombre), no como número
+  // El BCRA devuelve "entidad" como string (nombre del banco)
   const entidadesMapped = entidadesRaw.map((e: any) => ({
     entidad: typeof e.entidad === 'number' ? e.entidad : 0,
     entidadNombre: typeof e.entidad === 'string' ? e.entidad : undefined,
@@ -115,17 +112,41 @@ export async function GET(
   )
 
   // ── Cheques rechazados ────────────────────────────────────────────────────────
-  const causales: any[] =
-    cheques?.status === 200 ? cheques?.results?.causales ?? [] : []
+  // Estructura real: causales[].entidades[].detalle[] (no causales[].entidades directamente)
+  // causales[].causal = string (nombre de la causal)
+  // causales[].entidades[].entidad = number (ID banco)
+  // causales[].entidades[].detalle[].nroCheque, fechaRechazo, monto, fechaPago
+  const causalesRaw: any[] =
+    cheques?.status === 200 ? (cheques?.results?.causales ?? []) : []
 
+  // Contar checks reales (sum de detalle.length de cada entidad)
   let cantidadChequesRechazados = 0
-  for (const causal of causales) {
-    if (Array.isArray(causal.entidades)) {
-      cantidadChequesRechazados += causal.entidades.length
-    } else if (causal.cantidadCheques) {
-      cantidadChequesRechazados += Number(causal.cantidadCheques)
+  for (const causal of causalesRaw) {
+    for (const ent of causal.entidades ?? []) {
+      cantidadChequesRechazados += (ent.detalle ?? []).length
     }
   }
+
+  // Transformar a estructura plana que el frontend puede renderizar:
+  // causales[].descripcionCausal + causales[].entidades[] con campos directos
+  const causalesTransformed = causalesRaw.map((c: any) => ({
+    descripcionCausal: c.causal ?? '',
+    entidades: (c.entidades ?? []).flatMap((ent: any) =>
+      (ent.detalle ?? []).map((d: any) => ({
+        entidad: typeof ent.entidad === 'number' ? ent.entidad : 0,
+        entidadNombre:
+          typeof ent.entidad === 'string'
+            ? ent.entidad
+            : ent.denomJuridica ?? undefined,
+        numeroCheque: String(d.nroCheque ?? ''),
+        fechaRechazo: d.fechaRechazo ?? null,
+        monto: d.monto ?? null,
+        moneda: 'ARS',
+        pagado: d.fechaPago != null,
+        fechaPago: d.fechaPago ?? null,
+      }))
+    ),
+  }))
 
   const semaforo =
     situacionPeor === 0 && cantidadChequesRechazados === 0
@@ -152,12 +173,23 @@ export async function GET(
         }
       : deudas
 
+  const chequesTransformed =
+    cheques?.status === 200
+      ? {
+          status: cheques.status,
+          results: {
+            denominacion: cheques.results?.denominacion,
+            causales: causalesTransformed,
+          },
+        }
+      : cheques
+
   const result = {
     cuit: formatCuit(cuit),
     denominacion,
     deudas: deudasTransformed,
     historicas,
-    cheques,
+    cheques: chequesTransformed,
     resumen: {
       situacionPeor,
       montoTotalDeuda,

@@ -55,6 +55,8 @@ interface ChequeEntidad {
   fechaRechazo?: string
   monto?: number
   moneda?: string
+  pagado?: boolean
+  fechaPago?: string | null
 }
 
 interface Causal {
@@ -504,11 +506,12 @@ export default function AnalisisCrediticioPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Fecha</TableHead>
+                      <TableHead>Fecha Rechazo</TableHead>
                       <TableHead>Entidad</TableHead>
                       <TableHead>Nº Cheque</TableHead>
                       <TableHead className="text-right">Monto</TableHead>
                       <TableHead>Causal</TableHead>
+                      <TableHead>Estado</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -530,6 +533,17 @@ export default function AnalisisCrediticioPage() {
                           <Badge className="bg-red-100 text-red-800 text-xs">
                             {ch.descripcionCausal || '—'}
                           </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {ch.pagado ? (
+                            <Badge className="bg-green-100 text-green-800 text-xs">
+                              Pagado
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-red-100 text-red-800 text-xs">
+                              Impago
+                            </Badge>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}

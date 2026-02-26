@@ -38,6 +38,7 @@ import {
   FileSpreadsheet,
   MoreHorizontal,
   Filter,
+  Plus,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -142,7 +143,7 @@ export default function RemitosPage() {
   }
 
   const getTotalItems = (items: Array<{ quantity: number }>) => {
-    return items.reduce((sum, item) => sum + item.quantity, 0)
+    return items.reduce((sum, item) => sum + Number(item.quantity), 0)
   }
 
   const filteredDeliveryNotes = deliveryNotes.filter((dn) => {
@@ -163,6 +164,12 @@ export default function RemitosPage() {
             Gestión de remitos y despachos de mercadería
           </p>
         </div>
+        <Button asChild className="bg-blue-600 hover:bg-blue-700">
+          <Link href="/remitos/nuevo">
+            <Plus className="h-4 w-4 mr-2" />
+            Nuevo Remito
+          </Link>
+        </Button>
       </div>
 
       {/* Filters */}
@@ -319,7 +326,9 @@ export default function RemitosPage() {
                             {dn.quote.quoteNumber}
                           </Link>
                         ) : (
-                          <span className="text-gray-400">-</span>
+                          <Badge variant="outline" className="text-xs text-gray-500 border-gray-300">
+                            Directo
+                          </Badge>
                         )}
                       </TableCell>
                       <TableCell className="text-right">

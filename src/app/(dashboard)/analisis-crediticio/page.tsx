@@ -15,6 +15,13 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   LineChart,
   Line,
   XAxis,
@@ -25,7 +32,17 @@ import {
   ReferenceArea,
   ReferenceLine,
 } from 'recharts'
-import { Loader2, Search, ShieldCheck, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react'
+import {
+  Loader2,
+  Search,
+  ShieldCheck,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
+} from 'lucide-react'
 import { toast } from 'sonner'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
@@ -100,6 +117,9 @@ interface BcraResult {
   }
 }
 
+type SortField = 'fechaRechazo' | 'monto' | 'entidad' | 'estado'
+type SortDir = 'asc' | 'desc'
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
@@ -160,6 +180,15 @@ function semaforoColor(s: 'verde' | 'amarillo' | 'rojo'): string {
   return 'border-red-300 bg-red-50'
 }
 
+// ─── Sort icon ────────────────────────────────────────────────────────────────
+
+function SortIcon({ field, current, dir }: { field: SortField; current: SortField; dir: SortDir }) {
+  if (field !== current) return <ChevronsUpDown className="h-3 w-3 ml-1 text-gray-400 inline" />
+  return dir === 'asc'
+    ? <ChevronUp className="h-3 w-3 ml-1 text-blue-600 inline" />
+    : <ChevronDown className="h-3 w-3 ml-1 text-blue-600 inline" />
+}
+
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function AnalisisCrediticioPage() {
@@ -169,6 +198,25 @@ export default function AnalisisCrediticioPage() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<BcraResult | null>(null)
   const [error, setError] = useState('')
+
+  // ─── Estado filtros y ordenamiento ───────────────────────────────────────────
+  const [filtroEntidad, setFiltroEntidad] = useState('todas')
+  const [filtroCausal, setFiltroCausal] = useState('todas')
+  const [filtroEstado, setFiltroEstado] = useState('todos')
+  const [filtroFechaDesde, setFiltroFechaDesde] = useState('')
+  const [filtroFechaHasta, setFiltroFechaHasta] = useState('')
+  const [sortField, setSortField] = useState<SortField>('fechaRechazo')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
+
+  const resetFiltros = useCallback(() => {
+    setFiltroEntidad('todas')
+    setFiltroCausal('todas')
+    setFiltroEstado('todos')
+    setFiltroFechaDesde('')
+    setFiltroFechaHasta('')
+    setSortField('fechaRechazo')
+    setSortDir('desc')
+  }, [])
 
   const buscar = useCallback(
     async (cuit: string) => {
@@ -180,6 +228,7 @@ export default function AnalisisCrediticioPage() {
       setLoading(true)
       setError('')
       setResult(null)
+      resetFiltros()
       try {
         const res = await fetch(`/api/bcra/${clean}`)
         if (!res.ok) {
@@ -202,7 +251,7 @@ export default function AnalisisCrediticioPage() {
         setLoading(false)
       }
     },
-    [router]
+    [router, resetFiltros]
   )
 
   // Auto-buscar si viene con ?cuit= en la URL
@@ -236,7 +285,7 @@ export default function AnalisisCrediticioPage() {
 
   const entidades: Entidad[] = result?.deudas?.results?.entidades ?? []
 
-  // ─── Cheques rechazados ───────────────────────────────────────────────────────
+  // ─── Todos los cheques (lista plana) ─────────────────────────────────────────
 
   const allCheques: Array<ChequeEntidad & { descripcionCausal?: string }> = useMemo(() => {
     const causales = result?.cheques?.results?.causales ?? []
@@ -248,6 +297,93 @@ export default function AnalisisCrediticioPage() {
     }
     return list
   }, [result])
+
+  // ─── Opciones dinámicas para filtros ─────────────────────────────────────────
+
+  const entidadesUnicas = useMemo(
+    () =>
+      [...new Set(allCheques.map((c) => c.entidadNombre || `Entidad ${c.entidad}`))].sort(),
+    [allCheques]
+  )
+
+  const causalesUnicas = useMemo(
+    () => [...new Set(allCheques.map((c) => c.descripcionCausal).filter(Boolean))].sort() as string[],
+    [allCheques]
+  )
+
+  // ─── Cheques filtrados y ordenados ───────────────────────────────────────────
+
+  const chequesFiltrados = useMemo(() => {
+    let lista = [...allCheques]
+
+    if (filtroEntidad !== 'todas')
+      lista = lista.filter(
+        (c) => (c.entidadNombre || `Entidad ${c.entidad}`) === filtroEntidad
+      )
+    if (filtroCausal !== 'todas')
+      lista = lista.filter((c) => c.descripcionCausal === filtroCausal)
+    if (filtroEstado === 'pagado') lista = lista.filter((c) => c.pagado)
+    if (filtroEstado === 'impago') lista = lista.filter((c) => !c.pagado)
+    if (filtroFechaDesde)
+      lista = lista.filter((c) => c.fechaRechazo && c.fechaRechazo >= filtroFechaDesde)
+    if (filtroFechaHasta)
+      lista = lista.filter((c) => c.fechaRechazo && c.fechaRechazo <= filtroFechaHasta)
+
+    lista.sort((a, b) => {
+      let cmp = 0
+      switch (sortField) {
+        case 'fechaRechazo':
+          cmp = (a.fechaRechazo ?? '').localeCompare(b.fechaRechazo ?? '')
+          break
+        case 'monto':
+          cmp = (a.monto ?? 0) - (b.monto ?? 0)
+          break
+        case 'entidad':
+          cmp = (a.entidadNombre || `Entidad ${a.entidad}`).localeCompare(
+            b.entidadNombre || `Entidad ${b.entidad}`
+          )
+          break
+        case 'estado':
+          cmp = Number(a.pagado ?? false) - Number(b.pagado ?? false)
+          break
+      }
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+
+    return lista
+  }, [allCheques, filtroEntidad, filtroCausal, filtroEstado, filtroFechaDesde, filtroFechaHasta, sortField, sortDir])
+
+  // ─── Resumen cheques por causal ───────────────────────────────────────────────
+
+  const resumenCheques = useMemo(() => {
+    const porCausal: Record<string, { cantidad: number; monto: number; pagados: number; montoPagado: number }> = {}
+    for (const ch of allCheques) {
+      const causal = ch.descripcionCausal ?? 'OTRAS'
+      if (!porCausal[causal]) porCausal[causal] = { cantidad: 0, monto: 0, pagados: 0, montoPagado: 0 }
+      porCausal[causal].cantidad++
+      porCausal[causal].monto += ch.monto ?? 0
+      if (ch.pagado) {
+        porCausal[causal].pagados++
+        porCausal[causal].montoPagado += ch.monto ?? 0
+      }
+    }
+    const totalCantidad = allCheques.length
+    const totalMonto = allCheques.reduce((s, c) => s + (c.monto ?? 0), 0)
+    const totalPagados = allCheques.filter((c) => c.pagado).length
+    const totalMontoPagado = allCheques.filter((c) => c.pagado).reduce((s, c) => s + (c.monto ?? 0), 0)
+    return { porCausal, totalCantidad, totalMonto, totalPagados, totalMontoPagado }
+  }, [allCheques])
+
+  // ─── Handler de ordenamiento ──────────────────────────────────────────────────
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortField(field)
+      setSortDir(field === 'fechaRechazo' ? 'desc' : 'asc')
+    }
+  }
 
   // ─── Render ───────────────────────────────────────────────────────────────────
 
@@ -442,17 +578,10 @@ export default function AnalisisCrediticioPage() {
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-
-                      {/* Zonas de color de fondo */}
                       <ReferenceArea y1={0.5} y2={1.5} fill="#dcfce7" fillOpacity={0.6} />
                       <ReferenceArea y1={1.5} y2={3.5} fill="#fef9c3" fillOpacity={0.5} />
                       <ReferenceArea y1={3.5} y2={5.5} fill="#fee2e2" fillOpacity={0.5} />
-
-                      <XAxis
-                        dataKey="mes"
-                        tick={{ fontSize: 10 }}
-                        interval="preserveStartEnd"
-                      />
+                      <XAxis dataKey="mes" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
                       <YAxis
                         domain={[0.5, 5.5]}
                         ticks={[1, 2, 3, 4, 5]}
@@ -501,54 +630,231 @@ export default function AnalisisCrediticioPage() {
             <CardHeader>
               <CardTitle>Cheques Rechazados</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               {allCheques.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Fecha Rechazo</TableHead>
-                      <TableHead>Entidad</TableHead>
-                      <TableHead>Nº Cheque</TableHead>
-                      <TableHead className="text-right">Monto</TableHead>
-                      <TableHead>Causal</TableHead>
-                      <TableHead>Estado</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {allCheques.map((ch, i) => (
-                      <TableRow key={i}>
-                        <TableCell>
-                          {ch.fechaRechazo
-                            ? new Date(ch.fechaRechazo).toLocaleDateString('es-AR')
-                            : '—'}
-                        </TableCell>
-                        <TableCell>{ch.entidadNombre || `Entidad ${ch.entidad}` || '—'}</TableCell>
-                        <TableCell className="font-mono">{ch.numeroCheque || '—'}</TableCell>
-                        <TableCell className="text-right font-mono">
-                          {ch.monto != null
-                            ? `${ch.moneda || 'ARS'} ${formatMonto(ch.monto)}`
-                            : '—'}
-                        </TableCell>
-                        <TableCell>
-                          <Badge className="bg-red-100 text-red-800 text-xs">
-                            {ch.descripcionCausal || '—'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {ch.pagado ? (
-                            <Badge className="bg-green-100 text-green-800 text-xs">
-                              Pagado
-                            </Badge>
-                          ) : (
-                            <Badge className="bg-red-100 text-red-800 text-xs">
-                              Impago
-                            </Badge>
-                          )}
-                        </TableCell>
-                      </TableRow>
+                <>
+                  {/* ── Resumen por causal ───────────────────────────────── */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Tarjeta por cada causal */}
+                    {Object.entries(resumenCheques.porCausal).map(([causal, datos]) => (
+                      <div key={causal} className="border rounded-lg p-3 bg-red-50 border-red-200">
+                        <p className="text-xs font-semibold text-red-700 uppercase truncate">{causal}</p>
+                        <div className="mt-1 space-y-0.5">
+                          <p className="text-sm text-gray-700">
+                            Cantidad: <span className="font-semibold">{datos.cantidad}</span>
+                          </p>
+                          <p className="text-sm text-gray-700">
+                            Monto: <span className="font-semibold">${formatMonto(datos.monto)}</span>
+                          </p>
+                          <p className="text-xs text-green-700 mt-1">
+                            Pagados: {datos.pagados} de {datos.cantidad}
+                            {datos.cantidad > 0 && (
+                              <> ({((datos.pagados / datos.cantidad) * 100).toFixed(1)}%)</>
+                            )}
+                          </p>
+                          <p className="text-xs text-green-700">
+                            Monto abonado: ${formatMonto(datos.montoPagado)} de ${formatMonto(datos.monto)}
+                            {datos.monto > 0 && (
+                              <> ({((datos.montoPagado / datos.monto) * 100).toFixed(1)}%)</>
+                            )}
+                          </p>
+                        </div>
+                      </div>
                     ))}
-                  </TableBody>
-                </Table>
+
+                    {/* Tarjeta total */}
+                    <div className="border rounded-lg p-3 bg-gray-50 border-gray-300">
+                      <p className="text-xs font-semibold text-gray-700 uppercase">TOTAL</p>
+                      <div className="mt-1 space-y-0.5">
+                        <p className="text-sm text-gray-700">
+                          Cantidad: <span className="font-semibold">{resumenCheques.totalCantidad}</span>
+                        </p>
+                        <p className="text-sm text-gray-700">
+                          Monto: <span className="font-semibold">${formatMonto(resumenCheques.totalMonto)}</span>
+                        </p>
+                        <p className="text-xs text-green-700 mt-1">
+                          Pagados: {resumenCheques.totalPagados} de {resumenCheques.totalCantidad}
+                          {resumenCheques.totalCantidad > 0 && (
+                            <> ({((resumenCheques.totalPagados / resumenCheques.totalCantidad) * 100).toFixed(1)}%)</>
+                          )}
+                        </p>
+                        <p className="text-xs text-green-700">
+                          Monto abonado: ${formatMonto(resumenCheques.totalMontoPagado)} de ${formatMonto(resumenCheques.totalMonto)}
+                          {resumenCheques.totalMonto > 0 && (
+                            <> ({((resumenCheques.totalMontoPagado / resumenCheques.totalMonto) * 100).toFixed(1)}%)</>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── Filtros ──────────────────────────────────────────── */}
+                  <div className="flex flex-wrap gap-3 items-end border rounded-lg p-3 bg-gray-50">
+                    {/* Entidad */}
+                    <div className="min-w-[160px]">
+                      <label className="text-xs text-gray-500 mb-1 block">Entidad</label>
+                      <Select value={filtroEntidad} onValueChange={setFiltroEntidad}>
+                        <SelectTrigger className="h-8 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="todas">Todas</SelectItem>
+                          {entidadesUnicas.map((e) => (
+                            <SelectItem key={e} value={e}>{e}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Causal */}
+                    <div className="min-w-[160px]">
+                      <label className="text-xs text-gray-500 mb-1 block">Causal</label>
+                      <Select value={filtroCausal} onValueChange={setFiltroCausal}>
+                        <SelectTrigger className="h-8 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="todas">Todas</SelectItem>
+                          {causalesUnicas.map((c) => (
+                            <SelectItem key={c} value={c}>{c}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Estado */}
+                    <div className="min-w-[130px]">
+                      <label className="text-xs text-gray-500 mb-1 block">Estado</label>
+                      <Select value={filtroEstado} onValueChange={setFiltroEstado}>
+                        <SelectTrigger className="h-8 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="todos">Todos</SelectItem>
+                          <SelectItem value="pagado">Pagado</SelectItem>
+                          <SelectItem value="impago">Impago</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Fecha desde */}
+                    <div>
+                      <label className="text-xs text-gray-500 mb-1 block">Desde</label>
+                      <Input
+                        type="date"
+                        value={filtroFechaDesde}
+                        onChange={(e) => setFiltroFechaDesde(e.target.value)}
+                        className="h-8 text-sm w-36"
+                      />
+                    </div>
+
+                    {/* Fecha hasta */}
+                    <div>
+                      <label className="text-xs text-gray-500 mb-1 block">Hasta</label>
+                      <Input
+                        type="date"
+                        value={filtroFechaHasta}
+                        onChange={(e) => setFiltroFechaHasta(e.target.value)}
+                        className="h-8 text-sm w-36"
+                      />
+                    </div>
+
+                    {/* Limpiar filtros */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 self-end"
+                      onClick={resetFiltros}
+                    >
+                      Limpiar
+                    </Button>
+
+                    {/* Contador */}
+                    <span className="text-xs text-gray-500 self-end pb-1 ml-auto">
+                      {chequesFiltrados.length} de {allCheques.length} cheques
+                    </span>
+                  </div>
+
+                  {/* ── Tabla ─────────────────────────────────────────────── */}
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead
+                            className="cursor-pointer select-none whitespace-nowrap hover:bg-gray-50"
+                            onClick={() => handleSort('fechaRechazo')}
+                          >
+                            Fecha Rechazo
+                            <SortIcon field="fechaRechazo" current={sortField} dir={sortDir} />
+                          </TableHead>
+                          <TableHead
+                            className="cursor-pointer select-none hover:bg-gray-50"
+                            onClick={() => handleSort('entidad')}
+                          >
+                            Entidad
+                            <SortIcon field="entidad" current={sortField} dir={sortDir} />
+                          </TableHead>
+                          <TableHead>Nº Cheque</TableHead>
+                          <TableHead
+                            className="text-right cursor-pointer select-none hover:bg-gray-50"
+                            onClick={() => handleSort('monto')}
+                          >
+                            Monto
+                            <SortIcon field="monto" current={sortField} dir={sortDir} />
+                          </TableHead>
+                          <TableHead>Causal</TableHead>
+                          <TableHead
+                            className="cursor-pointer select-none hover:bg-gray-50"
+                            onClick={() => handleSort('estado')}
+                          >
+                            Estado
+                            <SortIcon field="estado" current={sortField} dir={sortDir} />
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {chequesFiltrados.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={6} className="text-center py-6 text-gray-400">
+                              Sin resultados para los filtros aplicados
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          chequesFiltrados.map((ch, i) => (
+                            <TableRow key={i}>
+                              <TableCell className="whitespace-nowrap">
+                                {ch.fechaRechazo
+                                  ? new Date(ch.fechaRechazo).toLocaleDateString('es-AR')
+                                  : '—'}
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {ch.entidadNombre || `Entidad ${ch.entidad}` || '—'}
+                              </TableCell>
+                              <TableCell className="font-mono">{ch.numeroCheque || '—'}</TableCell>
+                              <TableCell className="text-right font-mono">
+                                {ch.monto != null
+                                  ? `${ch.moneda || 'ARS'} ${formatMonto(ch.monto)}`
+                                  : '—'}
+                              </TableCell>
+                              <TableCell>
+                                <Badge className="bg-red-100 text-red-800 text-xs whitespace-nowrap">
+                                  {ch.descripcionCausal || '—'}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {ch.pagado ? (
+                                  <Badge className="bg-green-100 text-green-800 text-xs">Pagado</Badge>
+                                ) : (
+                                  <Badge className="bg-red-100 text-red-800 text-xs">Impago</Badge>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
               ) : (
                 <div className="text-center py-6 text-gray-500">
                   <CheckCircle2 className="h-8 w-8 text-green-400 mx-auto mb-2" />

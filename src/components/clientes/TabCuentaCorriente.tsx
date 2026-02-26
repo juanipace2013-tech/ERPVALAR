@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   Table,
   TableBody,
@@ -19,6 +18,7 @@ interface CCMovimiento {
   fecha: string
   tipo: string
   comprobante: string
+  descripcion: string
   debe: number
   haber: number
   saldo: number
@@ -118,7 +118,8 @@ export default function TabCuentaCorriente({ colppyId, saldoInicial }: Props) {
                   <TableRow>
                     <TableHead>Fecha</TableHead>
                     <TableHead>Tipo</TableHead>
-                    <TableHead>Comprobante</TableHead>
+                    <TableHead className="whitespace-nowrap">Nro. Comprobante</TableHead>
+                    <TableHead>Descripción</TableHead>
                     <TableHead className="text-right">Debe</TableHead>
                     <TableHead className="text-right">Haber</TableHead>
                     <TableHead className="text-right">Saldo</TableHead>
@@ -132,6 +133,9 @@ export default function TabCuentaCorriente({ colppyId, saldoInicial }: Props) {
                       </TableCell>
                       <TableCell className="text-sm">{mov.tipo}</TableCell>
                       <TableCell className="font-mono text-sm">{mov.comprobante || '—'}</TableCell>
+                      <TableCell className="text-sm text-gray-500 max-w-[200px] truncate">
+                        {mov.descripcion || '—'}
+                      </TableCell>
                       <TableCell className="text-right font-mono text-sm">
                         {mov.debe > 0 ? `$ ${formatNumber(mov.debe)}` : ''}
                       </TableCell>

@@ -102,10 +102,11 @@ export function Sidebar() {
 
   const userRole = session?.user?.role
 
-  // Filtrar items del menú según el rol del usuario
-  const visibleItems = navItems.filter((item) =>
-    userRole ? item.roles.includes(userRole) : false
-  )
+  // TODO: Re-habilitar filtro por roles cuando se definan permisos
+  // const visibleItems = navItems.filter((item) =>
+  //   userRole ? item.roles.includes(userRole) : false
+  // )
+  const visibleItems = navItems
 
   const toggleExpand = (title: string) => {
     setExpandedItems((prev) =>
@@ -125,12 +126,13 @@ export function Sidebar() {
           const isActive = pathname === item.href
           const isParentActive = hasSubItems && item.subItems.some(sub => pathname.startsWith(sub.href))
 
-          // Filtrar sub-items por rol
-          const visibleSubItems = hasSubItems
-            ? item.subItems!.filter(subItem =>
-                userRole ? subItem.roles.includes(userRole) : false
-              )
-            : []
+          // TODO: Re-habilitar filtro por roles cuando se definan permisos
+          // const visibleSubItems = hasSubItems
+          //   ? item.subItems!.filter(subItem =>
+          //       userRole ? subItem.roles.includes(userRole) : false
+          //     )
+          //   : []
+          const visibleSubItems = hasSubItems ? item.subItems! : []
 
           return (
             <div key={item.title}>

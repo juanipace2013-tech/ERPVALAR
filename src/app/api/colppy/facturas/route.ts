@@ -42,13 +42,17 @@ interface ColppyFactura {
   numero: string;
   tipo: string;           // "A", "B", "C", etc.
   tipoComprobante: string; // "4"=Factura, "5"=ND, "6"=NC
+  tipoLabel: string;       // "FAV A", "NCV A", "NDV A", "REC"
   fecha: string;           // fechaFactura
   fechaVto: string;        // fechaPago (vencimiento)
   total: number;
+  cobrado: number;         // totalaplicado
   saldo: number;           // totalFactura - totalaplicado
   estado: string;          // "Pagada", "Pendiente", "Vencida"
   moneda: string;
+  monedaLabel: string;     // "ARS", "USD", etc.
   tipoCambio: number;
+  valorME: number;         // Valor en moneda extranjera (total / tipoCambio si USD)
   condicionPago: string;
   descripcion: string;
   cae: string;
@@ -140,6 +144,16 @@ const condicionPagoMap: Record<string, string> = {
   '120': 'a 120 Días',
 };
 
+// Mapeo tipoComprobante a label legible (como muestra Colppy)
+// 4=Factura Venta (FAV), 5=Nota Débito Venta (NDV), 6=Nota Crédito Venta (NCV)
+const tipoComprobanteLabel: Record<string, string> = {
+  '4': 'FAV',
+  '5': 'NDV',
+  '6': 'NCV',
+  '8': 'NCV',
+  '13': 'NCV',
+};
+
 function mapFacturas(data: any[]): ColppyFactura[] {
   return (data || []).map((f: any) => {
     const total = parseFloat(f.totalFactura || '0');
@@ -154,20 +168,32 @@ function mapFacturas(data: any[]): ColppyFactura[] {
     }
 
     const tipoLetra = tipoFacturaMap[f.idTipoFactura] || 'A';
-    const moneda = monedaMap[f.idMoneda] || 'ARS';
+    const tipoComp = f.idTipoComprobante || '4';
+    const compLabel = tipoComprobanteLabel[tipoComp] || 'FAV';
+    const monedaCode = monedaMap[f.idMoneda] || 'ARS';
+    const tipoCambio = parseFloat(f.rate || f.valorCambio || '1');
+
+    // Calcular valor en moneda extranjera
+    // Si es USD (idMoneda=0) el rate es el tipo de cambio, el valor ME es total/rate
+    // Si es ARS (idMoneda=1) no hay valor ME relevante
+    const valorME = monedaCode === 'USD' ? total : (tipoCambio > 1 ? Math.round((total / tipoCambio) * 100) / 100 : 0);
 
     return {
       idFactura: String(f.idFactura || ''),
       numero: f.nroFactura || '',
       tipo: tipoLetra,
-      tipoComprobante: f.idTipoComprobante || '4',
+      tipoComprobante: tipoComp,
+      tipoLabel: `${compLabel} ${tipoLetra}`,
       fecha: f.fechaFactura || '',
-      fechaVto: f.fechaPago || f.fechaFactura || '', // fechaPago es el vencimiento en Colppy
+      fechaVto: f.fechaPago || f.fechaFactura || '',
       total,
+      cobrado: aplicado,
       saldo,
       estado,
-      moneda,
-      tipoCambio: parseFloat(f.rate || f.valorCambio || '1'),
+      moneda: monedaCode,
+      monedaLabel: monedaCode,
+      tipoCambio,
+      valorME,
       condicionPago: condicionPagoMap[f.idCondicionPago] || f.idCondicionPago || '',
       descripcion: f.descripcion || '',
       cae: f.cae || '',

@@ -34,6 +34,7 @@ interface CCMovimiento {
   fecha: string;
   tipo: string;
   comprobante: string;
+  descripcion: string;
   debe: number;
   haber: number;
   saldo: number;
@@ -91,6 +92,10 @@ const tipoFacturaMap: Record<string, string> = {
   '0': 'A', '1': 'B', '2': 'C', '3': 'E',
 };
 
+const tipoComprobanteLabel: Record<string, string> = {
+  '4': 'FAV', '5': 'NDV', '6': 'NCV', '8': 'NCV', '13': 'NCV',
+};
+
 function parseColppyDate(dateStr: string): Date {
   if (!dateStr) return new Date(0);
   // Colppy usa YYYY-MM-DD para fechaFactura
@@ -110,9 +115,11 @@ function buildMovimientosFromFacturas(facturasData: any[]): {
   for (const f of facturasData) {
     const tipoComp = f.idTipoComprobante || '4';
     const tipoLetra = tipoFacturaMap[f.idTipoFactura] || 'A';
+    const compLabel = tipoComprobanteLabel[tipoComp] || 'FAV';
     const total = parseFloat(f.totalFactura || '0');
     const aplicado = parseFloat(f.totalaplicado || '0');
     const numero = f.nroFactura || '';
+    const desc = f.descripcion || '';
 
     const isNotaCredito = ['6', '8', '13'].includes(tipoComp);
 
@@ -120,8 +127,9 @@ function buildMovimientosFromFacturas(facturasData: any[]): {
       // NC → movimiento HABER (reduce deuda)
       movimientos.push({
         fecha: f.fechaFactura || '',
-        tipo: `NC ${tipoLetra}`,
+        tipo: `${compLabel} ${tipoLetra}`,
         comprobante: numero,
+        descripcion: desc,
         debe: 0,
         haber: total,
         saldo: 0,
@@ -131,8 +139,9 @@ function buildMovimientosFromFacturas(facturasData: any[]): {
       totalFacturas++;
       movimientos.push({
         fecha: f.fechaFactura || '',
-        tipo: `Factura ${tipoLetra}`,
+        tipo: `${compLabel} ${tipoLetra}`,
         comprobante: numero,
+        descripcion: desc,
         debe: total,
         haber: 0,
         saldo: 0,
@@ -141,15 +150,15 @@ function buildMovimientosFromFacturas(facturasData: any[]): {
       // Si hay cobro (totalaplicado > 0), agregar movimiento HABER
       if (aplicado > 0) {
         totalPagos++;
-        // Fecha del cobro: usar record_update_ts si es posterior a fechaFactura
         const fechaCobro = f.record_update_ts
           ? f.record_update_ts.split(' ')[0]
           : f.fechaFactura || '';
 
         movimientos.push({
           fecha: fechaCobro,
-          tipo: 'Cobro',
+          tipo: 'REC',
           comprobante: numero,
+          descripcion: `Cobro de ${compLabel} ${tipoLetra} ${numero}`,
           debe: 0,
           haber: aplicado,
           saldo: 0,

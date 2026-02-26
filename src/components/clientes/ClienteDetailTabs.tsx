@@ -6,14 +6,12 @@ import {
   User,
   Wallet,
   FileText,
-  CreditCard,
   BarChart3,
   ShieldCheck,
 } from 'lucide-react'
 import TabDatosGenerales from './TabDatosGenerales'
 import TabCuentaCorriente from './TabCuentaCorriente'
-import TabFacturas from './TabFacturas'
-import TabPagos from './TabPagos'
+import TabFacturasAdeudadas from './TabFacturasAdeudadas'
 import TabComercial from './TabComercial'
 import TabAnalisisBCRA from './TabAnalisisBCRA'
 
@@ -57,24 +55,21 @@ export default function ClienteDetailTabs({ colppyCustomer, cuit }: Props) {
 
   return (
     <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-      <TabsList className="grid w-full grid-cols-6 h-auto">
+      <TabsList className="grid w-full grid-cols-5 h-auto">
         <TabsTrigger value="general" className="flex items-center gap-1.5 text-xs py-2">
           <User className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">Datos Generales</span>
           <span className="sm:hidden">General</span>
         </TabsTrigger>
+        <TabsTrigger value="facturas" className="flex items-center gap-1.5 text-xs py-2">
+          <FileText className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Facturas Adeudadas</span>
+          <span className="sm:hidden">Adeudadas</span>
+        </TabsTrigger>
         <TabsTrigger value="cc" className="flex items-center gap-1.5 text-xs py-2">
           <Wallet className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">Cuenta Corriente</span>
           <span className="sm:hidden">CC</span>
-        </TabsTrigger>
-        <TabsTrigger value="facturas" className="flex items-center gap-1.5 text-xs py-2">
-          <FileText className="h-3.5 w-3.5" />
-          Facturas
-        </TabsTrigger>
-        <TabsTrigger value="pagos" className="flex items-center gap-1.5 text-xs py-2">
-          <CreditCard className="h-3.5 w-3.5" />
-          Pagos
         </TabsTrigger>
         <TabsTrigger value="comercial" className="flex items-center gap-1.5 text-xs py-2">
           <BarChart3 className="h-3.5 w-3.5" />
@@ -91,21 +86,15 @@ export default function ClienteDetailTabs({ colppyCustomer, cuit }: Props) {
           <TabDatosGenerales customer={colppyCustomer} />
         </TabsContent>
 
+        <TabsContent value="facturas" className="mt-0">
+          {activatedTabs.has('facturas') && (
+            <TabFacturasAdeudadas colppyId={colppyId} />
+          )}
+        </TabsContent>
+
         <TabsContent value="cc" className="mt-0">
           {activatedTabs.has('cc') && (
             <TabCuentaCorriente colppyId={colppyId} saldoInicial={colppyCustomer.saldo} />
-          )}
-        </TabsContent>
-
-        <TabsContent value="facturas" className="mt-0">
-          {activatedTabs.has('facturas') && (
-            <TabFacturas colppyId={colppyId} />
-          )}
-        </TabsContent>
-
-        <TabsContent value="pagos" className="mt-0">
-          {activatedTabs.has('pagos') && (
-            <TabPagos colppyId={colppyId} />
           )}
         </TabsContent>
 

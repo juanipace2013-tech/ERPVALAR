@@ -167,6 +167,11 @@ export default function QuoteDetailPage() {
   const [bonificationLoading, setBonificationLoading] = useState(false)
   const [showEditBonification, setShowEditBonification] = useState(false)
 
+  // Additional product search (per-index)
+  const [additionalSearchTerms, setAdditionalSearchTerms] = useState<Record<number, string>>({})
+  const [additionalSearchResults, setAdditionalSearchResults] = useState<Record<number, Product[]>>({})
+  const [additionalSearchLoading, setAdditionalSearchLoading] = useState<Record<number, boolean>>({})
+
   // Product search
   const [productSearch, setProductSearch] = useState('')
   const [refreshingStock, setRefreshingStock] = useState(false)
@@ -224,6 +229,24 @@ export default function QuoteDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productSearch])
 
+  // Debounce para búsqueda de adicionales (300ms por cada índice)
+  useEffect(() => {
+    const timeouts: NodeJS.Timeout[] = []
+    for (const [indexStr, term] of Object.entries(additionalSearchTerms)) {
+      const index = Number(indexStr)
+      if (term.length >= 2) {
+        const t = setTimeout(() => {
+          searchAdditionalProducts(index, term)
+        }, 300)
+        timeouts.push(t)
+      } else {
+        setAdditionalSearchResults(prev => ({ ...prev, [index]: [] }))
+      }
+    }
+    return () => timeouts.forEach(t => clearTimeout(t))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [additionalSearchTerms])
+
   const fetchQuoteData = async () => {
     try {
       setLoading(true)
@@ -265,6 +288,33 @@ export default function QuoteDetailPage() {
       setSearchResults([])
     } finally {
       setSearchLoading(false)
+    }
+  }
+
+  const searchAdditionalProducts = async (index: number, query: string) => {
+    if (query.length < 2) {
+      setAdditionalSearchResults(prev => ({ ...prev, [index]: [] }))
+      return
+    }
+    try {
+      setAdditionalSearchLoading(prev => ({ ...prev, [index]: true }))
+      const params = new URLSearchParams({
+        search: query,
+        limit: '20',
+        status: 'ACTIVE',
+      })
+      const response = await fetch(`/api/productos?${params.toString()}`)
+      if (response.ok) {
+        const data = await response.json()
+        setAdditionalSearchResults(prev => ({ ...prev, [index]: data.products || [] }))
+      } else {
+        setAdditionalSearchResults(prev => ({ ...prev, [index]: [] }))
+      }
+    } catch (error) {
+      console.error('Error buscando adicionales:', error)
+      setAdditionalSearchResults(prev => ({ ...prev, [index]: [] }))
+    } finally {
+      setAdditionalSearchLoading(prev => ({ ...prev, [index]: false }))
     }
   }
 

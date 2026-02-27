@@ -6,13 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+// Select imports removed - additionals now use search-based selector
 import {
   Dialog,
   DialogContent,
@@ -105,6 +99,7 @@ interface Quote {
   terms: string | null
   notes: string | null
   subtotal: number
+  bonification: number
   total: number
   items: QuoteItem[]
 }
@@ -166,6 +161,11 @@ export default function QuoteDetailPage() {
   const [exchangeRateLoading, setExchangeRateLoading] = useState(false)
   const [showEditExchangeRate, setShowEditExchangeRate] = useState(false)
   const [currentTCLoading, setCurrentTCLoading] = useState(false)
+
+  // Bonification
+  const [bonificationValue, setBonificationValue] = useState('')
+  const [bonificationLoading, setBonificationLoading] = useState(false)
+  const [showEditBonification, setShowEditBonification] = useState(false)
 
   // Product search
   const [productSearch, setProductSearch] = useState('')
@@ -235,6 +235,7 @@ export default function QuoteDetailPage() {
       setQuote(data)
       setMultiplierValue(Number(data.multiplier).toFixed(2))
       setExchangeRateValue(Number(data.exchangeRate).toFixed(2))
+      setBonificationValue(Number(data.bonification || 0).toFixed(2))
     } catch (error) {
       console.error('Error:', error)
       toast.error('Error al cargar la cotización')
@@ -336,6 +337,31 @@ export default function QuoteDetailPage() {
       toast.error('Error al actualizar tipo de cambio')
     } finally {
       setExchangeRateLoading(false)
+    }
+  }
+
+  const handleBonificationChange = async (newValue: string) => {
+    const numValue = parseFloat(newValue)
+    if (isNaN(numValue) || numValue < 0 || numValue > 100) {
+      toast.error('La bonificación debe estar entre 0% y 100%')
+      return
+    }
+    try {
+      setBonificationLoading(true)
+      const response = await fetch(`/api/quotes/${quoteId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bonification: numValue }),
+      })
+      if (!response.ok) throw new Error()
+      setBonificationValue(numValue.toFixed(2))
+      setShowEditBonification(false)
+      toast.success(`Bonificación actualizada a ${numValue}%`)
+      await fetchQuoteData()
+    } catch {
+      toast.error('Error al actualizar bonificación')
+    } finally {
+      setBonificationLoading(false)
     }
   }
 
@@ -1272,33 +1298,63 @@ export default function QuoteDetailPage() {
                       </Button>
                     </div>
                     {itemFormData.additionals.map((additional, index) => (
-                      <div key={index} className="flex gap-2 items-center">
-                        <Select
-                          value={additional.productId}
-                          onValueChange={(value) =>
-                            handleUpdateAdditional(index, value)
-                          }
-                        >
-                          <SelectTrigger className="flex-1">
-                            <SelectValue placeholder="Seleccionar adicional..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {products.map((product) => (
-                              <SelectItem key={product.id} value={product.id}>
-                                {product.name} - USD{' '}
-                                {product.listPriceUSD ? formatNumber(product.listPriceUSD) : '0,00'}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          type="button"
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => handleRemoveAdditional(index)}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
+                      <div key={index} className="space-y-1">
+                        {additional.productId ? (
+                          <div className="flex items-center gap-2 bg-gray-50 rounded px-2 py-1">
+                            <span className="text-sm truncate flex-1">
+                              {additional.productSku && <span className="font-mono text-xs text-muted-foreground mr-1">{additional.productSku}</span>}
+                              {additional.productName || 'Producto seleccionado'}
+                            </span>
+                            <span className="text-xs font-mono text-muted-foreground">
+                              USD {formatNumber(additional.listPrice)}
+                            </span>
+                            <Button type="button" size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleRemoveAdditional(index)}>
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="relative">
+                            <div className="flex items-center gap-1">
+                              <Search className="h-3 w-3 text-muted-foreground" />
+                              <Input
+                                placeholder="Buscar adicional..."
+                                value={additionalSearchTerms[index] || ''}
+                                onChange={(e) => setAdditionalSearchTerms(prev => ({ ...prev, [index]: e.target.value }))}
+                                className="h-8 text-sm"
+                              />
+                              <Button type="button" size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleRemoveAdditional(index)}>
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                            {(additionalSearchResults[index]?.length > 0) && (
+                              <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                                {additionalSearchResults[index].map((product) => (
+                                  <button
+                                    key={product.id}
+                                    type="button"
+                                    className="w-full text-left px-3 py-1.5 text-sm hover:bg-blue-50 border-b last:border-0"
+                                    onClick={() => {
+                                      handleUpdateAdditional(index, product.id)
+                                      setAdditionalSearchTerms(prev => ({ ...prev, [index]: '' }))
+                                      setAdditionalSearchResults(prev => ({ ...prev, [index]: [] }))
+                                    }}
+                                  >
+                                    <span className="font-mono text-xs text-muted-foreground">{product.sku}</span>{' '}
+                                    {product.name}
+                                    <span className="float-right text-xs font-mono">
+                                      USD {product.listPriceUSD ? formatNumber(product.listPriceUSD) : '0,00'}
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            {additionalSearchLoading[index] && (
+                              <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg p-2 text-center">
+                                <Loader2 className="h-4 w-4 animate-spin inline" />
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1687,6 +1743,77 @@ export default function QuoteDetailPage() {
                 USD {formatNumber(quote.subtotal)}
               </span>
             </div>
+
+            {/* Bonificación */}
+            <div className="flex justify-between items-center text-base">
+              <div className="flex items-center gap-2">
+                <span className={Number(quote.bonification) > 0 ? 'text-green-700 font-medium' : 'text-muted-foreground'}>
+                  Bonificación:
+                </span>
+                {showEditBonification ? (
+                  <div className="flex items-center gap-1">
+                    <Input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      max="100"
+                      value={bonificationValue}
+                      onChange={(e) => setBonificationValue(e.target.value)}
+                      className="w-20 font-mono font-semibold h-8 text-sm"
+                      disabled={bonificationLoading}
+                    />
+                    <span className="text-sm text-muted-foreground">%</span>
+                    <Button
+                      size="sm"
+                      className="h-8 bg-green-600 hover:bg-green-700"
+                      onClick={() => handleBonificationChange(bonificationValue)}
+                      disabled={bonificationLoading}
+                    >
+                      {bonificationLoading ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Save className="h-3 w-3" />
+                      )}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8"
+                      onClick={() => {
+                        setShowEditBonification(false)
+                        setBonificationValue(Number(quote.bonification || 0).toFixed(2))
+                      }}
+                      disabled={bonificationLoading}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <span className={`font-mono font-semibold ${Number(quote.bonification) > 0 ? 'text-green-700' : 'text-muted-foreground'}`}>
+                      {Number(quote.bonification || 0).toFixed(2)}%
+                    </span>
+                    {quote.status === 'DRAFT' && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 w-6 p-0"
+                        onClick={() => setShowEditBonification(true)}
+                        title="Cambiar bonificación"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+              {Number(quote.bonification) > 0 && (
+                <span className="font-mono text-green-700 font-medium">
+                  - USD {formatNumber(Number(quote.subtotal) * Number(quote.bonification) / 100)}
+                </span>
+              )}
+            </div>
+
             <div className="flex justify-between text-2xl font-bold text-blue-900 border-t-2 pt-2">
               <span>Total:</span>
               <div className="text-right">

@@ -36,6 +36,7 @@ interface Quote {
   currency: string
   exchangeRate: number | null
   subtotal: number
+  bonification: number
   total: number
   terms: string | null
   notes: string | null
@@ -355,6 +356,14 @@ export default function PublicQuotePage() {
                       {formatCurrency(quote.subtotal)}
                     </span>
                   </div>
+                  {Number(quote.bonification) > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-green-700">Bonificación ({Number(quote.bonification)}%):</span>
+                      <span className="font-semibold text-green-700">
+                        - {formatCurrency(Number(quote.subtotal) * Number(quote.bonification) / 100)}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-lg pt-2 border-t">
                     <span className="font-bold">Total:</span>
                     <span className="font-bold text-blue-600">

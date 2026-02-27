@@ -189,11 +189,22 @@ export const CLIENT_MULTIPLIERS: Record<string, number> = {
 }
 
 /**
+ * Normaliza una razón social para comparación:
+ * - Minúsculas
+ * - Quita puntos (S.A. → SA, S.R.L. → SRL)
+ * - Colapsa espacios múltiples en uno solo
+ * - Trim
+ */
+function normalize(str: string): string {
+  return str.toLowerCase().replace(/\./g, '').replace(/\s+/g, ' ').trim()
+}
+
+/**
  * Busca el multiplicador de precio para un cliente por su razón social.
  * Estrategia de búsqueda:
  * 1. Exacto (case sensitive)
- * 2. Case insensitive
- * 3. Parcial (contiene) - la razón social del cliente contiene la clave o viceversa
+ * 2. Normalizado (sin puntos, espacios colapsados, case insensitive)
+ * 3. Parcial normalizado (contiene)
  *
  * @param razonSocial - Razón social del cliente (como viene de Colppy)
  * @returns El multiplicador si se encuentra, o 1.0 por defecto
@@ -206,19 +217,19 @@ export function getMultiplierForClient(razonSocial: string): number {
     return CLIENT_MULTIPLIERS[razonSocial]
   }
 
-  // 2. Búsqueda case insensitive
-  const lowerRazon = razonSocial.toLowerCase()
-  const exactKey = Object.keys(CLIENT_MULTIPLIERS).find(
-    k => k.toLowerCase() === lowerRazon
+  // 2. Búsqueda normalizada (sin puntos, espacios colapsados, case insensitive)
+  const normalizedRazon = normalize(razonSocial)
+  const normalizedKey = Object.keys(CLIENT_MULTIPLIERS).find(
+    k => normalize(k) === normalizedRazon
   )
-  if (exactKey) {
-    return CLIENT_MULTIPLIERS[exactKey]
+  if (normalizedKey) {
+    return CLIENT_MULTIPLIERS[normalizedKey]
   }
 
-  // 3. Búsqueda parcial (contiene)
+  // 3. Búsqueda parcial normalizada (contiene)
   const partialKey = Object.keys(CLIENT_MULTIPLIERS).find(
-    k => lowerRazon.includes(k.toLowerCase()) ||
-         k.toLowerCase().includes(lowerRazon)
+    k => normalizedRazon.includes(normalize(k)) ||
+         normalize(k).includes(normalizedRazon)
   )
   if (partialKey) {
     return CLIENT_MULTIPLIERS[partialKey]

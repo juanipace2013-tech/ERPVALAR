@@ -125,6 +125,7 @@ export async function GET(
         })
       })(),
       subtotal: Number(quote.subtotal),
+      bonification: Number(quote.bonification || 0),
       total: Number(quote.total),
       exchangeRate: Number(quote.exchangeRate),
       paymentTerms: quote.terms || 'Cuenta corriente a 30 días fecha factura',

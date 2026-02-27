@@ -892,6 +892,7 @@ model Quote {
 
   // Totales (en USD)
   subtotal        Decimal      @default(0) @db.Decimal(15, 2)
+  bonification    Decimal      @default(0) @db.Decimal(5, 2) // Bonificación en %
   total           Decimal      @default(0) @db.Decimal(15, 2)
 
   validUntil      DateTime?
@@ -1103,6 +1104,7 @@ model DeliveryNote {
 
   // Orden de compra / referencia cliente
   purchaseOrder     String?            // OC del cliente
+  customerInvoiceNumber String?        // Número de factura del cliente
 
   // Totales
   totalAmountARS    Decimal?           @db.Decimal(15,2)  // Total sin IVA en ARS

@@ -93,7 +93,8 @@ const tipoFacturaMap: Record<string, string> = {
 };
 
 const tipoComprobanteLabel: Record<string, string> = {
-  '4': 'FAV', '5': 'NDV', '6': 'NCV', '8': 'NCV', '13': 'NCV',
+  '4': 'FAV', '5': 'NDV', '6': 'NCV', '7': 'REC', '8': 'NCV', '9': 'NDV',
+  '10': 'FAV', '11': 'NDV', '12': 'NCV', '13': 'NCV',
 };
 
 function parseColppyDate(dateStr: string): Date {
@@ -121,28 +122,41 @@ function buildMovimientosFromFacturas(facturasData: any[]): {
     const numero = f.nroFactura || '';
     const desc = f.descripcion || '';
 
-    const isNotaCredito = ['6', '8', '13'].includes(tipoComp);
+    const isNotaCredito = ['6', '8', '12', '13'].includes(tipoComp);
+    const isNotaDebito = ['5', '9', '11'].includes(tipoComp);
 
     if (isNotaCredito) {
-      // NC → movimiento HABER (reduce deuda)
+      // NC → movimiento HABER (reduce deuda) - Math.abs por si Colppy manda negativo
       movimientos.push({
         fecha: f.fechaFactura || '',
         tipo: `${compLabel} ${tipoLetra}`,
         comprobante: numero,
         descripcion: desc,
         debe: 0,
-        haber: total,
+        haber: Math.abs(total),
         saldo: 0,
       });
-    } else {
-      // Factura/ND → movimiento DEBE
+    } else if (isNotaDebito) {
+      // ND → movimiento DEBE (aumenta deuda) - Math.abs por si Colppy manda negativo
       totalFacturas++;
       movimientos.push({
         fecha: f.fechaFactura || '',
         tipo: `${compLabel} ${tipoLetra}`,
         comprobante: numero,
         descripcion: desc,
-        debe: total,
+        debe: Math.abs(total),
+        haber: 0,
+        saldo: 0,
+      });
+    } else {
+      // Factura → movimiento DEBE
+      totalFacturas++;
+      movimientos.push({
+        fecha: f.fechaFactura || '',
+        tipo: `${compLabel} ${tipoLetra}`,
+        comprobante: numero,
+        descripcion: desc,
+        debe: Math.abs(total),
         haber: 0,
         saldo: 0,
       });
@@ -160,7 +174,7 @@ function buildMovimientosFromFacturas(facturasData: any[]): {
           comprobante: numero,
           descripcion: `Cobro de ${compLabel} ${tipoLetra} ${numero}`,
           debe: 0,
-          haber: aplicado,
+          haber: Math.abs(aplicado),
           saldo: 0,
         });
       }

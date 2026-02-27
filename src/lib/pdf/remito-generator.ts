@@ -24,6 +24,7 @@ export interface RemitoPDFData {
   carrier?: string | null
   transportAddress?: string | null
   purchaseOrder?: string | null
+  customerInvoiceNumber?: string | null
   bultos?: number | null
   totalAmountARS?: number | null
   notes?: string | null
@@ -166,7 +167,7 @@ function drawRemitoCopy(doc: jsPDF, data: RemitoPDFData, copyLabel: string) {
   // ══════════════════════════════════════════════════════════════════════════
   // DATOS DEL CLIENTE — caja con borde
   // ══════════════════════════════════════════════════════════════════════════
-  const clientBoxH = 30
+  const clientBoxH = 36
   doc.setDrawColor(...BLACK)
   doc.setLineWidth(0.4)
   doc.rect(ML, y, USABLE_W, clientBoxH)
@@ -241,6 +242,14 @@ function drawRemitoCopy(doc: jsPDF, data: RemitoPDFData, copyLabel: string) {
     doc.text(data.customer.cuit, rx2 + 17, ry)
     doc.setFont('helvetica', 'normal')
   }
+
+  ry += 6
+  const facNumValue = data.customerInvoiceNumber || '-'
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(8)
+  doc.text('FAC N°:', rx2, ry)
+  doc.setFont('helvetica', 'normal')
+  doc.text(facNumValue, rx2 + 15, ry)
 
   ry += 6
   if (data.purchaseOrder) {

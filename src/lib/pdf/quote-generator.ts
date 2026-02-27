@@ -29,6 +29,7 @@ interface QuotePDFData {
     isAlternative?: boolean
   }>
   subtotal: number
+  bonification: number
   total: number
   exchangeRate: number
   paymentTerms: string
@@ -282,22 +283,34 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
   doc.text('Subtotal:', totalsLeft + 6, curY + 8)
   doc.text(fmtUSD(data.subtotal), totalsRight - 1, curY + 8, { align: 'right' })
 
+  let bonifOffset = 0
+  if (data.bonification > 0) {
+    doc.setFontSize(9)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(0, 128, 0)
+    const bonifAmount = data.subtotal * data.bonification / 100
+    doc.text(`Bonificación (${data.bonification}%):`, totalsLeft + 6, curY + 14)
+    doc.text(`- ${fmtUSD(bonifAmount)}`, totalsRight - 1, curY + 14, { align: 'right' })
+    doc.setTextColor(0, 0, 0)
+    bonifOffset = 6
+  }
+
   // Línea separadora antes del total
   doc.setDrawColor(...BLUE)
   doc.setLineWidth(0.8)
-  doc.line(totalsLeft, curY + 11, totalsRight, curY + 11)
+  doc.line(totalsLeft, curY + 11 + bonifOffset, totalsRight, curY + 11 + bonifOffset)
 
   // Total
   doc.setFontSize(11)
   doc.setFont('helvetica', 'bold')
-  doc.text('Total:', totalsLeft + 6, curY + 17)
-  doc.text(fmtUSD(data.total), totalsRight - 1, curY + 17, { align: 'right' })
+  doc.text('Total:', totalsLeft + 6, curY + 17 + bonifOffset)
+  doc.text(fmtUSD(data.total), totalsRight - 1, curY + 17 + bonifOffset, { align: 'right' })
 
   // Línea final
   doc.setLineWidth(0.3)
-  doc.line(totalsLeft, curY + 19, totalsRight, curY + 19)
+  doc.line(totalsLeft, curY + 19 + bonifOffset, totalsRight, curY + 19 + bonifOffset)
 
-  curY += 25
+  curY += 25 + bonifOffset
 
   // ═══════════════════════════════════════════════════════════════════════
   // CONDICIONES COMERCIALES + FIRMA

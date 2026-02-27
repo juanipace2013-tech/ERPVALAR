@@ -147,6 +147,7 @@ export async function generateDeliveryNoteFromQuote(
     carrier?: string;
     transportAddress?: string;
     purchaseOrder?: string;
+    customerInvoiceNumber?: string;
     bultos?: number;
     notes?: string;
   }
@@ -196,6 +197,7 @@ export async function generateDeliveryNoteFromQuote(
         carrier: data?.carrier || null,
         transportAddress: data?.transportAddress || null,
         purchaseOrder: data?.purchaseOrder || null,
+        customerInvoiceNumber: data?.customerInvoiceNumber || null,
         bultos: data?.bultos || null,
         totalAmountARS: calculatedTotalAmountARS,
         exchangeRate: quoteExchangeRate,

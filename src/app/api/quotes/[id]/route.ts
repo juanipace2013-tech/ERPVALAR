@@ -164,6 +164,7 @@ export async function PUT(
     if (body.validUntil !== undefined) updateData.validUntil = body.validUntil ? new Date(body.validUntil) : null
     if (body.exchangeRate !== undefined) updateData.exchangeRate = body.exchangeRate
     if (body.multiplier !== undefined) updateData.multiplier = body.multiplier
+    if (body.bonification !== undefined) updateData.bonification = body.bonification
 
     const quote = await prisma.quote.update({
       where: { id },
@@ -224,10 +225,12 @@ export async function PUT(
       const mainItems = await prisma.quoteItem.findMany({
         where: { quoteId: id, isAlternative: false },
       })
-      const total = mainItems.reduce((sum, item) => sum + Number(item.totalPrice), 0)
+      const subtotal = mainItems.reduce((sum, item) => sum + Number(item.totalPrice), 0)
+      const bonif = Number(quote.bonification) || 0
+      const total = subtotal * (1 - bonif / 100)
       await prisma.quote.update({
         where: { id },
-        data: { subtotal: total, total },
+        data: { subtotal, total },
       })
 
       // Opcionalmente guardar en el Customer para próximas cotizaciones
@@ -237,6 +240,20 @@ export async function PUT(
           data: { priceMultiplier: newMultiplier },
         })
       }
+    }
+
+    // Si la bonificación cambió (sin cambio de multiplicador), recalcular total
+    if (body.bonification !== undefined && !multiplierChanged) {
+      const mainItems = await prisma.quoteItem.findMany({
+        where: { quoteId: id, isAlternative: false },
+      })
+      const subtotal = mainItems.reduce((sum, item) => sum + Number(item.totalPrice), 0)
+      const bonif = Number(body.bonification) || 0
+      const total = subtotal * (1 - bonif / 100)
+      await prisma.quote.update({
+        where: { id },
+        data: { subtotal, total },
+      })
     }
 
     // Recargar quote actualizado

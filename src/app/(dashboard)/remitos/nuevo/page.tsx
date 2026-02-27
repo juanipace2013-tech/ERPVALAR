@@ -166,6 +166,7 @@ export default function NuevoRemitoPage() {
   const [carrier, setCarrier] = useState('')
   const [transportAddress, setTransportAddress] = useState('')
   const [purchaseOrder, setPurchaseOrder] = useState('')
+  const [customerInvoiceNumber, setCustomerInvoiceNumber] = useState('')
   const [invoiceRef, setInvoiceRef] = useState('')
   const [bultos, setBultos] = useState('')
   const [notes, setNotes] = useState('')
@@ -332,6 +333,7 @@ export default function NuevoRemitoPage() {
           carrier: carrier || undefined,
           transportAddress: transportAddress || undefined,
           purchaseOrder: purchaseOrder || undefined,
+          customerInvoiceNumber: customerInvoiceNumber || undefined,
           bultos: bultos ? parseInt(bultos) : undefined,
           notes: notes || undefined,
         }),
@@ -387,6 +389,7 @@ export default function NuevoRemitoPage() {
           carrier: carrier || undefined,
           transportAddress: transportAddress || undefined,
           purchaseOrder: purchaseOrder || undefined,
+          customerInvoiceNumber: customerInvoiceNumber || undefined,
           invoiceRef: invoiceRef || undefined,
           bultos: bultos || undefined,
           totalAmountARS: totalAmountARS || undefined,
@@ -547,6 +550,15 @@ export default function NuevoRemitoPage() {
                   placeholder="Número de orden de compra"
                   value={purchaseOrder}
                   onChange={(e) => setPurchaseOrder(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="customerInvoiceNumber">Factura del cliente</Label>
+                <Input
+                  id="customerInvoiceNumber"
+                  placeholder="Número de factura del cliente"
+                  value={customerInvoiceNumber}
+                  onChange={(e) => setCustomerInvoiceNumber(e.target.value)}
                 />
               </div>
               <div className="space-y-2">
@@ -722,6 +734,18 @@ export default function NuevoRemitoPage() {
                   placeholder="Número de orden de compra"
                   value={purchaseOrder}
                   onChange={(e) => setPurchaseOrder(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="d-customerInvoiceNumber">
+                  Factura del cliente{' '}
+                  <span className="text-gray-400 font-normal">(opcional)</span>
+                </Label>
+                <Input
+                  id="d-customerInvoiceNumber"
+                  placeholder="Número de factura del cliente"
+                  value={customerInvoiceNumber}
+                  onChange={(e) => setCustomerInvoiceNumber(e.target.value)}
                 />
               </div>
               <div className="space-y-2">

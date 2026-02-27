@@ -219,13 +219,20 @@ async function recalculateQuoteTotals(quoteId: string) {
     },
   })
 
-  const total = items.reduce((sum, item) => sum + Number(item.totalPrice), 0)
+  const subtotal = items.reduce((sum, item) => sum + Number(item.totalPrice), 0)
+
+  const quote = await prisma.quote.findUnique({
+    where: { id: quoteId },
+    select: { bonification: true },
+  })
+  const bonif = Number(quote?.bonification) || 0
+  const total = subtotal * (1 - bonif / 100)
 
   await prisma.quote.update({
     where: { id: quoteId },
     data: {
-      subtotal: total,
-      total: total,
+      subtotal,
+      total,
     },
   })
 }

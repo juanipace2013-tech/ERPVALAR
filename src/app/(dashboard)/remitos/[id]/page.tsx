@@ -62,6 +62,7 @@ interface DeliveryNote {
   transportAddress: string | null
   trackingNumber: string | null
   purchaseOrder: string | null
+  customerInvoiceNumber: string | null
   totalAmountARS: string | number | null
   bultos: number | null
   preparedBy: string | null
@@ -304,6 +305,7 @@ export default function DeliveryNoteDetailPage() {
         carrier: deliveryNote.carrier,
         transportAddress: deliveryNote.transportAddress,
         purchaseOrder: deliveryNote.purchaseOrder,
+        customerInvoiceNumber: deliveryNote.customerInvoiceNumber,
         bultos: deliveryNote.bultos,
         totalAmountARS: deliveryNote.totalAmountARS
           ? Number(deliveryNote.totalAmountARS)

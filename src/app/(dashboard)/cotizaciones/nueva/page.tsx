@@ -60,12 +60,27 @@ export default function NuevaCotizacionPage() {
         setQuoteNumber(data.quoteNumber)
       }
 
-      // Obtener tipo de cambio
+      // Obtener tipo de cambio (de la DB o del BCRA como fallback)
+      let tcLoaded = false
       const tcRes = await fetch('/api/tipo-cambio?from=USD&to=ARS')
       if (tcRes.ok) {
         const data = await tcRes.json()
         if (data.rates && data.rates.length > 0) {
           setExchangeRate(Number(data.rates[0].rate))
+          tcLoaded = true
+        }
+      }
+      if (!tcLoaded) {
+        try {
+          const bcraRes = await fetch('/api/tipo-cambio/bcra')
+          if (bcraRes.ok) {
+            const bcraData = await bcraRes.json()
+            if (bcraData.exchangeRate?.rate) {
+              setExchangeRate(Number(bcraData.exchangeRate.rate))
+            }
+          }
+        } catch (e) {
+          console.error('Error obteniendo TC del BCRA:', e)
         }
       }
 

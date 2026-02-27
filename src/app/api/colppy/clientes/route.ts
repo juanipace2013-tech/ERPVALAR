@@ -12,6 +12,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { getMultiplierForClient } from '@/lib/client-multipliers';
 
 // ============================================================================
 // CONFIGURACIÓN
@@ -256,7 +257,7 @@ function mapCustomers(data: any[]): CachedCustomer[] {
       mobile: c.Celular || '',
       email: c.Email || '',
       saldo: parseFloat(c.Saldo || '0'),
-      priceMultiplier: 1.0,
+      priceMultiplier: getMultiplierForClient(businessName),
       paymentTerms: paymentTermsMap[idCondicionPago] || 'Contado',
       paymentTermsDays: parseInt(idCondicionPago) || 0,
       searchText: `${name} ${cuit} ${cuit.replace(/\D/g, '')} ${businessName}`.toLowerCase(),

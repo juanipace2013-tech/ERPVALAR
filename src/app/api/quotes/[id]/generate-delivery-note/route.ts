@@ -22,6 +22,7 @@ export async function POST(
       carrier,
       transportAddress,
       purchaseOrder,
+      customerInvoiceNumber,
       bultos,
       notes
     } = body;
@@ -34,6 +35,7 @@ export async function POST(
       carrier,
       transportAddress,
       purchaseOrder,
+      customerInvoiceNumber,
       bultos,
       notes
     });

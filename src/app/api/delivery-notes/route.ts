@@ -93,6 +93,7 @@ export async function POST(request: NextRequest) {
       carrier,
       transportAddress,
       purchaseOrder,
+      customerInvoiceNumber,
       invoiceRef,
       bultos,
       totalAmountARS,
@@ -186,6 +187,7 @@ export async function POST(request: NextRequest) {
         carrier: carrier || null,
         transportAddress: transportAddress || null,
         purchaseOrder: purchaseOrder || null,
+        customerInvoiceNumber: customerInvoiceNumber || null,
         bultos: bultos ? parseInt(bultos) : null,
         totalAmountARS: totalAmountARS ? parseFloat(totalAmountARS) : null,
         notes: notes

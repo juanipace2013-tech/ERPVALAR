@@ -147,11 +147,8 @@ const condicionPagoMap: Record<string, string> = {
 // Mapeo tipoComprobante a label legible (como muestra Colppy)
 // 4=Factura Venta (FAV), 5=Nota Débito Venta (NDV), 6=Nota Crédito Venta (NCV)
 const tipoComprobanteLabel: Record<string, string> = {
-  '4': 'FAV',
-  '5': 'NDV',
-  '6': 'NCV',
-  '8': 'NCV',
-  '13': 'NCV',
+  '4': 'FAV', '5': 'NDV', '6': 'NCV', '7': 'REC', '8': 'NCV', '9': 'NDV',
+  '10': 'FAV', '11': 'NDV', '12': 'NCV', '13': 'NCV',
 };
 
 function mapFacturas(data: any[]): ColppyFactura[] {

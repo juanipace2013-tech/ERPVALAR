@@ -170,6 +170,9 @@ model Customer {
   priceMultiplier Decimal        @default(1.0) @db.Decimal(5, 3) // Multiplicador de precio (ej: 1.2 = 20% markup)
   balance         Decimal        @default(0) @db.Decimal(15, 2) // Saldo actual del cliente
 
+  // Integración Colppy
+  colppyId        String?
+
   // Vendedor asignado
   salesPersonId   String?
   salesPerson     User?          @relation("CustomerSalesPerson", fields: [salesPersonId], references: [id])

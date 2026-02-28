@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -40,8 +40,11 @@ import {
   Copy,
   FileDown,
   Loader2,
+  Download,
+  XCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import * as XLSX from 'xlsx'
 
 interface Quote {
   id: string
@@ -49,6 +52,8 @@ interface Quote {
   date: string
   status: string
   currency: string
+  subtotal: number
+  bonification: number
   total: number
   exchangeRate: number
   customer: {
@@ -60,6 +65,13 @@ interface Quote {
     name: string
   }
   validUntil: string | null
+}
+
+interface User {
+  id: string
+  name: string
+  email: string
+  role: string
 }
 
 const statusLabels: Record<string, string> = {
@@ -84,29 +96,30 @@ export default function CotizacionesPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('ALL')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [salesPersonId, setSalesPersonId] = useState<string>('ALL')
+  const [salesPersons, setSalesPersons] = useState<User[]>([])
 
+  // Fetch vendedores al montar
   useEffect(() => {
-    fetchQuotes()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter])
+    fetch('/api/users')
+      .then((res) => res.json())
+      .then((data) => setSalesPersons(data.users || []))
+      .catch(() => {})
+  }, [])
 
-  const fetchQuotes = async () => {
+  const fetchQuotes = useCallback(async () => {
     try {
       setLoading(true)
-      let url = '/api/quotes'
-
       const params = new URLSearchParams()
-      if (statusFilter !== 'ALL') {
-        params.append('status', statusFilter)
-      }
-      if (search) {
-        params.append('search', search)
-      }
+      if (statusFilter !== 'ALL') params.append('status', statusFilter)
+      if (search) params.append('search', search)
+      if (dateFrom) params.append('dateFrom', dateFrom)
+      if (dateTo) params.append('dateTo', dateTo)
+      if (salesPersonId !== 'ALL') params.append('salesPersonId', salesPersonId)
 
-      if (params.toString()) {
-        url += `?${params.toString()}`
-      }
-
+      const url = `/api/quotes${params.toString() ? `?${params.toString()}` : ''}`
       const response = await fetch(url)
 
       if (!response.ok) {
@@ -121,11 +134,30 @@ export default function CotizacionesPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [statusFilter, search, dateFrom, dateTo, salesPersonId])
+
+  useEffect(() => {
+    fetchQuotes()
+  }, [fetchQuotes])
 
   const handleSearch = () => {
     fetchQuotes()
   }
+
+  const handleClearFilters = () => {
+    setSearch('')
+    setStatusFilter('ALL')
+    setDateFrom('')
+    setDateTo('')
+    setSalesPersonId('ALL')
+  }
+
+  const hasActiveFilters =
+    search !== '' ||
+    statusFilter !== 'ALL' ||
+    dateFrom !== '' ||
+    dateTo !== '' ||
+    salesPersonId !== 'ALL'
 
   const handleDownloadPDF = async (quoteId: string, quoteNumber: string) => {
     try {
@@ -168,6 +200,48 @@ export default function CotizacionesPage() {
     }
   }
 
+  const handleExportExcel = () => {
+    if (quotes.length === 0) {
+      toast.error('No hay cotizaciones para exportar')
+      return
+    }
+
+    const data = quotes.map((q) => ({
+      'Nº Cotización': q.quoteNumber,
+      Fecha: new Date(q.date).toLocaleDateString('es-AR'),
+      Cliente: q.customer.name,
+      Vendedor: q.salesPerson.name,
+      Estado: statusLabels[q.status] || q.status,
+      'Subtotal USD': Number(q.subtotal),
+      'Bonificación %': Number(q.bonification),
+      'Total USD': Number(q.total),
+      'Total ARS': Number((q.total * Number(q.exchangeRate)).toFixed(2)),
+    }))
+
+    const ws = XLSX.utils.json_to_sheet(data)
+
+    // Autoajustar columnas
+    const colWidths = Object.keys(data[0]).map((key) => {
+      const maxLen = Math.max(
+        key.length,
+        ...data.map((row) => String(row[key as keyof typeof row]).length)
+      )
+      return { wch: maxLen + 2 }
+    })
+    ws['!cols'] = colWidths
+
+    // Encabezados en negrita: aplicar estilo a primera fila
+    // SheetJS community edition no soporta estilos nativos,
+    // pero los encabezados se generan automáticamente por json_to_sheet
+
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Cotizaciones')
+
+    const today = new Date().toISOString().split('T')[0].replace(/-/g, '')
+    XLSX.writeFile(wb, `Cotizaciones_VAL_ARG_${today}.xlsx`)
+    toast.success('Excel descargado correctamente')
+  }
+
   const formatCurrency = (amount: number, currency: string = 'USD') => {
     return new Intl.NumberFormat('es-AR', {
       style: 'currency',
@@ -196,19 +270,30 @@ export default function CotizacionesPage() {
             Gestión de cotizaciones y presupuestos
           </p>
         </div>
-        <Link href="/cotizaciones/nueva">
-          <Button className="bg-blue-600 hover:bg-blue-700">
-            <Plus className="mr-2 h-4 w-4" />
-            Nueva Cotización
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={handleExportExcel}
+            className="border-green-300 text-green-700 hover:bg-green-50"
+          >
+            <Download className="mr-2 h-4 w-4" />
+            Descargar Excel
           </Button>
-        </Link>
+          <Link href="/cotizaciones/nueva">
+            <Button className="bg-blue-600 hover:bg-blue-700">
+              <Plus className="mr-2 h-4 w-4" />
+              Nueva Cotización
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Filters */}
       <Card className="border-blue-200">
         <CardContent className="p-6">
-          <div className="flex gap-4">
-            <div className="relative flex-1">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            {/* Búsqueda por texto */}
+            <div className="relative xl:col-span-2">
               <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Buscar por número, cliente..."
@@ -218,19 +303,63 @@ export default function CotizacionesPage() {
                 className="pl-10"
               />
             </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Todos los estados" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">Todos los estados</SelectItem>
-                <SelectItem value="DRAFT">Borrador</SelectItem>
-                <SelectItem value="SENT">Enviada</SelectItem>
-                <SelectItem value="ACCEPTED">Aceptada</SelectItem>
-                <SelectItem value="REJECTED">Rechazada</SelectItem>
-                <SelectItem value="EXPIRED">Vencida</SelectItem>
-              </SelectContent>
-            </Select>
+            {/* Fecha desde */}
+            <div>
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                placeholder="Desde"
+                className="w-full"
+                title="Fecha desde"
+              />
+            </div>
+            {/* Fecha hasta */}
+            <div>
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                placeholder="Hasta"
+                className="w-full"
+                title="Fecha hasta"
+              />
+            </div>
+            {/* Vendedor */}
+            <div>
+              <Select value={salesPersonId} onValueChange={setSalesPersonId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Vendedor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Todos los vendedores</SelectItem>
+                  {salesPersons.map((sp) => (
+                    <SelectItem key={sp.id} value={sp.id}>
+                      {sp.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {/* Estado */}
+            <div>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Estado" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Todos los estados</SelectItem>
+                  <SelectItem value="DRAFT">Borrador</SelectItem>
+                  <SelectItem value="SENT">Enviada</SelectItem>
+                  <SelectItem value="ACCEPTED">Aceptada</SelectItem>
+                  <SelectItem value="REJECTED">Rechazada</SelectItem>
+                  <SelectItem value="EXPIRED">Vencida</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {/* Botones de acción de filtros */}
+          <div className="flex gap-2 mt-4">
             <Button
               onClick={handleSearch}
               className="bg-blue-600 hover:bg-blue-700"
@@ -238,6 +367,16 @@ export default function CotizacionesPage() {
               <Search className="mr-2 h-4 w-4" />
               Buscar
             </Button>
+            {hasActiveFilters && (
+              <Button
+                variant="outline"
+                onClick={handleClearFilters}
+                className="text-gray-600"
+              >
+                <XCircle className="mr-2 h-4 w-4" />
+                Limpiar filtros
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -253,9 +392,9 @@ export default function CotizacionesPage() {
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <FileText className="h-12 w-12 text-muted-foreground mb-4" />
               <p className="text-muted-foreground text-lg">
-                {search ? 'No se encontraron cotizaciones' : 'No hay cotizaciones'}
+                {hasActiveFilters ? 'No se encontraron cotizaciones' : 'No hay cotizaciones'}
               </p>
-              {!search && (
+              {!hasActiveFilters && (
                 <Link href="/cotizaciones/nueva">
                   <Button className="mt-4 bg-blue-600 hover:bg-blue-700">
                     <Plus className="mr-2 h-4 w-4" />

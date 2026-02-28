@@ -18,6 +18,9 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status')
     const search = searchParams.get('search')
+    const dateFrom = searchParams.get('dateFrom')
+    const dateTo = searchParams.get('dateTo')
+    const salesPersonId = searchParams.get('salesPersonId')
 
     const where: Record<string, unknown> = {}
 
@@ -30,6 +33,21 @@ export async function GET(request: NextRequest) {
         { quoteNumber: { contains: search, mode: 'insensitive' } },
         { customer: { name: { contains: search, mode: 'insensitive' } } },
       ]
+    }
+
+    if (dateFrom || dateTo) {
+      const dateFilter: Record<string, Date> = {}
+      if (dateFrom) dateFilter.gte = new Date(dateFrom)
+      if (dateTo) {
+        const endDate = new Date(dateTo)
+        endDate.setHours(23, 59, 59, 999)
+        dateFilter.lte = endDate
+      }
+      where.date = dateFilter
+    }
+
+    if (salesPersonId) {
+      where.salesPersonId = salesPersonId
     }
 
     const quotes = await prisma.quote.findMany({

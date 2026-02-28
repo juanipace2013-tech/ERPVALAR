@@ -1254,6 +1254,9 @@ model Invoice {
 
   notes           String?       @db.Text
 
+  // TODO: Agregar con prisma db push
+  // colppyId        String?       // ID de la factura en Colppy
+
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -1284,6 +1287,7 @@ model Invoice {
   @@index([deliveryNoteId])
   @@index([afipStatus])
   @@index([paymentStatus])
+  // @@index([colppyId])  // TODO: habilitar con prisma db push
   @@map("invoices")
 }
 
@@ -1293,6 +1297,9 @@ model InvoiceItem {
   productId   String
   quoteItemId String?
 
+  // TODO: Agregar con prisma db push
+  // sku         String?
+  // brand       String?
   quantity    Int
   unitPrice   Decimal @db.Decimal(12, 2)
   discount    Decimal @default(0) @db.Decimal(5, 2)

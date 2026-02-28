@@ -68,6 +68,14 @@ const navItems: NavItem[] = [
     href: '/facturacion',
     icon: Receipt,
     roles: ['ADMIN', 'GERENTE', 'VENDEDOR', 'CONTADOR'],
+    subItems: [
+      {
+        title: 'Análisis',
+        href: '/facturacion/analisis',
+        icon: TrendingUp,
+        roles: ['ADMIN', 'GERENTE', 'VENDEDOR', 'CONTADOR'],
+      },
+    ],
   },
   {
     title: 'Productos',
@@ -124,7 +132,7 @@ export function Sidebar() {
           const isExpanded = expandedItems.includes(item.title)
           const hasSubItems = item.subItems && item.subItems.length > 0
           const isActive = pathname === item.href
-          const isParentActive = hasSubItems && item.subItems.some(sub => pathname.startsWith(sub.href))
+          const isParentActive = hasSubItems && item.subItems!.some(sub => pathname.startsWith(sub.href))
 
           // TODO: Re-habilitar filtro por roles cuando se definan permisos
           // const visibleSubItems = hasSubItems
@@ -132,7 +140,7 @@ export function Sidebar() {
           //       userRole ? subItem.roles.includes(userRole) : false
           //     )
           //   : []
-          const visibleSubItems = hasSubItems ? item.subItems! : []
+          const visibleSubItems = hasSubItems ? (item.subItems ?? []) : []
 
           return (
             <div key={item.title}>

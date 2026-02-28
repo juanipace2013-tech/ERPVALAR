@@ -1254,8 +1254,8 @@ model Invoice {
 
   notes           String?       @db.Text
 
-  // TODO: Agregar con prisma db push
-  // colppyId        String?       // ID de la factura en Colppy
+  // Integración con Colppy
+  colppyId        String?       // ID de la factura en Colppy
 
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
@@ -1287,29 +1287,28 @@ model Invoice {
   @@index([deliveryNoteId])
   @@index([afipStatus])
   @@index([paymentStatus])
-  // @@index([colppyId])  // TODO: habilitar con prisma db push
+  @@index([colppyId])
   @@map("invoices")
 }
 
 model InvoiceItem {
   id          String  @id @default(cuid())
   invoiceId   String
-  productId   String
+  productId   String?
   quoteItemId String?
 
-  // TODO: Agregar con prisma db push
-  // sku         String?
-  // brand       String?
-  quantity    Int
+  sku         String?
+  brand       String?
+  quantity    Decimal @db.Decimal(12, 2)
   unitPrice   Decimal @db.Decimal(12, 2)
   discount    Decimal @default(0) @db.Decimal(5, 2)
-  taxRate     Decimal @db.Decimal(5, 2)
+  taxRate     Decimal @default(0) @db.Decimal(5, 2)
   subtotal    Decimal @db.Decimal(12, 2)
 
   description String?
 
   invoice     Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  product     Product   @relation(fields: [productId], references: [id])
+  product     Product?  @relation(fields: [productId], references: [id])
   quoteItem   QuoteItem? @relation(fields: [quoteItemId], references: [id])
 
   @@index([invoiceId])

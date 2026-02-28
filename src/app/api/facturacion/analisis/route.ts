@@ -81,6 +81,7 @@ export async function GET(request: NextRequest) {
         taxAmount: true,
         discount: true,
         total: true,
+        colppyId: true,
         customer: { select: { id: true, name: true } },
         user: { select: { id: true, name: true } },
         items: {
@@ -264,7 +265,7 @@ export async function GET(request: NextRequest) {
         taxAmount: inv.taxAmount,
         discount: inv.discount,
         total: inv.total,
-        colppyId: null, // disponible después de prisma db push
+        colppyId: inv.colppyId,
       })),
       resumen: {
         totalUSD: Math.round(totalUSD * 100) / 100,

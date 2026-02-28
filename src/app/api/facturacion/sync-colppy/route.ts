@@ -198,14 +198,14 @@ export async function POST(request: NextRequest) {
         dueDate: new Date(String(f.fechaPago || f.fechaFactura || new Date().toISOString())),
         cae: String(f.cae || '') || null,
         afipStatus: f.cae ? 'APPROVED' as const : 'PENDING' as const,
-        // colppyId se agregará después de prisma db push
-        notes: `${compLabel} ${tipoLetra} - Colppy ID: ${idFactura}`,
+        colppyId: idFactura,
+        notes: `${compLabel} ${tipoLetra} - Importado desde Colppy`,
       }
 
       try {
-        // Verificar si ya existe por invoiceNumber (colppyId se usará después de db push)
+        // Verificar si ya existe por colppyId
         const existing = await prisma.invoice.findFirst({
-          where: { invoiceNumber: invoiceData.invoiceNumber },
+          where: { colppyId: idFactura },
         })
 
         if (existing) {

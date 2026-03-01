@@ -30,25 +30,70 @@ function md5(text: string): string {
   return crypto.createHash('md5').update(text).digest('hex')
 }
 
-function callColppy(payload: unknown): Record<string, unknown> {
+function callColppyRaw(payload: unknown): string {
   let tempFile: string | null = null
   try {
     tempFile = path.join(os.tmpdir(), `colppy-sync-${Date.now()}.json`)
     fs.writeFileSync(tempFile, JSON.stringify(payload), 'utf-8')
     const cmd = `curl -s -X POST "${COLPPY_ENDPOINT}" -H "Content-Type: application/json" -d @"${tempFile}" --max-time 120 -L`
-    const result = execSync(cmd, {
+    return execSync(cmd, {
       encoding: 'utf-8',
       timeout: 130000,
       maxBuffer: 50 * 1024 * 1024,
     })
-    return JSON.parse(result)
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : 'Unknown error'
-    throw new Error(`Error llamando a Colppy: ${msg}`)
+    throw new Error(`Error ejecutando curl a Colppy: ${msg}`)
   } finally {
     if (tempFile && fs.existsSync(tempFile)) {
       try { fs.unlinkSync(tempFile) } catch { /* ignore */ }
     }
+  }
+}
+
+function callColppy(payload: unknown): Record<string, unknown> {
+  const raw = callColppyRaw(payload)
+
+  // Verificar que la respuesta sea JSON antes de parsear
+  const trimmed = raw.trim()
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+    const preview = trimmed.substring(0, 500)
+    console.error(`[Colppy] Respuesta NO-JSON recibida (${trimmed.length} bytes). Primeros 500 chars:\n${preview}`)
+    throw new Error(`Colppy devolvió respuesta no-JSON (${trimmed.length} bytes). Posible error de sesión, rate limit, o mantenimiento. Preview: ${preview.substring(0, 200)}`)
+  }
+
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    const preview = trimmed.substring(0, 500)
+    console.error(`[Colppy] Error parseando JSON (${trimmed.length} bytes). Preview:\n${preview}`)
+    throw new Error(`Error parseando respuesta Colppy como JSON. Preview: ${preview.substring(0, 200)}`)
+  }
+}
+
+/**
+ * Llama a Colppy con retry automático: si falla con respuesta no-JSON o error de sesión,
+ * re-hace login y reintenta UNA vez.
+ */
+function callColppyWithRetry(
+  payload: unknown,
+  getNewSession: () => { claveSesion: string; passwordMD5: string },
+  updatePayloadSession: (payload: unknown, claveSesion: string) => unknown
+): Record<string, unknown> {
+  try {
+    return callColppy(payload)
+  } catch (firstError: unknown) {
+    const msg = firstError instanceof Error ? firstError.message : ''
+    console.warn(`[Colppy] Primer intento falló: ${msg.substring(0, 200)}. Re-autenticando...`)
+
+    // Re-login
+    const { claveSesion } = getNewSession()
+    const updatedPayload = updatePayloadSession(payload, claveSesion)
+
+    // Esperar 2 segundos antes de reintentar (evitar rate limit)
+    execSync('timeout /t 2 >nul 2>&1 || sleep 2', { timeout: 5000 }).toString()
+
+    return callColppy(updatedPayload)
   }
 }
 
@@ -63,7 +108,9 @@ function colppyLogin(): string {
   if (response.result?.estado !== 0) {
     throw new Error(`Error login Colppy: ${response.result?.mensaje}`)
   }
-  return response.response?.data?.claveSesion || ''
+  const key = response.response?.data?.claveSesion || ''
+  console.log(`[Sync Colppy] Login OK, sesión: ${key.substring(0, 8)}...`)
+  return key
 }
 
 // Mapeos de Colppy
@@ -78,6 +125,7 @@ const monedaMap: Record<string, string> = {
 const tipoComprobanteLabel: Record<string, string> = {
   '4': 'FAV', '5': 'NDV', '6': 'NCV', '7': 'REC', '8': 'NCV', '9': 'NDV',
   '10': 'FAV', '11': 'NDV', '12': 'NCV', '13': 'NCV',
+  '51': 'FAV', '52': 'NDV', '53': 'NCV', // MiPyme
 }
 
 // Mapear tipo de comprobante Colppy a InvoiceType del schema
@@ -119,46 +167,65 @@ interface ColppyClient {
 }
 
 /**
- * Obtiene TODOS los clientes de Colppy para mapeo
+ * Obtiene TODOS los clientes de Colppy para mapeo (con retry automático)
  */
 function fetchAllColppyClients(claveSesion: string, passwordMD5: string): ColppyClient[] {
-  const response = callColppy({
-    auth: { usuario: COLPPY_USER, password: passwordMD5 },
-    service: { provision: 'Cliente', operacion: 'listar_cliente' },
-    parameters: {
-      sesion: { usuario: COLPPY_USER, claveSesion },
-      idEmpresa: COLPPY_ID_EMPRESA,
-      start: 0,
-      limit: 6000,
-      filter: [],
-      order: [{ field: 'NombreFantasia', dir: 'asc' }],
-    },
-  }) as { result?: { estado?: number }; response?: { success?: boolean; data?: Record<string, unknown>[] } }
+  try {
+    const payload = {
+      auth: { usuario: COLPPY_USER, password: passwordMD5 },
+      service: { provision: 'Cliente', operacion: 'listar_cliente' },
+      parameters: {
+        sesion: { usuario: COLPPY_USER, claveSesion },
+        idEmpresa: COLPPY_ID_EMPRESA,
+        start: 0,
+        limit: 6000,
+        filter: [],
+        order: [{ field: 'NombreFantasia', dir: 'asc' }],
+      },
+    }
 
-  if (response.result?.estado !== 0 || !response.response?.success) {
-    console.warn('[Sync Colppy] No se pudieron cargar clientes de Colppy')
+    const response = callColppyWithRetry(
+      payload,
+      () => {
+        const newSession = colppyLogin()
+        return { claveSesion: newSession, passwordMD5 }
+      },
+      (p, newSession) => {
+        const pl = p as typeof payload
+        return { ...pl, parameters: { ...pl.parameters, sesion: { usuario: COLPPY_USER, claveSesion: newSession } } }
+      }
+    ) as { result?: { estado?: number }; response?: { success?: boolean; data?: Record<string, unknown>[] } }
+
+    if (response.result?.estado !== 0 || !response.response?.success) {
+      console.warn('[Sync Colppy] Respuesta de clientes no exitosa:', response.result)
+      return []
+    }
+
+    return (response.response.data || []).map((c: Record<string, unknown>) => ({
+      idCliente: String(c.idCliente || ''),
+      cuit: String(c.CUIT || ''),
+      name: String(c.NombreFantasia || c.RazonSocial || ''),
+      businessName: String(c.RazonSocial || ''),
+      taxCondition: condicionIvaMap[String(c.idCondicionIva || '1')] || 'RESPONSABLE_INSCRIPTO',
+      email: String(c.Email || ''),
+      phone: String(c.Telefono || ''),
+      address: String(c.DirPostal || ''),
+      city: String(c.DirPostalCiudad || ''),
+      province: String(c.DirPostalProvincia || ''),
+    }))
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Unknown'
+    console.error(`[Sync Colppy] Error cargando clientes: ${msg.substring(0, 300)}`)
     return []
   }
-
-  return (response.response.data || []).map((c: Record<string, unknown>) => ({
-    idCliente: String(c.idCliente || ''),
-    cuit: String(c.CUIT || ''),
-    name: String(c.NombreFantasia || c.RazonSocial || ''),
-    businessName: String(c.RazonSocial || ''),
-    taxCondition: condicionIvaMap[String(c.idCondicionIva || '1')] || 'RESPONSABLE_INSCRIPTO',
-    email: String(c.Email || ''),
-    phone: String(c.Telefono || ''),
-    address: String(c.DirPostal || ''),
-    city: String(c.DirPostalCiudad || ''),
-    province: String(c.DirPostalProvincia || ''),
-  }))
 }
 
 /**
- * Obtiene TODAS las facturas de Colppy paginando automáticamente
+ * Obtiene TODAS las facturas de Colppy paginando automáticamente.
+ * Usa retry con re-login ante fallos y delay entre páginas para evitar rate limit.
  */
 function fetchAllColppyFacturas(
-  claveSesion: string,
+  claveSesionInicial: string,
   passwordMD5: string,
   dateFromStr: string,
   dateToStr: string
@@ -166,13 +233,14 @@ function fetchAllColppyFacturas(
   const allFacturas: Record<string, unknown>[] = []
   let start = 0
   let hasMore = true
+  let currentSession = claveSesionInicial
 
   while (hasMore) {
-    const response = callColppy({
+    const payload = {
       auth: { usuario: COLPPY_USER, password: passwordMD5 },
       service: { provision: 'FacturaVenta', operacion: 'listar_facturasventa' },
       parameters: {
-        sesion: { usuario: COLPPY_USER, claveSesion },
+        sesion: { usuario: COLPPY_USER, claveSesion: currentSession },
         idEmpresa: COLPPY_ID_EMPRESA,
         start,
         limit: PAGE_SIZE,
@@ -182,7 +250,20 @@ function fetchAllColppyFacturas(
         ],
         order: { field: ['idFactura'], order: 'desc' },
       },
-    }) as { result?: { estado?: number; mensaje?: string }; response?: { success?: boolean; data?: Record<string, unknown>[]; total?: number } }
+    }
+
+    const response = callColppyWithRetry(
+      payload,
+      () => {
+        currentSession = colppyLogin()
+        return { claveSesion: currentSession, passwordMD5 }
+      },
+      (p, newSession) => {
+        const pl = p as typeof payload
+        currentSession = newSession
+        return { ...pl, parameters: { ...pl.parameters, sesion: { usuario: COLPPY_USER, claveSesion: newSession } } }
+      }
+    ) as { result?: { estado?: number; mensaje?: string }; response?: { success?: boolean; data?: Record<string, unknown>[]; total?: number } }
 
     if (response.result?.estado !== 0 || !response.response?.success) {
       throw new Error(response.result?.mensaje || 'Error al obtener facturas de Colppy')
@@ -198,6 +279,8 @@ function fetchAllColppyFacturas(
       hasMore = false
     } else {
       start += PAGE_SIZE
+      // Delay entre páginas para evitar rate limit de Colppy
+      try { execSync('timeout /t 1 >nul 2>&1 || sleep 1', { timeout: 3000 }).toString() } catch { /* ignore */ }
     }
   }
 
@@ -310,9 +393,11 @@ export async function POST(request: NextRequest) {
       }
 
       // Importar TODOS los tipos de comprobante de venta:
-      // 4=FAV A, 5=NDV A, 6=NCV A, 10=FAV B, 11=NDV B, 12=NCV B, 13=NCV C/E
+      // 4=FAV A, 5=NDV A, 6=NCV A, 7=REC, 8=NCV B, 9=NDV B
+      // 10=FAV B, 11=NDV B, 12=NCV B, 13=NCV C/E
+      // 51=FAV M (MiPyme), 52=NDV M, 53=NCV M
       const tipoComp = String(f.idTipoComprobante || '4')
-      const tiposVenta = ['4', '5', '6', '8', '9', '10', '11', '12', '13']
+      const tiposVenta = ['4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '51', '52', '53']
       if (!tiposVenta.includes(tipoComp)) {
         skipReasons[`tipo_${tipoComp}`] = (skipReasons[`tipo_${tipoComp}`] || 0) + 1
         skipped++; continue

@@ -3,7 +3,9 @@
  * Sincroniza facturas desde Colppy a la base de datos local.
  *
  * Body: { dateFrom?: string, dateTo?: string }
- * - Si no se proveen fechas, sincroniza los últimos 30 días.
+ * - Si no se proveen fechas, sincroniza desde 2026-01-01 hasta hoy.
+ * - Pagina automáticamente TODOS los resultados de Colppy
+ * - Importa TODOS los tipos de comprobante (FAV, NDV, NCV)
  * - Importa facturas nuevas (por colppyId/idFactura)
  * - Actualiza las que ya existen
  */
@@ -21,6 +23,8 @@ const COLPPY_ENDPOINT = 'https://login.colppy.com/lib/frontera2/service.php'
 const COLPPY_USER = process.env.COLPPY_USER || ''
 const COLPPY_PASSWORD = process.env.COLPPY_PASSWORD || ''
 const COLPPY_ID_EMPRESA = process.env.COLPPY_ID_EMPRESA || ''
+
+const PAGE_SIZE = 500
 
 function md5(text: string): string {
   return crypto.createHash('md5').update(text).digest('hex')
@@ -95,6 +99,56 @@ function mapPaymentStatus(idEstadoFactura: string, total: number, aplicado: numb
   return 'UNPAID'
 }
 
+/**
+ * Obtiene TODAS las facturas de Colppy paginando automáticamente
+ */
+function fetchAllColppyFacturas(
+  claveSesion: string,
+  passwordMD5: string,
+  dateFromStr: string,
+  dateToStr: string
+): Record<string, unknown>[] {
+  const allFacturas: Record<string, unknown>[] = []
+  let start = 0
+  let hasMore = true
+
+  while (hasMore) {
+    const response = callColppy({
+      auth: { usuario: COLPPY_USER, password: passwordMD5 },
+      service: { provision: 'FacturaVenta', operacion: 'listar_facturasventa' },
+      parameters: {
+        sesion: { usuario: COLPPY_USER, claveSesion },
+        idEmpresa: COLPPY_ID_EMPRESA,
+        start,
+        limit: PAGE_SIZE,
+        filter: [
+          { field: 'fechaFactura', op: '>=', value: dateFromStr },
+          { field: 'fechaFactura', op: '<=', value: dateToStr },
+        ],
+        order: { field: ['idFactura'], order: 'desc' },
+      },
+    }) as { result?: { estado?: number; mensaje?: string }; response?: { success?: boolean; data?: Record<string, unknown>[]; total?: number } }
+
+    if (response.result?.estado !== 0 || !response.response?.success) {
+      throw new Error(response.result?.mensaje || 'Error al obtener facturas de Colppy')
+    }
+
+    const pageData = response.response?.data || []
+    allFacturas.push(...pageData)
+
+    console.log(`[Sync Colppy] Página ${Math.floor(start / PAGE_SIZE) + 1}: ${pageData.length} facturas (total acumulado: ${allFacturas.length})`)
+
+    // Si devolvió menos que el page size, no hay más páginas
+    if (pageData.length < PAGE_SIZE) {
+      hasMore = false
+    } else {
+      start += PAGE_SIZE
+    }
+  }
+
+  return allFacturas
+}
+
 export async function POST(request: NextRequest) {
   try {
     const session = await auth()
@@ -105,43 +159,23 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}))
     const dateFrom = body.dateFrom
       ? new Date(body.dateFrom)
-      : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) // últimos 30 días
+      : new Date('2026-01-01') // Por defecto desde 1 de enero de 2026
     const dateTo = body.dateTo
       ? new Date(body.dateTo)
       : new Date()
 
-    console.log(`[Sync Colppy] Sincronizando facturas desde ${dateFrom.toISOString()} hasta ${dateTo.toISOString()}...`)
+    const dateFromStr = dateFrom.toISOString().split('T')[0]
+    const dateToStr = dateTo.toISOString().split('T')[0]
+
+    console.log(`[Sync Colppy] Sincronizando facturas desde ${dateFromStr} hasta ${dateToStr}...`)
 
     // 1. Login a Colppy
     const claveSesion = colppyLogin()
     const passwordMD5 = md5(COLPPY_PASSWORD)
 
-    // 2. Fetch facturas de Colppy (con filtro por fecha)
-    const dateFromStr = dateFrom.toISOString().split('T')[0]
-    const dateToStr = dateTo.toISOString().split('T')[0]
-
-    const response = callColppy({
-      auth: { usuario: COLPPY_USER, password: passwordMD5 },
-      service: { provision: 'FacturaVenta', operacion: 'listar_facturasventa' },
-      parameters: {
-        sesion: { usuario: COLPPY_USER, claveSesion },
-        idEmpresa: COLPPY_ID_EMPRESA,
-        start: 0,
-        limit: 5000,
-        filter: [
-          { field: 'fechaFactura', op: '>=', value: dateFromStr },
-          { field: 'fechaFactura', op: '<=', value: dateToStr },
-        ],
-        order: { field: ['idFactura'], order: 'desc' },
-      },
-    }) as { result?: { estado?: number; mensaje?: string }; response?: { success?: boolean; data?: Record<string, unknown>[] } }
-
-    if (response.result?.estado !== 0 || !response.response?.success) {
-      throw new Error(response.result?.mensaje || 'Error al obtener facturas de Colppy')
-    }
-
-    const colppyFacturas = response.response?.data || []
-    console.log(`[Sync Colppy] ${colppyFacturas.length} facturas obtenidas de Colppy`)
+    // 2. Fetch TODAS las facturas de Colppy con paginación
+    const colppyFacturas = fetchAllColppyFacturas(claveSesion, passwordMD5, dateFromStr, dateToStr)
+    console.log(`[Sync Colppy] Total: ${colppyFacturas.length} facturas obtenidas de Colppy`)
 
     // 3. Obtener mapeo de clientes Colppy -> local
     const customers = await prisma.customer.findMany({
@@ -150,17 +184,25 @@ export async function POST(request: NextRequest) {
     })
     const customerMap = new Map(customers.map((c) => [c.colppyId!, c.id]))
 
+    // Obtener un usuario del sistema para asignar como fallback (no se usa vendedor de Colppy)
+    const systemUser = await prisma.user.findFirst({ select: { id: true } })
+    if (!systemUser) {
+      throw new Error('No hay usuarios en el sistema')
+    }
+
     // 4. Procesar cada factura
     let created = 0
     let updated = 0
     let skipped = 0
     const errors: string[] = []
+    const porTipoComprobante: Record<string, number> = {}
 
     for (const f of colppyFacturas) {
       const idFactura = String(f.idFactura || '')
       if (!idFactura) { skipped++; continue }
 
-      // Solo sincronizar facturas de venta (idTipoComprobante 4=FAV, 5=NDV, 6=NCV)
+      // Importar TODOS los tipos de comprobante de venta:
+      // 4=FAV A/B/C, 5=NDV A/B/C, 6=NCV A/B/C
       const tipoComp = String(f.idTipoComprobante || '4')
       if (!['4', '5', '6'].includes(tipoComp)) { skipped++; continue }
 
@@ -179,12 +221,17 @@ export async function POST(request: NextRequest) {
       const tipoLetra = tipoFacturaMap[String(f.idTipoFactura || '0')] || 'A'
       const compLabel = tipoComprobanteLabel[tipoComp] || 'FAV'
 
+      // Contar por tipo de comprobante
+      const tipoKey = `${compLabel} ${tipoLetra}`
+      porTipoComprobante[tipoKey] = (porTipoComprobante[tipoKey] || 0) + 1
+
       const invoiceData = {
         invoiceNumber: String(f.nroFactura || `COLPPY-${idFactura}`),
         invoiceType: mapInvoiceType(String(f.idTipoFactura || '0')),
         transactionType: 'SALE' as const,
         customerId: localCustomerId,
-        userId: session.user.id,
+        // El vendedor NO viene de Colppy - se asigna el primer usuario del sistema como placeholder
+        userId: systemUser.id,
         status: mapInvoiceStatus(String(f.idEstadoFactura || '3'), saldo) as 'PENDING' | 'PAID',
         currency: monedaCode as 'ARS' | 'USD' | 'EUR',
         exchangeRate: tipoCambio,
@@ -209,7 +256,7 @@ export async function POST(request: NextRequest) {
         })
 
         if (existing) {
-          // Actualizar
+          // Actualizar (NO sobreescribir userId para preservar asignación manual de vendedor)
           await prisma.invoice.update({
             where: { id: existing.id },
             data: {
@@ -245,7 +292,12 @@ export async function POST(request: NextRequest) {
         updated,
         skipped,
         errors: errors.length,
-        errorDetails: errors.slice(0, 10),
+        errorDetails: errors.slice(0, 20),
+        porTipoComprobante,
+        rangoFechas: {
+          desde: dateFromStr,
+          hasta: dateToStr,
+        },
       },
     })
   } catch (error) {

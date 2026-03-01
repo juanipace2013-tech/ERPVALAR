@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Table,
@@ -21,6 +22,14 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
   Search,
   Loader2,
   Download,
@@ -32,6 +41,7 @@ import {
   RefreshCw,
   BarChart3,
   ArrowUpDown,
+  CalendarIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import * as XLSX from 'xlsx'
@@ -46,7 +56,6 @@ import {
   PieChart,
   Pie,
   Cell,
-  Legend,
 } from 'recharts'
 
 // ============================================================================
@@ -170,6 +179,15 @@ export default function AnalisisFacturacionPage() {
   const [sortField, setSortField] = useState<SortField>('issueDate')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
 
+  // Sync modal
+  const [syncModalOpen, setSyncModalOpen] = useState(false)
+  const [syncDateFrom, setSyncDateFrom] = useState('2026-01-01')
+  const [syncDateTo, setSyncDateTo] = useState(new Date().toISOString().split('T')[0])
+  const [syncResult, setSyncResult] = useState<Record<string, unknown> | null>(null)
+
+  // Vendedor edit
+  const [editingVendedor, setEditingVendedor] = useState<string | null>(null)
+
   useEffect(() => {
     fetch('/api/users')
       .then((r) => r.json())
@@ -219,14 +237,15 @@ export default function AnalisisFacturacionPage() {
   const handleSync = async () => {
     try {
       setSyncing(true)
-      const body: Record<string, string> = {}
-      if (dateFrom) body.dateFrom = dateFrom
-      if (dateTo) body.dateTo = dateTo
+      setSyncResult(null)
 
       const res = await fetch('/api/facturacion/sync-colppy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          dateFrom: syncDateFrom,
+          dateTo: syncDateTo,
+        }),
       })
 
       if (!res.ok) {
@@ -235,15 +254,51 @@ export default function AnalisisFacturacionPage() {
       }
 
       const result = await res.json()
+      setSyncResult(result.resumen)
       const r = result.resumen
       toast.success(
-        `Sincronización completada: ${r.created} nuevas, ${r.updated} actualizadas, ${r.skipped} omitidas`
+        `Sincronización completada: ${r.created} nuevas, ${r.updated} actualizadas`
       )
       fetchData()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error al sincronizar desde Colppy')
     } finally {
       setSyncing(false)
+    }
+  }
+
+  const handleAssignVendedor = async (invoiceId: string, userId: string) => {
+    try {
+      const res = await fetch(`/api/facturacion/${invoiceId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Error al asignar vendedor')
+      }
+
+      const result = await res.json()
+
+      // Actualizar estado local sin recargar todo
+      setData((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          invoices: prev.invoices.map((inv) =>
+            inv.id === invoiceId
+              ? { ...inv, salesPerson: result.salesPerson }
+              : inv
+          ),
+        }
+      })
+
+      setEditingVendedor(null)
+      toast.success('Vendedor asignado correctamente')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error al asignar vendedor')
     }
   }
 
@@ -361,7 +416,10 @@ export default function AnalisisFacturacionPage() {
         <div className="flex gap-2">
           <Button
             variant="outline"
-            onClick={handleSync}
+            onClick={() => {
+              setSyncResult(null)
+              setSyncModalOpen(true)
+            }}
             disabled={syncing}
             className="border-purple-300 text-purple-700 hover:bg-purple-50"
           >
@@ -378,6 +436,123 @@ export default function AnalisisFacturacionPage() {
           </Button>
         </div>
       </div>
+
+      {/* Modal de sincronización con rango de fechas */}
+      <Dialog open={syncModalOpen} onOpenChange={setSyncModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarIcon className="h-5 w-5 text-purple-600" />
+              Sincronizar desde Colppy
+            </DialogTitle>
+            <DialogDescription>
+              Seleccioná el rango de fechas para importar facturas desde Colppy.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="syncFrom">Fecha desde</Label>
+                <Input
+                  id="syncFrom"
+                  type="date"
+                  value={syncDateFrom}
+                  onChange={(e) => setSyncDateFrom(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="syncTo">Fecha hasta</Label>
+                <Input
+                  id="syncTo"
+                  type="date"
+                  value={syncDateTo}
+                  onChange={(e) => setSyncDateTo(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Resultado de la sincronización */}
+            {syncResult && (
+              <div className="mt-2 p-4 rounded-lg bg-purple-50 border border-purple-200 space-y-2">
+                <p className="text-sm font-semibold text-purple-900">Resultado de sincronización:</p>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Total Colppy:</span>
+                    <span className="font-medium">{(syncResult as { totalColppy?: number }).totalColppy}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Importadas:</span>
+                    <span className="font-medium text-green-700">{(syncResult as { created?: number }).created}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Actualizadas:</span>
+                    <span className="font-medium text-blue-700">{(syncResult as { updated?: number }).updated}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Omitidas:</span>
+                    <span className="font-medium text-gray-500">{(syncResult as { skipped?: number }).skipped}</span>
+                  </div>
+                </div>
+                {/* Por tipo de comprobante */}
+                {(syncResult as { porTipoComprobante?: Record<string, number> }).porTipoComprobante && (
+                  <div className="mt-2 pt-2 border-t border-purple-200">
+                    <p className="text-xs font-semibold text-purple-800 mb-1">Por tipo de comprobante:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries((syncResult as { porTipoComprobante: Record<string, number> }).porTipoComprobante).map(([tipo, count]) => (
+                        <Badge key={tipo} variant="outline" className="text-xs">
+                          {tipo}: {count}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* Rango de fechas procesado */}
+                {(syncResult as { rangoFechas?: { desde: string; hasta: string } }).rangoFechas && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Rango: {(syncResult as { rangoFechas: { desde: string; hasta: string } }).rangoFechas.desde} → {(syncResult as { rangoFechas: { desde: string; hasta: string } }).rangoFechas.hasta}
+                  </p>
+                )}
+                {/* Errores */}
+                {((syncResult as { errors?: number }).errors || 0) > 0 && (
+                  <p className="text-xs text-red-600 mt-1">
+                    {(syncResult as { errors?: number }).errors} error(es)
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setSyncModalOpen(false)}
+              disabled={syncing}
+            >
+              {syncResult ? 'Cerrar' : 'Cancelar'}
+            </Button>
+            {!syncResult && (
+              <Button
+                onClick={handleSync}
+                disabled={syncing || !syncDateFrom || !syncDateTo}
+                className="bg-purple-600 hover:bg-purple-700"
+              >
+                {syncing ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Sincronizando...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Iniciar sincronización
+                  </>
+                )}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Filtros */}
       <Card className="border-blue-200">
@@ -685,7 +860,31 @@ export default function AnalisisFacturacionPage() {
                       </TableCell>
                       <TableCell className="text-sm text-gray-600">{fmtDate(inv.issueDate)}</TableCell>
                       <TableCell className="font-medium text-gray-900">{inv.customer.name}</TableCell>
-                      <TableCell className="text-sm text-gray-600">{inv.salesPerson.name}</TableCell>
+                      <TableCell className="min-w-[180px]">
+                        {editingVendedor === inv.id ? (
+                          <Select
+                            value={inv.salesPerson.id}
+                            onValueChange={(value) => handleAssignVendedor(inv.id, value)}
+                          >
+                            <SelectTrigger className="h-8 text-sm">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {salesPersons.map((sp) => (
+                                <SelectItem key={sp.id} value={sp.id}>{sp.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <button
+                            onClick={() => setEditingVendedor(inv.id)}
+                            className="text-sm text-gray-600 hover:text-blue-700 hover:underline cursor-pointer text-left"
+                            title="Click para cambiar vendedor"
+                          >
+                            {inv.salesPerson.name}
+                          </button>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <Badge className={statusColors[inv.status]}>
                           {statusLabels[inv.status] || inv.status}

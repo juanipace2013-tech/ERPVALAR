@@ -1217,7 +1217,7 @@ export default function QuoteDetailPage() {
                       onChange={(e) => setProductSearch(e.target.value)}
                       className="mb-2"
                     />
-                    <div className="max-h-48 overflow-y-auto border rounded-md">
+                    <div className="max-h-[200px] overflow-y-auto border rounded-md">
                       {searchLoading ? (
                         <div className="p-8 text-center text-muted-foreground">
                           <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
@@ -1283,12 +1283,11 @@ export default function QuoteDetailPage() {
 
                   {/* Selected Product */}
                   {itemFormData.productId && selectedProduct && (
-                    <div className="p-4 bg-blue-50 rounded-md">
-                      <Label className="text-blue-900">Producto Seleccionado</Label>
-                      <p className="font-medium">
+                    <div className="px-3 py-2 bg-blue-50 rounded-md">
+                      <p className="font-medium text-sm line-clamp-2">
                         {selectedProduct.name}
                       </p>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-xs text-muted-foreground">
                         SKU: {selectedProduct.sku} | USD {formatNumber(selectedProduct.listPriceUSD || 0)}
                       </p>
                     </div>
@@ -1356,17 +1355,18 @@ export default function QuoteDetailPage() {
                       </Button>
                     </div>
                     {itemFormData.additionals.map((additional, index) => (
-                      <div key={index} className="space-y-1">
+                      <div key={index}>
                         {additional.productId ? (
-                          <div className="flex items-center gap-2 bg-gray-50 rounded px-2 py-1">
-                            <span className="text-sm truncate flex-1">
-                              {additional.productSku && <span className="font-mono text-xs text-muted-foreground mr-1">{additional.productSku}</span>}
+                          <div className="flex items-center gap-1.5 bg-gray-50 rounded px-2 py-1 min-w-0">
+                            {additional.productSku && <span className="font-mono text-xs text-muted-foreground shrink-0">{additional.productSku}</span>}
+                            {additional.productSku && <span className="text-xs text-muted-foreground shrink-0">-</span>}
+                            <span className="text-xs truncate min-w-0 flex-1">
                               {additional.productName || 'Producto seleccionado'}
                             </span>
-                            <span className="text-xs font-mono text-muted-foreground">
+                            <span className="text-xs font-mono text-muted-foreground shrink-0">
                               USD {formatNumber(additional.listPrice)}
                             </span>
-                            <Button type="button" size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleRemoveAdditional(index)}>
+                            <Button type="button" size="sm" variant="ghost" className="h-5 w-5 p-0 shrink-0" onClick={() => handleRemoveAdditional(index)}>
                               <X className="h-3 w-3" />
                             </Button>
                           </div>
@@ -1419,70 +1419,41 @@ export default function QuoteDetailPage() {
 
                   {/* Price Preview */}
                   {itemFormData.productId && (
-                    <Card className="bg-gradient-to-r from-blue-50 to-blue-100 border-blue-200">
-                      <CardHeader>
-                        <CardTitle className="text-lg text-blue-900 flex items-center gap-2">
-                          <Calculator className="h-5 w-5" />
-                          Cálculo de Precio
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span>Precio Lista:</span>
-                          <span className="font-mono">
-                            USD {formatNumber(pricePreview.listPrice)}
+                    <div className="bg-gradient-to-r from-blue-50 to-blue-100 border border-blue-200 rounded-lg px-3 py-2 space-y-1">
+                      <p className="text-xs font-semibold text-blue-900 flex items-center gap-1.5 mb-1">
+                        <Calculator className="h-3.5 w-3.5" />
+                        Cálculo de Precio
+                      </p>
+                      <div className="flex justify-between text-xs">
+                        <span>Precio Lista:</span>
+                        <span className="font-mono">USD {formatNumber(pricePreview.listPrice)}</span>
+                      </div>
+                      {pricePreview.additionalsTotal > 0 && (
+                        <div className="flex justify-between text-xs">
+                          <span>+ Adicionales:</span>
+                          <span className="font-mono">USD {formatNumber(pricePreview.additionalsTotal)}</span>
+                        </div>
+                      )}
+                      {pricePreview.brandDiscount > 0 && (
+                        <div className="flex justify-between text-xs text-green-600">
+                          <span>- Desc. Marca ({pricePreview.brandDiscount}%):</span>
+                          <span className="font-mono">USD {formatNumber(pricePreview.subtotalWithAdditionals - pricePreview.afterDiscount)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-xs">
+                        <span>× Multiplicador ({formatNumber(quote.multiplier)}x):</span>
+                        <span className="font-mono">USD {formatNumber(pricePreview.unitPrice)}</span>
+                      </div>
+                      <div className="border-t border-blue-300 pt-1 mt-1 flex justify-between font-bold text-sm text-blue-900">
+                        <span>Total ({itemFormData.quantity} ud):</span>
+                        <div className="text-right">
+                          <span className="font-mono">USD {formatNumber(pricePreview.totalPrice)}</span>
+                          <span className="text-xs font-normal text-muted-foreground ml-2">
+                            ARS {formatNumber(pricePreview.totalPrice * Number(quote.exchangeRate))}
                           </span>
                         </div>
-                        {pricePreview.additionalsTotal > 0 && (
-                          <div className="flex justify-between text-sm">
-                            <span>+ Adicionales:</span>
-                            <span className="font-mono">
-                              USD {formatNumber(pricePreview.additionalsTotal)}
-                            </span>
-                          </div>
-                        )}
-                        <div className="flex justify-between text-sm font-medium">
-                          <span>Subtotal:</span>
-                          <span className="font-mono">
-                            USD {formatNumber(pricePreview.subtotalWithAdditionals)}
-                          </span>
-                        </div>
-                        {pricePreview.brandDiscount > 0 && (
-                          <div className="flex justify-between text-sm text-green-600">
-                            <span>- Descuento Marca ({pricePreview.brandDiscount}%):</span>
-                            <span className="font-mono">
-                              USD{' '}
-                              {formatNumber(
-                                pricePreview.subtotalWithAdditionals -
-                                pricePreview.afterDiscount
-                              )}
-                            </span>
-                          </div>
-                        )}
-                        <div className="flex justify-between text-sm">
-                          <span>× Multiplicador ({formatNumber(quote.multiplier)}x):</span>
-                          <span className="font-mono">
-                            USD {formatNumber(pricePreview.unitPrice)}
-                          </span>
-                        </div>
-                        <div className="border-t-2 border-blue-300 pt-2 mt-2">
-                          <div className="flex justify-between font-bold text-lg text-blue-900">
-                            <span>Precio Total ({itemFormData.quantity} ud):</span>
-                            <div className="text-right">
-                              <div className="font-mono">
-                                USD {formatNumber(pricePreview.totalPrice)}
-                              </div>
-                              <div className="text-sm font-normal text-muted-foreground">
-                                ARS{' '}
-                                {formatNumber(
-                                  pricePreview.totalPrice * Number(quote.exchangeRate)
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
+                      </div>
+                    </div>
                   )}
                   </>)}
 

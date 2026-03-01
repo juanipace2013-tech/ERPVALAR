@@ -114,6 +114,8 @@ interface ItemFormData {
   additionals: Array<{
     productId: string
     listPrice: number
+    productName?: string
+    productSku?: string
   }>
   // Manual item fields
   isManual: boolean
@@ -592,6 +594,8 @@ export default function QuoteDetailPage() {
       additionals: item.additionals.map(add => ({
         productId: add.productId,
         listPrice: Number(add.listPrice),
+        productName: add.product?.name || '',
+        productSku: add.product?.sku || '',
       })),
       isManual,
       manualSku: item.manualSku || '',
@@ -696,12 +700,16 @@ export default function QuoteDetailPage() {
     })
   }
 
-  const handleUpdateAdditional = (index: number, productId: string) => {
-    const product = products.find((p) => p.id === productId)
-    const listPrice = product?.listPriceUSD ? Number(product.listPriceUSD) : 0
+  const handleUpdateAdditional = (index: number, product: Product) => {
+    const listPrice = product.listPriceUSD ? Number(product.listPriceUSD) : 0
 
     const newAdditionals = [...itemFormData.additionals]
-    newAdditionals[index] = { productId, listPrice }
+    newAdditionals[index] = {
+      productId: product.id,
+      listPrice,
+      productName: product.name,
+      productSku: product.sku,
+    }
 
     setItemFormData({
       ...itemFormData,
@@ -1384,7 +1392,7 @@ export default function QuoteDetailPage() {
                                     type="button"
                                     className="w-full text-left px-3 py-1.5 text-sm hover:bg-blue-50 border-b last:border-0"
                                     onClick={() => {
-                                      handleUpdateAdditional(index, product.id)
+                                      handleUpdateAdditional(index, product)
                                       setAdditionalSearchTerms(prev => ({ ...prev, [index]: '' }))
                                       setAdditionalSearchResults(prev => ({ ...prev, [index]: [] }))
                                     }}

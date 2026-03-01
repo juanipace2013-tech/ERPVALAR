@@ -318,6 +318,80 @@ export async function getProductosMasCotizados(): Promise<ProductoMasCotizado[]>
     .slice(0, 10)
 }
 
+export interface VendedorRanking {
+  nombre: string
+  cotizaciones: number
+  totalUSD: number
+  aceptadas: number
+  tasaConversion: number
+  ticketPromedio: number
+}
+
+/**
+ * Obtener ranking de vendedores del mes actual
+ */
+export async function getRankingVendedores(): Promise<VendedorRanking[]> {
+  const now = new Date()
+  const inicioMes = startOfMonth(now)
+  const finMes = endOfMonth(now)
+
+  // Todas las cotizaciones del mes agrupadas por vendedor
+  const vendedores = await prisma.quote.groupBy({
+    by: ['salesPersonId'],
+    where: { date: { gte: inicioMes, lte: finMes } },
+    _sum: { total: true },
+    _count: true,
+  })
+
+  // Cotizaciones aceptadas/convertidas del mes agrupadas por vendedor
+  const aceptadasPorVendedor = await prisma.quote.groupBy({
+    by: ['salesPersonId'],
+    where: {
+      date: { gte: inicioMes, lte: finMes },
+      status: { in: ['ACCEPTED', 'CONVERTED'] },
+    },
+    _count: true,
+  })
+
+  // Mapa de aceptadas por salesPersonId
+  const aceptadasMap = new Map<string, number>()
+  aceptadasPorVendedor.forEach(v => {
+    aceptadasMap.set(v.salesPersonId, v._count)
+  })
+
+  // Traer nombres de usuarios
+  const userIds = vendedores.map(v => v.salesPersonId)
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds } },
+    select: { id: true, name: true },
+  })
+  const userMap = new Map<string, string>()
+  users.forEach(u => {
+    userMap.set(u.id, u.name || 'Sin nombre')
+  })
+
+  // Combinar datos
+  const ranking: VendedorRanking[] = vendedores.map(v => {
+    const totalUSD = Number(v._sum.total || 0)
+    const cotizaciones = v._count
+    const aceptadas = aceptadasMap.get(v.salesPersonId) || 0
+    const tasaConversion = cotizaciones > 0 ? (aceptadas / cotizaciones) * 100 : 0
+    const ticketPromedio = cotizaciones > 0 ? totalUSD / cotizaciones : 0
+
+    return {
+      nombre: userMap.get(v.salesPersonId) || 'Sin nombre',
+      cotizaciones,
+      totalUSD,
+      aceptadas,
+      tasaConversion,
+      ticketPromedio,
+    }
+  })
+
+  // Ordenar por total cotizado USD descendente
+  return ranking.sort((a, b) => b.totalUSD - a.totalUSD)
+}
+
 /**
  * Obtener tipo de cambio actual y últimos 10 registros
  */

@@ -9,7 +9,8 @@ import {
   getCotizacionesRecientes,
   getCotizacionesPorVencer,
   getProductosMasCotizados,
-  getTipoCambioActual
+  getTipoCambioActual,
+  getRankingVendedores
 } from '@/lib/quote-dashboard-queries'
 
 async function DashboardContent() {
@@ -27,7 +28,8 @@ async function DashboardContent() {
     cotizacionesRecientes,
     cotizacionesPorVencer,
     productosMasCotizados,
-    tipoCambio
+    tipoCambio,
+    rankingVendedores
   ] = await Promise.all([
     getQuoteDashboardMetrics(),
     getCotizacionesPorMes(),
@@ -35,7 +37,8 @@ async function DashboardContent() {
     getCotizacionesRecientes(),
     getCotizacionesPorVencer(),
     getProductosMasCotizados(),
-    getTipoCambioActual()
+    getTipoCambioActual(),
+    getRankingVendedores()
   ])
 
   const data = {
@@ -45,7 +48,8 @@ async function DashboardContent() {
     cotizacionesRecientes,
     cotizacionesPorVencer,
     productosMasCotizados,
-    tipoCambio
+    tipoCambio,
+    rankingVendedores
   }
 
   return (

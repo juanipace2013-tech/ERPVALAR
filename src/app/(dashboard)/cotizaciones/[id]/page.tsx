@@ -1340,81 +1340,86 @@ export default function QuoteDetailPage() {
                   </div>
 
                   {/* Additionals */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label>Adicionales (Máx. 5)</Label>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <Label className="shrink-0">Adicionales (Máx. 5)</Label>
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
+                        className="h-6 px-2 text-xs"
                         onClick={handleAddAdditional}
                         disabled={itemFormData.additionals.length >= 5}
                       >
-                        <Plus className="h-4 w-4 mr-1" />
+                        <Plus className="h-3 w-3 mr-1" />
                         Agregar
                       </Button>
                     </div>
-                    {itemFormData.additionals.map((additional, index) => (
-                      <div key={index}>
-                        {additional.productId ? (
-                          <div className="flex items-center gap-1.5 bg-gray-50 rounded px-2 py-1 min-w-0">
-                            {additional.productSku && <span className="font-mono text-xs text-muted-foreground shrink-0">{additional.productSku}</span>}
-                            {additional.productSku && <span className="text-xs text-muted-foreground shrink-0">-</span>}
-                            <span className="text-xs truncate min-w-0 flex-1">
-                              {additional.productName || 'Producto seleccionado'}
-                            </span>
-                            <span className="text-xs font-mono text-muted-foreground shrink-0">
-                              USD {formatNumber(additional.listPrice)}
-                            </span>
-                            <Button type="button" size="sm" variant="ghost" className="h-5 w-5 p-0 shrink-0" onClick={() => handleRemoveAdditional(index)}>
-                              <X className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="relative">
-                            <div className="flex items-center gap-1">
-                              <Search className="h-3 w-3 text-muted-foreground" />
-                              <Input
-                                placeholder="Buscar adicional..."
-                                value={additionalSearchTerms[index] || ''}
-                                onChange={(e) => setAdditionalSearchTerms(prev => ({ ...prev, [index]: e.target.value }))}
-                                className="h-8 text-sm"
-                              />
-                              <Button type="button" size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleRemoveAdditional(index)}>
-                                <X className="h-3 w-3" />
-                              </Button>
-                            </div>
-                            {(additionalSearchResults[index]?.length > 0) && (
-                              <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-40 overflow-y-auto">
-                                {additionalSearchResults[index].map((product) => (
-                                  <button
-                                    key={product.id}
-                                    type="button"
-                                    className="w-full text-left px-3 py-1.5 text-sm hover:bg-blue-50 border-b last:border-0"
-                                    onClick={() => {
-                                      handleUpdateAdditional(index, product)
-                                      setAdditionalSearchTerms(prev => ({ ...prev, [index]: '' }))
-                                      setAdditionalSearchResults(prev => ({ ...prev, [index]: [] }))
-                                    }}
-                                  >
-                                    <span className="font-mono text-xs text-muted-foreground">{product.sku}</span>{' '}
-                                    {product.name}
-                                    <span className="float-right text-xs font-mono">
-                                      USD {product.listPriceUSD ? formatNumber(product.listPriceUSD) : '0,00'}
-                                    </span>
-                                  </button>
-                                ))}
+                    {itemFormData.additionals.length > 0 && (
+                      <div className="max-h-[160px] overflow-y-auto space-y-1">
+                        {itemFormData.additionals.map((additional, index) => (
+                          <div key={index}>
+                            {additional.productId ? (
+                              <div className="flex items-center gap-1.5 bg-gray-50 rounded px-2 py-1 min-w-0 h-7">
+                                {additional.productSku && <span className="font-mono text-xs text-muted-foreground shrink-0">{additional.productSku}</span>}
+                                {additional.productSku && <span className="text-xs text-muted-foreground shrink-0">-</span>}
+                                <span className="text-xs truncate min-w-0 flex-1">
+                                  {additional.productName || 'Producto seleccionado'}
+                                </span>
+                                <span className="text-xs font-mono text-muted-foreground shrink-0">
+                                  USD {formatNumber(additional.listPrice)}
+                                </span>
+                                <Button type="button" size="sm" variant="ghost" className="h-5 w-5 p-0 shrink-0" onClick={() => handleRemoveAdditional(index)}>
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="relative">
+                                <div className="flex items-center gap-1">
+                                  <Search className="h-3 w-3 text-muted-foreground shrink-0" />
+                                  <Input
+                                    placeholder="Buscar adicional..."
+                                    value={additionalSearchTerms[index] || ''}
+                                    onChange={(e) => setAdditionalSearchTerms(prev => ({ ...prev, [index]: e.target.value }))}
+                                    className="h-7 text-xs"
+                                  />
+                                  <Button type="button" size="sm" variant="ghost" className="h-5 w-5 p-0 shrink-0" onClick={() => handleRemoveAdditional(index)}>
+                                    <X className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                                {(additionalSearchResults[index]?.length > 0) && (
+                                  <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                                    {additionalSearchResults[index].map((product) => (
+                                      <button
+                                        key={product.id}
+                                        type="button"
+                                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-blue-50 border-b last:border-0"
+                                        onClick={() => {
+                                          handleUpdateAdditional(index, product)
+                                          setAdditionalSearchTerms(prev => ({ ...prev, [index]: '' }))
+                                          setAdditionalSearchResults(prev => ({ ...prev, [index]: [] }))
+                                        }}
+                                      >
+                                        <span className="font-mono text-xs text-muted-foreground">{product.sku}</span>{' '}
+                                        {product.name}
+                                        <span className="float-right text-xs font-mono">
+                                          USD {product.listPriceUSD ? formatNumber(product.listPriceUSD) : '0,00'}
+                                        </span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                                {additionalSearchLoading[index] && (
+                                  <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg p-2 text-center">
+                                    <Loader2 className="h-4 w-4 animate-spin inline" />
+                                  </div>
+                                )}
                               </div>
                             )}
-                            {additionalSearchLoading[index] && (
-                              <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg p-2 text-center">
-                                <Loader2 className="h-4 w-4 animate-spin inline" />
-                              </div>
-                            )}
                           </div>
-                        )}
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
 
                   {/* Price Preview */}

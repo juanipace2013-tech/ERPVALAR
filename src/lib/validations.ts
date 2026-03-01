@@ -106,6 +106,7 @@ export const productSchema = z.object({
 
   // Categorización
   categoryId: z.string().nullable().optional(),
+  supplierId: z.string().nullable().optional(),
   brand: z.string().nullable().optional(),
 
   // Stock
@@ -114,9 +115,10 @@ export const productSchema = z.object({
   maxStock: z.number().int().positive('El stock máximo debe ser positivo').nullable().optional(),
   unit: z.string().default('UN'),
 
-  // Costos
+  // Costos y precios
   lastCost: z.number().nonnegative('El costo no puede ser negativo').nullable().optional(),
   averageCost: z.number().nonnegative('El costo promedio no puede ser negativo').nullable().optional(),
+  listPriceUSD: z.number().nonnegative('El precio lista USD no puede ser negativo').nullable().optional(),
 
   // Configuración
   status: z.enum(['ACTIVE', 'INACTIVE', 'DISCONTINUED']).default('ACTIVE'),

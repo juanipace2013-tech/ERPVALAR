@@ -145,10 +145,10 @@ export default function NuevoProductoPage() {
         })
       }
 
-      // Agregar precio de compra si existe
+      // Agregar precio de compra (costo) si existe
       if (formData.purchasePrice) {
         payload.prices.push({
-          priceType: 'PURCHASE',
+          priceType: 'COST',
           amount: parseFloat(formData.purchasePrice),
           currency: 'ARS',
         })
@@ -162,7 +162,7 @@ export default function NuevoProductoPage() {
 
       if (!response.ok) {
         const error = await response.json()
-        throw new Error(error.error || 'Error al crear producto')
+        throw new Error(error.message || error.error || 'Error al crear producto')
       }
 
       toast.success('Producto creado exitosamente')

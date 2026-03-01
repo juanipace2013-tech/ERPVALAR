@@ -432,8 +432,19 @@ export async function POST(request: NextRequest) {
         const colppyClient = colppyClientMap.get(idCliente)
         if (colppyClient && colppyClient.cuit) {
           try {
-            const newCustomer = await prisma.customer.create({
-              data: {
+            const upsertedCustomer = await prisma.customer.upsert({
+              where: { cuit: colppyClient.cuit },
+              update: {
+                colppyId: idCliente,
+                // Actualizar datos si están vacíos
+                businessName: colppyClient.businessName || undefined,
+                email: colppyClient.email || undefined,
+                phone: colppyClient.phone || undefined,
+                address: colppyClient.address || undefined,
+                city: colppyClient.city || undefined,
+                province: colppyClient.province || undefined,
+              },
+              create: {
                 name: colppyClient.name || colppyClient.businessName || `Cliente Colppy ${idCliente}`,
                 businessName: colppyClient.businessName || null,
                 cuit: colppyClient.cuit,
@@ -447,32 +458,14 @@ export async function POST(request: NextRequest) {
                 notes: 'Auto-creado desde sync Colppy',
               },
             })
-            localCustomerId = newCustomer.id
-            customerByColppyId.set(idCliente, newCustomer.id)
-            customerByCuit.set(colppyClient.cuit.replace(/\D/g, ''), newCustomer.id)
+            localCustomerId = upsertedCustomer.id
+            customerByColppyId.set(idCliente, upsertedCustomer.id)
+            customerByCuit.set(colppyClient.cuit.replace(/\D/g, ''), upsertedCustomer.id)
             customersCreated++
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : 'Unknown error'
-            // Si es error de CUIT duplicado, intentar buscar por CUIT
-            if (msg.includes('Unique constraint') && colppyClient.cuit) {
-              const existing = await prisma.customer.findUnique({
-                where: { cuit: colppyClient.cuit },
-                select: { id: true },
-              })
-              if (existing) {
-                localCustomerId = existing.id
-                await prisma.customer.update({
-                  where: { id: existing.id },
-                  data: { colppyId: idCliente },
-                })
-                customerByColppyId.set(idCliente, existing.id)
-                customersLinkedByCuit++
-              }
-            }
-            if (!localCustomerId) {
-              skipReasons['cliente_crear_error'] = (skipReasons['cliente_crear_error'] || 0) + 1
-              errors.push(`Factura ${idFactura}: Error creando cliente ${colppyClient.name}: ${msg}`)
-            }
+            skipReasons['cliente_crear_error'] = (skipReasons['cliente_crear_error'] || 0) + 1
+            errors.push(`Factura ${idFactura}: Error creando/actualizando cliente ${colppyClient.name}: ${msg}`)
           }
         } else {
           skipReasons['sin_cliente_colppy'] = (skipReasons['sin_cliente_colppy'] || 0) + 1
@@ -550,7 +543,7 @@ export async function POST(request: NextRequest) {
         userId: matchedSalesPersonId || systemUser.id,
         status: mapInvoiceStatus(String(f.idEstadoFactura || '3'), saldo) as 'PENDING' | 'PAID',
         currency: monedaCode as 'ARS' | 'USD' | 'EUR',
-        exchangeRate: monedaCode !== 'ARS' ? tipoCambio : null,
+        exchangeRate: tipoCambio > 0 ? tipoCambio : null,
         subtotal: subtotalVal,
         taxAmount: taxAmountVal,
         discount: 0,

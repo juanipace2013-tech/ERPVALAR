@@ -177,6 +177,16 @@ export async function POST(request: NextRequest) {
     const colppyFacturas = fetchAllColppyFacturas(claveSesion, passwordMD5, dateFromStr, dateToStr)
     console.log(`[Sync Colppy] Total: ${colppyFacturas.length} facturas obtenidas de Colppy`)
 
+    // Log raw de la primera factura para debug de campos
+    if (colppyFacturas.length > 0) {
+      console.log('[Sync Colppy] RAW primera factura:', JSON.stringify(colppyFacturas[0], null, 2))
+      // Log de una factura USD si existe
+      const usdSample = colppyFacturas.find((f) => String(f.idMoneda) === '0')
+      if (usdSample) {
+        console.log('[Sync Colppy] RAW factura USD ejemplo:', JSON.stringify(usdSample, null, 2))
+      }
+    }
+
     // 3. Obtener mapeo de clientes Colppy -> local
     const customers = await prisma.customer.findMany({
       where: { colppyId: { not: null } },
@@ -227,9 +237,10 @@ export async function POST(request: NextRequest) {
       if (!idFactura) { skipped++; continue }
 
       // Importar TODOS los tipos de comprobante de venta:
-      // 4=FAV A/B/C, 5=NDV A/B/C, 6=NCV A/B/C
+      // 4=FAV A, 5=NDV A, 6=NCV A, 10=FAV B, 11=NDV B, 12=NCV B, 13=NCV C/E
       const tipoComp = String(f.idTipoComprobante || '4')
-      if (!['4', '5', '6'].includes(tipoComp)) { skipped++; continue }
+      const tiposVenta = ['4', '5', '6', '8', '9', '10', '11', '12', '13']
+      if (!tiposVenta.includes(tipoComp)) { skipped++; continue }
 
       const idCliente = String(f.idCliente || '')
       const localCustomerId = customerMap.get(idCliente)
@@ -238,11 +249,37 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      const total = parseFloat(String(f.totalFactura || '0'))
-      const aplicado = parseFloat(String(f.totalaplicado || '0'))
-      const saldo = Math.max(0, total - aplicado)
       const monedaCode = monedaMap[String(f.idMoneda || '1')] || 'ARS'
-      const tipoCambio = parseFloat(String(f.rate || f.valorCambio || '1'))
+      const tipoCambio = parseFloat(String(f.rate || f.valorCambio || f.cotizacion || '1'))
+
+      // Colppy devuelve totalFactura SIEMPRE en ARS (moneda fiscal).
+      // Para facturas en USD/EUR, necesitamos el monto en la moneda original.
+      const totalFacturaARS = parseFloat(String(f.totalFactura || '0'))
+      const aplicadoARS = parseFloat(String(f.totalaplicado || '0'))
+      const netoGravadoARS = parseFloat(String(f.netoGravado || '0'))
+      const totalIVAARS = parseFloat(String(f.totalIVA || '0'))
+
+      let total: number
+      let aplicado: number
+      let subtotalVal: number
+      let taxAmountVal: number
+
+      if (monedaCode !== 'ARS' && tipoCambio > 1) {
+        // Factura en moneda extranjera: convertir de ARS a moneda original
+        total = Math.round((totalFacturaARS / tipoCambio) * 100) / 100
+        aplicado = Math.round((aplicadoARS / tipoCambio) * 100) / 100
+        subtotalVal = Math.round((netoGravadoARS / tipoCambio) * 100) / 100
+        taxAmountVal = Math.round((totalIVAARS / tipoCambio) * 100) / 100
+        console.log(`[Sync Colppy] Factura ${idFactura} ${monedaCode}: totalARS=${totalFacturaARS} / TC=${tipoCambio} = ${monedaCode} ${total}`)
+      } else {
+        // Factura en ARS: montos directos
+        total = totalFacturaARS
+        aplicado = aplicadoARS
+        subtotalVal = netoGravadoARS
+        taxAmountVal = totalIVAARS
+      }
+
+      const saldo = Math.max(0, total - aplicado)
       const tipoLetra = tipoFacturaMap[String(f.idTipoFactura || '0')] || 'A'
       const compLabel = tipoComprobanteLabel[tipoComp] || 'FAV'
 
@@ -278,9 +315,9 @@ export async function POST(request: NextRequest) {
         userId: matchedSalesPersonId || systemUser.id,
         status: mapInvoiceStatus(String(f.idEstadoFactura || '3'), saldo) as 'PENDING' | 'PAID',
         currency: monedaCode as 'ARS' | 'USD' | 'EUR',
-        exchangeRate: tipoCambio,
-        subtotal: parseFloat(String(f.netoGravado || '0')),
-        taxAmount: parseFloat(String(f.totalIVA || '0')),
+        exchangeRate: monedaCode !== 'ARS' ? tipoCambio : null,
+        subtotal: subtotalVal,
+        taxAmount: taxAmountVal,
         discount: 0,
         total,
         balance: saldo,
@@ -310,6 +347,8 @@ export async function POST(request: NextRequest) {
               total: invoiceData.total,
               subtotal: invoiceData.subtotal,
               taxAmount: invoiceData.taxAmount,
+              currency: invoiceData.currency,
+              exchangeRate: invoiceData.exchangeRate,
               cae: invoiceData.cae,
               afipStatus: invoiceData.afipStatus,
             },

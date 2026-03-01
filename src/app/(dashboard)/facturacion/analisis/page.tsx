@@ -84,6 +84,7 @@ interface Invoice {
 interface Resumen {
   totalUSD: number
   totalARS: number
+  totalGeneralUSD: number
   totalFacturas: number
   ticketPromedio: number
   variacionMesAnterior: number
@@ -630,8 +631,8 @@ export default function AnalisisFacturacionPage() {
                   <DollarSign className="h-5 w-5 text-blue-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Facturado (USD)</p>
-                  <p className="text-2xl font-bold text-blue-900">{fmt(resumen.totalUSD)}</p>
+                  <p className="text-sm text-muted-foreground">Total Facturado</p>
+                  <p className="text-2xl font-bold text-blue-900">{fmt(resumen.totalUSD)} USD</p>
                   <p className="text-xs text-muted-foreground">{fmt(resumen.totalARS, 'ARS')} ARS</p>
                 </div>
               </div>

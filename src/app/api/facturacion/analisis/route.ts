@@ -99,22 +99,26 @@ export async function GET(request: NextRequest) {
       orderBy: { issueDate: 'desc' },
     })
 
-    // 2. Calcular totales
-    let totalUSD = 0
-    let totalARS = 0
-    let totalFacturas = invoices.length
+    // 2. Calcular totales separados por moneda + total general en USD
+    let totalUSD = 0       // Solo facturas en USD (sumadas en USD)
+    let totalARS = 0       // Solo facturas en ARS (sumadas en ARS)
+    let totalGeneralUSD = 0 // Todo convertido a USD
+    const totalFacturas = invoices.length
 
     for (const inv of invoices) {
       const total = Number(inv.total)
       if (inv.currency === 'USD') {
         totalUSD += total
-        totalARS += total * Number(inv.exchangeRate || 1)
+        totalGeneralUSD += total
       } else {
         totalARS += total
+        // Convertir ARS a USD usando el TC de la factura
+        const tc = Number(inv.exchangeRate || 0)
+        totalGeneralUSD += tc > 1 ? total / tc : 0
       }
     }
 
-    const ticketPromedio = totalFacturas > 0 ? totalUSD / totalFacturas : 0
+    const ticketPromedio = totalFacturas > 0 ? totalGeneralUSD / totalFacturas : 0
 
     // 3. Comparación vs mes anterior
     const now = new Date()
@@ -133,13 +137,15 @@ export async function GET(request: NextRequest) {
       }),
     ])
 
-    const currentMonthTotal = currentMonthInvoices.reduce((sum, inv) => {
-      return sum + (inv.currency === 'USD' ? Number(inv.total) : Number(inv.total) / Number(inv.exchangeRate || 1))
-    }, 0)
+    const toUSD = (inv: { total: unknown; currency: string; exchangeRate: unknown }) => {
+      const total = Number(inv.total)
+      if (inv.currency === 'USD') return total
+      const tc = Number(inv.exchangeRate || 0)
+      return tc > 1 ? total / tc : 0
+    }
 
-    const prevMonthTotal = prevMonthInvoices.reduce((sum, inv) => {
-      return sum + (inv.currency === 'USD' ? Number(inv.total) : Number(inv.total) / Number(inv.exchangeRate || 1))
-    }, 0)
+    const currentMonthTotal = currentMonthInvoices.reduce((sum, inv) => sum + toUSD(inv), 0)
+    const prevMonthTotal = prevMonthInvoices.reduce((sum, inv) => sum + toUSD(inv), 0)
 
     const variacionMesAnterior = prevMonthTotal > 0
       ? ((currentMonthTotal - prevMonthTotal) / prevMonthTotal) * 100
@@ -163,9 +169,7 @@ export async function GET(request: NextRequest) {
       const d = new Date(inv.issueDate)
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
       if (monthlyData[key] !== undefined) {
-        monthlyData[key] += inv.currency === 'USD'
-          ? Number(inv.total)
-          : Number(inv.total) / Number(inv.exchangeRate || 1)
+        monthlyData[key] += toUSD(inv)
       }
     }
 
@@ -182,9 +186,7 @@ export async function GET(request: NextRequest) {
       if (!porVendedor[key]) {
         porVendedor[key] = { name: inv.user.name, total: 0 }
       }
-      porVendedor[key].total += inv.currency === 'USD'
-        ? Number(inv.total)
-        : Number(inv.total) / Number(inv.exchangeRate || 1)
+      porVendedor[key].total += toUSD(inv)
     }
     const facturacionPorVendedor = Object.values(porVendedor)
       .sort((a, b) => b.total - a.total)
@@ -197,9 +199,7 @@ export async function GET(request: NextRequest) {
       if (!porCliente[key]) {
         porCliente[key] = { name: inv.customer.name, total: 0 }
       }
-      porCliente[key].total += inv.currency === 'USD'
-        ? Number(inv.total)
-        : Number(inv.total) / Number(inv.exchangeRate || 1)
+      porCliente[key].total += toUSD(inv)
     }
     const topClientes = Object.values(porCliente)
       .sort((a, b) => b.total - a.total)
@@ -209,7 +209,8 @@ export async function GET(request: NextRequest) {
     // 7. Top 10 productos
     const porProducto: Record<string, { name: string; total: number; qty: number }> = {}
     for (const inv of invoices) {
-      const rate = inv.currency === 'USD' ? 1 : 1 / Number(inv.exchangeRate || 1)
+      // Items ya están en la moneda original de la factura
+      const rate = inv.currency === 'USD' ? 1 : (Number(inv.exchangeRate || 0) > 1 ? 1 / Number(inv.exchangeRate) : 0)
       for (const item of inv.items) {
         const key = item.productId || item.description || 'sin-producto'
         const name = item.product?.name || item.description || item.product?.sku || 'Sin nombre'
@@ -228,7 +229,7 @@ export async function GET(request: NextRequest) {
     // 8. Facturación por marca
     const porMarca: Record<string, number> = {}
     for (const inv of invoices) {
-      const rate = inv.currency === 'USD' ? 1 : 1 / Number(inv.exchangeRate || 1)
+      const rate = inv.currency === 'USD' ? 1 : (Number(inv.exchangeRate || 0) > 1 ? 1 / Number(inv.exchangeRate) : 0)
       for (const item of inv.items) {
         const brandName = item.product?.brand || 'Sin marca'
         if (!porMarca[brandName]) porMarca[brandName] = 0
@@ -270,6 +271,7 @@ export async function GET(request: NextRequest) {
       resumen: {
         totalUSD: Math.round(totalUSD * 100) / 100,
         totalARS: Math.round(totalARS * 100) / 100,
+        totalGeneralUSD: Math.round(totalGeneralUSD * 100) / 100,
         totalFacturas,
         ticketPromedio: Math.round(ticketPromedio * 100) / 100,
         variacionMesAnterior: Math.round(variacionMesAnterior * 10) / 10,

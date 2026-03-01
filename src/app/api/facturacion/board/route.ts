@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
       const processedItems = quote.items.map((item) => {
         const invoicedQuantity = item.invoiceItems
           .filter((ii) => ii.invoice.status !== 'CANCELLED')
-          .reduce((sum, ii) => sum + ii.quantity, 0)
+          .reduce((sum, ii) => sum + Number(ii.quantity), 0)
 
         const remainingQuantity = item.quantity - invoicedQuantity
 

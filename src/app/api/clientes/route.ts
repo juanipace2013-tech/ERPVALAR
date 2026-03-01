@@ -146,6 +146,8 @@ export async function POST(request: NextRequest) {
         creditCurrency: validatedData.creditCurrency,
         paymentTerms: validatedData.paymentTerms,
         discount: validatedData.discount,
+        priceMultiplier: validatedData.priceMultiplier,
+        salesPersonId: validatedData.salesPersonId,
         notes: validatedData.notes,
       },
     })

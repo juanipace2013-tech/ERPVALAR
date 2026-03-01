@@ -65,6 +65,8 @@ export async function POST(
         status: 'DRAFT',
         currency: originalQuote.currency,
         exchangeRate: originalQuote.exchangeRate,
+        multiplier: originalQuote.multiplier,
+        bonification: originalQuote.bonification,
         subtotal: originalQuote.subtotal,
         total: originalQuote.total,
         validUntil: originalQuote.validUntil,

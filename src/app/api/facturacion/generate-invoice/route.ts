@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
 
       const alreadyInvoiced = quoteItem.invoiceItems
         .filter((ii) => ii.invoice.status !== 'CANCELLED')
-        .reduce((sum, ii) => sum + ii.quantity, 0)
+        .reduce((sum, ii) => sum + Number(ii.quantity), 0)
 
       const remaining = quoteItem.quantity - alreadyInvoiced
 
@@ -294,7 +294,7 @@ export async function POST(request: NextRequest) {
       const isFullyInvoiced = allQuoteItems.every((item) => {
         const totalInvoiced = item.invoiceItems
           .filter((ii) => ii.invoice.status !== 'CANCELLED')
-          .reduce((sum, ii) => sum + ii.quantity, 0)
+          .reduce((sum, ii) => sum + Number(ii.quantity), 0)
         return totalInvoiced >= item.quantity
       })
 

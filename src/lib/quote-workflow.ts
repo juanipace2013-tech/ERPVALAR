@@ -352,7 +352,8 @@ export async function generateInvoiceFromDeliveryNote(
     return sum + (Number(unitPrice) * item.quantity);
   }, 0);
 
-  const taxRate = invoiceType === 'A' ? 0.21 : 0;
+  // IVA 21% aplica tanto a factura A como B (en B se incluye en el precio, en A se discrimina)
+  const taxRate = 0.21;
   const taxAmount = subtotal * taxRate;
   const total = subtotal + taxAmount;
 
@@ -386,7 +387,6 @@ export async function generateInvoiceFromDeliveryNote(
           );
           const unitPrice = Number(quoteItem?.unitPrice || 0);
           const itemSubtotal = unitPrice * item.quantity;
-          const itemTaxAmount = itemSubtotal * taxRate;
 
           return {
             productId: item.productId,
@@ -395,7 +395,7 @@ export async function generateInvoiceFromDeliveryNote(
             unitPrice,
             discount: 0,
             taxRate: taxRate * 100, // Guardar como porcentaje
-            subtotal: itemSubtotal + itemTaxAmount
+            subtotal: itemSubtotal
           };
         })
       }
@@ -459,7 +459,8 @@ export async function generateInvoiceFromQuote(
     .filter(item => !item.isAlternative)
     .reduce((sum, item) => sum + Number(item.totalPrice), 0);
 
-  const taxRate = invoiceType === 'A' ? 0.21 : 0;
+  // IVA 21% aplica tanto a factura A como B (en B se incluye en el precio, en A se discrimina)
+  const taxRate = 0.21;
   const taxAmount = subtotal * taxRate;
   const total = subtotal + taxAmount;
 
@@ -491,7 +492,6 @@ export async function generateInvoiceFromQuote(
             .filter(item => !item.isAlternative)
             .map(item => {
               const itemSubtotal = Number(item.totalPrice);
-              const itemTaxAmount = itemSubtotal * taxRate;
 
               return {
                 productId: item.productId,
@@ -501,7 +501,7 @@ export async function generateInvoiceFromQuote(
                 unitPrice: Number(item.unitPrice),
                 discount: 0,
                 taxRate: taxRate * 100,
-                subtotal: itemSubtotal + itemTaxAmount
+                subtotal: itemSubtotal
               };
             })
         }

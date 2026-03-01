@@ -2,6 +2,7 @@
  * Función para enviar emails de cotizaciones
  */
 
+import { randomBytes } from 'crypto';
 import { resend, emailConfig } from './resend';
 import { generateQuoteEmailHTML, generateQuoteEmailText } from './templates/quote-email';
 import { prisma } from '@/lib/prisma';
@@ -156,15 +157,10 @@ async function generatePublicToken(quoteId: string): Promise<string> {
 }
 
 /**
- * Genera un token aleatorio seguro
+ * Genera un token aleatorio criptográficamente seguro
  */
 function generateRandomToken(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let token = '';
-  for (let i = 0; i < 32; i++) {
-    token += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return token;
+  return randomBytes(32).toString('hex');
 }
 
 /**

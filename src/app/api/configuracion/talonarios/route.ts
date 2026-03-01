@@ -1,7 +1,25 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 
 import { prisma } from '@/lib/prisma'
+
+const invoiceNumberingSchema = z.object({
+  description: z.string().min(1, 'La descripción es obligatoria'),
+  prefix: z.string().min(1, 'El prefijo es obligatorio'),
+  numberFrom: z.number().int().nonnegative(),
+  numberTo: z.number().int().positive(),
+  currentNumber: z.number().int().nonnegative(),
+  isDefault: z.boolean().optional(),
+  numberingMethod: z.enum(['MANUAL', 'AUTOMATIC']).optional(),
+  isSaleInvoice: z.boolean().optional(),
+  isDebitNote: z.boolean().optional(),
+  isCreditNote: z.boolean().optional(),
+  isPaymentOrder: z.boolean().optional(),
+  isReceipt: z.boolean().optional(),
+  isRemittance: z.boolean().optional(),
+  isElectronic: z.boolean().optional(),
+}).strict()
 
 export async function GET(_request: NextRequest) {
   try {
@@ -41,12 +59,22 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
 
+    // Validar y filtrar campos permitidos
+    const validatedData = invoiceNumberingSchema.parse(body)
+
     const talonario = await prisma.invoiceNumbering.create({
-      data: body
+      data: validatedData
     })
 
     return NextResponse.json(talonario)
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Datos inválidos', details: error.issues },
+        { status: 400 }
+      )
+    }
+
     console.error('Error creating talonario:', error)
     return NextResponse.json(
       { error: 'Error al crear talonario' },

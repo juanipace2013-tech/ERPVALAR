@@ -23,7 +23,7 @@ export async function PATCH(
     const { status } = body
 
     // Validar estado
-    if (!['PENDING', 'CLEARED', 'REJECTED', 'CANCELLED'].includes(status)) {
+    if (!['PENDING', 'CLEARED', 'BOUNCED', 'CANCELLED'].includes(status)) {
       return NextResponse.json(
         { error: 'Estado no válido' },
         { status: 400 }
@@ -47,7 +47,7 @@ export async function PATCH(
 
     if (status === 'CLEARED') {
       updatedDescription = `${transaction.description || 'Cheque'} - COBRADO`
-    } else if (status === 'REJECTED') {
+    } else if (status === 'BOUNCED') {
       updatedDescription = `${transaction.description || 'Cheque'} - RECHAZADO`
     } else if (status === 'CANCELLED') {
       updatedDescription = `${transaction.description || 'Cheque'} - ANULADO`

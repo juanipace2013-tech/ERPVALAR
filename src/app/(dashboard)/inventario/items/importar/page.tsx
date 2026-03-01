@@ -182,7 +182,7 @@ export default function ImportarItemsPage() {
         stockQuantity: Number(p.data.stockQuantity) || 0,
         minStock: Number(p.data.minStock) || 0,
         maxStock: null,
-        isTaxable: p.data.isTaxable === 'true' || p.data.isTaxable === true || true,
+        isTaxable: p.data.isTaxable === 'true' || p.data.isTaxable === true,
         taxRate: Number(p.data.taxRate) || 21,
         trackInventory: true,
         allowNegative: false,

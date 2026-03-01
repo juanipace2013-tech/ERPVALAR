@@ -34,14 +34,14 @@ interface Check {
   entityName: string | null
   description: string | null
   voucherType: string
-  status: 'PENDING' | 'CLEARED' | 'REJECTED' | 'CANCELLED'
+  status: 'PENDING' | 'CLEARED' | 'BOUNCED' | 'CANCELLED'
   bankAccountName: string
 }
 
 const CHECK_STATUS_LABELS = {
   PENDING: { label: 'En cartera', color: 'text-yellow-700 bg-yellow-50', icon: Clock },
   CLEARED: { label: 'Cobrado', color: 'text-green-700 bg-green-50', icon: CheckCircle },
-  REJECTED: { label: 'Rechazado', color: 'text-red-700 bg-red-50', icon: XCircle },
+  BOUNCED: { label: 'Rechazado', color: 'text-red-700 bg-red-50', icon: XCircle },
   CANCELLED: { label: 'Anulado', color: 'text-gray-700 bg-gray-50', icon: Ban },
 }
 
@@ -236,7 +236,7 @@ export function CheckManagementDialog({ open, onOpenChange }: CheckManagementDia
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  onClick={() => updateCheckStatus(check.id, 'REJECTED')}
+                                  onClick={() => updateCheckStatus(check.id, 'BOUNCED')}
                                   className="text-red-600 hover:text-red-700"
                                 >
                                   ✗ Rechazar

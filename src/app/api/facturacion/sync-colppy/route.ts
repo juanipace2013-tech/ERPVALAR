@@ -99,6 +99,61 @@ function mapPaymentStatus(idEstadoFactura: string, total: number, aplicado: numb
   return 'UNPAID'
 }
 
+// Mapeo de condición IVA Colppy a TaxCondition del schema
+const condicionIvaMap: Record<string, string> = {
+  '1': 'RESPONSABLE_INSCRIPTO', '2': 'MONOTRIBUTO', '4': 'EXENTO',
+  '5': 'CONSUMIDOR_FINAL', '6': 'RESPONSABLE_NO_INSCRIPTO',
+}
+
+interface ColppyClient {
+  idCliente: string
+  cuit: string
+  name: string
+  businessName: string
+  taxCondition: string
+  email: string
+  phone: string
+  address: string
+  city: string
+  province: string
+}
+
+/**
+ * Obtiene TODOS los clientes de Colppy para mapeo
+ */
+function fetchAllColppyClients(claveSesion: string, passwordMD5: string): ColppyClient[] {
+  const response = callColppy({
+    auth: { usuario: COLPPY_USER, password: passwordMD5 },
+    service: { provision: 'Cliente', operacion: 'listar_cliente' },
+    parameters: {
+      sesion: { usuario: COLPPY_USER, claveSesion },
+      idEmpresa: COLPPY_ID_EMPRESA,
+      start: 0,
+      limit: 6000,
+      filter: [],
+      order: [{ field: 'NombreFantasia', dir: 'asc' }],
+    },
+  }) as { result?: { estado?: number }; response?: { success?: boolean; data?: Record<string, unknown>[] } }
+
+  if (response.result?.estado !== 0 || !response.response?.success) {
+    console.warn('[Sync Colppy] No se pudieron cargar clientes de Colppy')
+    return []
+  }
+
+  return (response.response.data || []).map((c: Record<string, unknown>) => ({
+    idCliente: String(c.idCliente || ''),
+    cuit: String(c.CUIT || ''),
+    name: String(c.NombreFantasia || c.RazonSocial || ''),
+    businessName: String(c.RazonSocial || ''),
+    taxCondition: condicionIvaMap[String(c.idCondicionIva || '1')] || 'RESPONSABLE_INSCRIPTO',
+    email: String(c.Email || ''),
+    phone: String(c.Telefono || ''),
+    address: String(c.DirPostal || ''),
+    city: String(c.DirPostalCiudad || ''),
+    province: String(c.DirPostalProvincia || ''),
+  }))
+}
+
 /**
  * Obtiene TODAS las facturas de Colppy paginando automáticamente
  */
@@ -187,12 +242,24 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 3. Obtener mapeo de clientes Colppy -> local
+    // 3. Obtener mapeo de clientes Colppy -> local (múltiples estrategias)
     const customers = await prisma.customer.findMany({
-      where: { colppyId: { not: null } },
-      select: { id: true, colppyId: true },
+      select: { id: true, colppyId: true, cuit: true, name: true },
     })
-    const customerMap = new Map(customers.map((c) => [c.colppyId!, c.id]))
+    // Mapeo por colppyId (directo)
+    const customerByColppyId = new Map<string, string>()
+    // Mapeo por CUIT (fallback)
+    const customerByCuit = new Map<string, string>()
+    for (const c of customers) {
+      if (c.colppyId) customerByColppyId.set(c.colppyId, c.id)
+      if (c.cuit) customerByCuit.set(c.cuit.replace(/\D/g, ''), c.id)
+    }
+    console.log(`[Sync Colppy] Clientes locales: ${customers.length} total, ${customerByColppyId.size} con colppyId, ${customerByCuit.size} con CUIT`)
+
+    // Cargar clientes de Colppy para matching por CUIT y auto-creación
+    const colppyClients = fetchAllColppyClients(claveSesion, passwordMD5)
+    const colppyClientMap = new Map(colppyClients.map((c) => [c.idCliente, c]))
+    console.log(`[Sync Colppy] Clientes Colppy cargados: ${colppyClients.length}`)
 
     // Obtener un usuario del sistema para asignar como fallback
     const systemUser = await prisma.user.findFirst({ select: { id: true } })
@@ -229,21 +296,104 @@ export async function POST(request: NextRequest) {
     let updated = 0
     let skipped = 0
     let linkedToQuote = 0
+    let customersCreated = 0
+    let customersLinkedByCuit = 0
     const errors: string[] = []
     const porTipoComprobante: Record<string, number> = {}
+    const skipReasons: Record<string, number> = {}
 
     for (const f of colppyFacturas) {
       const idFactura = String(f.idFactura || '')
-      if (!idFactura) { skipped++; continue }
+      if (!idFactura) {
+        skipReasons['sin_idFactura'] = (skipReasons['sin_idFactura'] || 0) + 1
+        skipped++; continue
+      }
 
       // Importar TODOS los tipos de comprobante de venta:
       // 4=FAV A, 5=NDV A, 6=NCV A, 10=FAV B, 11=NDV B, 12=NCV B, 13=NCV C/E
       const tipoComp = String(f.idTipoComprobante || '4')
       const tiposVenta = ['4', '5', '6', '8', '9', '10', '11', '12', '13']
-      if (!tiposVenta.includes(tipoComp)) { skipped++; continue }
+      if (!tiposVenta.includes(tipoComp)) {
+        skipReasons[`tipo_${tipoComp}`] = (skipReasons[`tipo_${tipoComp}`] || 0) + 1
+        skipped++; continue
+      }
 
       const idCliente = String(f.idCliente || '')
-      const localCustomerId = customerMap.get(idCliente)
+
+      // Estrategia de matching de cliente: 1) colppyId, 2) CUIT, 3) auto-crear
+      let localCustomerId = customerByColppyId.get(idCliente)
+
+      if (!localCustomerId) {
+        // Intentar por CUIT
+        const colppyClient = colppyClientMap.get(idCliente)
+        if (colppyClient?.cuit) {
+          const cuitClean = colppyClient.cuit.replace(/\D/g, '')
+          const matchedByCuit = customerByCuit.get(cuitClean)
+          if (matchedByCuit) {
+            localCustomerId = matchedByCuit
+            customersLinkedByCuit++
+            // Actualizar colppyId en el cliente local para futuras syncs
+            await prisma.customer.update({
+              where: { id: matchedByCuit },
+              data: { colppyId: idCliente },
+            })
+            customerByColppyId.set(idCliente, matchedByCuit)
+          }
+        }
+      }
+
+      if (!localCustomerId) {
+        // Auto-crear cliente desde datos de Colppy
+        const colppyClient = colppyClientMap.get(idCliente)
+        if (colppyClient && colppyClient.cuit) {
+          try {
+            const newCustomer = await prisma.customer.create({
+              data: {
+                name: colppyClient.name || colppyClient.businessName || `Cliente Colppy ${idCliente}`,
+                businessName: colppyClient.businessName || null,
+                cuit: colppyClient.cuit,
+                taxCondition: colppyClient.taxCondition as 'RESPONSABLE_INSCRIPTO' | 'MONOTRIBUTO' | 'EXENTO' | 'CONSUMIDOR_FINAL',
+                email: colppyClient.email || null,
+                phone: colppyClient.phone || null,
+                address: colppyClient.address || null,
+                city: colppyClient.city || null,
+                province: colppyClient.province || null,
+                colppyId: idCliente,
+                notes: 'Auto-creado desde sync Colppy',
+              },
+            })
+            localCustomerId = newCustomer.id
+            customerByColppyId.set(idCliente, newCustomer.id)
+            customerByCuit.set(colppyClient.cuit.replace(/\D/g, ''), newCustomer.id)
+            customersCreated++
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Unknown error'
+            // Si es error de CUIT duplicado, intentar buscar por CUIT
+            if (msg.includes('Unique constraint') && colppyClient.cuit) {
+              const existing = await prisma.customer.findUnique({
+                where: { cuit: colppyClient.cuit },
+                select: { id: true },
+              })
+              if (existing) {
+                localCustomerId = existing.id
+                await prisma.customer.update({
+                  where: { id: existing.id },
+                  data: { colppyId: idCliente },
+                })
+                customerByColppyId.set(idCliente, existing.id)
+                customersLinkedByCuit++
+              }
+            }
+            if (!localCustomerId) {
+              skipReasons['cliente_crear_error'] = (skipReasons['cliente_crear_error'] || 0) + 1
+              errors.push(`Factura ${idFactura}: Error creando cliente ${colppyClient.name}: ${msg}`)
+            }
+          }
+        } else {
+          skipReasons['sin_cliente_colppy'] = (skipReasons['sin_cliente_colppy'] || 0) + 1
+        }
+      }
+
       if (!localCustomerId) {
         skipped++
         continue
@@ -367,6 +517,10 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`[Sync Colppy] Resultado: ${created} creadas (${linkedToQuote} vinculadas a cotización), ${updated} actualizadas, ${skipped} omitidas, ${errors.length} errores`)
+    console.log(`[Sync Colppy] Clientes: ${customersCreated} creados, ${customersLinkedByCuit} vinculados por CUIT`)
+    if (Object.keys(skipReasons).length > 0) {
+      console.log('[Sync Colppy] Razones de omisión:', JSON.stringify(skipReasons))
+    }
 
     return NextResponse.json({
       success: true,
@@ -376,8 +530,11 @@ export async function POST(request: NextRequest) {
         updated,
         skipped,
         linkedToQuote,
+        customersCreated,
+        customersLinkedByCuit,
         errors: errors.length,
         errorDetails: errors.slice(0, 20),
+        skipReasons,
         porTipoComprobante,
         rangoFechas: {
           desde: dateFromStr,

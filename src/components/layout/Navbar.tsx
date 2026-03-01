@@ -36,12 +36,14 @@ export function Navbar() {
       <div className="flex h-16 items-center justify-between px-6">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/logo-valarg.png"
-              alt="VAL ARG"
-              className="h-8 object-contain brightness-0 invert"
-            />
+            <div className="bg-white rounded-md px-2 py-1">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/logo-valarg.png"
+                alt="VAL ARG"
+                className="h-6 object-contain"
+              />
+            </div>
             <h1 className="text-xl font-bold text-white">
               ERP VAL ARG
             </h1>

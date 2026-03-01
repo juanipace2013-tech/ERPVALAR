@@ -21,6 +21,7 @@ export async function GET(
       where: { id },
       include: {
         category: true,
+        supplier: true,
         prices: {
           orderBy: {
             validFrom: 'desc',
@@ -99,20 +100,28 @@ export async function PUT(
         sku: validatedData.sku,
         name: validatedData.name,
         description: validatedData.description,
+        type: validatedData.type,
         categoryId: validatedData.categoryId,
+        supplierId: validatedData.supplierId,
         brand: validatedData.brand,
         stockQuantity: validatedData.stockQuantity,
         minStock: validatedData.minStock,
         maxStock: validatedData.maxStock,
         unit: validatedData.unit,
+        lastCost: validatedData.lastCost,
+        averageCost: validatedData.averageCost,
+        listPriceUSD: validatedData.listPriceUSD,
         status: validatedData.status,
         isTaxable: validatedData.isTaxable,
         taxRate: validatedData.taxRate,
+        trackInventory: validatedData.trackInventory,
+        allowNegative: validatedData.allowNegative,
         notes: validatedData.notes,
       },
       include: {
         prices: true,
         category: true,
+        supplier: true,
       },
     })
 
@@ -159,6 +168,7 @@ export async function PUT(
       where: { id },
       include: {
         category: true,
+        supplier: true,
         prices: {
           where: {
             OR: [

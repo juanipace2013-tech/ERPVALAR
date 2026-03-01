@@ -1,5 +1,3 @@
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
-
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
@@ -24,19 +22,18 @@ function calcularSemaforo(
 }
 
 async function fetchBCRA(endpoint: string) {
+  // Deshabilitar TLS solo durante el fetch al BCRA (su certificado suele fallar)
+  const originalTLS = process.env.NODE_TLS_REJECT_UNAUTHORIZED
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
   try {
     const url = `${BCRA_BASE}/${endpoint}`
-    console.log('Fetching BCRA:', url)
 
     const response = await fetch(url, {
       headers: { Accept: 'application/json' },
       cache: 'no-store',
     })
 
-    console.log('BCRA response status:', response.status)
-
     const text = await response.text()
-    console.log('BCRA response body:', text.substring(0, 300))
 
     if (!text) {
       return { status: 404, errorMessages: ['Respuesta vacía del BCRA'] }
@@ -46,6 +43,13 @@ async function fetchBCRA(endpoint: string) {
   } catch (error) {
     console.error('BCRA fetch error:', error)
     return { status: 500, errorMessages: [`Error al consultar BCRA: ${error}`] }
+  } finally {
+    // Restaurar TLS para el resto de la aplicación
+    if (originalTLS !== undefined) {
+      process.env.NODE_TLS_REJECT_UNAUTHORIZED = originalTLS
+    } else {
+      delete process.env.NODE_TLS_REJECT_UNAUTHORIZED
+    }
   }
 }
 

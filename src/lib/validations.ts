@@ -97,7 +97,7 @@ export const productSchema = z.object({
   sku: z
     .string()
     .min(2, 'El SKU debe tener al menos 2 caracteres')
-    .regex(/^[A-Z0-9-]+$/, 'El SKU solo puede contener letras mayúsculas, números y guiones'),
+    .regex(/^[A-Z0-9 .\-]+$/, 'El SKU solo puede contener letras mayúsculas, números, espacios, guiones y puntos'),
   name: z.string().min(2, 'El nombre debe tener al menos 2 caracteres'),
   description: z.string().nullable().optional(),
 

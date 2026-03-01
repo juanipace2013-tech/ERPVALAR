@@ -231,7 +231,7 @@ export async function POST(request: NextRequest) {
           transactionType: 'SALE',
           quoteId: quote.id,
           customerId: quote.customerId,
-          userId: session.user!.id!,
+          userId: quote.salesPersonId || session.user!.id!,
           status: 'DRAFT',
           currency: quote.currency,
           exchangeRate: quote.exchangeRate,

@@ -184,16 +184,41 @@ export async function POST(request: NextRequest) {
     })
     const customerMap = new Map(customers.map((c) => [c.colppyId!, c.id]))
 
-    // Obtener un usuario del sistema para asignar como fallback (no se usa vendedor de Colppy)
+    // Obtener un usuario del sistema para asignar como fallback
     const systemUser = await prisma.user.findFirst({ select: { id: true } })
     if (!systemUser) {
       throw new Error('No hay usuarios en el sistema')
+    }
+
+    // Pre-cargar cotizaciones ACCEPTED/CONVERTED para vincular con facturas importadas
+    // Busca por customerId + total similar (±5%)
+    const quotesForMatching = await prisma.quote.findMany({
+      where: {
+        status: { in: ['ACCEPTED', 'CONVERTED'] },
+        date: { gte: dateFrom },
+      },
+      select: {
+        id: true,
+        customerId: true,
+        total: true,
+        salesPersonId: true,
+      },
+      orderBy: { date: 'desc' },
+    })
+
+    // Agrupar cotizaciones por customerId para búsqueda rápida
+    const quotesByCustomer = new Map<string, typeof quotesForMatching>()
+    for (const q of quotesForMatching) {
+      const existing = quotesByCustomer.get(q.customerId) || []
+      existing.push(q)
+      quotesByCustomer.set(q.customerId, existing)
     }
 
     // 4. Procesar cada factura
     let created = 0
     let updated = 0
     let skipped = 0
+    let linkedToQuote = 0
     const errors: string[] = []
     const porTipoComprobante: Record<string, number> = {}
 
@@ -225,13 +250,32 @@ export async function POST(request: NextRequest) {
       const tipoKey = `${compLabel} ${tipoLetra}`
       porTipoComprobante[tipoKey] = (porTipoComprobante[tipoKey] || 0) + 1
 
+      // Intentar vincular con cotización existente por customerId + total similar (±5%)
+      let matchedQuoteId: string | null = null
+      let matchedSalesPersonId: string | null = null
+      const customerQuotes = quotesByCustomer.get(localCustomerId)
+      if (customerQuotes && total > 0) {
+        const tolerance = 0.05 // 5%
+        const match = customerQuotes.find((q) => {
+          const quoteTotal = Number(q.total)
+          if (quoteTotal === 0) return false
+          const diff = Math.abs(quoteTotal - total) / quoteTotal
+          return diff <= tolerance
+        })
+        if (match) {
+          matchedQuoteId = match.id
+          matchedSalesPersonId = match.salesPersonId
+        }
+      }
+
       const invoiceData = {
         invoiceNumber: String(f.nroFactura || `COLPPY-${idFactura}`),
         invoiceType: mapInvoiceType(String(f.idTipoFactura || '0')),
         transactionType: 'SALE' as const,
         customerId: localCustomerId,
-        // El vendedor NO viene de Colppy - se asigna el primer usuario del sistema como placeholder
-        userId: systemUser.id,
+        quoteId: matchedQuoteId,
+        // Si se vinculó con cotización, usar su vendedor; si no, fallback a usuario del sistema
+        userId: matchedSalesPersonId || systemUser.id,
         status: mapInvoiceStatus(String(f.idEstadoFactura || '3'), saldo) as 'PENDING' | 'PAID',
         currency: monedaCode as 'ARS' | 'USD' | 'EUR',
         exchangeRate: tipoCambio,
@@ -246,7 +290,7 @@ export async function POST(request: NextRequest) {
         cae: String(f.cae || '') || null,
         afipStatus: f.cae ? 'APPROVED' as const : 'PENDING' as const,
         colppyId: idFactura,
-        notes: `${compLabel} ${tipoLetra} - Importado desde Colppy`,
+        notes: `${compLabel} ${tipoLetra} - Importado desde Colppy${matchedQuoteId ? ' (vinculado a cotización)' : ''}`,
       }
 
       try {
@@ -256,7 +300,7 @@ export async function POST(request: NextRequest) {
         })
 
         if (existing) {
-          // Actualizar (NO sobreescribir userId para preservar asignación manual de vendedor)
+          // Actualizar (NO sobreescribir userId/quoteId para preservar asignación manual)
           await prisma.invoice.update({
             where: { id: existing.id },
             data: {
@@ -274,6 +318,7 @@ export async function POST(request: NextRequest) {
         } else {
           // Crear nueva
           await prisma.invoice.create({ data: invoiceData })
+          if (matchedQuoteId) linkedToQuote++
           created++
         }
       } catch (err: unknown) {
@@ -282,7 +327,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log(`[Sync Colppy] Resultado: ${created} creadas, ${updated} actualizadas, ${skipped} omitidas, ${errors.length} errores`)
+    console.log(`[Sync Colppy] Resultado: ${created} creadas (${linkedToQuote} vinculadas a cotización), ${updated} actualizadas, ${skipped} omitidas, ${errors.length} errores`)
 
     return NextResponse.json({
       success: true,
@@ -291,6 +336,7 @@ export async function POST(request: NextRequest) {
         created,
         updated,
         skipped,
+        linkedToQuote,
         errors: errors.length,
         errorDetails: errors.slice(0, 20),
         porTipoComprobante,

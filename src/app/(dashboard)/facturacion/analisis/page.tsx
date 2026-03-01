@@ -493,6 +493,12 @@ export default function AnalisisFacturacionPage() {
                     <span className="text-gray-600">Omitidas:</span>
                     <span className="font-medium text-gray-500">{(syncResult as { skipped?: number }).skipped}</span>
                   </div>
+                  {((syncResult as { linkedToQuote?: number }).linkedToQuote || 0) > 0 && (
+                    <div className="flex justify-between col-span-2">
+                      <span className="text-gray-600">Vinculadas a cotización:</span>
+                      <span className="font-medium text-purple-700">{(syncResult as { linkedToQuote?: number }).linkedToQuote}</span>
+                    </div>
+                  )}
                 </div>
                 {/* Por tipo de comprobante */}
                 {(syncResult as { porTipoComprobante?: Record<string, number> }).porTipoComprobante && (

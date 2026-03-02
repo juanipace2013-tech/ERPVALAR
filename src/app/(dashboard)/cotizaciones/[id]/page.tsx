@@ -169,10 +169,15 @@ export default function QuoteDetailPage() {
   const [bonificationLoading, setBonificationLoading] = useState(false)
   const [showEditBonification, setShowEditBonification] = useState(false)
 
-  // Additional product search (per-index)
+  // Additional product search (per-index) — legacy, kept for compatibility
   const [additionalSearchTerms, setAdditionalSearchTerms] = useState<Record<number, string>>({})
   const [additionalSearchResults, setAdditionalSearchResults] = useState<Record<number, Product[]>>({})
   const [additionalSearchLoading, setAdditionalSearchLoading] = useState<Record<number, boolean>>({})
+
+  // Additional product search — single search input (new)
+  const [addlSearchTerm, setAddlSearchTerm] = useState('')
+  const [addlSearchResults, setAddlSearchResults] = useState<Product[]>([])
+  const [addlSearchLoading, setAddlSearchLoading] = useState(false)
 
   // Product search
   const [productSearch, setProductSearch] = useState('')
@@ -248,6 +253,32 @@ export default function QuoteDetailPage() {
     return () => timeouts.forEach(t => clearTimeout(t))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [additionalSearchTerms])
+
+  // Debounce para búsqueda de adicionales — input único
+  useEffect(() => {
+    if (addlSearchTerm.length < 2) {
+      setAddlSearchResults([])
+      return
+    }
+    const timeout = setTimeout(async () => {
+      setAddlSearchLoading(true)
+      try {
+        const params = new URLSearchParams({ search: addlSearchTerm, limit: '20', status: 'ACTIVE' })
+        const response = await fetch(`/api/productos?${params.toString()}`)
+        if (response.ok) {
+          const data = await response.json()
+          setAddlSearchResults(data.products || [])
+        } else {
+          setAddlSearchResults([])
+        }
+      } catch {
+        setAddlSearchResults([])
+      } finally {
+        setAddlSearchLoading(false)
+      }
+    }, 300)
+    return () => clearTimeout(timeout)
+  }, [addlSearchTerm])
 
   const fetchQuoteData = async () => {
     try {
@@ -700,6 +731,23 @@ export default function QuoteDetailPage() {
     })
   }
 
+  const handleAddAdditionalFromSearch = (product: Product) => {
+    if (itemFormData.additionals.length >= 5) {
+      toast.error('Máximo 5 adicionales por item')
+      return
+    }
+    const listPrice = product.listPriceUSD ? Number(product.listPriceUSD) : 0
+    setItemFormData({
+      ...itemFormData,
+      additionals: [
+        ...itemFormData.additionals,
+        { productId: product.id, listPrice, productName: product.name, productSku: product.sku },
+      ],
+    })
+    setAddlSearchTerm('')
+    setAddlSearchResults([])
+  }
+
   const handleUpdateAdditional = (index: number, product: Product) => {
     const listPrice = product.listPriceUSD ? Number(product.listPriceUSD) : 0
 
@@ -734,6 +782,8 @@ export default function QuoteDetailPage() {
       manualUnitPrice: '',
     })
     setProductSearch('')
+    setAddlSearchTerm('')
+    setAddlSearchResults([])
   }
 
   const handleOpenAlternativeDialog = (parentItemId: string) => {
@@ -1348,90 +1398,104 @@ export default function QuoteDetailPage() {
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
                           <Label className="text-sm font-semibold">Adicionales</Label>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-7 px-3 text-xs"
-                            onClick={handleAddAdditional}
-                            disabled={itemFormData.additionals.length >= 5}
-                          >
-                            <Plus className="h-3 w-3 mr-1" />
-                            Agregar ({itemFormData.additionals.length}/5)
-                          </Button>
+                          <span className="text-xs text-muted-foreground">{itemFormData.additionals.length}/5</span>
                         </div>
-                        <div className="max-h-[300px] overflow-y-auto space-y-2">
-                          {itemFormData.additionals.length === 0 && (
-                            <div className="text-center py-4 text-muted-foreground border border-dashed rounded-lg">
-                              <Package className="h-5 w-5 mx-auto mb-1 opacity-40" />
+
+                        {/* Buscador de adicionales — siempre visible si < 5 */}
+                        {itemFormData.additionals.length < 5 && (
+                          <div className="relative">
+                            <div className="relative">
+                              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                              <Input
+                                placeholder="Buscar adicional por SKU o nombre..."
+                                value={addlSearchTerm}
+                                onChange={(e) => setAddlSearchTerm(e.target.value)}
+                                className="text-sm pl-8"
+                              />
+                            </div>
+                            {/* Dropdown flotante de resultados */}
+                            {addlSearchLoading && (
+                              <div className="absolute z-[100] w-full mt-1 bg-white border rounded-md shadow-lg p-3 text-center">
+                                <Loader2 className="h-4 w-4 animate-spin inline mr-2" />
+                                <span className="text-sm text-muted-foreground">Buscando...</span>
+                              </div>
+                            )}
+                            {!addlSearchLoading && addlSearchTerm.length >= 2 && addlSearchResults.length === 0 && (
+                              <div className="absolute z-[100] w-full mt-1 bg-white border rounded-md shadow-lg p-3 text-center text-sm text-muted-foreground">
+                                No se encontraron productos
+                              </div>
+                            )}
+                            {!addlSearchLoading && addlSearchResults.length > 0 && (
+                              <div className="absolute z-[100] w-full mt-1 bg-white border rounded-md shadow-lg max-h-[240px] overflow-y-auto">
+                                {addlSearchResults.map((product) => (
+                                  <button
+                                    key={product.id}
+                                    type="button"
+                                    className="w-full text-left px-3 py-2.5 hover:bg-blue-50 border-b last:border-0 transition-colors"
+                                    onClick={() => handleAddAdditionalFromSearch(product)}
+                                  >
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-sm font-medium truncate">{product.name}</p>
+                                        <p className="text-xs text-muted-foreground font-mono">
+                                          SKU: {product.sku}{product.brand ? ` | ${product.brand}` : ''}
+                                        </p>
+                                        <div className="mt-0.5">
+                                          <StockBadge
+                                            sku={product.sku}
+                                            stock={stockData[product.sku]?.stock}
+                                            found={stockData[product.sku]?.found}
+                                            loading={stockLoading}
+                                            size="sm"
+                                          />
+                                        </div>
+                                      </div>
+                                      <span className="text-sm font-mono font-semibold shrink-0 text-blue-700">
+                                        USD {product.listPriceUSD ? formatNumber(product.listPriceUSD) : '0,00'}
+                                      </span>
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Lista de adicionales seleccionados */}
+                        <div className="space-y-2">
+                          {itemFormData.additionals.length === 0 && !addlSearchTerm && (
+                            <div className="text-center py-3 text-muted-foreground border border-dashed rounded-lg">
+                              <Package className="h-4 w-4 mx-auto mb-1 opacity-40" />
                               <p className="text-xs">Sin adicionales</p>
                             </div>
                           )}
-                          {itemFormData.additionals.map((additional, index) => (
-                            <div key={index}>
-                              {additional.productId ? (
-                                /* Card de adicional seleccionado */
-                                <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-                                  <div className="min-w-0 flex-1">
-                                    <p className="text-sm font-medium truncate">{additional.productName || 'Producto seleccionado'}</p>
-                                    <p className="text-xs text-muted-foreground font-mono">SKU: {additional.productSku || '—'}</p>
-                                  </div>
-                                  <div className="flex items-center gap-2 shrink-0 ml-2">
-                                    <span className="text-sm font-mono font-semibold">USD {formatNumber(additional.listPrice)}</span>
-                                    <Button type="button" size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => handleRemoveAdditional(index)}>
-                                      <X className="h-3.5 w-3.5" />
-                                    </Button>
+                          {itemFormData.additionals.map((additional, index) =>
+                            additional.productId ? (
+                              <div key={index} className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-medium truncate">{additional.productName || 'Producto seleccionado'}</p>
+                                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                    <span className="font-mono">SKU: {additional.productSku || '—'}</span>
+                                    {additional.productSku && (
+                                      <StockBadge
+                                        sku={additional.productSku}
+                                        stock={stockData[additional.productSku]?.stock}
+                                        found={stockData[additional.productSku]?.found}
+                                        loading={stockLoading}
+                                        size="sm"
+                                      />
+                                    )}
                                   </div>
                                 </div>
-                              ) : (
-                                /* Buscador de adicional */
-                                <div className="relative">
-                                  <div className="flex items-center gap-2">
-                                    <Input
-                                      placeholder="Buscar por SKU o nombre..."
-                                      value={additionalSearchTerms[index] || ''}
-                                      onChange={(e) => setAdditionalSearchTerms(prev => ({ ...prev, [index]: e.target.value }))}
-                                      className="text-sm"
-                                    />
-                                    <Button type="button" size="sm" variant="ghost" className="h-8 w-8 p-0 shrink-0 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => handleRemoveAdditional(index)}>
-                                      <X className="h-4 w-4" />
-                                    </Button>
-                                  </div>
-                                  {(additionalSearchResults[index]?.length > 0) && (
-                                    <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">
-                                      {additionalSearchResults[index].map((product) => (
-                                        <button
-                                          key={product.id}
-                                          type="button"
-                                          className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b last:border-0"
-                                          onClick={() => {
-                                            handleUpdateAdditional(index, product)
-                                            setAdditionalSearchTerms(prev => ({ ...prev, [index]: '' }))
-                                            setAdditionalSearchResults(prev => ({ ...prev, [index]: [] }))
-                                          }}
-                                        >
-                                          <div className="flex items-center justify-between">
-                                            <div className="min-w-0 flex-1">
-                                              <p className="text-sm truncate">{product.name}</p>
-                                              <p className="text-xs text-muted-foreground font-mono">SKU: {product.sku}</p>
-                                            </div>
-                                            <span className="text-xs font-mono font-semibold shrink-0 ml-2">
-                                              USD {product.listPriceUSD ? formatNumber(product.listPriceUSD) : '0,00'}
-                                            </span>
-                                          </div>
-                                        </button>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {additionalSearchLoading[index] && (
-                                    <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg p-3 text-center">
-                                      <Loader2 className="h-4 w-4 animate-spin inline" />
-                                    </div>
-                                  )}
+                                <div className="flex items-center gap-2 shrink-0 ml-2">
+                                  <span className="text-sm font-mono font-semibold">USD {formatNumber(additional.listPrice)}</span>
+                                  <Button type="button" size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => handleRemoveAdditional(index)}>
+                                    <X className="h-3.5 w-3.5" />
+                                  </Button>
                                 </div>
-                              )}
-                            </div>
-                          ))}
+                              </div>
+                            ) : null
+                          )}
                         </div>
                       </div>
 

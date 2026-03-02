@@ -84,7 +84,7 @@ const navItems: NavItem[] = [
     roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
   },
   {
-    title: 'Inventario',
+    title: 'Inventario (En proceso)',
     href: '/inventario/items',
     icon: ShoppingCart,
     roles: ['ADMIN', 'GERENTE'],

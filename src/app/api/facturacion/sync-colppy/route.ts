@@ -122,11 +122,24 @@ const monedaMap: Record<string, string> = {
   '0': 'USD', '1': 'ARS', '2': 'EUR',
 }
 
+// Mapeo CORRECTO de idTipoComprobante de Colppy:
+// La letra (A/B/C/E) viene de idTipoFactura, NO del idTipoComprobante
+// 4=FAV, 5=NDV, 8=NCV, 9=REC, 51=FAV MiPyme, 52=NDV MiPyme, 53=NCV MiPyme
 const tipoComprobanteLabel: Record<string, string> = {
-  '4': 'FAV', '5': 'NDV', '6': 'NCV', '7': 'REC', '8': 'NCV', '9': 'NDV',
-  '10': 'FAV', '11': 'NDV', '12': 'NCV', '13': 'NCV',
-  '51': 'FAV', '52': 'NDV', '53': 'NCV', // MiPyme
+  '4': 'FAV',   // Factura de Venta
+  '5': 'NDV',   // Nota de Débito Venta
+  '8': 'NCV',   // Nota de Crédito Venta
+  '9': 'REC',   // Recibo
+  '51': 'FAV',  // Factura MiPyme
+  '52': 'NDV',  // ND MiPyme
+  '53': 'NCV',  // NC MiPyme
 }
+
+// Notas de Crédito (NCV) → transactionType = CREDIT_NOTE, RESTAN del total
+const CREDIT_NOTE_TIPOS = new Set(['8', '53'])
+
+// Notas de Débito (NDV) → transactionType = DEBIT_NOTE, SUMAN al total
+const DEBIT_NOTE_TIPOS = new Set(['5', '52'])
 
 // Mapear tipo de comprobante Colppy a InvoiceType del schema
 function mapInvoiceType(idTipoFactura: string): 'A' | 'B' | 'C' | 'E' {
@@ -287,6 +300,36 @@ function fetchAllColppyFacturas(
   return allFacturas
 }
 
+/**
+ * Busca el tipo de cambio USD→ARS para una fecha dada en la tabla ExchangeRate.
+ * Usa cache por fecha para evitar queries repetidos durante la sync.
+ */
+const exchangeRateCache = new Map<string, number>()
+
+async function getExchangeRateForDate(dateStr: string): Promise<number> {
+  if (exchangeRateCache.has(dateStr)) return exchangeRateCache.get(dateStr)!
+
+  const d = new Date(dateStr)
+  const rate = await prisma.exchangeRate.findFirst({
+    where: {
+      fromCurrency: 'USD',
+      toCurrency: 'ARS',
+      validFrom: { lte: d },
+      OR: [
+        { validUntil: null },
+        { validUntil: { gte: d } },
+      ],
+    },
+    orderBy: { validFrom: 'desc' },
+  })
+
+  const value = rate ? Number(rate.rate) : 0
+  exchangeRateCache.set(dateStr, value)
+  return value
+}
+
+const DEFAULT_EXCHANGE_RATE = 1420
+
 export async function POST(request: NextRequest) {
   try {
     const session = await auth()
@@ -392,12 +435,10 @@ export async function POST(request: NextRequest) {
         skipped++; continue
       }
 
-      // Importar TODOS los tipos de comprobante de venta:
-      // 4=FAV A, 5=NDV A, 6=NCV A, 7=REC, 8=NCV B, 9=NDV B
-      // 10=FAV B, 11=NDV B, 12=NCV B, 13=NCV C/E
-      // 51=FAV M (MiPyme), 52=NDV M, 53=NCV M
+      // Importar tipos de comprobante de venta de Colppy:
+      // 4=FAV, 5=NDV, 8=NCV, 9=REC, 51=FAV MiPyme, 52=NDV MiPyme, 53=NCV MiPyme
       const tipoComp = String(f.idTipoComprobante || '4')
-      const tiposVenta = ['4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '51', '52', '53']
+      const tiposVenta = ['4', '5', '8', '9', '51', '52', '53']
       if (!tiposVenta.includes(tipoComp)) {
         skipReasons[`tipo_${tipoComp}`] = (skipReasons[`tipo_${tipoComp}`] || 0) + 1
         skipped++; continue
@@ -477,66 +518,112 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      const monedaCode = monedaMap[String(f.idMoneda || '1')] || 'ARS'
-      const tipoCambio = parseFloat(String(f.rate || f.valorCambio || f.cotizacion || '1'))
+      // ================================================================
+      // FIX: Detección correcta de moneda
+      // idMoneda "0" = USD, "1" = ARS (Colppy)
+      // rate > 0 solo para facturas USD; en ARS es "0" o null
+      // ================================================================
+      const idMoneda = String(f.idMoneda || '1')
+      const rawRate = parseFloat(String(f.rate || f.valorCambio || f.cotizacion || '0'))
+
+      let monedaCode: string
+      let tipoCambio: number
 
       // Colppy devuelve totalFactura SIEMPRE en ARS (moneda fiscal).
-      // Para facturas en USD/EUR, necesitamos el monto en la moneda original.
       const totalFacturaARS = parseFloat(String(f.totalFactura || '0'))
       const aplicadoARS = parseFloat(String(f.totalaplicado || '0'))
       const netoGravadoARS = parseFloat(String(f.netoGravado || '0'))
       const totalIVAARS = parseFloat(String(f.totalIVA || '0'))
+      const fechaFactura = String(f.fechaFactura || new Date().toISOString().split('T')[0])
 
       let total: number
       let aplicado: number
       let subtotalVal: number
       let taxAmountVal: number
 
-      if (monedaCode !== 'ARS' && tipoCambio > 1) {
-        // Factura en moneda extranjera: convertir de ARS a moneda original
+      if (idMoneda === '0' && rawRate > 0) {
+        // FACTURA EN USD: idMoneda=0 y tiene tipo de cambio válido
+        monedaCode = 'USD'
+        tipoCambio = rawRate
+        // Convertir de ARS a USD usando el TC de Colppy
         total = Math.round((totalFacturaARS / tipoCambio) * 100) / 100
         aplicado = Math.round((aplicadoARS / tipoCambio) * 100) / 100
         subtotalVal = Math.round((netoGravadoARS / tipoCambio) * 100) / 100
         taxAmountVal = Math.round((totalIVAARS / tipoCambio) * 100) / 100
-        console.log(`[Sync Colppy] Factura ${idFactura} ${monedaCode}: totalARS=${totalFacturaARS} / TC=${tipoCambio} = ${monedaCode} ${total}`)
+        console.log(`[Sync Colppy] Factura ${idFactura} USD: totalARS=${totalFacturaARS} / TC=${tipoCambio} = USD ${total}`)
       } else {
-        // Factura en ARS: montos directos
+        // FACTURA EN ARS: idMoneda=1, o rate=0/null
+        monedaCode = 'ARS'
         total = totalFacturaARS
         aplicado = aplicadoARS
         subtotalVal = netoGravadoARS
         taxAmountVal = totalIVAARS
+        // Buscar TC del día para poder convertir a USD en el dashboard
+        const tcDelDia = await getExchangeRateForDate(fechaFactura)
+        tipoCambio = tcDelDia > 0 ? tcDelDia : DEFAULT_EXCHANGE_RATE
+        console.log(`[Sync Colppy] Factura ${idFactura} ARS: total=${total}, TC día=${tipoCambio}`)
+      }
+
+      // ================================================================
+      // Determinar transactionType según tipo de comprobante:
+      // NCV (8, 53) → CREDIT_NOTE (resta), totales positivos (Colppy envía negativo)
+      // NDV (5, 52) → DEBIT_NOTE (suma)
+      // FAV (4, 51) → SALE
+      // REC (9) → SALE (recibo, tratado como comprobante normal)
+      // ================================================================
+      const esNotaCredito = CREDIT_NOTE_TIPOS.has(tipoComp)
+      const esNotaDebito = DEBIT_NOTE_TIPOS.has(tipoComp)
+
+      if (esNotaCredito) {
+        // NCV: Colppy envía totalFactura NEGATIVO, guardamos positivo
+        total = Math.abs(total)
+        aplicado = Math.abs(aplicado)
+        subtotalVal = Math.abs(subtotalVal)
+        taxAmountVal = Math.abs(taxAmountVal)
       }
 
       const saldo = Math.max(0, total - aplicado)
       const tipoLetra = tipoFacturaMap[String(f.idTipoFactura || '0')] || 'A'
       const compLabel = tipoComprobanteLabel[tipoComp] || 'FAV'
 
+      let transactionType: 'SALE' | 'CREDIT_NOTE' | 'DEBIT_NOTE'
+      if (esNotaCredito) {
+        transactionType = 'CREDIT_NOTE'
+      } else if (esNotaDebito) {
+        transactionType = 'DEBIT_NOTE'
+      } else {
+        transactionType = 'SALE'
+      }
+
       // Contar por tipo de comprobante
       const tipoKey = `${compLabel} ${tipoLetra}`
       porTipoComprobante[tipoKey] = (porTipoComprobante[tipoKey] || 0) + 1
 
       // Intentar vincular con cotización existente por customerId + total similar (±5%)
+      // Solo para FAV/NDV, no para notas de crédito
       let matchedQuoteId: string | null = null
       let matchedSalesPersonId: string | null = null
-      const customerQuotes = quotesByCustomer.get(localCustomerId)
-      if (customerQuotes && total > 0) {
-        const tolerance = 0.05 // 5%
-        const match = customerQuotes.find((q) => {
-          const quoteTotal = Number(q.total)
-          if (quoteTotal === 0) return false
-          const diff = Math.abs(quoteTotal - total) / quoteTotal
-          return diff <= tolerance
-        })
-        if (match) {
-          matchedQuoteId = match.id
-          matchedSalesPersonId = match.salesPersonId
+      if (!esNotaCredito) {
+        const customerQuotes = quotesByCustomer.get(localCustomerId)
+        if (customerQuotes && total > 0) {
+          const tolerance = 0.05 // 5%
+          const match = customerQuotes.find((q) => {
+            const quoteTotal = Number(q.total)
+            if (quoteTotal === 0) return false
+            const diff = Math.abs(quoteTotal - total) / quoteTotal
+            return diff <= tolerance
+          })
+          if (match) {
+            matchedQuoteId = match.id
+            matchedSalesPersonId = match.salesPersonId
+          }
         }
       }
 
       const invoiceData = {
         invoiceNumber: String(f.nroFactura || `COLPPY-${idFactura}`),
         invoiceType: mapInvoiceType(String(f.idTipoFactura || '0')),
-        transactionType: 'SALE' as const,
+        transactionType,
         customerId: localCustomerId,
         quoteId: matchedQuoteId,
         // Si se vinculó con cotización, usar su vendedor; si no, fallback a usuario del sistema
@@ -550,8 +637,8 @@ export async function POST(request: NextRequest) {
         total,
         balance: saldo,
         paymentStatus: mapPaymentStatus(String(f.idEstadoFactura || '3'), total, aplicado) as 'UNPAID' | 'PARTIAL' | 'PAID',
-        issueDate: new Date(String(f.fechaFactura || new Date().toISOString())),
-        dueDate: new Date(String(f.fechaPago || f.fechaFactura || new Date().toISOString())),
+        issueDate: new Date(fechaFactura),
+        dueDate: new Date(String(f.fechaPago || fechaFactura)),
         cae: String(f.cae || '') || null,
         afipStatus: f.cae ? 'APPROVED' as const : 'PENDING' as const,
         colppyId: idFactura,
@@ -569,6 +656,7 @@ export async function POST(request: NextRequest) {
           await prisma.invoice.update({
             where: { id: existing.id },
             data: {
+              transactionType: invoiceData.transactionType,
               status: invoiceData.status,
               paymentStatus: invoiceData.paymentStatus,
               balance: invoiceData.balance,
@@ -579,6 +667,7 @@ export async function POST(request: NextRequest) {
               exchangeRate: invoiceData.exchangeRate,
               cae: invoiceData.cae,
               afipStatus: invoiceData.afipStatus,
+              notes: invoiceData.notes,
             },
           })
           updated++

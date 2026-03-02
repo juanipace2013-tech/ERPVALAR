@@ -516,10 +516,6 @@ export default function QuoteViewPage() {
                   <Send className="h-4 w-4 mr-2" />
                   Enviar a Colppy
                 </Button>
-                <Button onClick={handleGenerateInvoice} disabled={actionLoading} className="bg-purple-600 hover:bg-purple-700">
-                  <FileSpreadsheet className="h-4 w-4 mr-2" />
-                  Generar Factura
-                </Button>
                 <Button onClick={() => router.push(`/remitos/nuevo?quoteId=${id}`)} variant="outline">
                   <Package className="h-4 w-4 mr-2" />
                   Generar Remito

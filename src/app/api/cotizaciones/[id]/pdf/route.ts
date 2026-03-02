@@ -111,9 +111,17 @@ export async function GET(
               .join('\n')
           }
 
+          // Columna Código: código principal + códigos de adicionales (uno por línea)
+          let code = item.product?.sku || item.manualSku || ''
+          if (item.additionals.length > 0) {
+            code += '\n' + item.additionals
+              .map((add) => `+ ${add.product.sku}`)
+              .join('\n')
+          }
+
           return {
             itemNumber: displayNumber,
-            code: item.product?.sku || item.manualSku || '',
+            code,
             description,
             brand: item.product?.brand || item.manualBrand || '-',
             quantity: item.quantity,

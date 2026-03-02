@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
           iva: item.iva,
           comentario: item.comentario,
           deliveryTime: undefined as string | undefined,
-          additionals: [] as Array<{ name: string; unitPrice: number }>,
+          additionals: [] as Array<{ name: string; unitPrice: number; sku: string }>,
         }))
       : requestedItems.map((req) => {
           const quoteItem = quote.items.find((i) => i.id === req.quoteItemId)!
@@ -166,6 +166,7 @@ export async function POST(request: NextRequest) {
             additionals: quoteItem.additionals.map((additional) => ({
               name: additional.product.name,
               unitPrice: Number(additional.listPrice),
+              sku: additional.product.sku || '',
             })),
           }
         })

@@ -590,10 +590,10 @@ export default function AnalisisCrediticioPage() {
                         width={110}
                       />
                       <Tooltip
-                        formatter={(value: number) => [
+                        formatter={((value: number) => [
                           `${value} – ${SITUACION_LABEL[value] ?? ''}`,
                           'Situación',
-                        ]}
+                        ]) as never}
                         labelFormatter={(label) => `Período: ${label}`}
                       />
                       <ReferenceLine y={1} stroke="#22c55e" strokeDasharray="4 2" strokeWidth={1} />

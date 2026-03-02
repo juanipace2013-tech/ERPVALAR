@@ -167,6 +167,7 @@ export async function POST(
         additionals: item.additionals.map((additional) => ({
           name: additional.product.name,
           unitPrice: Number(additional.listPrice),
+          sku: additional.product.sku || '',
         })),
       })),
     };

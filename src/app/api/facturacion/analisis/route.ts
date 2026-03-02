@@ -24,9 +24,9 @@ export async function GET(request: NextRequest) {
     const brand = searchParams.get('brand')
     const status = searchParams.get('status')
 
-    // Construir filtro base
+    // Construir filtro base: FAV (SALE), NDV (DEBIT_NOTE) y NCV (CREDIT_NOTE)
     const where: Record<string, unknown> = {
-      transactionType: 'SALE',
+      transactionType: { in: ['SALE', 'CREDIT_NOTE', 'DEBIT_NOTE'] },
     }
 
     if (dateFrom || dateTo) {
@@ -71,6 +71,8 @@ export async function GET(request: NextRequest) {
         id: true,
         invoiceNumber: true,
         invoiceType: true,
+        transactionType: true,
+        notes: true,
         issueDate: true,
         dueDate: true,
         status: true,
@@ -100,25 +102,37 @@ export async function GET(request: NextRequest) {
     })
 
     // 2. Calcular totales separados por moneda + total general en USD
+    // IMPORTANTE: Las notas de crédito (CREDIT_NOTE) se RESTAN del total
     let totalUSD = 0       // Solo facturas en USD (sumadas en USD)
     let totalARS = 0       // Solo facturas en ARS (sumadas en ARS)
     let totalGeneralUSD = 0 // Todo convertido a USD
+    let totalCreditNotesUSD = 0 // NC en USD (para info)
+    let totalCreditNotesARS = 0 // NC en ARS (para info)
     const totalFacturas = invoices.length
+    const totalNC = invoices.filter(inv => inv.transactionType === 'CREDIT_NOTE').length
 
     for (const inv of invoices) {
       const total = Number(inv.total)
+      const esNC = inv.transactionType === 'CREDIT_NOTE'
+      // Las NC se restan: multiplicador -1 para NC, +1 para FAV/NDV
+      const signo = esNC ? -1 : 1
+
       if (inv.currency === 'USD') {
-        totalUSD += total
-        totalGeneralUSD += total
+        totalUSD += total * signo
+        totalGeneralUSD += total * signo
+        if (esNC) totalCreditNotesUSD += total
       } else {
-        totalARS += total
+        totalARS += total * signo
         // Convertir ARS a USD usando el TC de la factura
         const tc = Number(inv.exchangeRate || 0)
-        totalGeneralUSD += tc > 1 ? total / tc : 0
+        const totalEnUSD = tc > 1 ? total / tc : 0
+        totalGeneralUSD += totalEnUSD * signo
+        if (esNC) totalCreditNotesARS += total
       }
     }
 
-    const ticketPromedio = totalFacturas > 0 ? totalGeneralUSD / totalFacturas : 0
+    const facturasSinNC = totalFacturas - totalNC
+    const ticketPromedio = facturasSinNC > 0 ? totalGeneralUSD / facturasSinNC : 0
 
     // 3. Comparación vs mes anterior
     const now = new Date()
@@ -128,20 +142,21 @@ export async function GET(request: NextRequest) {
 
     const [currentMonthInvoices, prevMonthInvoices] = await Promise.all([
       prisma.invoice.findMany({
-        where: { transactionType: 'SALE', issueDate: { gte: currentMonthStart } },
-        select: { total: true, currency: true, exchangeRate: true },
+        where: { transactionType: { in: ['SALE', 'CREDIT_NOTE', 'DEBIT_NOTE'] }, issueDate: { gte: currentMonthStart } },
+        select: { total: true, currency: true, exchangeRate: true, transactionType: true },
       }),
       prisma.invoice.findMany({
-        where: { transactionType: 'SALE', issueDate: { gte: prevMonthStart, lte: prevMonthEnd } },
-        select: { total: true, currency: true, exchangeRate: true },
+        where: { transactionType: { in: ['SALE', 'CREDIT_NOTE', 'DEBIT_NOTE'] }, issueDate: { gte: prevMonthStart, lte: prevMonthEnd } },
+        select: { total: true, currency: true, exchangeRate: true, transactionType: true },
       }),
     ])
 
-    const toUSD = (inv: { total: unknown; currency: string; exchangeRate: unknown }) => {
+    const toUSD = (inv: { total: unknown; currency: string; exchangeRate: unknown; transactionType: string }) => {
       const total = Number(inv.total)
-      if (inv.currency === 'USD') return total
+      const signo = inv.transactionType === 'CREDIT_NOTE' ? -1 : 1
+      if (inv.currency === 'USD') return total * signo
       const tc = Number(inv.exchangeRate || 0)
-      return tc > 1 ? total / tc : 0
+      return tc > 1 ? (total / tc) * signo : 0
     }
 
     const currentMonthTotal = currentMonthInvoices.reduce((sum, inv) => sum + toUSD(inv), 0)
@@ -154,8 +169,8 @@ export async function GET(request: NextRequest) {
     // 4. Facturación mensual (últimos 12 meses)
     const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1)
     const monthlyInvoices = await prisma.invoice.findMany({
-      where: { transactionType: 'SALE', issueDate: { gte: twelveMonthsAgo } },
-      select: { total: true, currency: true, exchangeRate: true, issueDate: true },
+      where: { transactionType: { in: ['SALE', 'CREDIT_NOTE', 'DEBIT_NOTE'] }, issueDate: { gte: twelveMonthsAgo } },
+      select: { total: true, currency: true, exchangeRate: true, issueDate: true, transactionType: true },
     })
 
     const monthlyData: Record<string, number> = {}
@@ -169,7 +184,7 @@ export async function GET(request: NextRequest) {
       const d = new Date(inv.issueDate)
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
       if (monthlyData[key] !== undefined) {
-        monthlyData[key] += toUSD(inv)
+        monthlyData[key] += toUSD(inv as typeof monthlyInvoices[0])
       }
     }
 
@@ -179,46 +194,47 @@ export async function GET(request: NextRequest) {
       total: Math.round(total * 100) / 100,
     }))
 
-    // 5. Facturación por vendedor (desde facturas filtradas)
+    // 5. Facturación por vendedor (desde facturas filtradas, NC restan)
     const porVendedor: Record<string, { name: string; total: number }> = {}
     for (const inv of invoices) {
       const key = inv.user.id
       if (!porVendedor[key]) {
         porVendedor[key] = { name: inv.user.name, total: 0 }
       }
-      porVendedor[key].total += toUSD(inv)
+      porVendedor[key].total += toUSD(inv as Parameters<typeof toUSD>[0])
     }
     const facturacionPorVendedor = Object.values(porVendedor)
       .sort((a, b) => b.total - a.total)
       .map((v) => ({ ...v, total: Math.round(v.total * 100) / 100 }))
 
-    // 6. Top 10 clientes
+    // 6. Top 10 clientes (NC restan)
     const porCliente: Record<string, { name: string; total: number }> = {}
     for (const inv of invoices) {
       const key = inv.customer.id
       if (!porCliente[key]) {
         porCliente[key] = { name: inv.customer.name, total: 0 }
       }
-      porCliente[key].total += toUSD(inv)
+      porCliente[key].total += toUSD(inv as Parameters<typeof toUSD>[0])
     }
     const topClientes = Object.values(porCliente)
       .sort((a, b) => b.total - a.total)
       .slice(0, 10)
       .map((c) => ({ ...c, total: Math.round(c.total * 100) / 100 }))
 
-    // 7. Top 10 productos
+    // 7. Top 10 productos (NC restan)
     const porProducto: Record<string, { name: string; total: number; qty: number }> = {}
     for (const inv of invoices) {
       // Items ya están en la moneda original de la factura
       const rate = inv.currency === 'USD' ? 1 : (Number(inv.exchangeRate || 0) > 1 ? 1 / Number(inv.exchangeRate) : 0)
+      const signo = inv.transactionType === 'CREDIT_NOTE' ? -1 : 1
       for (const item of inv.items) {
         const key = item.productId || item.description || 'sin-producto'
         const name = item.product?.name || item.description || item.product?.sku || 'Sin nombre'
         if (!porProducto[key]) {
           porProducto[key] = { name, total: 0, qty: 0 }
         }
-        porProducto[key].total += Number(item.subtotal) * rate
-        porProducto[key].qty += Number(item.quantity)
+        porProducto[key].total += Number(item.subtotal) * rate * signo
+        porProducto[key].qty += Number(item.quantity) * signo
       }
     }
     const topProductos = Object.values(porProducto)
@@ -226,14 +242,15 @@ export async function GET(request: NextRequest) {
       .slice(0, 10)
       .map((p) => ({ ...p, total: Math.round(p.total * 100) / 100 }))
 
-    // 8. Facturación por marca
+    // 8. Facturación por marca (NC restan)
     const porMarca: Record<string, number> = {}
     for (const inv of invoices) {
       const rate = inv.currency === 'USD' ? 1 : (Number(inv.exchangeRate || 0) > 1 ? 1 / Number(inv.exchangeRate) : 0)
+      const signo = inv.transactionType === 'CREDIT_NOTE' ? -1 : 1
       for (const item of inv.items) {
         const brandName = item.product?.brand || 'Sin marca'
         if (!porMarca[brandName]) porMarca[brandName] = 0
-        porMarca[brandName] += Number(item.subtotal) * rate
+        porMarca[brandName] += Number(item.subtotal) * rate * signo
       }
     }
     const facturacionPorMarca = Object.entries(porMarca)
@@ -250,29 +267,42 @@ export async function GET(request: NextRequest) {
     const marcas = marcasResult.map((m) => m.brand).filter(Boolean) as string[]
 
     return NextResponse.json({
-      invoices: invoices.map((inv) => ({
-        id: inv.id,
-        invoiceNumber: inv.invoiceNumber,
-        invoiceType: inv.invoiceType,
-        issueDate: inv.issueDate,
-        dueDate: inv.dueDate,
-        customer: inv.customer,
-        salesPerson: inv.user,
-        status: inv.status,
-        paymentStatus: inv.paymentStatus,
-        currency: inv.currency,
-        exchangeRate: inv.exchangeRate,
-        subtotal: inv.subtotal,
-        taxAmount: inv.taxAmount,
-        discount: inv.discount,
-        total: inv.total,
-        colppyId: inv.colppyId,
-      })),
+      invoices: invoices.map((inv) => {
+        // Extraer label del comprobante del campo notes: "FAV A - ..." → "FAV-A"
+        const noteParts = (inv.notes || '').split(' - ')
+        const compLabelRaw = noteParts[0] || ''
+        const compParts = compLabelRaw.split(' ')
+        const comprobanteLabel = compParts.length >= 2 ? `${compParts[0]}-${compParts[1]}` : compLabelRaw
+
+        return {
+          id: inv.id,
+          invoiceNumber: inv.invoiceNumber,
+          invoiceType: inv.invoiceType,
+          transactionType: inv.transactionType,
+          comprobanteLabel,
+          issueDate: inv.issueDate,
+          dueDate: inv.dueDate,
+          customer: inv.customer,
+          salesPerson: inv.user,
+          status: inv.status,
+          paymentStatus: inv.paymentStatus,
+          currency: inv.currency,
+          exchangeRate: inv.exchangeRate,
+          subtotal: inv.subtotal,
+          taxAmount: inv.taxAmount,
+          discount: inv.discount,
+          total: inv.total,
+          colppyId: inv.colppyId,
+        }
+      }),
       resumen: {
         totalUSD: Math.round(totalUSD * 100) / 100,
         totalARS: Math.round(totalARS * 100) / 100,
         totalGeneralUSD: Math.round(totalGeneralUSD * 100) / 100,
         totalFacturas,
+        totalNC,
+        totalCreditNotesUSD: Math.round(totalCreditNotesUSD * 100) / 100,
+        totalCreditNotesARS: Math.round(totalCreditNotesARS * 100) / 100,
         ticketPromedio: Math.round(ticketPromedio * 100) / 100,
         variacionMesAnterior: Math.round(variacionMesAnterior * 10) / 10,
       },

@@ -55,7 +55,18 @@
       "Bash(git pull:*)",
       "Bash(git merge:*)",
       "Bash(powershell.exe:*)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(npm ls xlsx)",
+      "Bash(npx next build)",
+      "Bash(git status -u)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(validación\":*)",
+      "Bash(timeout /t 3)",
+      "Bash(del \"C:\\\\Users\\\\santi\\\\crm-valarg\\\\node_modules\\\\.prisma\\\\client\\\\query_engine-windows.dll.node\")",
+      "Bash(npx next dev --port 3000)",
+      "Bash(kill -9 12152)",
+      "Bash(wmic process where \"processid=12152\" get CommandLine,Name)",
+      "Bash(wmic process where \"processid=12152\" call terminate)"
     ]
   }
 }

@@ -1185,8 +1185,10 @@ enum InvoiceType {
 }
 
 enum TransactionType {
-  SALE       // Venta a cliente
-  PURCHASE   // Compra a proveedor
+  SALE         // Factura de venta (FAV)
+  PURCHASE     // Compra a proveedor
+  CREDIT_NOTE  // Nota de crédito venta (NCV) - RESTA del total
+  DEBIT_NOTE   // Nota de débito venta (NDV) - SUMA al total
 }
 
 enum InvoiceStatus {

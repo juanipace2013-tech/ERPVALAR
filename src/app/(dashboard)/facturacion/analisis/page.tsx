@@ -66,6 +66,8 @@ interface Invoice {
   id: string
   invoiceNumber: string
   invoiceType: string
+  transactionType: string
+  comprobanteLabel: string
   issueDate: string
   dueDate: string
   customer: { id: string; name: string }
@@ -86,6 +88,9 @@ interface Resumen {
   totalARS: number
   totalGeneralUSD: number
   totalFacturas: number
+  totalNC: number
+  totalCreditNotesUSD: number
+  totalCreditNotesARS: number
   ticketPromedio: number
   variacionMesAnterior: number
 }
@@ -335,7 +340,8 @@ export default function AnalisisFacturacionPage() {
 
     const rows = sortedInvoices.map((inv) => ({
       'Nº Factura': inv.invoiceNumber,
-      Tipo: inv.invoiceType,
+      Comprobante: inv.comprobanteLabel || inv.invoiceType,
+      Tipo: inv.transactionType === 'CREDIT_NOTE' ? 'Nota de Crédito' : inv.transactionType === 'DEBIT_NOTE' ? 'Nota de Débito' : 'Factura',
       Fecha: new Date(inv.issueDate).toLocaleDateString('es-AR'),
       Vencimiento: new Date(inv.dueDate).toLocaleDateString('es-AR'),
       Cliente: inv.customer.name,
@@ -344,10 +350,10 @@ export default function AnalisisFacturacionPage() {
       Pago: paymentLabels[inv.paymentStatus] || inv.paymentStatus,
       Moneda: inv.currency,
       'TC': Number(inv.exchangeRate || 1),
-      Subtotal: Number(inv.subtotal),
-      IVA: Number(inv.taxAmount),
+      Subtotal: inv.transactionType === 'CREDIT_NOTE' ? -Number(inv.subtotal) : Number(inv.subtotal),
+      IVA: inv.transactionType === 'CREDIT_NOTE' ? -Number(inv.taxAmount) : Number(inv.taxAmount),
       Descuento: Number(inv.discount),
-      Total: Number(inv.total),
+      Total: inv.transactionType === 'CREDIT_NOTE' ? -Number(inv.total) : Number(inv.total),
       Colppy: inv.colppyId ? 'Sí' : 'No',
     }))
 
@@ -631,9 +637,14 @@ export default function AnalisisFacturacionPage() {
                   <DollarSign className="h-5 w-5 text-blue-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Facturado</p>
+                  <p className="text-sm text-muted-foreground">Total Facturado (neto)</p>
                   <p className="text-2xl font-bold text-blue-900">{fmt(resumen.totalUSD)} USD</p>
                   <p className="text-xs text-muted-foreground">{fmt(resumen.totalARS, 'ARS')} ARS</p>
+                  {resumen.totalNC > 0 && (
+                    <p className="text-xs text-red-500 mt-1">
+                      NC descontadas: {resumen.totalNC} ({fmt(resumen.totalCreditNotesUSD)} USD / {fmt(resumen.totalCreditNotesARS, 'ARS')} ARS)
+                    </p>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -645,8 +656,11 @@ export default function AnalisisFacturacionPage() {
                   <FileText className="h-5 w-5 text-green-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Cantidad de Facturas</p>
+                  <p className="text-sm text-muted-foreground">Comprobantes</p>
                   <p className="text-2xl font-bold text-green-900">{resumen.totalFacturas}</p>
+                  {resumen.totalNC > 0 && (
+                    <p className="text-xs text-red-500">({resumen.totalNC} NC)</p>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -857,13 +871,20 @@ export default function AnalisisFacturacionPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sortedInvoices.map((inv) => (
-                    <TableRow key={inv.id} className="hover:bg-blue-50 transition-colors">
-                      <TableCell className="font-mono text-sm font-medium text-blue-700">
+                  {sortedInvoices.map((inv) => {
+                    const esNC = inv.transactionType === 'CREDIT_NOTE'
+                    return (
+                    <TableRow key={inv.id} className={`transition-colors ${esNC ? 'bg-red-50/50 hover:bg-red-50' : 'hover:bg-blue-50'}`}>
+                      <TableCell className={`font-mono text-sm font-medium ${esNC ? 'text-red-700' : 'text-blue-700'}`}>
                         {inv.invoiceNumber}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline">{inv.invoiceType}</Badge>
+                        <Badge
+                          variant="outline"
+                          className={esNC ? 'border-red-300 text-red-700 bg-red-50' : inv.comprobanteLabel.startsWith('NDV') ? 'border-orange-300 text-orange-700 bg-orange-50' : ''}
+                        >
+                          {inv.comprobanteLabel || inv.invoiceType}
+                        </Badge>
                       </TableCell>
                       <TableCell className="text-sm text-gray-600">{fmtDate(inv.issueDate)}</TableCell>
                       <TableCell className="font-medium text-gray-900">{inv.customer.name}</TableCell>
@@ -911,11 +932,12 @@ export default function AnalisisFacturacionPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-sm">{inv.currency}</TableCell>
-                      <TableCell className="text-right font-semibold">
-                        {fmt(Number(inv.total), inv.currency === 'ARS' ? 'ARS' : 'USD')}
+                      <TableCell className={`text-right font-semibold ${esNC ? 'text-red-600' : ''}`}>
+                        {esNC ? '-' : ''}{fmt(Number(inv.total), inv.currency === 'ARS' ? 'ARS' : 'USD')}
                       </TableCell>
                     </TableRow>
-                  ))}
+                    )
+                  })}
                 </TableBody>
               </Table>
             </div>

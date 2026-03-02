@@ -740,6 +740,7 @@ export async function sendQuoteToColppy(
       additionals?: Array<{
         name: string;
         unitPrice: number;
+        sku: string;
       }>;
     }>;
   }
@@ -773,13 +774,19 @@ export async function sendQuoteToColppy(
         descripcion: item.productName,
         cantidad: item.quantity,
         precioUnitario: item.unitPrice,
+        productSku: item.productSku,
+        ivaPercent: item.iva || 21,
+        comentario: item.comentario,
       };
 
-      // Adicionales como items separados
+      // Adicionales como items separados (cada uno con su propio SKU/código)
       const additionalItems = (item.additionals || []).map((additional) => ({
         descripcion: `${item.productName} - ${additional.name}`,
         cantidad: item.quantity,
         precioUnitario: additional.unitPrice,
+        productSku: additional.sku,
+        ivaPercent: item.iva || 21,
+        comentario: item.comentario,
       }));
 
       return [mainItem, ...additionalItems];
@@ -875,18 +882,19 @@ export async function sendQuoteToColppy(
       fechaVtoDate.setDate(fechaVtoDate.getDate() + diasVto);
       const fechaVto = formatDateColppy(fechaVtoDate);
 
-      // Buscar idItem de Colppy para cada producto por SKU
+      // Buscar idItem de Colppy para cada producto por SKU (incluye adicionales)
       const colppyItemIds: Record<string, string> = {};
-      for (const item of quote.items) {
+      for (const item of preparedItems) {
         if (item.productSku && !colppyItemIds[item.productSku]) {
           colppyItemIds[item.productSku] = await getColppyItemId(session, item.productSku);
         }
       }
 
       // Calcular totales para Colppy
+      // Cada preparedItem tiene su propio SKU, IVA% y comentario (tanto principales como adicionales)
       let netoGravado = 0;
       const itemsFactura = itemsConIVA.map((item, index) => {
-        const quoteItem = quote.items[Math.floor(index / (1 + (quote.items[0]?.additionals?.length || 0)))];
+        const prepItem = preparedItems[index]; // Índices alineados: preparedItems → itemsConIVA
 
         // Convertir a números (pueden venir como strings de los inputs)
         const cantidad = Number(item.cantidad);
@@ -898,16 +906,16 @@ export async function sendQuoteToColppy(
         netoGravado += importeTotal;
 
         return {
-          idItem: colppyItemIds[quoteItem?.productSku] || '0',
+          idItem: colppyItemIds[prepItem.productSku] || '0',
           tipoItem: 'P' as 'P', // P para productos
           Descripcion: item.descripcion,
           ImporteUnitario: String(Number(importeUnitario).toFixed(2)),
           importeTotal: String(Number(importeTotal).toFixed(2)),
           importeIva: String(Number(importeIva).toFixed(2)),
-          IVA: String(Number(quoteItem?.iva || 21).toFixed(2)),
+          IVA: String(Number(prepItem.ivaPercent).toFixed(2)),
           Cantidad: String(cantidad),
           unidadMedida: 'Un',
-          Comentario: quoteItem?.comentario || `Cotización ${quote.quoteNumber}${quote.notes ? ' / ' + quote.notes : ''}`,
+          Comentario: prepItem.comentario || `Cotización ${quote.quoteNumber}`,
           porcDesc: '0',
           idPlanCuenta: 'Ventas',
         };

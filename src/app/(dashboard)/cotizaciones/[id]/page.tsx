@@ -1054,8 +1054,8 @@ export default function QuoteDetailPage() {
                   Agregar Item
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
+              <DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+                <DialogHeader className="shrink-0">
                   <DialogTitle>
                     {editingItemId
                       ? 'Editar Item'
@@ -1072,7 +1072,7 @@ export default function QuoteDetailPage() {
                   </DialogDescription>
                 </DialogHeader>
 
-                <div className="space-y-6">
+                <div className="overflow-y-auto flex-1 pr-1 space-y-6">
                   {/* Mode toggle */}
                   {!itemFormData.isAlternative && (
                     <div className="flex rounded-lg border border-gray-200 overflow-hidden">
@@ -1194,273 +1194,294 @@ export default function QuoteDetailPage() {
                     </div>
                   )}
 
-                  {/* ── CATALOG SEARCH ── */}
-                  {!itemFormData.isManual && (<>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label>Buscar Producto</Label>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={handleRefreshStock}
-                        disabled={refreshingStock}
-                        className="text-xs"
-                      >
-                        <RefreshCw className={`h-3 w-3 mr-1 ${refreshingStock ? 'animate-spin' : ''}`} />
-                        Actualizar Stock
-                      </Button>
-                    </div>
-                    <Input
-                      placeholder="Buscar por SKU, nombre o marca... (mín. 2 caracteres)"
-                      value={productSearch}
-                      onChange={(e) => setProductSearch(e.target.value)}
-                      className="mb-2"
-                    />
-                    <div className="max-h-[200px] overflow-y-auto border rounded-md">
-                      {searchLoading ? (
-                        <div className="p-8 text-center text-muted-foreground">
-                          <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
-                          <p className="text-sm">Buscando productos...</p>
+                  {/* ── CATALOG SEARCH — Layout 2 columnas ── */}
+                  {!itemFormData.isManual && (
+                  <div className="grid grid-cols-5 gap-6">
+                    {/* ═══ COLUMNA IZQUIERDA (60%): Búsqueda + Datos ═══ */}
+                    <div className="col-span-3 space-y-4">
+                      {/* Buscar Producto */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <Label>Buscar Producto</Label>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleRefreshStock}
+                            disabled={refreshingStock}
+                            className="text-xs"
+                          >
+                            <RefreshCw className={`h-3 w-3 mr-1 ${refreshingStock ? 'animate-spin' : ''}`} />
+                            Actualizar Stock
+                          </Button>
                         </div>
-                      ) : productSearch.length >= 2 && filteredProducts.length === 0 ? (
-                        <div className="p-8 text-center text-muted-foreground">
-                          <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                          <p className="text-sm">No se encontraron productos</p>
-                          <p className="text-xs">Intenta con otro término de búsqueda</p>
+                        <Input
+                          placeholder="Buscar por SKU, nombre o marca... (mín. 2 caracteres)"
+                          value={productSearch}
+                          onChange={(e) => setProductSearch(e.target.value)}
+                        />
+                        <div className="max-h-[200px] overflow-y-auto border rounded-md">
+                          {searchLoading ? (
+                            <div className="p-8 text-center text-muted-foreground">
+                              <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+                              <p className="text-sm">Buscando productos...</p>
+                            </div>
+                          ) : productSearch.length >= 2 && filteredProducts.length === 0 ? (
+                            <div className="p-8 text-center text-muted-foreground">
+                              <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                              <p className="text-sm">No se encontraron productos</p>
+                              <p className="text-xs">Intenta con otro término de búsqueda</p>
+                            </div>
+                          ) : productSearch.length < 2 ? (
+                            <div className="p-8 text-center text-muted-foreground">
+                              <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                              <p className="text-sm">Escribe al menos 2 caracteres para buscar</p>
+                            </div>
+                          ) : null}
+                          {!searchLoading && filteredProducts.map((product) => (
+                            <div
+                              key={product.id}
+                              className={`p-3 cursor-pointer hover:bg-blue-50 border-b last:border-b-0 ${
+                                itemFormData.productId === product.id
+                                  ? 'bg-blue-100'
+                                  : ''
+                              }`}
+                              onClick={() => {
+                                setSelectedProduct(product)
+                                setItemFormData({
+                                  ...itemFormData,
+                                  productId: product.id,
+                                  description: product.name,
+                                })
+                                setProductSearch('')
+                              }}
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <p className="font-medium">{product.name}</p>
+                                  <p className="text-sm text-muted-foreground">
+                                    SKU: {product.sku}
+                                    {product.brand && ` | Marca: ${product.brand}`}
+                                  </p>
+                                  <div className="mt-1">
+                                    <StockBadge
+                                      sku={product.sku}
+                                      stock={stockData[product.sku]?.stock}
+                                      found={stockData[product.sku]?.found}
+                                      loading={stockLoading}
+                                      size="sm"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <p className="font-mono font-semibold">
+                                    USD {product.listPriceUSD ? formatNumber(product.listPriceUSD) : '0,00'}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      ) : productSearch.length < 2 ? (
-                        <div className="p-8 text-center text-muted-foreground">
-                          <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                          <p className="text-sm">Escribe al menos 2 caracteres para buscar</p>
+                      </div>
+
+                      {/* Producto Seleccionado */}
+                      {itemFormData.productId && selectedProduct && (
+                        <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium line-clamp-2">{selectedProduct.name}</p>
+                            <p className="text-xs text-muted-foreground font-mono">SKU: {selectedProduct.sku}</p>
+                          </div>
+                          <span className="text-sm font-mono font-semibold shrink-0 ml-3">USD {formatNumber(selectedProduct.listPriceUSD || 0)}</span>
                         </div>
-                      ) : null}
-                      {!searchLoading && filteredProducts.map((product) => (
-                        <div
-                          key={product.id}
-                          className={`p-3 cursor-pointer hover:bg-blue-50 border-b last:border-b-0 ${
-                            itemFormData.productId === product.id
-                              ? 'bg-blue-100'
-                              : ''
-                          }`}
-                          onClick={() => {
-                            setSelectedProduct(product)
+                      )}
+
+                      {/* Cantidad + Descripción */}
+                      <div className="grid gap-4 grid-cols-2">
+                        <div className="space-y-2">
+                          <Label>Cantidad</Label>
+                          <Input
+                            type="number"
+                            min="1"
+                            value={itemFormData.quantity}
+                            onChange={(e) =>
+                              setItemFormData({
+                                ...itemFormData,
+                                quantity: parseInt(e.target.value) || 1,
+                              })
+                            }
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Descripción (Opcional)</Label>
+                          <Input
+                            value={itemFormData.description}
+                            onChange={(e) =>
+                              setItemFormData({
+                                ...itemFormData,
+                                description: e.target.value,
+                              })
+                            }
+                            placeholder="Descripción personalizada..."
+                          />
+                        </div>
+                      </div>
+
+                      {/* Plazo de Entrega */}
+                      <div className="space-y-2">
+                        <Label>Plazo de Entrega</Label>
+                        <Input
+                          value={itemFormData.deliveryTime}
+                          onChange={(e) =>
                             setItemFormData({
                               ...itemFormData,
-                              productId: product.id,
-                              description: product.name,
+                              deliveryTime: e.target.value,
                             })
-                            setProductSearch('')
-                          }}
-                        >
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <p className="font-medium">{product.name}</p>
-                              <p className="text-sm text-muted-foreground">
-                                SKU: {product.sku}
-                                {product.brand && ` | Marca: ${product.brand}`}
-                              </p>
-                              <div className="mt-1">
-                                <StockBadge
-                                  sku={product.sku}
-                                  stock={stockData[product.sku]?.stock}
-                                  found={stockData[product.sku]?.found}
-                                  loading={stockLoading}
-                                  size="sm"
-                                />
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <p className="font-mono font-semibold">
-                                USD {product.listPriceUSD ? formatNumber(product.listPriceUSD) : '0,00'}
-                              </p>
-                            </div>
-                          </div>
+                          }
+                          placeholder="Ej: Inmediato, 15 días, 30 días..."
+                        />
+                      </div>
+                    </div>
+
+                    {/* ═══ COLUMNA DERECHA (40%): Adicionales + Precio ═══ */}
+                    <div className="col-span-2 space-y-4">
+                      {/* Adicionales */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-sm font-semibold">Adicionales</Label>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-3 text-xs"
+                            onClick={handleAddAdditional}
+                            disabled={itemFormData.additionals.length >= 5}
+                          >
+                            <Plus className="h-3 w-3 mr-1" />
+                            Agregar ({itemFormData.additionals.length}/5)
+                          </Button>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Selected Product */}
-                  {itemFormData.productId && selectedProduct && (
-                    <div className="px-3 py-2 bg-blue-50 rounded-md">
-                      <p className="font-medium text-sm line-clamp-2">
-                        {selectedProduct.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        SKU: {selectedProduct.sku} | USD {formatNumber(selectedProduct.listPriceUSD || 0)}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Quantity */}
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label>Cantidad</Label>
-                      <Input
-                        type="number"
-                        min="1"
-                        value={itemFormData.quantity}
-                        onChange={(e) =>
-                          setItemFormData({
-                            ...itemFormData,
-                            quantity: parseInt(e.target.value) || 1,
-                          })
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Descripción (Opcional)</Label>
-                      <Input
-                        value={itemFormData.description}
-                        onChange={(e) =>
-                          setItemFormData({
-                            ...itemFormData,
-                            description: e.target.value,
-                          })
-                        }
-                        placeholder="Descripción personalizada..."
-                      />
-                    </div>
-                  </div>
-
-                  {/* Delivery Time */}
-                  <div className="space-y-2">
-                    <Label>Plazo de Entrega</Label>
-                    <Input
-                      value={itemFormData.deliveryTime}
-                      onChange={(e) =>
-                        setItemFormData({
-                          ...itemFormData,
-                          deliveryTime: e.target.value,
-                        })
-                      }
-                      placeholder="Ej: Inmediato, 15 días, 30 días..."
-                    />
-                  </div>
-
-                  {/* Additionals */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-2">
-                      <Label className="shrink-0">Adicionales (Máx. 5)</Label>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-6 px-2 text-xs"
-                        onClick={handleAddAdditional}
-                        disabled={itemFormData.additionals.length >= 5}
-                      >
-                        <Plus className="h-3 w-3 mr-1" />
-                        Agregar
-                      </Button>
-                    </div>
-                    {itemFormData.additionals.length > 0 && (
-                      <div className="max-h-[160px] overflow-y-auto space-y-1">
-                        {itemFormData.additionals.map((additional, index) => (
-                          <div key={index}>
-                            {additional.productId ? (
-                              <div className="flex items-center gap-1.5 bg-gray-50 rounded px-2 py-1 min-w-0 h-7">
-                                {additional.productSku && <span className="font-mono text-xs text-muted-foreground shrink-0">{additional.productSku}</span>}
-                                {additional.productSku && <span className="text-xs text-muted-foreground shrink-0">-</span>}
-                                <span className="text-xs truncate min-w-0 flex-1">
-                                  {additional.productName || 'Producto seleccionado'}
-                                </span>
-                                <span className="text-xs font-mono text-muted-foreground shrink-0">
-                                  USD {formatNumber(additional.listPrice)}
-                                </span>
-                                <Button type="button" size="sm" variant="ghost" className="h-5 w-5 p-0 shrink-0" onClick={() => handleRemoveAdditional(index)}>
-                                  <X className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            ) : (
-                              <div className="relative">
-                                <div className="flex items-center gap-1">
-                                  <Search className="h-3 w-3 text-muted-foreground shrink-0" />
-                                  <Input
-                                    placeholder="Buscar adicional..."
-                                    value={additionalSearchTerms[index] || ''}
-                                    onChange={(e) => setAdditionalSearchTerms(prev => ({ ...prev, [index]: e.target.value }))}
-                                    className="h-7 text-xs"
-                                  />
-                                  <Button type="button" size="sm" variant="ghost" className="h-5 w-5 p-0 shrink-0" onClick={() => handleRemoveAdditional(index)}>
-                                    <X className="h-3 w-3" />
-                                  </Button>
+                        <div className="max-h-[300px] overflow-y-auto space-y-2">
+                          {itemFormData.additionals.length === 0 && (
+                            <div className="text-center py-4 text-muted-foreground border border-dashed rounded-lg">
+                              <Package className="h-5 w-5 mx-auto mb-1 opacity-40" />
+                              <p className="text-xs">Sin adicionales</p>
+                            </div>
+                          )}
+                          {itemFormData.additionals.map((additional, index) => (
+                            <div key={index}>
+                              {additional.productId ? (
+                                /* Card de adicional seleccionado */
+                                <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-medium truncate">{additional.productName || 'Producto seleccionado'}</p>
+                                    <p className="text-xs text-muted-foreground font-mono">SKU: {additional.productSku || '—'}</p>
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0 ml-2">
+                                    <span className="text-sm font-mono font-semibold">USD {formatNumber(additional.listPrice)}</span>
+                                    <Button type="button" size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => handleRemoveAdditional(index)}>
+                                      <X className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
                                 </div>
-                                {(additionalSearchResults[index]?.length > 0) && (
-                                  <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-40 overflow-y-auto">
-                                    {additionalSearchResults[index].map((product) => (
-                                      <button
-                                        key={product.id}
-                                        type="button"
-                                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-blue-50 border-b last:border-0"
-                                        onClick={() => {
-                                          handleUpdateAdditional(index, product)
-                                          setAdditionalSearchTerms(prev => ({ ...prev, [index]: '' }))
-                                          setAdditionalSearchResults(prev => ({ ...prev, [index]: [] }))
-                                        }}
-                                      >
-                                        <span className="font-mono text-xs text-muted-foreground">{product.sku}</span>{' '}
-                                        {product.name}
-                                        <span className="float-right text-xs font-mono">
-                                          USD {product.listPriceUSD ? formatNumber(product.listPriceUSD) : '0,00'}
-                                        </span>
-                                      </button>
-                                    ))}
+                              ) : (
+                                /* Buscador de adicional */
+                                <div className="relative">
+                                  <div className="flex items-center gap-2">
+                                    <Input
+                                      placeholder="Buscar por SKU o nombre..."
+                                      value={additionalSearchTerms[index] || ''}
+                                      onChange={(e) => setAdditionalSearchTerms(prev => ({ ...prev, [index]: e.target.value }))}
+                                      className="text-sm"
+                                    />
+                                    <Button type="button" size="sm" variant="ghost" className="h-8 w-8 p-0 shrink-0 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => handleRemoveAdditional(index)}>
+                                      <X className="h-4 w-4" />
+                                    </Button>
                                   </div>
-                                )}
-                                {additionalSearchLoading[index] && (
-                                  <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg p-2 text-center">
-                                    <Loader2 className="h-4 w-4 animate-spin inline" />
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        ))}
+                                  {(additionalSearchResults[index]?.length > 0) && (
+                                    <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                                      {additionalSearchResults[index].map((product) => (
+                                        <button
+                                          key={product.id}
+                                          type="button"
+                                          className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b last:border-0"
+                                          onClick={() => {
+                                            handleUpdateAdditional(index, product)
+                                            setAdditionalSearchTerms(prev => ({ ...prev, [index]: '' }))
+                                            setAdditionalSearchResults(prev => ({ ...prev, [index]: [] }))
+                                          }}
+                                        >
+                                          <div className="flex items-center justify-between">
+                                            <div className="min-w-0 flex-1">
+                                              <p className="text-sm truncate">{product.name}</p>
+                                              <p className="text-xs text-muted-foreground font-mono">SKU: {product.sku}</p>
+                                            </div>
+                                            <span className="text-xs font-mono font-semibold shrink-0 ml-2">
+                                              USD {product.listPriceUSD ? formatNumber(product.listPriceUSD) : '0,00'}
+                                            </span>
+                                          </div>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {additionalSearchLoading[index] && (
+                                    <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg p-3 text-center">
+                                      <Loader2 className="h-4 w-4 animate-spin inline" />
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    )}
-                  </div>
 
-                  {/* Price Preview */}
-                  {itemFormData.productId && (
-                    <div className="bg-gradient-to-r from-blue-50 to-blue-100 border border-blue-200 rounded-lg px-3 py-2 space-y-1">
-                      <p className="text-xs font-semibold text-blue-900 flex items-center gap-1.5 mb-1">
-                        <Calculator className="h-3.5 w-3.5" />
-                        Cálculo de Precio
-                      </p>
-                      <div className="flex justify-between text-xs">
-                        <span>Precio Lista:</span>
-                        <span className="font-mono">USD {formatNumber(pricePreview.listPrice)}</span>
-                      </div>
-                      {pricePreview.additionalsTotal > 0 && (
-                        <div className="flex justify-between text-xs">
-                          <span>+ Adicionales:</span>
-                          <span className="font-mono">USD {formatNumber(pricePreview.additionalsTotal)}</span>
+                      {/* Cálculo de Precio */}
+                      {itemFormData.productId && (
+                        <div className="bg-gradient-to-b from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-4 space-y-2">
+                          <p className="text-sm font-semibold text-blue-900 flex items-center gap-1.5 pb-2 border-b border-blue-200">
+                            <Calculator className="h-4 w-4" />
+                            Cálculo de Precio
+                          </p>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Precio Lista:</span>
+                            <span className="font-mono">USD {formatNumber(pricePreview.listPrice)}</span>
+                          </div>
+                          {itemFormData.additionals.filter(a => a.productId).map((add, i) => (
+                            <div key={i} className="flex justify-between text-sm text-blue-700">
+                              <span className="truncate mr-2">+ {add.productName || add.productSku}</span>
+                              <span className="font-mono shrink-0">USD {formatNumber(add.listPrice)}</span>
+                            </div>
+                          ))}
+                          {pricePreview.additionalsTotal > 0 && (
+                            <div className="flex justify-between text-xs text-muted-foreground border-t border-blue-200 pt-1">
+                              <span>Subtotal:</span>
+                              <span className="font-mono">USD {formatNumber(pricePreview.subtotalWithAdditionals)}</span>
+                            </div>
+                          )}
+                          {pricePreview.brandDiscount > 0 && (
+                            <div className="flex justify-between text-sm text-green-600">
+                              <span>- Desc. Marca ({pricePreview.brandDiscount}%):</span>
+                              <span className="font-mono">-USD {formatNumber(pricePreview.subtotalWithAdditionals - pricePreview.afterDiscount)}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">x Multiplicador ({formatNumber(quote.multiplier)}x):</span>
+                            <span className="font-mono">USD {formatNumber(pricePreview.unitPrice)}</span>
+                          </div>
+                          <div className="border-t-2 border-blue-300 pt-2 mt-1">
+                            <div className="flex justify-between font-bold text-base text-blue-900">
+                              <span>Total ({itemFormData.quantity} ud):</span>
+                              <span className="font-mono">USD {formatNumber(pricePreview.totalPrice)}</span>
+                            </div>
+                            <p className="text-right text-xs text-muted-foreground font-mono mt-0.5">
+                              ARS {formatNumber(pricePreview.totalPrice * Number(quote.exchangeRate))}
+                            </p>
+                          </div>
                         </div>
                       )}
-                      {pricePreview.brandDiscount > 0 && (
-                        <div className="flex justify-between text-xs text-green-600">
-                          <span>- Desc. Marca ({pricePreview.brandDiscount}%):</span>
-                          <span className="font-mono">USD {formatNumber(pricePreview.subtotalWithAdditionals - pricePreview.afterDiscount)}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between text-xs">
-                        <span>× Multiplicador ({formatNumber(quote.multiplier)}x):</span>
-                        <span className="font-mono">USD {formatNumber(pricePreview.unitPrice)}</span>
-                      </div>
-                      <div className="border-t border-blue-300 pt-1 mt-1 flex justify-between font-bold text-sm text-blue-900">
-                        <span>Total ({itemFormData.quantity} ud):</span>
-                        <div className="text-right">
-                          <span className="font-mono">USD {formatNumber(pricePreview.totalPrice)}</span>
-                          <span className="text-xs font-normal text-muted-foreground ml-2">
-                            ARS {formatNumber(pricePreview.totalPrice * Number(quote.exchangeRate))}
-                          </span>
-                        </div>
-                      </div>
                     </div>
+                  </div>
                   )}
-                  </>)}
 
                   {/* Actions */}
                   <div className="flex justify-end gap-2">

@@ -186,12 +186,17 @@ export default function QuoteDetailPage() {
   const [searchLoading, setSearchLoading] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
 
-  // Stock data hook - consultar stock de productos filtrados
-  const filteredProductSkus = searchResults.map((p) => p.sku)
+  // Stock data hook - consultar stock de productos filtrados (main + adicionales + seleccionados)
+  const filteredProductSkus = [...new Set([
+    ...searchResults.map((p) => p.sku),
+    ...addlSearchResults.map((p) => p.sku),
+    ...(selectedProduct ? [selectedProduct.sku] : []),
+    ...itemFormData.additionals.filter(a => a.productSku).map(a => a.productSku!),
+  ])]
 
   const { stockData, loading: stockLoading } = useColppyStock(
     filteredProductSkus,
-    searchResults.length > 0 && showItemDialog
+    filteredProductSkus.length > 0 && showItemDialog
   )
 
   // Stock data para items de la cotización
@@ -1339,7 +1344,16 @@ export default function QuoteDetailPage() {
                         <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium line-clamp-2">{selectedProduct.name}</p>
-                            <p className="text-xs text-muted-foreground font-mono">SKU: {selectedProduct.sku}</p>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <span className="font-mono">SKU: {selectedProduct.sku}</span>
+                              <StockBadge
+                                sku={selectedProduct.sku}
+                                stock={stockData[selectedProduct.sku]?.stock}
+                                found={stockData[selectedProduct.sku]?.found}
+                                loading={stockLoading}
+                                size="sm"
+                              />
+                            </div>
                           </div>
                           <span className="text-sm font-mono font-semibold shrink-0 ml-3">USD {formatNumber(selectedProduct.listPriceUSD || 0)}</span>
                         </div>

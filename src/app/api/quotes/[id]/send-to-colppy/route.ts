@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
-import { sendQuoteToColppy, type SendToColppyOptions } from '@/lib/colppy';
+import { sendQuoteToColppy, type SendToColppyOptions, buildSplitItem, calcComponentPrice } from '@/lib/colppy';
 import { QuoteStatus } from '@prisma/client';
 
 // ============================================================================
@@ -133,7 +133,30 @@ export async function POST(
     }
 
     // 8. Preparar datos para Colppy
-    // Usar datos editados si están disponibles, si no usar los originales
+    // IMPORTANTE: QuoteItem.unitPrice INCLUYE adicionales (listPrice + additionalsPrices) * discount * multiplier
+    // Necesitamos descomponer el precio en principal + adicionales separados
+    const quoteItems = (editedData
+      ? editedData.items.map((editedItem) => {
+          const originalItem = quote.items.find((i) => i.id === editedItem.id);
+          if (!originalItem) {
+            return {
+              productName: editedItem.descripcion,
+              productSku: editedItem.sku,
+              quantity: editedItem.cantidad,
+              unitPrice: editedItem.precioUnitario,
+              iva: editedItem.iva,
+              comentario: editedItem.comentario,
+              deliveryTime: undefined as string | undefined,
+              additionals: [] as Array<{ name: string; unitPrice: number; sku: string }>,
+            };
+          }
+          return buildSplitItem(originalItem, calcComponentPrice, quote, editedItem);
+        })
+      : quote.items.map((item) => buildSplitItem(item, calcComponentPrice, quote))
+    );
+
+    console.log('[Send to Colppy] Items a enviar:', JSON.stringify(quoteItems, null, 2));
+
     const quoteData = {
       id: quote.id,
       quoteNumber: quote.quoteNumber,
@@ -147,29 +170,7 @@ export async function POST(
         phone: quote.customer.phone || undefined,
         email: quote.customer.email || undefined,
       },
-      items: editedData?.items.map((item) => ({
-        productName: item.descripcion,
-        productSku: item.sku,
-        quantity: item.cantidad,
-        unitPrice: item.precioUnitario,
-        iva: item.iva,
-        comentario: item.comentario,
-        deliveryTime: undefined,
-        additionals: [],
-      })) || quote.items.map((item) => ({
-        productName: item.product?.name || item.description || 'Item manual',
-        productSku: item.product?.sku || item.manualSku || '',
-        quantity: item.quantity,
-        unitPrice: Number(item.unitPrice),
-        iva: 21,
-        comentario: `Cotización ${quote.quoteNumber}${quote.notes ? ' / ' + quote.notes : ''}`,
-        deliveryTime: item.deliveryTime || undefined,
-        additionals: item.additionals.map((additional) => ({
-          name: additional.product.name,
-          unitPrice: Number(additional.listPrice),
-          sku: additional.product.sku || '',
-        })),
-      })),
+      items: quoteItems,
     };
 
     // 9. Llamar a sendQuoteToColppy

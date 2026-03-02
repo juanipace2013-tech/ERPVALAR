@@ -707,6 +707,81 @@ export async function colppyCreateInvoice(
 }
 
 // ============================================================================
+// HELPERS: Descomponer precio combinado en principal + adicionales
+// ============================================================================
+
+/** Calcula el precio de un componente aplicando descuento de marca y multiplicador */
+export function calcComponentPrice(listPrice: number, brandDiscount: number, multiplier: number): number {
+  return listPrice * (1 - brandDiscount) * multiplier;
+}
+
+/**
+ * Construye un item con precios separados: principal + cada adicional con su propio precio.
+ * QuoteItem.unitPrice INCLUYE adicionales, así que se descompone usando listPrice y brandDiscount.
+ * Si el usuario editó el precio combinado en el dialog, se escala proporcionalmente.
+ */
+export function buildSplitItem(
+  originalItem: {
+    product?: { name: string; sku: string } | null;
+    description?: string | null;
+    manualSku?: string | null;
+    quantity: number;
+    listPrice: any;
+    brandDiscount: any;
+    customerMultiplier: any;
+    unitPrice: any;
+    deliveryTime?: string | null;
+    additionals: Array<{
+      product: { name: string; sku: string };
+      listPrice: any;
+    }>;
+  },
+  calcPrice: typeof calcComponentPrice,
+  quote: { quoteNumber: string; notes?: string | null },
+  overrides?: { descripcion?: string; sku?: string; cantidad?: number; precioUnitario?: number; iva?: number; comentario?: string },
+) {
+  const brandDiscount = Number(originalItem.brandDiscount) || 0;
+  const customerMultiplier = Number(originalItem.customerMultiplier) || 1;
+  const mainListPrice = Number(originalItem.listPrice);
+
+  // Precio calculado solo del producto principal
+  const mainPrice = calcPrice(mainListPrice, brandDiscount, customerMultiplier);
+
+  // Precios calculados de cada adicional
+  const addPrices = originalItem.additionals.map((add) =>
+    calcPrice(Number(add.listPrice), brandDiscount, customerMultiplier)
+  );
+
+  // Total original (debería coincidir con QuoteItem.unitPrice)
+  const originalTotal = mainPrice + addPrices.reduce((s, p) => s + p, 0);
+
+  // Si el usuario editó el precio combinado, escalar proporcionalmente
+  const editedTotal = overrides?.precioUnitario ?? Number(originalItem.unitPrice);
+  const scaleFactor = originalTotal > 0 ? editedTotal / originalTotal : 1;
+
+  const productName = overrides?.descripcion || originalItem.product?.name || originalItem.description || 'Item manual';
+  const productSku = overrides?.sku || originalItem.product?.sku || originalItem.manualSku || '';
+  const quantity = overrides?.cantidad ?? originalItem.quantity;
+  const iva = overrides?.iva ?? 21;
+  const comentario = overrides?.comentario || `Cotización ${quote.quoteNumber}${quote.notes ? ' / ' + quote.notes : ''}`;
+
+  return {
+    productName,
+    productSku,
+    quantity,
+    unitPrice: Number((mainPrice * scaleFactor).toFixed(2)),
+    iva,
+    comentario,
+    deliveryTime: originalItem.deliveryTime || undefined,
+    additionals: originalItem.additionals.map((add, idx) => ({
+      name: add.product.name,
+      unitPrice: Number((addPrices[idx] * scaleFactor).toFixed(2)),
+      sku: add.product.sku || '',
+    })),
+  };
+}
+
+// ============================================================================
 // FUNCIÓN WRAPPER DE ALTO NIVEL
 // ============================================================================
 
@@ -791,6 +866,13 @@ export async function sendQuoteToColppy(
 
       return [mainItem, ...additionalItems];
     });
+
+    console.log(`[Colppy] preparedItems (${preparedItems.length} líneas):`, JSON.stringify(preparedItems.map(p => ({
+      sku: p.productSku,
+      desc: p.descripcion.substring(0, 40),
+      cant: p.cantidad,
+      precio: p.precioUnitario,
+    })), null, 2));
 
     // 4. Determinar tipo de factura según condición IVA
     const tipoFactura: 'A' | 'B' =

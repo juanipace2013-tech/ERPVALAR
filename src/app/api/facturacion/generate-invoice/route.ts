@@ -12,7 +12,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { sendQuoteToColppy, type SendToColppyOptions } from '@/lib/colppy'
+import { sendQuoteToColppy, type SendToColppyOptions, buildSplitItem, calcComponentPrice } from '@/lib/colppy'
 
 interface InvoiceItemRequest {
   quoteItemId: string
@@ -140,36 +140,31 @@ export async function POST(request: NextRequest) {
     }
 
     // Construir datos para Colppy
-    // Si hay editedData del dialog, usar esos datos (el usuario pudo editar)
-    // Si no, usar los datos originales de la cotización
+    // IMPORTANTE: QuoteItem.unitPrice INCLUYE adicionales (listPrice + additionalsPrices) * discount * multiplier
+    // Necesitamos descomponer el precio en principal + adicionales separados
     const colppyItems = editedData
-      ? editedData.items.map((item) => ({
-          productName: item.descripcion,
-          productSku: item.sku,
-          quantity: item.cantidad,
-          unitPrice: item.precioUnitario,
-          iva: item.iva,
-          comentario: item.comentario,
-          deliveryTime: undefined as string | undefined,
-          additionals: [] as Array<{ name: string; unitPrice: number; sku: string }>,
-        }))
+      ? editedData.items.map((editedItem) => {
+          const originalItem = quote.items.find((i) => i.id === editedItem.id)
+          if (!originalItem) {
+            return {
+              productName: editedItem.descripcion,
+              productSku: editedItem.sku,
+              quantity: editedItem.cantidad,
+              unitPrice: editedItem.precioUnitario,
+              iva: editedItem.iva,
+              comentario: editedItem.comentario,
+              deliveryTime: undefined as string | undefined,
+              additionals: [] as Array<{ name: string; unitPrice: number; sku: string }>,
+            }
+          }
+          return buildSplitItem(originalItem, calcComponentPrice, quote, editedItem)
+        })
       : requestedItems.map((req) => {
           const quoteItem = quote.items.find((i) => i.id === req.quoteItemId)!
-          return {
-            productName: quoteItem.product?.name || quoteItem.description || 'Item manual',
-            productSku: quoteItem.product?.sku || quoteItem.manualSku || '',
-            quantity: req.quantity,
-            unitPrice: Number(quoteItem.unitPrice),
-            iva: 21,
-            comentario: `Cotización ${quote.quoteNumber}${quote.notes ? ' / ' + quote.notes : ''}`,
-            deliveryTime: quoteItem.deliveryTime || undefined,
-            additionals: quoteItem.additionals.map((additional) => ({
-              name: additional.product.name,
-              unitPrice: Number(additional.listPrice),
-              sku: additional.product.sku || '',
-            })),
-          }
+          return buildSplitItem(quoteItem, calcComponentPrice, quote, { cantidad: req.quantity })
         })
+
+    console.log('[Generate Invoice] Items a enviar:', JSON.stringify(colppyItems, null, 2))
 
     // Enviar a Colppy usando la función existente
     const colppyAction = action || 'factura-cuenta-corriente'

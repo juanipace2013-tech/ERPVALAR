@@ -976,11 +976,12 @@ model QuoteItem {
   @@map("quote_items")
 }
 
-// Adicionales: hasta 5 productos complementarios por item
+// Adicionales: hasta 5 productos complementarios o manuales por item
 model QuoteItemAdditional {
   id          String     @id @default(cuid())
   quoteItemId String
-  productId   String
+  productId   String?                          // Null para adicionales manuales (sin producto)
+  description String?                          // Descripción libre para adicionales manuales
   position    Int        // 1-5 (Adicional 1, 2, 3, 4, 5)
   listPrice   Decimal    @db.Decimal(12, 2)  // Precio del adicional en USD
 
@@ -988,7 +989,7 @@ model QuoteItemAdditional {
   updatedAt   DateTime   @updatedAt
 
   quoteItem   QuoteItem  @relation(fields: [quoteItemId], references: [id], onDelete: Cascade)
-  product     Product    @relation(fields: [productId], references: [id])
+  product     Product?   @relation(fields: [productId], references: [id])
 
   @@index([quoteItemId])
   @@index([productId])

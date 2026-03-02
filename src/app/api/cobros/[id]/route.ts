@@ -53,26 +53,7 @@ export async function GET(
       where: { id },
       include: {
         customer: { select: { id: true, name: true, cuit: true, taxCondition: true } },
-        user:     { select: { id: true, name: true } },
-        invoiceApplications: {
-          include: {
-            invoice: {
-              select: {
-                id: true, invoiceNumber: true, invoiceType: true,
-                total: true, paidAmount: true, dueDate: true, issueDate: true, currency: true
-              }
-            }
-          }
-        },
-        withholdingGroups: { include: { lines: true } },
-        paymentMethods: {
-          include: {
-            treasuryAccount: {
-              include: { chartOfAccount: { select: { id: true, code: true, name: true } } }
-            }
-          }
-        },
-        journalEntry: { select: { id: true, entryNumber: true, status: true } }
+        bankAccount: true,
       }
     })
 
@@ -106,7 +87,7 @@ export async function PUT(
     if (!existing) {
       return NextResponse.json({ error: 'Recibo no encontrado' }, { status: 404 })
     }
-    if (existing.status !== 'BORRADOR') {
+    if (existing.status !== 'PENDING') {
       return NextResponse.json(
         { error: 'Solo se pueden editar recibos en estado BORRADOR' },
         { status: 422 }

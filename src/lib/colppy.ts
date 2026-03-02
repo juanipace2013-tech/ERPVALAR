@@ -732,7 +732,8 @@ export function buildSplitItem(
     unitPrice: any;
     deliveryTime?: string | null;
     additionals: Array<{
-      product: { name: string; sku: string };
+      product?: { name: string; sku: string } | null;
+      description?: string | null;
       listPrice: any;
     }>;
   },
@@ -774,9 +775,9 @@ export function buildSplitItem(
     comentario,
     deliveryTime: originalItem.deliveryTime || undefined,
     additionals: originalItem.additionals.map((add, idx) => ({
-      name: add.product.name,
+      name: add.product?.name || add.description || 'Adicional manual',
       unitPrice: Number((addPrices[idx] * scaleFactor).toFixed(2)),
-      sku: add.product.sku || '',
+      sku: add.product?.sku || '',
     })),
   };
 }

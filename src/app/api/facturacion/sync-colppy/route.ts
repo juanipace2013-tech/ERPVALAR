@@ -541,8 +541,11 @@ export async function POST(request: NextRequest) {
       let subtotalVal: number
       let taxAmountVal: number
 
-      if (idMoneda === '0' && rawRate > 0) {
-        // FACTURA EN USD: idMoneda=0 y tiene tipo de cambio válido
+      // Una factura es USD solo si idMoneda=0 Y el rate es un TC real (> 1).
+      // rate=0, rate=null, rate=1 → NO es USD (1 USD = 1 ARS no tiene sentido).
+      // Facturas con idMoneda=0 pero sin rate válido son ARS mal clasificadas en Colppy.
+      if (idMoneda === '0' && rawRate > 1) {
+        // FACTURA EN USD: idMoneda=0 y tiene tipo de cambio válido (> 1)
         monedaCode = 'USD'
         tipoCambio = rawRate
         // Convertir de ARS a USD usando el TC de Colppy

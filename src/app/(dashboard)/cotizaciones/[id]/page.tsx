@@ -48,8 +48,9 @@ interface BrandDiscount {
 }
 
 interface Additional {
-  productId: string
-  product?: Product
+  productId: string | null
+  product?: Product | null
+  description?: string | null
   listPrice: number
   position: number
 }
@@ -112,10 +113,12 @@ interface ItemFormData {
   isAlternative: boolean
   alternativeToItemId: string | null
   additionals: Array<{
-    productId: string
+    productId: string | null
     listPrice: number
     productName?: string
     productSku?: string
+    isManual?: boolean
+    manualDescription?: string
   }>
   // Manual item fields
   isManual: boolean
@@ -179,6 +182,11 @@ export default function QuoteDetailPage() {
   const [addlSearchResults, setAddlSearchResults] = useState<Product[]>([])
   const [addlSearchLoading, setAddlSearchLoading] = useState(false)
 
+  // Manual additional mini-form state
+  const [showManualAddlForm, setShowManualAddlForm] = useState(false)
+  const [manualAddlDescription, setManualAddlDescription] = useState('')
+  const [manualAddlPrice, setManualAddlPrice] = useState('')
+
   // Product search
   const [productSearch, setProductSearch] = useState('')
   const [refreshingStock, setRefreshingStock] = useState(false)
@@ -191,7 +199,7 @@ export default function QuoteDetailPage() {
     ...searchResults.map((p) => p.sku),
     ...addlSearchResults.map((p) => p.sku),
     ...(selectedProduct ? [selectedProduct.sku] : []),
-    ...itemFormData.additionals.filter(a => a.productSku).map(a => a.productSku!),
+    ...itemFormData.additionals.filter(a => a.productSku && !a.isManual).map(a => a.productSku!),
   ])]
 
   const { stockData, loading: stockLoading } = useColppyStock(
@@ -568,8 +576,9 @@ export default function QuoteDetailPage() {
             isAlternative: itemFormData.isAlternative,
             alternativeToItemId: itemFormData.alternativeToItemId,
             additionals: itemFormData.additionals.map((add) => ({
-              productId: add.productId,
+              productId: add.productId || null,
               listPrice: add.listPrice,
+              description: add.isManual ? (add.manualDescription || '') : undefined,
             })),
           }
 
@@ -632,6 +641,8 @@ export default function QuoteDetailPage() {
         listPrice: Number(add.listPrice),
         productName: add.product?.name || '',
         productSku: add.product?.sku || '',
+        isManual: !add.productId,
+        manualDescription: add.description || '',
       })),
       isManual,
       manualSku: item.manualSku || '',
@@ -685,8 +696,9 @@ export default function QuoteDetailPage() {
             description: itemFormData.description || selectedProduct?.name,
             deliveryTime: itemFormData.deliveryTime,
             additionals: itemFormData.additionals.map((add) => ({
-              productId: add.productId,
+              productId: add.productId || null,
               listPrice: add.listPrice,
+              description: add.isManual ? (add.manualDescription || '') : undefined,
             })),
           }
 
@@ -753,6 +765,33 @@ export default function QuoteDetailPage() {
     setAddlSearchResults([])
   }
 
+  const handleAddManualAdditional = () => {
+    if (itemFormData.additionals.length >= 5) {
+      toast.error('Máximo 5 adicionales por item')
+      return
+    }
+    const description = manualAddlDescription.trim()
+    const price = parseFloat(manualAddlPrice)
+    if (!description) {
+      toast.error('La descripción del adicional es obligatoria')
+      return
+    }
+    if (isNaN(price) || price < 0) {
+      toast.error('El precio debe ser un número válido')
+      return
+    }
+    setItemFormData({
+      ...itemFormData,
+      additionals: [
+        ...itemFormData.additionals,
+        { productId: null, listPrice: price, isManual: true, manualDescription: description },
+      ],
+    })
+    setManualAddlDescription('')
+    setManualAddlPrice('')
+    setShowManualAddlForm(false)
+  }
+
   const handleUpdateAdditional = (index: number, product: Product) => {
     const listPrice = product.listPriceUSD ? Number(product.listPriceUSD) : 0
 
@@ -789,6 +828,9 @@ export default function QuoteDetailPage() {
     setProductSearch('')
     setAddlSearchTerm('')
     setAddlSearchResults([])
+    setShowManualAddlForm(false)
+    setManualAddlDescription('')
+    setManualAddlPrice('')
   }
 
   const handleOpenAlternativeDialog = (parentItemId: string) => {
@@ -1475,16 +1517,90 @@ export default function QuoteDetailPage() {
                           </div>
                         )}
 
+                        {/* Botón + Adicional libre */}
+                        {itemFormData.additionals.length < 5 && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="w-full text-xs border-dashed border-orange-300 text-orange-600 hover:bg-orange-50"
+                            onClick={() => setShowManualAddlForm(!showManualAddlForm)}
+                          >
+                            <Plus className="h-3 w-3 mr-1" />
+                            + Adicional libre (sin producto)
+                          </Button>
+                        )}
+
+                        {/* Mini-form para adicional manual */}
+                        {showManualAddlForm && itemFormData.additionals.length < 5 && (
+                          <div className="border border-orange-200 bg-orange-50 rounded-lg p-3 space-y-2">
+                            <p className="text-xs font-semibold text-orange-700">Adicional libre</p>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Descripción</Label>
+                              <Input
+                                value={manualAddlDescription}
+                                onChange={(e) => setManualAddlDescription(e.target.value)}
+                                placeholder="Ej: Servicio de armado, Ensayo de presión..."
+                                className="text-sm h-8"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Precio Lista USD</Label>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={manualAddlPrice}
+                                onChange={(e) => setManualAddlPrice(e.target.value)}
+                                placeholder="0.00"
+                                className="text-sm h-8 font-mono"
+                              />
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="flex-1 h-7 text-xs bg-orange-600 hover:bg-orange-700"
+                                onClick={handleAddManualAdditional}
+                              >
+                                Agregar
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 text-xs"
+                                onClick={() => { setShowManualAddlForm(false); setManualAddlDescription(''); setManualAddlPrice('') }}
+                              >
+                                Cancelar
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+
                         {/* Lista de adicionales seleccionados */}
                         <div className="space-y-2">
-                          {itemFormData.additionals.length === 0 && !addlSearchTerm && (
+                          {itemFormData.additionals.length === 0 && !addlSearchTerm && !showManualAddlForm && (
                             <div className="text-center py-3 text-muted-foreground border border-dashed rounded-lg">
                               <Package className="h-4 w-4 mx-auto mb-1 opacity-40" />
                               <p className="text-xs">Sin adicionales</p>
                             </div>
                           )}
                           {itemFormData.additionals.map((additional, index) =>
-                            additional.productId ? (
+                            additional.isManual ? (
+                              <div key={index} className="flex items-center justify-between bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-medium truncate">{additional.manualDescription || 'Adicional libre'}</p>
+                                  <p className="text-xs text-orange-600 font-medium">Adicional libre</p>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0 ml-2">
+                                  <span className="text-sm font-mono font-semibold">USD {formatNumber(additional.listPrice)}</span>
+                                  <Button type="button" size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => handleRemoveAdditional(index)}>
+                                    <X className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : additional.productId ? (
                               <div key={index} className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
                                 <div className="min-w-0 flex-1">
                                   <p className="text-sm font-medium truncate">{additional.productName || 'Producto seleccionado'}</p>
@@ -1524,9 +1640,9 @@ export default function QuoteDetailPage() {
                             <span className="text-muted-foreground">Precio Lista:</span>
                             <span className="font-mono">USD {formatNumber(pricePreview.listPrice)}</span>
                           </div>
-                          {itemFormData.additionals.filter(a => a.productId).map((add, i) => (
-                            <div key={i} className="flex justify-between text-sm text-blue-700">
-                              <span className="truncate mr-2">+ {add.productName || add.productSku}</span>
+                          {itemFormData.additionals.map((add, i) => (
+                            <div key={i} className={`flex justify-between text-sm ${add.isManual ? 'text-orange-700' : 'text-blue-700'}`}>
+                              <span className="truncate mr-2">+ {add.isManual ? (add.manualDescription || 'Adicional libre') : (add.productName || add.productSku)}</span>
                               <span className="font-mono shrink-0">USD {formatNumber(add.listPrice)}</span>
                             </div>
                           ))}
@@ -1677,8 +1793,8 @@ export default function QuoteDetailPage() {
                                   Adicionales:
                                 </p>
                                 {mainItem.additionals.map((add, idx) => (
-                                  <p key={idx} className="text-sm text-muted-foreground">
-                                    + {add.product?.name} (USD{' '}
+                                  <p key={idx} className={`text-sm ${add.productId ? 'text-muted-foreground' : 'text-orange-600'}`}>
+                                    + {add.product?.name || add.description || 'Adicional libre'} (USD{' '}
                                     {formatNumber(add.listPrice)})
                                   </p>
                                 ))}

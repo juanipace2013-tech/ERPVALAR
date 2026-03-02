@@ -140,11 +140,17 @@ export async function POST(
 
     if (body.additionals && body.additionals.length > 0) {
       for (const add of body.additionals) {
-        const addProduct = await prisma.product.findUnique({
-          where: { id: add.productId },
-        })
-        if (addProduct && addProduct.listPriceUSD) {
-          additionalsPrices += Number(addProduct.listPriceUSD)
+        if (add.productId) {
+          // Adicional de catálogo: buscar precio del producto
+          const addProduct = await prisma.product.findUnique({
+            where: { id: add.productId },
+          })
+          if (addProduct && addProduct.listPriceUSD) {
+            additionalsPrices += Number(addProduct.listPriceUSD)
+          }
+        } else {
+          // Adicional manual: usar listPrice del request directo
+          additionalsPrices += Number(add.listPrice || 0)
         }
       }
     }
@@ -173,8 +179,9 @@ export async function POST(
         alternativeToItemId: body.alternativeToItemId,
         additionals: body.additionals
           ? {
-              create: body.additionals.map((add: { productId: string; listPrice: number }, index: number) => ({
-                productId: add.productId,
+              create: body.additionals.map((add: { productId?: string | null; description?: string; listPrice: number }, index: number) => ({
+                productId: add.productId || null,
+                description: add.description || null,
                 position: index + 1,
                 listPrice: add.listPrice,
               })),

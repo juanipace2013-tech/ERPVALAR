@@ -107,7 +107,12 @@ export async function GET(
 
           if (item.additionals.length > 0) {
             description += '\n' + item.additionals
-              .map((add) => `+ ${add.product.sku} - ${add.product.name}`)
+              .map((add) => {
+                if (add.product) {
+                  return `+ ${add.product.sku} - ${add.product.name}`
+                }
+                return `+ ${add.description || 'Adicional'}`
+              })
               .join('\n')
           }
 
@@ -115,7 +120,7 @@ export async function GET(
           let code = item.product?.sku || item.manualSku || ''
           if (item.additionals.length > 0) {
             code += '\n' + item.additionals
-              .map((add) => `+ ${add.product.sku}`)
+              .map((add) => add.product ? `+ ${add.product.sku}` : '+')
               .join('\n')
           }
 

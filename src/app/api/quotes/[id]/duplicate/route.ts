@@ -88,6 +88,7 @@ export async function POST(
             additionals: {
               create: item.additionals.map((additional) => ({
                 productId: additional.productId,
+                description: additional.description,
                 position: additional.position,
                 listPrice: additional.listPrice,
               })),

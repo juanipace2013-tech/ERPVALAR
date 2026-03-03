@@ -13,11 +13,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { execSync } from 'child_process'
 import * as crypto from 'crypto'
-import * as fs from 'fs'
-import * as path from 'path'
-import * as os from 'os'
 
 const COLPPY_ENDPOINT = 'https://login.colppy.com/lib/frontera2/service.php'
 const COLPPY_USER = process.env.COLPPY_USER || ''
@@ -30,76 +26,73 @@ function md5(text: string): string {
   return crypto.createHash('md5').update(text).digest('hex')
 }
 
-function callColppyRaw(payload: unknown): string {
-  let tempFile: string | null = null
+/**
+ * Llama a la API de Colppy usando fetch() nativo.
+ * Migrado desde execSync(curl) para mayor confiabilidad.
+ */
+async function callColppy(payload: unknown): Promise<Record<string, unknown>> {
   try {
-    tempFile = path.join(os.tmpdir(), `colppy-sync-${Date.now()}.json`)
-    fs.writeFileSync(tempFile, JSON.stringify(payload), 'utf-8')
-    const cmd = `curl -s -X POST "${COLPPY_ENDPOINT}" -H "Content-Type: application/json" -d @"${tempFile}" --max-time 120 -L`
-    return execSync(cmd, {
-      encoding: 'utf-8',
-      timeout: 130000,
-      maxBuffer: 50 * 1024 * 1024,
+    const response = await fetch(COLPPY_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      redirect: 'follow',
+      signal: AbortSignal.timeout(120000), // 120s timeout para sync (payloads grandes)
     })
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : 'Unknown error'
-    throw new Error(`Error ejecutando curl a Colppy: ${msg}`)
-  } finally {
-    if (tempFile && fs.existsSync(tempFile)) {
-      try { fs.unlinkSync(tempFile) } catch { /* ignore */ }
+
+    const responseText = await response.text()
+    const trimmed = responseText.trim()
+
+    // Verificar que la respuesta sea JSON antes de parsear
+    if (!trimmed || (!trimmed.startsWith('{') && !trimmed.startsWith('['))) {
+      const preview = trimmed.substring(0, 500)
+      console.error(`[Colppy] Respuesta NO-JSON recibida (${trimmed.length} bytes). Primeros 500 chars:\n${preview}`)
+      throw new Error(`Colppy devolvió respuesta no-JSON (${trimmed.length} bytes). Posible error de sesión, rate limit, o mantenimiento. Preview: ${preview.substring(0, 200)}`)
     }
+
+    return JSON.parse(trimmed)
+  } catch (error: unknown) {
+    if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+      throw new Error(`Timeout en llamada a Colppy (120s): ${error.message}`)
+    }
+    throw error
   }
 }
 
-function callColppy(payload: unknown): Record<string, unknown> {
-  const raw = callColppyRaw(payload)
-
-  // Verificar que la respuesta sea JSON antes de parsear
-  const trimmed = raw.trim()
-  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
-    const preview = trimmed.substring(0, 500)
-    console.error(`[Colppy] Respuesta NO-JSON recibida (${trimmed.length} bytes). Primeros 500 chars:\n${preview}`)
-    throw new Error(`Colppy devolvió respuesta no-JSON (${trimmed.length} bytes). Posible error de sesión, rate limit, o mantenimiento. Preview: ${preview.substring(0, 200)}`)
-  }
-
-  try {
-    return JSON.parse(trimmed)
-  } catch {
-    const preview = trimmed.substring(0, 500)
-    console.error(`[Colppy] Error parseando JSON (${trimmed.length} bytes). Preview:\n${preview}`)
-    throw new Error(`Error parseando respuesta Colppy como JSON. Preview: ${preview.substring(0, 200)}`)
-  }
+/** Helper: esperar N milisegundos sin bloquear el event loop */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 /**
  * Llama a Colppy con retry automático: si falla con respuesta no-JSON o error de sesión,
  * re-hace login y reintenta UNA vez.
  */
-function callColppyWithRetry(
+async function callColppyWithRetry(
   payload: unknown,
-  getNewSession: () => { claveSesion: string; passwordMD5: string },
+  getNewSession: () => Promise<{ claveSesion: string; passwordMD5: string }>,
   updatePayloadSession: (payload: unknown, claveSesion: string) => unknown
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   try {
-    return callColppy(payload)
+    return await callColppy(payload)
   } catch (firstError: unknown) {
     const msg = firstError instanceof Error ? firstError.message : ''
     console.warn(`[Colppy] Primer intento falló: ${msg.substring(0, 200)}. Re-autenticando...`)
 
     // Re-login
-    const { claveSesion } = getNewSession()
+    const { claveSesion } = await getNewSession()
     const updatedPayload = updatePayloadSession(payload, claveSesion)
 
     // Esperar 2 segundos antes de reintentar (evitar rate limit)
-    execSync('timeout /t 2 >nul 2>&1 || sleep 2', { timeout: 5000 }).toString()
+    await sleep(2000)
 
-    return callColppy(updatedPayload)
+    return await callColppy(updatedPayload)
   }
 }
 
-function colppyLogin(): string {
+async function colppyLogin(): Promise<string> {
   const passwordMD5 = md5(COLPPY_PASSWORD)
-  const response = callColppy({
+  const response = await callColppy({
     auth: { usuario: COLPPY_USER, password: passwordMD5 },
     service: { provision: 'Usuario', operacion: 'iniciar_sesion' },
     parameters: { usuario: COLPPY_USER, password: passwordMD5 },
@@ -188,7 +181,7 @@ interface ColppyClient {
 /**
  * Obtiene TODOS los clientes de Colppy para mapeo (con retry automático)
  */
-function fetchAllColppyClients(claveSesion: string, passwordMD5: string): ColppyClient[] {
+async function fetchAllColppyClients(claveSesion: string, passwordMD5: string): Promise<ColppyClient[]> {
   try {
     const payload = {
       auth: { usuario: COLPPY_USER, password: passwordMD5 },
@@ -203,10 +196,10 @@ function fetchAllColppyClients(claveSesion: string, passwordMD5: string): Colppy
       },
     }
 
-    const response = callColppyWithRetry(
+    const response = await callColppyWithRetry(
       payload,
-      () => {
-        const newSession = colppyLogin()
+      async () => {
+        const newSession = await colppyLogin()
         return { claveSesion: newSession, passwordMD5 }
       },
       (p, newSession) => {
@@ -246,12 +239,12 @@ function fetchAllColppyClients(claveSesion: string, passwordMD5: string): Colppy
  * Si una página falla después del retry, devuelve las facturas obtenidas hasta ese punto
  * en vez de fallar completamente (degradación graceful).
  */
-function fetchAllColppyFacturas(
+async function fetchAllColppyFacturas(
   claveSesionInicial: string,
   passwordMD5: string,
   dateFromStr: string,
   dateToStr: string
-): { facturas: Record<string, unknown>[]; partial: boolean; error?: string } {
+): Promise<{ facturas: Record<string, unknown>[]; partial: boolean; error?: string }> {
   const allFacturas: Record<string, unknown>[] = []
   let start = 0
   let hasMore = true
@@ -275,10 +268,10 @@ function fetchAllColppyFacturas(
     }
 
     try {
-      const response = callColppyWithRetry(
+      const response = await callColppyWithRetry(
         payload,
-        () => {
-          currentSession = colppyLogin()
+        async () => {
+          currentSession = await colppyLogin()
           return { claveSesion: currentSession, passwordMD5 }
         },
         (p, newSession) => {
@@ -290,7 +283,6 @@ function fetchAllColppyFacturas(
 
       if (response.result?.estado !== 0 || !response.response?.success) {
         const errorMsg = response.result?.mensaje || 'Error al obtener facturas de Colppy'
-        // Si ya tenemos facturas, devolver parcial en vez de crashear
         if (allFacturas.length > 0) {
           console.warn(`[Sync Colppy] Error en página ${Math.floor(start / PAGE_SIZE) + 1}: ${errorMsg}. Devolviendo ${allFacturas.length} facturas parciales.`)
           return { facturas: allFacturas, partial: true, error: errorMsg }
@@ -303,22 +295,19 @@ function fetchAllColppyFacturas(
 
       console.log(`[Sync Colppy] Página ${Math.floor(start / PAGE_SIZE) + 1}: ${pageData.length} facturas (total acumulado: ${allFacturas.length})`)
 
-      // Si devolvió menos que el page size, no hay más páginas
       if (pageData.length < PAGE_SIZE) {
         hasMore = false
       } else {
         start += PAGE_SIZE
         // Delay entre páginas para evitar rate limit de Colppy
-        try { execSync('timeout /t 1 >nul 2>&1 || sleep 1', { timeout: 3000 }).toString() } catch { /* ignore */ }
+        await sleep(1000)
       }
     } catch (pageError: unknown) {
       const msg = pageError instanceof Error ? pageError.message : 'Error desconocido'
-      // Si ya tenemos facturas, devolver lo que tenemos (degradación graceful)
       if (allFacturas.length > 0) {
         console.warn(`[Sync Colppy] Error en página ${Math.floor(start / PAGE_SIZE) + 1}: ${msg}. Devolviendo ${allFacturas.length} facturas parciales.`)
         return { facturas: allFacturas, partial: true, error: msg }
       }
-      // Si no tenemos nada, propagar el error
       throw pageError
     }
   }
@@ -377,11 +366,11 @@ export async function POST(request: NextRequest) {
     console.log(`[Sync Colppy] Sincronizando facturas desde ${dateFromStr} hasta ${dateToStr}...`)
 
     // 1. Login a Colppy
-    const claveSesion = colppyLogin()
+    const claveSesion = await colppyLogin()
     const passwordMD5 = md5(COLPPY_PASSWORD)
 
     // 2. Fetch TODAS las facturas de Colppy con paginación (con degradación graceful)
-    const fetchResult = fetchAllColppyFacturas(claveSesion, passwordMD5, dateFromStr, dateToStr)
+    const fetchResult = await fetchAllColppyFacturas(claveSesion, passwordMD5, dateFromStr, dateToStr)
     const colppyFacturas = fetchResult.facturas
     const fetchPartial = fetchResult.partial
     console.log(`[Sync Colppy] Total: ${colppyFacturas.length} facturas obtenidas de Colppy${fetchPartial ? ' (PARCIAL - sesión expirada)' : ''}`)
@@ -411,7 +400,7 @@ export async function POST(request: NextRequest) {
     console.log(`[Sync Colppy] Clientes locales: ${customers.length} total, ${customerByColppyId.size} con colppyId, ${customerByCuit.size} con CUIT`)
 
     // Cargar clientes de Colppy para matching por CUIT y auto-creación
-    const colppyClients = fetchAllColppyClients(claveSesion, passwordMD5)
+    const colppyClients = await fetchAllColppyClients(claveSesion, passwordMD5)
     const colppyClientMap = new Map(colppyClients.map((c) => [c.idCliente, c]))
     console.log(`[Sync Colppy] Clientes Colppy cargados: ${colppyClients.length}`)
 
@@ -633,7 +622,7 @@ export async function POST(request: NextRequest) {
       const aplicadoARS = parseFloat(String(f.totalaplicado || '0'))
       const netoGravadoARS = parseFloat(String(f.netoGravado || '0'))
       const totalIVAARS = parseFloat(String(f.totalIVA || '0'))
-      const fechaFactura = String(f.fechaFactura || new Date().toISOString().split('T')[0])
+      const fechaFactura = String(f.fechaFactura || new Date().toISOString().split('T')[0]).split(' ')[0]
 
       let monedaCode: string
       let tipoCambio: number
@@ -750,8 +739,8 @@ export async function POST(request: NextRequest) {
         total,
         balance: saldo,
         paymentStatus: mapPaymentStatus(String(f.idEstadoFactura || '3'), total, aplicado) as 'UNPAID' | 'PARTIAL' | 'PAID',
-        issueDate: new Date(fechaFactura),
-        dueDate: new Date(String(f.fechaPago || fechaFactura)),
+        issueDate: new Date(fechaFactura + 'T12:00:00'), // T12:00 evita desfase UTC→AR timezone
+        dueDate: new Date(String(f.fechaPago || fechaFactura).split(' ')[0] + 'T12:00:00'),
         cae: String(f.cae || '') || null,
         afipStatus: f.cae ? 'APPROVED' as const : 'PENDING' as const,
         colppyId: idFactura,

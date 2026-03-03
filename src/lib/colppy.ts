@@ -8,11 +8,7 @@
  * - parameters: { sesion: { usuario, claveSesion }, ...params }
  */
 
-import { execSync } from 'child_process';
 import * as crypto from 'crypto';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 
 // ============================================================================
 // CONFIGURACIÓN
@@ -92,35 +88,37 @@ export class ColppySessionExpiredError extends Error {
 }
 
 /**
- * Realiza una llamada a la API de Colppy usando curl
- * Usamos curl en lugar de axios/fetch debido a problemas con redirects
- * Usa archivo temporal para evitar problemas de escape en bash/cmd
+ * Realiza una llamada a la API de Colppy usando fetch() nativo.
+ * Detecta respuestas HTML (sesión expirada) y lanza ColppySessionExpiredError.
  *
- * Detecta respuestas HTML (sesión expirada) y lanza ColppySessionExpiredError
+ * Migrado desde execSync(curl) para mayor confiabilidad:
+ * - Sin archivos temporales
+ * - Sin bloqueo del event loop
+ * - Sin límites de tamaño de comando
+ * - Manejo correcto de redirects
  */
-function callColppyAPI<T>(payload: any): T {
-  let tempFile: string | null = null;
-
+async function callColppyAPI<T>(payload: any): Promise<T> {
   try {
-    // Crear archivo temporal para el payload
-    tempFile = path.join(os.tmpdir(), `colppy-${Date.now()}.json`);
-    const payloadStr = JSON.stringify(payload);
-    fs.writeFileSync(tempFile, payloadStr, 'utf-8');
-
-    // Ejecutar curl usando el archivo temporal
-    const cmd = `curl -s -X POST "${COLPPY_ENDPOINT}" -H "Content-Type: application/json" -d @"${tempFile}" --max-time 30 -L`;
-
-    const result = execSync(cmd, {
-      encoding: 'utf-8',
-      timeout: 35000,
-      maxBuffer: 10 * 1024 * 1024, // 10MB
+    const response = await fetch(COLPPY_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      redirect: 'follow',
+      signal: AbortSignal.timeout(30000), // 30s timeout
     });
 
+    const responseText = await response.text();
+    const trimmed = responseText.trim();
+
     // Verificar si la respuesta es HTML (sesión expirada → página de login)
-    const trimmed = result.trim();
     if (trimmed.startsWith('<') || trimmed.startsWith('<!')) {
       console.error(`[Colppy] Respuesta HTML detectada (${trimmed.length} bytes). Sesión probablemente expirada.`);
       throw new ColppySessionExpiredError(trimmed);
+    }
+
+    // Verificar respuesta vacía
+    if (!trimmed) {
+      throw new ColppySessionExpiredError('Respuesta vacía de Colppy');
     }
 
     // Parsear respuesta JSON
@@ -137,42 +135,15 @@ function callColppyAPI<T>(payload: any): T {
     if (error instanceof ColppySessionExpiredError) {
       throw error;
     }
-    if (error.message.includes('JSON') || error.message.includes('Unexpected')) {
-      // Respuesta no-JSON que no es HTML → posible sesión expirada también
+    if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+      throw new Error(`Timeout en llamada a Colppy (30s): ${error.message}`);
+    }
+    if (error.message?.includes('JSON') || error.message?.includes('Unexpected')) {
       console.error(`[Colppy] Respuesta no-JSON: ${error.message}`);
       throw new ColppySessionExpiredError(error.message);
     }
     throw new Error(`Error en llamada a Colppy: ${error.message}`);
-  } finally {
-    // Limpiar archivo temporal
-    if (tempFile && fs.existsSync(tempFile)) {
-      try {
-        fs.unlinkSync(tempFile);
-      } catch {
-        // Ignorar error al limpiar
-      }
-    }
   }
-}
-
-/**
- * Reemplaza la claveSesion dentro de un payload de Colppy.
- * Soporta el formato estándar: payload.parameters.sesion.claveSesion
- */
-function updatePayloadSession(payload: any, newClaveSesion: string): any {
-  if (payload?.parameters?.sesion) {
-    return {
-      ...payload,
-      parameters: {
-        ...payload.parameters,
-        sesion: {
-          ...payload.parameters.sesion,
-          claveSesion: newClaveSesion,
-        },
-      },
-    };
-  }
-  return payload;
 }
 
 // ============================================================================
@@ -202,7 +173,7 @@ export async function colppyLogin(): Promise<ColppySession> {
   };
 
   try {
-    const response = callColppyAPI<any>(payload);
+    const response = await callColppyAPI<any>(payload);
 
     if (!response.response?.data?.claveSesion) {
       throw new Error('Colppy no retornó claveSesion');
@@ -243,7 +214,7 @@ export async function colppyLogout(session: ColppySession): Promise<void> {
   };
 
   try {
-    callColppyAPI(payload);
+    await callColppyAPI(payload);
   } catch (error: any) {
     // No lanzar error si falla logout, solo loguear
     console.warn(`Advertencia al cerrar sesión en Colppy: ${error.message}`);
@@ -335,7 +306,7 @@ export async function colppyFindCustomerByCUIT(
   };
 
   try {
-    const response = callColppyAPI<any>(payload);
+    const response = await callColppyAPI<any>(payload);
 
     if (!response.response?.data || response.response.data.length === 0) {
       return null;
@@ -427,7 +398,7 @@ export async function colppyCreateCustomer(
   };
 
   try {
-    const response = callColppyAPI<any>(payload);
+    const response = await callColppyAPI<any>(payload);
 
     // Verificar si la operación fue exitosa
     if (response.response?.success === false) {
@@ -496,7 +467,7 @@ export async function getColppyItemId(
   };
 
   try {
-    const response = callColppyAPI<any>(payload);
+    const response = await callColppyAPI<any>(payload);
 
     if (response.response?.data && response.response.data.length > 0) {
       return String(response.response.data[0].idItem || '0');
@@ -561,7 +532,7 @@ export async function colppyCreateDeliveryNote(
   console.log('=== FIN PAYLOAD ===');
 
   try {
-    const response = callColppyAPI<any>(payload);
+    const response = await callColppyAPI<any>(payload);
 
     console.log('=== RESPUESTA COLPPY REMITO ===');
     console.log(JSON.stringify(response, null, 2));
@@ -713,7 +684,7 @@ export async function colppyCreateInvoice(
   console.log('=== FIN PAYLOAD ===');
 
   try {
-    const response = callColppyAPI<any>(payload);
+    const response = await callColppyAPI<any>(payload);
 
     console.log('=== RESPUESTA COLPPY FACTURA ===');
     console.log(JSON.stringify(response, null, 2));

@@ -81,9 +81,22 @@ export interface SendToColppyResult {
 // ============================================================================
 
 /**
+ * Error específico para sesión expirada de Colppy.
+ * Se lanza cuando la API devuelve HTML (página de login) en vez de JSON.
+ */
+export class ColppySessionExpiredError extends Error {
+  constructor(preview: string) {
+    super(`Sesión de Colppy expirada. Respuesta HTML recibida: ${preview.substring(0, 200)}`);
+    this.name = 'ColppySessionExpiredError';
+  }
+}
+
+/**
  * Realiza una llamada a la API de Colppy usando curl
  * Usamos curl en lugar de axios/fetch debido a problemas con redirects
  * Usa archivo temporal para evitar problemas de escape en bash/cmd
+ *
+ * Detecta respuestas HTML (sesión expirada) y lanza ColppySessionExpiredError
  */
 function callColppyAPI<T>(payload: any): T {
   let tempFile: string | null = null;
@@ -103,8 +116,15 @@ function callColppyAPI<T>(payload: any): T {
       maxBuffer: 10 * 1024 * 1024, // 10MB
     });
 
+    // Verificar si la respuesta es HTML (sesión expirada → página de login)
+    const trimmed = result.trim();
+    if (trimmed.startsWith('<') || trimmed.startsWith('<!')) {
+      console.error(`[Colppy] Respuesta HTML detectada (${trimmed.length} bytes). Sesión probablemente expirada.`);
+      throw new ColppySessionExpiredError(trimmed);
+    }
+
     // Parsear respuesta JSON
-    const parsed = JSON.parse(result);
+    const parsed = JSON.parse(trimmed);
 
     // Verificar si hay error en la respuesta
     if (parsed.result && parsed.result.estado !== 0) {
@@ -113,8 +133,14 @@ function callColppyAPI<T>(payload: any): T {
 
     return parsed;
   } catch (error: any) {
+    // Re-lanzar ColppySessionExpiredError sin envolver
+    if (error instanceof ColppySessionExpiredError) {
+      throw error;
+    }
     if (error.message.includes('JSON') || error.message.includes('Unexpected')) {
-      throw new Error(`Respuesta de Colppy no es JSON válido: ${error.message}`);
+      // Respuesta no-JSON que no es HTML → posible sesión expirada también
+      console.error(`[Colppy] Respuesta no-JSON: ${error.message}`);
+      throw new ColppySessionExpiredError(error.message);
     }
     throw new Error(`Error en llamada a Colppy: ${error.message}`);
   } finally {
@@ -127,6 +153,26 @@ function callColppyAPI<T>(payload: any): T {
       }
     }
   }
+}
+
+/**
+ * Reemplaza la claveSesion dentro de un payload de Colppy.
+ * Soporta el formato estándar: payload.parameters.sesion.claveSesion
+ */
+function updatePayloadSession(payload: any, newClaveSesion: string): any {
+  if (payload?.parameters?.sesion) {
+    return {
+      ...payload,
+      parameters: {
+        ...payload.parameters,
+        sesion: {
+          ...payload.parameters.sesion,
+          claveSesion: newClaveSesion,
+        },
+      },
+    };
+  }
+  return payload;
 }
 
 // ============================================================================
@@ -823,22 +869,39 @@ export async function sendQuoteToColppy(
 ): Promise<SendToColppyResult> {
   let session: ColppySession | null = null;
 
+  /**
+   * Helper: ejecuta una función con la sesión actual.
+   * Si falla por sesión expirada, re-autentica y reintenta UNA vez.
+   */
+  async function withRetry<T>(fn: (s: ColppySession) => Promise<T>): Promise<T> {
+    try {
+      return await fn(session!);
+    } catch (error: any) {
+      if (error instanceof ColppySessionExpiredError) {
+        console.log('[Colppy] Sesión expirada, re-autenticando...');
+        session = await colppyLogin();
+        return await fn(session);
+      }
+      throw error;
+    }
+  }
+
   try {
     // 1. Iniciar sesión
     session = await colppyLogin();
 
-    // 2. Buscar o crear cliente
-    let customer = await colppyFindCustomerByCUIT(session, quote.customer.cuit);
+    // 2. Buscar o crear cliente (con retry automático ante sesión expirada)
+    let customer = await withRetry((s) => colppyFindCustomerByCUIT(s, quote.customer.cuit));
 
     if (!customer) {
-      customer = await colppyCreateCustomer(session, {
+      customer = await withRetry((s) => colppyCreateCustomer(s, {
         razonSocial: quote.customer.name,
         cuit: quote.customer.cuit,
         condicionIva: quote.customer.taxCondition,
         direccion: quote.customer.address,
         telefono: quote.customer.phone,
         email: quote.customer.email,
-      });
+      }));
     }
 
     // 3. Preparar items (los precios van en USD tal cual)
@@ -910,11 +973,11 @@ export async function sendQuoteToColppy(
     };
 
     if (options.action === 'remito' || options.action === 'remito-factura') {
-      const remito = await colppyCreateDeliveryNote(session, {
+      const remito = await withRetry((s) => colppyCreateDeliveryNote(s, {
         idCliente: customer.idEntidad,
         fecha,
         items: preparedItems,
-      });
+      }));
 
       result.remitoId = remito.idRemito;
       result.remitoNumber = remito.numeroRemito;
@@ -969,7 +1032,7 @@ export async function sendQuoteToColppy(
       const colppyItemIds: Record<string, string> = {};
       for (const item of preparedItems) {
         if (item.productSku && !colppyItemIds[item.productSku]) {
-          colppyItemIds[item.productSku] = await getColppyItemId(session, item.productSku);
+          colppyItemIds[item.productSku] = await withRetry((s) => getColppyItemId(s, item.productSku));
         }
       }
 
@@ -1009,7 +1072,7 @@ export async function sendQuoteToColppy(
 
       console.log(`[Colppy Factura] fechaFactura="${fechaFactura}", fechaVto="${fechaVto}"`);
 
-      const factura = await colppyCreateInvoice(session, {
+      const factura = await withRetry((s) => colppyCreateInvoice(s, {
         descripcion: options.descripcion || `Cotización ${quote.quoteNumber}`,
         idCliente: customer.idEntidad,
         puntoVenta: options.puntoVenta,
@@ -1032,7 +1095,7 @@ export async function sendQuoteToColppy(
         impInterno: '0',
         totalFactura: String(Number(totalFactura).toFixed(2)),
         items: itemsFactura,
-      });
+      }));
 
       result.facturaId = factura.idFactura;
       result.facturaNumber = factura.numeroFactura;

@@ -242,13 +242,16 @@ function fetchAllColppyClients(claveSesion: string, passwordMD5: string): Colppy
 /**
  * Obtiene TODAS las facturas de Colppy paginando automáticamente.
  * Usa retry con re-login ante fallos y delay entre páginas para evitar rate limit.
+ *
+ * Si una página falla después del retry, devuelve las facturas obtenidas hasta ese punto
+ * en vez de fallar completamente (degradación graceful).
  */
 function fetchAllColppyFacturas(
   claveSesionInicial: string,
   passwordMD5: string,
   dateFromStr: string,
   dateToStr: string
-): Record<string, unknown>[] {
+): { facturas: Record<string, unknown>[]; partial: boolean; error?: string } {
   const allFacturas: Record<string, unknown>[] = []
   let start = 0
   let hasMore = true
@@ -271,39 +274,56 @@ function fetchAllColppyFacturas(
       },
     }
 
-    const response = callColppyWithRetry(
-      payload,
-      () => {
-        currentSession = colppyLogin()
-        return { claveSesion: currentSession, passwordMD5 }
-      },
-      (p, newSession) => {
-        const pl = p as typeof payload
-        currentSession = newSession
-        return { ...pl, parameters: { ...pl.parameters, sesion: { usuario: COLPPY_USER, claveSesion: newSession } } }
+    try {
+      const response = callColppyWithRetry(
+        payload,
+        () => {
+          currentSession = colppyLogin()
+          return { claveSesion: currentSession, passwordMD5 }
+        },
+        (p, newSession) => {
+          const pl = p as typeof payload
+          currentSession = newSession
+          return { ...pl, parameters: { ...pl.parameters, sesion: { usuario: COLPPY_USER, claveSesion: newSession } } }
+        }
+      ) as { result?: { estado?: number; mensaje?: string }; response?: { success?: boolean; data?: Record<string, unknown>[]; total?: number } }
+
+      if (response.result?.estado !== 0 || !response.response?.success) {
+        const errorMsg = response.result?.mensaje || 'Error al obtener facturas de Colppy'
+        // Si ya tenemos facturas, devolver parcial en vez de crashear
+        if (allFacturas.length > 0) {
+          console.warn(`[Sync Colppy] Error en página ${Math.floor(start / PAGE_SIZE) + 1}: ${errorMsg}. Devolviendo ${allFacturas.length} facturas parciales.`)
+          return { facturas: allFacturas, partial: true, error: errorMsg }
+        }
+        throw new Error(errorMsg)
       }
-    ) as { result?: { estado?: number; mensaje?: string }; response?: { success?: boolean; data?: Record<string, unknown>[]; total?: number } }
 
-    if (response.result?.estado !== 0 || !response.response?.success) {
-      throw new Error(response.result?.mensaje || 'Error al obtener facturas de Colppy')
-    }
+      const pageData = response.response?.data || []
+      allFacturas.push(...pageData)
 
-    const pageData = response.response?.data || []
-    allFacturas.push(...pageData)
+      console.log(`[Sync Colppy] Página ${Math.floor(start / PAGE_SIZE) + 1}: ${pageData.length} facturas (total acumulado: ${allFacturas.length})`)
 
-    console.log(`[Sync Colppy] Página ${Math.floor(start / PAGE_SIZE) + 1}: ${pageData.length} facturas (total acumulado: ${allFacturas.length})`)
-
-    // Si devolvió menos que el page size, no hay más páginas
-    if (pageData.length < PAGE_SIZE) {
-      hasMore = false
-    } else {
-      start += PAGE_SIZE
-      // Delay entre páginas para evitar rate limit de Colppy
-      try { execSync('timeout /t 1 >nul 2>&1 || sleep 1', { timeout: 3000 }).toString() } catch { /* ignore */ }
+      // Si devolvió menos que el page size, no hay más páginas
+      if (pageData.length < PAGE_SIZE) {
+        hasMore = false
+      } else {
+        start += PAGE_SIZE
+        // Delay entre páginas para evitar rate limit de Colppy
+        try { execSync('timeout /t 1 >nul 2>&1 || sleep 1', { timeout: 3000 }).toString() } catch { /* ignore */ }
+      }
+    } catch (pageError: unknown) {
+      const msg = pageError instanceof Error ? pageError.message : 'Error desconocido'
+      // Si ya tenemos facturas, devolver lo que tenemos (degradación graceful)
+      if (allFacturas.length > 0) {
+        console.warn(`[Sync Colppy] Error en página ${Math.floor(start / PAGE_SIZE) + 1}: ${msg}. Devolviendo ${allFacturas.length} facturas parciales.`)
+        return { facturas: allFacturas, partial: true, error: msg }
+      }
+      // Si no tenemos nada, propagar el error
+      throw pageError
     }
   }
 
-  return allFacturas
+  return { facturas: allFacturas, partial: false }
 }
 
 /**
@@ -360,9 +380,11 @@ export async function POST(request: NextRequest) {
     const claveSesion = colppyLogin()
     const passwordMD5 = md5(COLPPY_PASSWORD)
 
-    // 2. Fetch TODAS las facturas de Colppy con paginación
-    const colppyFacturas = fetchAllColppyFacturas(claveSesion, passwordMD5, dateFromStr, dateToStr)
-    console.log(`[Sync Colppy] Total: ${colppyFacturas.length} facturas obtenidas de Colppy`)
+    // 2. Fetch TODAS las facturas de Colppy con paginación (con degradación graceful)
+    const fetchResult = fetchAllColppyFacturas(claveSesion, passwordMD5, dateFromStr, dateToStr)
+    const colppyFacturas = fetchResult.facturas
+    const fetchPartial = fetchResult.partial
+    console.log(`[Sync Colppy] Total: ${colppyFacturas.length} facturas obtenidas de Colppy${fetchPartial ? ' (PARCIAL - sesión expirada)' : ''}`)
 
     // Log raw de la primera factura para debug de campos
     if (colppyFacturas.length > 0) {
@@ -798,6 +820,10 @@ export async function POST(request: NextRequest) {
           desde: dateFromStr,
           hasta: dateToStr,
         },
+        ...(fetchPartial ? {
+          partial: true,
+          partialReason: `Sesión de Colppy expiró durante la paginación. Se importaron ${colppyFacturas.length} facturas parciales. ${fetchResult.error || ''}`.trim(),
+        } : {}),
       },
     })
   } catch (error) {

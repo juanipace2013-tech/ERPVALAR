@@ -101,38 +101,45 @@ export async function GET(request: NextRequest) {
       orderBy: { issueDate: 'desc' },
     })
 
-    // 2. Calcular totales separados por moneda + total general en USD
-    // IMPORTANTE: Las notas de crédito (CREDIT_NOTE) se RESTAN del total
-    let totalUSD = 0       // Solo facturas en USD (sumadas en USD)
-    let totalARS = 0       // Solo facturas en ARS (sumadas en ARS)
+    // 2. Calcular totales separados por moneda + totales generales en USD y ARS
+    // IMPORTANTE: NC se RESTAN, ND se SUMAN, FAV se SUMAN
+    let totalUSD = 0        // Solo facturas en USD (sumadas en USD)
+    let totalARS = 0        // Solo facturas en ARS (sumadas en ARS)
     let totalGeneralUSD = 0 // Todo convertido a USD
-    let totalCreditNotesUSD = 0 // NC en USD (para info)
-    let totalCreditNotesARS = 0 // NC en ARS (para info)
+    let totalGeneralARS = 0 // Todo convertido a ARS
+    let totalCreditNotesUSD = 0
+    let totalCreditNotesARS = 0
     const totalFacturas = invoices.length
     const totalNC = invoices.filter(inv => inv.transactionType === 'CREDIT_NOTE').length
 
     for (const inv of invoices) {
       const total = Number(inv.total)
       const esNC = inv.transactionType === 'CREDIT_NOTE'
-      // Las NC se restan: multiplicador -1 para NC, +1 para FAV/NDV
+      // NC restan (-1), FAV y NDV suman (+1)
       const signo = esNC ? -1 : 1
+      const tc = Number(inv.exchangeRate || 0)
 
       if (inv.currency === 'USD') {
         totalUSD += total * signo
         totalGeneralUSD += total * signo
+        // Para totalGeneralARS: USD × TC
+        const totalEnARS = tc > 1 ? total * tc : total * 1420
+        totalGeneralARS += totalEnARS * signo
         if (esNC) totalCreditNotesUSD += total
       } else {
         totalARS += total * signo
-        // Convertir ARS a USD usando el TC de la factura
-        const tc = Number(inv.exchangeRate || 0)
+        // Para totalGeneralUSD: ARS / TC
         const totalEnUSD = tc > 1 ? total / tc : 0
         totalGeneralUSD += totalEnUSD * signo
+        // Para totalGeneralARS: usar total ARS tal cual
+        totalGeneralARS += total * signo
         if (esNC) totalCreditNotesARS += total
       }
     }
 
-    const facturasSinNC = totalFacturas - totalNC
-    const ticketPromedio = facturasSinNC > 0 ? totalGeneralUSD / facturasSinNC : 0
+    // Ticket promedio: totalGeneralUSD / cantidad de SALE solamente (sin NC ni ND)
+    const totalSaleOnly = invoices.filter(inv => inv.transactionType === 'SALE').length
+    const ticketPromedio = totalSaleOnly > 0 ? totalGeneralUSD / totalSaleOnly : 0
 
     // 3. Comparación vs mes anterior
     const now = new Date()
@@ -299,6 +306,7 @@ export async function GET(request: NextRequest) {
         totalUSD: Math.round(totalUSD * 100) / 100,
         totalARS: Math.round(totalARS * 100) / 100,
         totalGeneralUSD: Math.round(totalGeneralUSD * 100) / 100,
+        totalGeneralARS: Math.round(totalGeneralARS * 100) / 100,
         totalFacturas,
         totalNC,
         totalCreditNotesUSD: Math.round(totalCreditNotesUSD * 100) / 100,

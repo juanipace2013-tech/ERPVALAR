@@ -87,6 +87,7 @@ interface Resumen {
   totalUSD: number
   totalARS: number
   totalGeneralUSD: number
+  totalGeneralARS: number
   totalFacturas: number
   totalNC: number
   totalCreditNotesUSD: number
@@ -638,8 +639,8 @@ export default function AnalisisFacturacionPage() {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Total Facturado (neto)</p>
-                  <p className="text-2xl font-bold text-blue-900">{fmt(resumen.totalUSD)} USD</p>
-                  <p className="text-xs text-muted-foreground">{fmt(resumen.totalARS, 'ARS')} ARS</p>
+                  <p className="text-2xl font-bold text-blue-900">{fmt(resumen.totalGeneralUSD)} USD</p>
+                  <p className="text-xs text-muted-foreground">{fmt(resumen.totalGeneralARS, 'ARS')} ARS</p>
                   {resumen.totalNC > 0 && (
                     <p className="text-xs text-red-500 mt-1">
                       NC descontadas: {resumen.totalNC} ({fmt(resumen.totalCreditNotesUSD)} USD / {fmt(resumen.totalCreditNotesARS, 'ARS')} ARS)

@@ -126,20 +126,26 @@ const monedaMap: Record<string, string> = {
 // La letra (A/B/C/E) viene de idTipoFactura, NO del idTipoComprobante
 // 4=FAV, 5=NDV, 8=NCV, 9=REC, 51=FAV MiPyme, 52=NDV MiPyme, 53=NCV MiPyme
 const tipoComprobanteLabel: Record<string, string> = {
-  '4': 'FAV',   // Factura de Venta
-  '5': 'NDV',   // Nota de Débito Venta
-  '8': 'NCV',   // Nota de Crédito Venta
-  '9': 'REC',   // Recibo
+  '4': 'FAV',   // Factura de Venta A
+  '5': 'NCV',   // Nota de Crédito Venta A (totales NEGATIVOS en Colppy)
+  '8': 'NDV',   // Nota de Débito Venta A (totales POSITIVOS en Colppy)
+  '9': 'REC',   // Recibo A (se ignora)
+  '10': 'FAV',  // Factura de Venta B
+  '11': 'NCV',  // Nota de Crédito Venta B
+  '12': 'NDV',  // Nota de Débito Venta B
+  '13': 'REC',  // Recibo B (se ignora)
   '51': 'FAV',  // Factura MiPyme
   '52': 'NDV',  // ND MiPyme
   '53': 'NCV',  // NC MiPyme
 }
 
 // Notas de Crédito (NCV) → transactionType = CREDIT_NOTE, RESTAN del total
-const CREDIT_NOTE_TIPOS = new Set(['8', '53'])
+// Verificado con datos reales: tipo 5 tiene totales NEGATIVOS = son NCV
+const CREDIT_NOTE_TIPOS = new Set(['5', '11', '53'])
 
 // Notas de Débito (NDV) → transactionType = DEBIT_NOTE, SUMAN al total
-const DEBIT_NOTE_TIPOS = new Set(['5', '52'])
+// Verificado con datos reales: tipo 8 tiene totales POSITIVOS = son NDV
+const DEBIT_NOTE_TIPOS = new Set(['8', '12', '52'])
 
 // Mapear tipo de comprobante Colppy a InvoiceType del schema
 function mapInvoiceType(idTipoFactura: string): 'A' | 'B' | 'C' | 'E' {
@@ -417,7 +423,22 @@ export async function POST(request: NextRequest) {
       quotesByCustomer.set(q.customerId, existing)
     }
 
-    // 4. Procesar cada factura
+    // 4. Limpiar recibos (REC/REC-B) importados en syncs anteriores
+    try {
+      const deletedREC = await prisma.invoice.deleteMany({
+        where: {
+          colppyId: { not: null },
+          notes: { startsWith: 'REC ' },
+        },
+      })
+      if (deletedREC.count > 0) {
+        console.log(`[Sync Colppy] Eliminados ${deletedREC.count} recibos (REC) de syncs anteriores`)
+      }
+    } catch (err) {
+      console.warn('[Sync Colppy] No se pudieron eliminar recibos antiguos:', err instanceof Error ? err.message : err)
+    }
+
+    // 5. Procesar cada factura
     let created = 0
     let updated = 0
     let skipped = 0
@@ -427,6 +448,33 @@ export async function POST(request: NextRequest) {
     const errors: string[] = []
     const porTipoComprobante: Record<string, number> = {}
     const skipReasons: Record<string, number> = {}
+
+    // Primera pasada: recolectar TCs de facturas USD para usar en facturas ARS
+    const usdRatesByDate = new Map<string, number>()
+    for (const f of colppyFacturas) {
+      const rate = parseFloat(String(f.rate || '0'))
+      if (rate > 1) {
+        const fecha = String(f.fechaFactura || '').split(' ')[0]
+        if (fecha) usdRatesByDate.set(fecha, rate)
+      }
+    }
+    console.log(`[Sync Colppy] TCs USD recolectados de ${usdRatesByDate.size} fechas distintas`)
+
+    // Helper: buscar TC más cercano de facturas USD del mismo período
+    function findClosestUsdRate(dateStr: string): number {
+      if (usdRatesByDate.has(dateStr)) return usdRatesByDate.get(dateStr)!
+      const target = new Date(dateStr).getTime()
+      let closestRate = 0
+      let minDiff = Infinity
+      for (const [d, r] of usdRatesByDate) {
+        const diff = Math.abs(new Date(d).getTime() - target)
+        if (diff < minDiff) {
+          minDiff = diff
+          closestRate = r
+        }
+      }
+      return closestRate || DEFAULT_EXCHANGE_RATE
+    }
 
     for (const f of colppyFacturas) {
       const idFactura = String(f.idFactura || '')
@@ -438,7 +486,9 @@ export async function POST(request: NextRequest) {
       // Importar tipos de comprobante de venta de Colppy:
       // 4=FAV, 5=NDV, 8=NCV, 9=REC, 51=FAV MiPyme, 52=NDV MiPyme, 53=NCV MiPyme
       const tipoComp = String(f.idTipoComprobante || '4')
-      const tiposVenta = ['4', '5', '8', '9', '51', '52', '53']
+      // Tipos aceptados: FAV(4,10,51), NDV(5,11,52), NCV(8,12,53)
+      // Ignorados: REC(9), REC-B(13)
+      const tiposVenta = ['4', '5', '8', '10', '11', '12', '51', '52', '53']
       if (!tiposVenta.includes(tipoComp)) {
         skipReasons[`tipo_${tipoComp}`] = (skipReasons[`tipo_${tipoComp}`] || 0) + 1
         skipped++; continue
@@ -518,16 +568,22 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      // ================================================================
-      // FIX: Detección correcta de moneda
-      // idMoneda "0" = USD, "1" = ARS (Colppy)
-      // rate > 0 solo para facturas USD; en ARS es "0" o null
-      // ================================================================
-      const idMoneda = String(f.idMoneda || '1')
-      const rawRate = parseFloat(String(f.rate || f.valorCambio || f.cotizacion || '0'))
+      // Log de debug COMPLETO para NCV/NDV y facturas con total negativo
+      const _totalDebug = parseFloat(String(f.totalFactura || '0'))
+      const _labelDebug = tipoComprobanteLabel[tipoComp] || '?'
+      const _rateDebug = String(f.rate || 'null')
+      const _monedaDebug = String(f.idMoneda || 'null')
+      if (_totalDebug < 0 || CREDIT_NOTE_TIPOS.has(tipoComp) || DEBIT_NOTE_TIPOS.has(tipoComp)) {
+        console.log(`[Sync Debug] ${String(f.nroFactura)} idTipoComprobante:${tipoComp} (${_labelDebug}) totalFactura:${_totalDebug} idMoneda:${_monedaDebug} rate:${_rateDebug} → ${CREDIT_NOTE_TIPOS.has(tipoComp) ? 'CREDIT_NOTE' : DEBIT_NOTE_TIPOS.has(tipoComp) ? 'DEBIT_NOTE' : 'SALE'}`)
+      }
 
-      let monedaCode: string
-      let tipoCambio: number
+      // ================================================================
+      // REGLA DEFINITIVA de moneda:
+      // rate > 1 → USD (el rate es el TC, ej: 1400, 1465)
+      // rate = 0, 1, null → ARS
+      // ================================================================
+      const rawRate = parseFloat(String(f.rate || '0'))
+      const esUSD = rawRate > 1
 
       // Colppy devuelve totalFactura SIEMPRE en ARS (moneda fiscal).
       const totalFacturaARS = parseFloat(String(f.totalFactura || '0'))
@@ -536,16 +592,15 @@ export async function POST(request: NextRequest) {
       const totalIVAARS = parseFloat(String(f.totalIVA || '0'))
       const fechaFactura = String(f.fechaFactura || new Date().toISOString().split('T')[0])
 
+      let monedaCode: string
+      let tipoCambio: number
       let total: number
       let aplicado: number
       let subtotalVal: number
       let taxAmountVal: number
 
-      // Una factura es USD solo si idMoneda=0 Y el rate es un TC real (> 1).
-      // rate=0, rate=null, rate=1 → NO es USD (1 USD = 1 ARS no tiene sentido).
-      // Facturas con idMoneda=0 pero sin rate válido son ARS mal clasificadas en Colppy.
-      if (idMoneda === '0' && rawRate > 1) {
-        // FACTURA EN USD: idMoneda=0 y tiene tipo de cambio válido (> 1)
+      if (esUSD) {
+        // FACTURA EN USD: rate > 1 (es el tipo de cambio, ej: 1465)
         monedaCode = 'USD'
         tipoCambio = rawRate
         // Convertir de ARS a USD usando el TC de Colppy
@@ -553,29 +608,41 @@ export async function POST(request: NextRequest) {
         aplicado = Math.round((aplicadoARS / tipoCambio) * 100) / 100
         subtotalVal = Math.round((netoGravadoARS / tipoCambio) * 100) / 100
         taxAmountVal = Math.round((totalIVAARS / tipoCambio) * 100) / 100
-        console.log(`[Sync Colppy] Factura ${idFactura} USD: totalARS=${totalFacturaARS} / TC=${tipoCambio} = USD ${total}`)
       } else {
-        // FACTURA EN ARS: idMoneda=1, o rate=0/null
+        // FACTURA EN ARS: rate=0/1/null
         monedaCode = 'ARS'
         total = totalFacturaARS
         aplicado = aplicadoARS
         subtotalVal = netoGravadoARS
         taxAmountVal = totalIVAARS
-        // Buscar TC del día para poder convertir a USD en el dashboard
+        // Buscar TC del día: 1) ExchangeRate table, 2) TC cercano de factura USD, 3) default 1420
         const tcDelDia = await getExchangeRateForDate(fechaFactura)
-        tipoCambio = tcDelDia > 0 ? tcDelDia : DEFAULT_EXCHANGE_RATE
-        console.log(`[Sync Colppy] Factura ${idFactura} ARS: total=${total}, TC día=${tipoCambio}`)
+        tipoCambio = tcDelDia > 0 ? tcDelDia : findClosestUsdRate(fechaFactura)
       }
 
       // ================================================================
       // Determinar transactionType según tipo de comprobante:
-      // NCV (8, 53) → CREDIT_NOTE (resta), totales positivos (Colppy envía negativo)
-      // NDV (5, 52) → DEBIT_NOTE (suma)
-      // FAV (4, 51) → SALE
-      // REC (9) → SALE (recibo, tratado como comprobante normal)
+      // NCV (5, 11, 53) → CREDIT_NOTE (resta), Colppy envía totales NEGATIVOS
+      // NDV (8, 12, 52) → DEBIT_NOTE (suma), Colppy envía totales POSITIVOS
+      // FAV (4, 10, 51) → SALE
+      // REC (9, 13) → IGNORAR (no se importan)
       // ================================================================
       const esNotaCredito = CREDIT_NOTE_TIPOS.has(tipoComp)
       const esNotaDebito = DEBIT_NOTE_TIPOS.has(tipoComp)
+
+      // REGLA DE NEGOCIO: NDV (Notas de Débito) SIEMPRE son en ARS
+      // Son por diferencia de cambio y nunca en USD, sin importar lo que diga rate/idMoneda
+      if (esNotaDebito && monedaCode === 'USD') {
+        console.log(`[Sync] NDV ${String(f.nroFactura)} forzada a ARS (era USD con rate=${rawRate}). Total ARS: ${totalFacturaARS}`)
+        monedaCode = 'ARS'
+        total = totalFacturaARS
+        aplicado = aplicadoARS
+        subtotalVal = netoGravadoARS
+        taxAmountVal = totalIVAARS
+        // Buscar TC del día para conversión en dashboard
+        const tcDelDia = await getExchangeRateForDate(fechaFactura)
+        tipoCambio = tcDelDia > 0 ? tcDelDia : findClosestUsdRate(fechaFactura)
+      }
 
       if (esNotaCredito) {
         // NCV: Colppy envía totalFactura NEGATIVO, guardamos positivo

@@ -502,7 +502,7 @@ export default function DeliveryNoteDetailPage() {
                 <Button
                   variant="outline"
                   className="border-green-300 text-green-700 hover:bg-green-50"
-                  onClick={() => window.open(deliveryNote.signedDocUrl!, '_blank')}
+                  onClick={() => window.open(`/api${deliveryNote.signedDocUrl!}`, '_blank')}
                 >
                   <CheckCircle2 className="h-4 w-4 mr-2 text-green-600" />
                   Ver Remito Firmado

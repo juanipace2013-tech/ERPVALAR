@@ -26,6 +26,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Send,
+  RefreshCw,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatCurrency, formatNumber, formatCUIT } from '@/lib/utils'
@@ -33,6 +34,7 @@ import {
   SendToColppyDialog,
   type ColppySendPayload,
 } from '@/components/quotes/SendToColppyDialog'
+import { refreshInventoryCache } from '@/hooks/useColppyStock'
 
 // ─── Types ───────────────────────────────────────────
 
@@ -116,6 +118,9 @@ export default function FacturacionPage() {
   // Selected items for partial invoicing
   const [selectedItems, setSelectedItems] = useState<Map<string, Set<string>>>(new Map())
 
+  // Stock refresh
+  const [refreshingStock, setRefreshingStock] = useState(false)
+
   // Colppy dialog state
   const [showColppyDialog, setShowColppyDialog] = useState(false)
   const [colppyQuoteId, setColppyQuoteId] = useState<string | null>(null)
@@ -149,6 +154,24 @@ export default function FacturacionPage() {
 
   const handleApplyFilters = () => {
     fetchBoard()
+  }
+
+  const handleRefreshStock = async () => {
+    try {
+      setRefreshingStock(true)
+      const result = await refreshInventoryCache()
+      if (result.success) {
+        toast.success(`Stock actualizado: ${result.total} productos sincronizados desde Colppy`)
+        fetchBoard()
+      } else {
+        toast.error('Error al actualizar stock desde Colppy')
+      }
+    } catch (error) {
+      console.error('Error refreshing stock:', error)
+      toast.error('Error al actualizar stock desde Colppy')
+    } finally {
+      setRefreshingStock(false)
+    }
   }
 
   const toggleCard = (cardId: string) => {
@@ -355,11 +378,21 @@ export default function FacturacionPage() {
   return (
     <div className="container mx-auto px-6 py-8">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Facturación</h1>
-        <p className="text-gray-600 mt-1">
-          Tablero de cotizaciones aceptadas — envío de borradores a Colppy
-        </p>
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Facturación</h1>
+          <p className="text-gray-600 mt-1">
+            Tablero de cotizaciones aceptadas — envío de borradores a Colppy
+          </p>
+        </div>
+        <Button variant="outline" onClick={handleRefreshStock} disabled={refreshingStock}>
+          {refreshingStock ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCw className="mr-2 h-4 w-4" />
+          )}
+          {refreshingStock ? 'Sincronizando...' : 'Actualizar Stock'}
+        </Button>
       </div>
 
       {/* Summary Stats */}

@@ -783,6 +783,18 @@ export function buildSplitItem(
   const iva = overrides?.iva ?? 21;
   const comentario = overrides?.comentario || `Cotización ${quote.quoteNumber}${quote.notes ? ' / ' + quote.notes : ''}`;
 
+  const additionals = originalItem.additionals.map((add, idx) => {
+    const name = add.product?.name || add.description || 'Adicional manual';
+    console.log(`[buildSplitItem] Adicional ${idx}: product?.name="${add.product?.name}", description="${add.description}", sku="${add.product?.sku}" → name="${name}"`);
+    return {
+      name,
+      unitPrice: Number((addPrices[idx] * scaleFactor).toFixed(2)),
+      sku: add.product?.sku || '',
+    };
+  });
+
+  console.log(`[buildSplitItem] productName="${productName}", productSku="${productSku}", additionals=${additionals.length}`);
+
   return {
     productName,
     productSku,
@@ -791,11 +803,7 @@ export function buildSplitItem(
     iva,
     comentario,
     deliveryTime: originalItem.deliveryTime || undefined,
-    additionals: originalItem.additionals.map((add, idx) => ({
-      name: add.product?.name || add.description || 'Adicional manual',
-      unitPrice: Number((addPrices[idx] * scaleFactor).toFixed(2)),
-      sku: add.product?.sku || '',
-    })),
+    additionals,
   };
 }
 
@@ -879,7 +887,7 @@ export async function sendQuoteToColppy(
     const exchangeRate = quote.currency === 'USD' ? quote.exchangeRate || 1 : 1;
 
     const preparedItems = quote.items.flatMap((item) => {
-      // Item principal
+      // Item principal: usa SU PROPIO productName
       const mainItem = {
         descripcion: item.productName,
         cantidad: item.quantity,
@@ -889,9 +897,10 @@ export async function sendQuoteToColppy(
         comentario: item.comentario,
       };
 
-      // Adicionales como items separados (cada uno con su propio SKU/código)
+      // Adicionales como items separados: cada uno con SU PROPIA descripción
+      // (nombre del producto adicional, NO el del producto principal)
       const additionalItems = (item.additionals || []).map((additional) => ({
-        descripcion: `${item.productName} - ${additional.name}`,
+        descripcion: additional.name,
         cantidad: item.quantity,
         precioUnitario: additional.unitPrice,
         productSku: additional.sku,
@@ -904,7 +913,7 @@ export async function sendQuoteToColppy(
 
     console.log(`[Colppy] preparedItems (${preparedItems.length} líneas):`, JSON.stringify(preparedItems.map(p => ({
       sku: p.productSku,
-      desc: p.descripcion.substring(0, 40),
+      desc: p.descripcion,
       cant: p.cantidad,
       precio: p.precioUnitario,
     })), null, 2));
@@ -1042,6 +1051,12 @@ export async function sendQuoteToColppy(
       const totalFactura = netoGravado + totalIVA;
 
       console.log(`[Colppy Factura] fechaFactura="${fechaFactura}", fechaVto="${fechaVto}"`);
+      console.log(`[Colppy Factura] itemsFactura Descripcion:`, itemsFactura.map((i, idx) => ({
+        idx,
+        idItem: i.idItem,
+        Descripcion: i.Descripcion,
+        SKU: preparedItems[idx]?.productSku,
+      })));
 
       const factura = await withRetry((s) => colppyCreateInvoice(s, {
         descripcion: options.descripcion || `Cotización ${quote.quoteNumber}`,

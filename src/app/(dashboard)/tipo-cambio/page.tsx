@@ -77,6 +77,7 @@ export default function TipoCambioPage() {
     toCurrency: 'ARS',
     rate: '',
     source: 'MANUAL',
+    validFrom: new Date().toISOString().split('T')[0], // YYYY-MM-DD
   })
 
   useEffect(() => {
@@ -159,6 +160,7 @@ export default function TipoCambioPage() {
           toCurrency: formData.toCurrency,
           rate: parseFloat(formData.rate),
           source: formData.source,
+          validFrom: formData.validFrom,
         }),
       })
 
@@ -174,6 +176,7 @@ export default function TipoCambioPage() {
         toCurrency: 'ARS',
         rate: '',
         source: 'MANUAL',
+        validFrom: new Date().toISOString().split('T')[0],
       })
       fetchExchangeRates()
     } catch (error) {
@@ -321,6 +324,19 @@ export default function TipoCambioPage() {
                       value={formData.rate}
                       onChange={(e) =>
                         setFormData({ ...formData, rate: e.target.value })
+                      }
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="validFrom">Fecha de vigencia</Label>
+                    <Input
+                      id="validFrom"
+                      type="date"
+                      value={formData.validFrom}
+                      onChange={(e) =>
+                        setFormData({ ...formData, validFrom: e.target.value })
                       }
                       required
                     />

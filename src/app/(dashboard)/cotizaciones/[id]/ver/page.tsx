@@ -1212,7 +1212,7 @@ export default function QuoteViewPage() {
             items: quote.items.map((item: any) => ({
               id: item.id,
               productSku: item.product?.sku || '',
-              description: item.description || item.product?.name || '',
+              description: item.product?.name || item.description || '',
               quantity: item.quantity || 0,
               unitPrice: item.unitPrice || 0,
               iva: 21,

@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
         return {
           id: item.id,
           itemNumber: item.itemNumber,
-          description: item.description || item.product?.name || 'Sin descripción',
+          description: item.product?.name || item.description || 'Sin descripción',
           productSku: item.product?.sku || item.manualSku || null,
           quantity: item.quantity,
           invoicedQuantity,

@@ -14,10 +14,10 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { Package, Plus, Search, AlertTriangle, CheckCircle2, Loader2, ChevronUp, ChevronDown } from 'lucide-react'
+import { Package, Plus, Search, AlertTriangle, CheckCircle2, Loader2, ChevronUp, ChevronDown, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber } from '@/lib/utils'
-import { useColppyStock } from '@/hooks/useColppyStock'
+import { useColppyStock, refreshInventoryCache } from '@/hooks/useColppyStock'
 
 interface Product {
   id: string
@@ -58,6 +58,7 @@ export default function ProductosPage() {
   const [letterFilter, setLetterFilter] = useState<string | null>(null)
   const [orderBy, setOrderBy] = useState<string>('sku')
   const [order, setOrder] = useState<'asc' | 'desc'>('asc')
+  const [refreshingStock, setRefreshingStock] = useState(false)
 
   const ITEMS_PER_PAGE = 50
 
@@ -127,6 +128,25 @@ export default function ProductosPage() {
       setOrder('asc')
     }
     setPage(1) // Reset to first page on sort
+  }
+
+  const handleRefreshStock = async () => {
+    try {
+      setRefreshingStock(true)
+      const result = await refreshInventoryCache()
+      if (result.success) {
+        toast.success(`Stock actualizado: ${result.total} productos sincronizados desde Colppy`)
+        // Re-fetch products to update the stock display
+        fetchProducts()
+      } else {
+        toast.error('Error al actualizar stock desde Colppy')
+      }
+    } catch (error) {
+      console.error('Error refreshing stock:', error)
+      toast.error('Error al actualizar stock desde Colppy')
+    } finally {
+      setRefreshingStock(false)
+    }
   }
 
   const filteredProducts = products
@@ -219,6 +239,18 @@ export default function ProductosPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={handleRefreshStock}
+            disabled={refreshingStock}
+          >
+            {refreshingStock ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 h-4 w-4" />
+            )}
+            {refreshingStock ? 'Sincronizando...' : 'Actualizar Stock'}
+          </Button>
           <Link href="/productos/nuevo">
             <Button>
               <Plus className="mr-2 h-4 w-4" />

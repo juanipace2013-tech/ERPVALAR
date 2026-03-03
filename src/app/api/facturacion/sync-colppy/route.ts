@@ -423,8 +423,9 @@ export async function POST(request: NextRequest) {
       quotesByCustomer.set(q.customerId, existing)
     }
 
-    // 4. Limpiar recibos (REC/REC-B) importados en syncs anteriores
+    // 4. Limpiar datos no válidos de syncs anteriores
     try {
+      // Eliminar recibos (REC/REC-B) importados antes
       const deletedREC = await prisma.invoice.deleteMany({
         where: {
           colppyId: { not: null },
@@ -434,8 +435,21 @@ export async function POST(request: NextRequest) {
       if (deletedREC.count > 0) {
         console.log(`[Sync Colppy] Eliminados ${deletedREC.count} recibos (REC) de syncs anteriores`)
       }
+
+      // Eliminar borradores: nroFactura con números muy altos (ej: 83957509)
+      // La numeración real de VAL ARG es 0003-13xxx y 0003-00001xxx
+      const deletedDrafts = await prisma.invoice.deleteMany({
+        where: {
+          colppyId: { not: null },
+          status: 'PENDING',
+          invoiceNumber: { not: { startsWith: '0003-0000' } },
+        },
+      })
+      if (deletedDrafts.count > 0) {
+        console.log(`[Sync Colppy] Eliminados ${deletedDrafts.count} borradores de syncs anteriores`)
+      }
     } catch (err) {
-      console.warn('[Sync Colppy] No se pudieron eliminar recibos antiguos:', err instanceof Error ? err.message : err)
+      console.warn('[Sync Colppy] No se pudieron eliminar registros antiguos:', err instanceof Error ? err.message : err)
     }
 
     // 5. Procesar cada factura
@@ -483,10 +497,17 @@ export async function POST(request: NextRequest) {
         skipped++; continue
       }
 
-      // Importar tipos de comprobante de venta de Colppy:
-      // 4=FAV, 5=NDV, 8=NCV, 9=REC, 51=FAV MiPyme, 52=NDV MiPyme, 53=NCV MiPyme
+      // Solo importar facturas EMITIDAS (idEstadoFactura=3 o 5=pagada)
+      // Ignorar borradores y otros estados no emitidos
+      const idEstado = String(f.idEstadoFactura || '')
+      if (idEstado !== '3' && idEstado !== '5') {
+        skipReasons[`estado_${idEstado}`] = (skipReasons[`estado_${idEstado}`] || 0) + 1
+        skipped++; continue
+      }
+
+      // Importar tipos de comprobante de venta de Colppy
       const tipoComp = String(f.idTipoComprobante || '4')
-      // Tipos aceptados: FAV(4,10,51), NDV(5,11,52), NCV(8,12,53)
+      // Tipos aceptados: FAV(4,10,51), NCV(5,11,53), NDV(8,12,52)
       // Ignorados: REC(9), REC-B(13)
       const tiposVenta = ['4', '5', '8', '10', '11', '12', '51', '52', '53']
       if (!tiposVenta.includes(tipoComp)) {

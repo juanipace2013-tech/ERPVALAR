@@ -173,17 +173,18 @@ export async function GET(request: NextRequest) {
       ? ((currentMonthTotal - prevMonthTotal) / prevMonthTotal) * 100
       : 0
 
-    // 4. Facturación mensual (últimos 12 meses)
-    const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1)
+    // 4. Facturación mensual (año calendario actual: Ene-Dic)
+    const currentYear = now.getFullYear()
+    const yearStart = new Date(currentYear, 0, 1) // 1 de Enero del año actual
     const monthlyInvoices = await prisma.invoice.findMany({
-      where: { transactionType: { in: ['SALE', 'CREDIT_NOTE', 'DEBIT_NOTE'] }, issueDate: { gte: twelveMonthsAgo } },
+      where: { transactionType: { in: ['SALE', 'CREDIT_NOTE', 'DEBIT_NOTE'] }, issueDate: { gte: yearStart } },
       select: { total: true, currency: true, exchangeRate: true, issueDate: true, transactionType: true },
     })
 
+    // Generar 12 meses del año actual (Ene-Dic)
     const monthlyData: Record<string, number> = {}
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    for (let m = 0; m < 12; m++) {
+      const key = `${currentYear}-${String(m + 1).padStart(2, '0')}`
       monthlyData[key] = 0
     }
 
@@ -195,11 +196,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const facturacionMensual = Object.entries(monthlyData).map(([month, total]) => ({
-      month,
-      label: new Date(month + '-01').toLocaleDateString('es-AR', { month: 'short', year: '2-digit' }),
-      total: Math.round(total * 100) / 100,
-    }))
+    // Labels manuales para evitar desfase por timezone (new Date('2026-01-01') = dic en UTC-3)
+    const monthNames = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+    const facturacionMensual = Object.entries(monthlyData).map(([month, total]) => {
+      const [y, m] = month.split('-').map(Number)
+      return {
+        month,
+        label: `${monthNames[m - 1]} ${String(y).slice(2)}`,
+        total: Math.round(total * 100) / 100,
+      }
+    })
 
     // 5. Facturación por vendedor (desde facturas filtradas, NC restan)
     const porVendedor: Record<string, { name: string; total: number }> = {}

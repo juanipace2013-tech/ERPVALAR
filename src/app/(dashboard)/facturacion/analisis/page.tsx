@@ -707,7 +707,7 @@ export default function AnalisisFacturacionPage() {
           {/* Facturación mensual */}
           <Card className="border-blue-200">
             <CardHeader>
-              <CardTitle className="text-blue-900">Facturación Mensual (USD) - Últimos 12 meses</CardTitle>
+              <CardTitle className="text-blue-900">Facturación Mensual (USD) - Año 2026</CardTitle>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -101,6 +101,10 @@ export default function CotizacionesPage() {
   const [dateTo, setDateTo] = useState('')
   const [salesPersonId, setSalesPersonId] = useState<string>('ALL')
   const [salesPersons, setSalesPersons] = useState<User[]>([])
+
+  // Sorting
+  const [sortColumn, setSortColumn] = useState<string>('date')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
 
   // Duplicate dialog
   const [duplicateQuote, setDuplicateQuote] = useState<{ id: string; customerName: string } | null>(null)
@@ -245,6 +249,50 @@ export default function CotizacionesPage() {
       month: 'short',
       day: 'numeric',
     })
+  }
+
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortColumn(column)
+      setSortDirection('asc')
+    }
+  }
+
+  const sortedQuotes = useMemo(() => {
+    return [...quotes].sort((a, b) => {
+      let cmp = 0
+      switch (sortColumn) {
+        case 'quoteNumber':
+          cmp = a.quoteNumber.localeCompare(b.quoteNumber)
+          break
+        case 'customer':
+          cmp = a.customer.name.localeCompare(b.customer.name)
+          break
+        case 'date':
+          cmp = new Date(a.date).getTime() - new Date(b.date).getTime()
+          break
+        case 'salesPerson':
+          cmp = a.salesPerson.name.localeCompare(b.salesPerson.name)
+          break
+        case 'total':
+          cmp = Number(a.total) - Number(b.total)
+          break
+        case 'status':
+          cmp = (statusLabels[a.status] || '').localeCompare(statusLabels[b.status] || '')
+          break
+        case 'validUntil':
+          cmp = new Date(a.validUntil || 0).getTime() - new Date(b.validUntil || 0).getTime()
+          break
+      }
+      return sortDirection === 'asc' ? cmp : -cmp
+    })
+  }, [quotes, sortColumn, sortDirection])
+
+  const SortArrow = ({ column }: { column: string }) => {
+    if (sortColumn !== column) return null
+    return <span className="ml-1">{sortDirection === 'asc' ? '▲' : '▼'}</span>
   }
 
   return (
@@ -397,26 +445,40 @@ export default function CotizacionesPage() {
               <Table className="min-w-[1100px]">
                 <TableHeader>
                   <TableRow className="bg-blue-50 hover:bg-blue-50">
-                    <TableHead className="min-w-[130px] font-semibold text-blue-900">
-                      Nº Cotización
+                    <TableHead className="min-w-[130px] font-semibold text-blue-900 cursor-pointer select-none hover:bg-blue-100" onClick={() => handleSort('quoteNumber')}>
+                      <span className={`flex items-center ${sortColumn === 'quoteNumber' ? 'text-blue-700' : ''}`}>
+                        Nº Cotización<SortArrow column="quoteNumber" />
+                      </span>
                     </TableHead>
-                    <TableHead className="min-w-[200px] font-semibold text-blue-900">
-                      Cliente
+                    <TableHead className="min-w-[200px] font-semibold text-blue-900 cursor-pointer select-none hover:bg-blue-100" onClick={() => handleSort('customer')}>
+                      <span className={`flex items-center ${sortColumn === 'customer' ? 'text-blue-700' : ''}`}>
+                        Cliente<SortArrow column="customer" />
+                      </span>
                     </TableHead>
-                    <TableHead className="min-w-[120px] font-semibold text-blue-900">
-                      Fecha
+                    <TableHead className="min-w-[120px] font-semibold text-blue-900 cursor-pointer select-none hover:bg-blue-100" onClick={() => handleSort('date')}>
+                      <span className={`flex items-center ${sortColumn === 'date' ? 'text-blue-700' : ''}`}>
+                        Fecha<SortArrow column="date" />
+                      </span>
                     </TableHead>
-                    <TableHead className="min-w-[120px] font-semibold text-blue-900">
-                      Vendedor
+                    <TableHead className="min-w-[120px] font-semibold text-blue-900 cursor-pointer select-none hover:bg-blue-100" onClick={() => handleSort('salesPerson')}>
+                      <span className={`flex items-center ${sortColumn === 'salesPerson' ? 'text-blue-700' : ''}`}>
+                        Vendedor<SortArrow column="salesPerson" />
+                      </span>
                     </TableHead>
-                    <TableHead className="min-w-[130px] text-right font-semibold text-blue-900">
-                      Total
+                    <TableHead className="min-w-[130px] text-right font-semibold text-blue-900 cursor-pointer select-none hover:bg-blue-100" onClick={() => handleSort('total')}>
+                      <span className={`flex items-center justify-end ${sortColumn === 'total' ? 'text-blue-700' : ''}`}>
+                        Total<SortArrow column="total" />
+                      </span>
                     </TableHead>
-                    <TableHead className="min-w-[90px] font-semibold text-blue-900">
-                      Estado
+                    <TableHead className="min-w-[90px] font-semibold text-blue-900 cursor-pointer select-none hover:bg-blue-100" onClick={() => handleSort('status')}>
+                      <span className={`flex items-center ${sortColumn === 'status' ? 'text-blue-700' : ''}`}>
+                        Estado<SortArrow column="status" />
+                      </span>
                     </TableHead>
-                    <TableHead className="min-w-[110px] font-semibold text-blue-900">
-                      Vigencia
+                    <TableHead className="min-w-[110px] font-semibold text-blue-900 cursor-pointer select-none hover:bg-blue-100" onClick={() => handleSort('validUntil')}>
+                      <span className={`flex items-center ${sortColumn === 'validUntil' ? 'text-blue-700' : ''}`}>
+                        Vigencia<SortArrow column="validUntil" />
+                      </span>
                     </TableHead>
                     <TableHead className="w-[60px] font-semibold text-blue-900">
                       Ver
@@ -427,7 +489,7 @@ export default function CotizacionesPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {quotes.map((quote) => (
+                  {sortedQuotes.map((quote) => (
                     <TableRow
                       key={quote.id}
                       className="cursor-pointer hover:bg-blue-50 transition-colors"

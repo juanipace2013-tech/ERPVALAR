@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -93,6 +93,8 @@ export default function RemitosPage() {
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [sortColumn, setSortColumn] = useState<string>('deliveryNumber')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
 
   useEffect(() => {
     fetchDeliveryNotes()
@@ -155,6 +157,53 @@ export default function RemitosPage() {
       dn.customer.name.toLowerCase().includes(searchTerm.toLowerCase())
     return matchesSearch
   })
+
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortColumn(column)
+      setSortDirection('asc')
+    }
+  }
+
+  const sortedDeliveryNotes = useMemo(() => {
+    return [...filteredDeliveryNotes].sort((a, b) => {
+      let cmp = 0
+      switch (sortColumn) {
+        case 'deliveryNumber':
+          cmp = a.deliveryNumber.localeCompare(b.deliveryNumber)
+          break
+        case 'date':
+          cmp = new Date(a.date).getTime() - new Date(b.date).getTime()
+          break
+        case 'customer':
+          cmp = a.customer.name.localeCompare(b.customer.name)
+          break
+        case 'quote':
+          cmp = (a.quote?.quoteNumber || '').localeCompare(b.quote?.quoteNumber || '')
+          break
+        case 'items':
+          cmp = getTotalItems(a.items) - getTotalItems(b.items)
+          break
+        case 'status':
+          cmp = (statusLabels[a.status] || '').localeCompare(statusLabels[b.status] || '')
+          break
+        case 'signed':
+          cmp = (a.signedDocUrl ? 1 : 0) - (b.signedDocUrl ? 1 : 0)
+          break
+        case 'invoice':
+          cmp = (a.invoices[0]?.invoiceNumber || '').localeCompare(b.invoices[0]?.invoiceNumber || '')
+          break
+      }
+      return sortDirection === 'asc' ? cmp : -cmp
+    })
+  }, [filteredDeliveryNotes, sortColumn, sortDirection])
+
+  const SortArrow = ({ column }: { column: string }) => {
+    if (sortColumn !== column) return null
+    return <span className="ml-1">{sortDirection === 'asc' ? '▲' : '▼'}</span>
+  }
 
   return (
     <div className="container mx-auto px-6 py-8">
@@ -291,19 +340,51 @@ export default function RemitosPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Número</TableHead>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead>Cliente</TableHead>
-                    <TableHead>Cotización</TableHead>
-                    <TableHead className="text-right">Items</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead className="text-center">Firmado</TableHead>
-                    <TableHead>Factura</TableHead>
+                    <TableHead className="cursor-pointer select-none hover:bg-gray-100" onClick={() => handleSort('deliveryNumber')}>
+                      <span className={`flex items-center ${sortColumn === 'deliveryNumber' ? 'text-blue-700 font-semibold' : ''}`}>
+                        Número<SortArrow column="deliveryNumber" />
+                      </span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none hover:bg-gray-100" onClick={() => handleSort('date')}>
+                      <span className={`flex items-center ${sortColumn === 'date' ? 'text-blue-700 font-semibold' : ''}`}>
+                        Fecha<SortArrow column="date" />
+                      </span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none hover:bg-gray-100" onClick={() => handleSort('customer')}>
+                      <span className={`flex items-center ${sortColumn === 'customer' ? 'text-blue-700 font-semibold' : ''}`}>
+                        Cliente<SortArrow column="customer" />
+                      </span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none hover:bg-gray-100" onClick={() => handleSort('quote')}>
+                      <span className={`flex items-center ${sortColumn === 'quote' ? 'text-blue-700 font-semibold' : ''}`}>
+                        Cotización<SortArrow column="quote" />
+                      </span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none hover:bg-gray-100 text-right" onClick={() => handleSort('items')}>
+                      <span className={`flex items-center justify-end ${sortColumn === 'items' ? 'text-blue-700 font-semibold' : ''}`}>
+                        Items<SortArrow column="items" />
+                      </span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none hover:bg-gray-100" onClick={() => handleSort('status')}>
+                      <span className={`flex items-center ${sortColumn === 'status' ? 'text-blue-700 font-semibold' : ''}`}>
+                        Estado<SortArrow column="status" />
+                      </span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none hover:bg-gray-100 text-center" onClick={() => handleSort('signed')}>
+                      <span className={`flex items-center justify-center ${sortColumn === 'signed' ? 'text-blue-700 font-semibold' : ''}`}>
+                        Firmado<SortArrow column="signed" />
+                      </span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none hover:bg-gray-100" onClick={() => handleSort('invoice')}>
+                      <span className={`flex items-center ${sortColumn === 'invoice' ? 'text-blue-700 font-semibold' : ''}`}>
+                        Factura<SortArrow column="invoice" />
+                      </span>
+                    </TableHead>
                     <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredDeliveryNotes.map((dn) => (
+                  {sortedDeliveryNotes.map((dn) => (
                     <TableRow
                       key={dn.id}
                       className="cursor-pointer hover:bg-gray-50"

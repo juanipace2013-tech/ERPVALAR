@@ -21,6 +21,9 @@ import {
   ChevronDown,
   ChevronRight,
   ShieldCheck,
+  Route,
+  Map,
+  ArrowDownToLine,
 } from 'lucide-react'
 
 interface SubNavItem {
@@ -62,6 +65,31 @@ const navItems: NavItem[] = [
     href: '/remitos',
     icon: Truck,
     roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
+  },
+  {
+    title: 'Logística',
+    icon: Route,
+    roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
+    subItems: [
+      {
+        title: 'Hojas de Ruta',
+        href: '/logistica/rutas',
+        icon: Map,
+        roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
+      },
+      {
+        title: 'Entregas',
+        href: '/logistica/entregas',
+        icon: PackageCheck,
+        roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
+      },
+      {
+        title: 'Retiros',
+        href: '/logistica/retiros',
+        icon: ArrowDownToLine,
+        roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
+      },
+    ],
   },
   {
     title: 'Facturación',

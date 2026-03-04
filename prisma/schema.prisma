@@ -66,6 +66,12 @@ model User {
   // Customer relations
   customerReceipts  CustomerReceipt[]
 
+  // Logistics relations
+  deliveryRoutes    DeliveryRoute[] @relation("UserDeliveryRoutes")
+
+  // BCRA relations
+  bcraSearches      BcraSearchHistory[]
+
   @@index([email])
   @@index([role])
   @@index([status])
@@ -1136,6 +1142,9 @@ model DeliveryNote {
 
   // Facturación
   invoices          Invoice[]          // Facturas generadas desde este remito
+
+  // Logística
+  deliveryStops     DeliveryStop[]
 
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
@@ -2211,4 +2220,121 @@ model BcraCache {
   consultedAt DateTime @default(now())
 
   @@map("bcra_cache")
+}
+
+model BcraSearchHistory {
+  id           String   @id @default(cuid())
+  cuit         String
+  customerName String
+  semaforo     String   // verde | amarillo | rojo
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  result       Json
+  searchDate   DateTime @default(now())
+
+  @@index([cuit])
+  @@index([userId])
+  @@index([searchDate])
+  @@map("bcra_search_history")
+}
+
+// ========================================
+// LOGÍSTICA
+// ========================================
+
+enum DeliveryRouteStatus {
+  PLANNING
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum DeliveryStopType {
+  DELIVERY
+  PICKUP
+}
+
+enum DeliveryStopTransport {
+  OWN
+  THIRD_PARTY
+}
+
+enum DeliveryStopZone {
+  CABA
+  NORTE
+  SUR
+  OESTE
+}
+
+enum DeliveryStopStatus {
+  PENDING
+  PREPARING
+  IN_ROUTE
+  DELIVERED
+  NOT_DELIVERED
+  PICKED_UP
+}
+
+model DeliveryRoute {
+  id          String              @id @default(cuid())
+  date        DateTime
+  status      DeliveryRouteStatus @default(PLANNING)
+  notes       String?             @db.Text
+
+  createdById String
+  createdBy   User                @relation("UserDeliveryRoutes", fields: [createdById], references: [id])
+
+  stops       DeliveryStop[]
+
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([date])
+  @@index([status])
+  @@index([createdById])
+  @@map("delivery_routes")
+}
+
+model DeliveryStop {
+  id                String              @id @default(cuid())
+  routeId           String
+  route             DeliveryRoute       @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  deliveryNoteId    String?
+  deliveryNote      DeliveryNote?       @relation(fields: [deliveryNoteId], references: [id])
+
+  order             Int                 // Posición en la ruta
+  type              DeliveryStopType    @default(DELIVERY)
+
+  customerName      String
+  transportType     DeliveryStopTransport @default(OWN)
+  transportName     String?             // Nombre transporte tercerizado
+
+  address           String?
+  city              String?
+  zone              DeliveryStopZone    @default(CABA)
+
+  schedule          String?             // Horario recepción (texto libre)
+  contactName       String?
+  contactPhone      String?
+
+  packages          Int                 @default(0)
+  finalDestination  String?             // Destino interior si aplica
+
+  trackingNumber    String?             // Número de guía
+  deliveryDeadline  DateTime?           // Fecha compromiso entrega
+
+  observations      String?             @db.Text
+
+  status            DeliveryStopStatus  @default(PENDING)
+  completedAt       DateTime?
+  signature         String?             // URL foto/firma
+
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@index([routeId])
+  @@index([deliveryNoteId])
+  @@index([status])
+  @@index([zone])
+  @@map("delivery_stops")
 }

@@ -119,7 +119,7 @@ interface DeliveryNote {
 
 const statusLabels: Record<string, string> = {
   PENDING: 'Pendiente',
-  PREPARING: 'En Preparación',
+  PREPARING: 'En Proceso',
   READY: 'Listo',
   DISPATCHED: 'Despachado',
   DELIVERED: 'Entregado',
@@ -127,7 +127,7 @@ const statusLabels: Record<string, string> = {
 }
 
 const statusColors: Record<string, string> = {
-  PENDING: 'bg-gray-100 text-gray-800',
+  PENDING: 'bg-orange-100 text-orange-800',
   PREPARING: 'bg-yellow-100 text-yellow-800',
   READY: 'bg-blue-100 text-blue-800',
   DISPATCHED: 'bg-purple-100 text-purple-800',

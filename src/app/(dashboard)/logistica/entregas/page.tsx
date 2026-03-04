@@ -67,8 +67,8 @@ type KanbanStatus = 'PENDING' | 'PREPARING' | 'IN_ROUTE' | 'DELIVERED' | 'NOT_DE
 // ─── Constantes ──────────────────────────────────────────────────────────────
 
 const COLUMNS: { key: KanbanStatus; label: string; color: string; borderColor: string; bgColor: string }[] = [
-  { key: 'PENDING', label: 'Pendiente', color: 'bg-gray-500', borderColor: 'border-l-gray-400', bgColor: 'bg-gray-50' },
-  { key: 'PREPARING', label: 'En Preparación', color: 'bg-yellow-500', borderColor: 'border-l-yellow-400', bgColor: 'bg-yellow-50' },
+  { key: 'PENDING', label: 'Pendiente', color: 'bg-orange-500', borderColor: 'border-l-orange-400', bgColor: 'bg-orange-50' },
+  { key: 'PREPARING', label: 'En Proceso', color: 'bg-yellow-500', borderColor: 'border-l-yellow-400', bgColor: 'bg-yellow-50' },
   { key: 'IN_ROUTE', label: 'En Ruta', color: 'bg-blue-500', borderColor: 'border-l-blue-400', bgColor: 'bg-blue-50' },
   { key: 'DELIVERED', label: 'Entregado', color: 'bg-green-500', borderColor: 'border-l-green-400', bgColor: 'bg-green-50' },
   { key: 'NOT_DELIVERED', label: 'No Entregado', color: 'bg-red-500', borderColor: 'border-l-red-400', bgColor: 'bg-red-50' },
@@ -83,7 +83,7 @@ const ZONE_BADGE: Record<string, string> = {
 
 const STATUS_LABEL: Record<string, string> = {
   PENDING: 'Pendiente',
-  PREPARING: 'En Preparación',
+  PREPARING: 'En Proceso',
   IN_ROUTE: 'En Ruta',
   DELIVERED: 'Entregado',
   NOT_DELIVERED: 'No Entregado',

@@ -71,7 +71,7 @@ interface DeliveryNote {
 
 const statusLabels: Record<string, string> = {
   PENDING: 'Pendiente',
-  PREPARING: 'En Preparación',
+  PREPARING: 'En Proceso',
   READY: 'Listo',
   DISPATCHED: 'Despachado',
   DELIVERED: 'Entregado',
@@ -79,7 +79,7 @@ const statusLabels: Record<string, string> = {
 }
 
 const statusColors: Record<string, string> = {
-  PENDING: 'bg-gray-100 text-gray-800',
+  PENDING: 'bg-orange-100 text-orange-800',
   PREPARING: 'bg-yellow-100 text-yellow-800',
   READY: 'bg-blue-100 text-blue-800',
   DISPATCHED: 'bg-purple-100 text-purple-800',
@@ -201,7 +201,7 @@ export default function RemitosPage() {
                 <SelectContent>
                   <SelectItem value="all">Todos los estados</SelectItem>
                   <SelectItem value="PENDING">Pendiente</SelectItem>
-                  <SelectItem value="PREPARING">En Preparación</SelectItem>
+                  <SelectItem value="PREPARING">En Proceso</SelectItem>
                   <SelectItem value="READY">Listo</SelectItem>
                   <SelectItem value="DISPATCHED">Despachado</SelectItem>
                   <SelectItem value="DELIVERED">Entregado</SelectItem>
@@ -231,11 +231,11 @@ export default function RemitosPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Pendientes</p>
-                <p className="text-2xl font-bold text-yellow-600">
+                <p className="text-2xl font-bold text-orange-600">
                   {deliveryNotes.filter((dn) => dn.status === 'PENDING').length}
                 </p>
               </div>
-              <Package className="h-8 w-8 text-yellow-400" />
+              <Package className="h-8 w-8 text-orange-400" />
             </div>
           </CardContent>
         </Card>
@@ -244,7 +244,7 @@ export default function RemitosPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">En Proceso</p>
-                <p className="text-2xl font-bold text-blue-600">
+                <p className="text-2xl font-bold text-yellow-600">
                   {
                     deliveryNotes.filter(
                       (dn) =>
@@ -255,7 +255,7 @@ export default function RemitosPage() {
                   }
                 </p>
               </div>
-              <Package className="h-8 w-8 text-blue-400" />
+              <Package className="h-8 w-8 text-yellow-400" />
             </div>
           </CardContent>
         </Card>

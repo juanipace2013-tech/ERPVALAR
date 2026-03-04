@@ -30,7 +30,16 @@ import {
   ClipboardList,
   DollarSign,
   CheckCircle2,
+  FileText,
 } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { toast } from 'sonner'
 import {
   ColppyCustomerSearch,
@@ -76,6 +85,27 @@ interface RemitoItem {
   description: string
   quantity: number
   unit: string
+  unitPrice?: number
+  fromQuoteId?: string
+}
+
+interface QuoteForImport {
+  id: string
+  quoteNumber: string
+  date: string
+  status: string
+  total: number | string
+  currency: string
+  items: Array<{
+    id: string
+    productId: string | null
+    description: string | null
+    quantity: number
+    unitPrice: number | string
+    isAlternative: boolean
+    manualSku: string | null
+    product: { id: string; sku: string; name: string; unit: string } | null
+  }>
 }
 
 interface ProductResult {
@@ -189,6 +219,13 @@ export default function NuevoRemitoPage() {
   const [manualQty, setManualQty] = useState('1')
   const [manualUnit, setManualUnit] = useState('UN')
 
+  // Quote import state (direct mode)
+  const [customerQuotes, setCustomerQuotes] = useState<QuoteForImport[]>([])
+  const [quotesLoading, setQuotesLoading] = useState(false)
+  const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null)
+  const [selectedQuoteItems, setSelectedQuoteItems] = useState<Set<string>>(new Set())
+  const [linkedQuoteId, setLinkedQuoteId] = useState<string | null>(null)
+
   const [submitting, setSubmitting] = useState(false)
 
   // ── Load quote if from quote ──
@@ -208,6 +245,33 @@ export default function NuevoRemitoPage() {
     const timeout = setTimeout(() => searchProducts(productSearch), 300)
     return () => clearTimeout(timeout)
   }, [productSearch])
+
+  // ── Fetch customer's accepted quotes ──
+  useEffect(() => {
+    if (!customer?.cuit) {
+      setCustomerQuotes([])
+      setSelectedQuoteId(null)
+      setSelectedQuoteItems(new Set())
+      setLinkedQuoteId(null)
+      return
+    }
+    const fetchCustomerQuotes = async () => {
+      setQuotesLoading(true)
+      try {
+        const params = new URLSearchParams({ status: 'ACCEPTED', customerCuit: customer.cuit })
+        const res = await fetch(`/api/quotes?${params.toString()}`)
+        if (res.ok) {
+          const data = await res.json()
+          setCustomerQuotes(data.quotes || [])
+        }
+      } catch {
+        console.error('Error fetching customer quotes')
+      } finally {
+        setQuotesLoading(false)
+      }
+    }
+    fetchCustomerQuotes()
+  }, [customer?.cuit])
 
   // ── Click outside to close dropdown ──
   useEffect(() => {
@@ -317,6 +381,63 @@ export default function NuevoRemitoPage() {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
+  // QUOTE IMPORT HANDLERS
+  // ══════════════════════════════════════════════════════════════════════════
+
+  const handleSelectQuote = (quoteId: string) => {
+    setSelectedQuoteId(quoteId)
+    const quote = customerQuotes.find((q) => q.id === quoteId)
+    if (quote) {
+      setSelectedQuoteItems(new Set(quote.items.filter((i) => !i.isAlternative).map((i) => i.id)))
+    }
+  }
+
+  const handleToggleQuoteItem = (itemId: string) => {
+    setSelectedQuoteItems((prev) => {
+      const next = new Set(prev)
+      if (next.has(itemId)) next.delete(itemId)
+      else next.add(itemId)
+      return next
+    })
+  }
+
+  const handleToggleAllQuoteItems = (checked: boolean) => {
+    const quote = customerQuotes.find((q) => q.id === selectedQuoteId)
+    if (!quote) return
+    if (checked) {
+      setSelectedQuoteItems(new Set(quote.items.filter((i) => !i.isAlternative).map((i) => i.id)))
+    } else {
+      setSelectedQuoteItems(new Set())
+    }
+  }
+
+  const handleImportQuoteItems = () => {
+    const quote = customerQuotes.find((q) => q.id === selectedQuoteId)
+    if (!quote) return
+    const toImport = quote.items
+      .filter((item) => !item.isAlternative && selectedQuoteItems.has(item.id))
+      .map((item) => ({
+        tempId: crypto.randomUUID(),
+        productId: item.productId || null,
+        sku: item.product?.sku || item.manualSku || '',
+        description: item.description || item.product?.name || 'Item',
+        quantity: item.quantity,
+        unit: item.product?.unit || 'UN',
+        unitPrice: Number(item.unitPrice),
+        fromQuoteId: quote.id,
+      }))
+    if (toImport.length === 0) {
+      toast.error('Seleccioná al menos un item para importar')
+      return
+    }
+    setItems((prev) => [...prev, ...toImport])
+    setLinkedQuoteId(quote.id)
+    toast.success(`${toImport.length} item${toImport.length !== 1 ? 's' : ''} importado${toImport.length !== 1 ? 's' : ''} de ${quote.quoteNumber}`)
+    setSelectedQuoteId(null)
+    setSelectedQuoteItems(new Set())
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
   // SUBMIT
   // ══════════════════════════════════════════════════════════════════════════
 
@@ -385,6 +506,7 @@ export default function NuevoRemitoPage() {
             province: customer.province,
             postalCode: customer.postalCode,
           },
+          quoteId: linkedQuoteId || undefined,
           date: remitoDate,
           carrier: carrier || undefined,
           transportAddress: transportAddress || undefined,
@@ -651,7 +773,9 @@ export default function NuevoRemitoPage() {
             Nuevo Remito Directo
           </h1>
           <p className="text-sm text-gray-500">
-            Crear remito sin cotización vinculada
+            {linkedQuoteId
+              ? `Remito vinculado a ${customerQuotes.find((q) => q.id === linkedQuoteId)?.quoteNumber}`
+              : 'Crear remito sin cotización vinculada'}
           </p>
         </div>
       </div>
@@ -816,6 +940,119 @@ export default function NuevoRemitoPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
+            {/* Importar desde cotización */}
+            {quotesLoading && (
+              <div className="flex items-center gap-2 text-sm text-gray-500 border rounded-lg p-4 bg-gray-50">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Cargando cotizaciones del cliente...
+              </div>
+            )}
+
+            {!quotesLoading && customerQuotes.length > 0 && (
+              <div className="border rounded-lg p-4 bg-amber-50/50 border-amber-200 space-y-4">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-amber-600" />
+                  <Label className="text-sm font-semibold">Importar desde cotización</Label>
+                </div>
+
+                <Select
+                  value={selectedQuoteId || ''}
+                  onValueChange={handleSelectQuote}
+                >
+                  <SelectTrigger className="w-full bg-white">
+                    <SelectValue placeholder="Seleccionar cotización aceptada..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {customerQuotes.map((q) => (
+                      <SelectItem key={q.id} value={q.id}>
+                        {q.quoteNumber} — {new Date(q.date).toLocaleDateString('es-AR')} — USD{' '}
+                        {Number(q.total).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {selectedQuoteId && (() => {
+                  const quote = customerQuotes.find((q) => q.id === selectedQuoteId)
+                  if (!quote) return null
+                  const mainItems = quote.items.filter((i) => !i.isAlternative)
+                  const allSelected = mainItems.length > 0 && mainItems.every((i) => selectedQuoteItems.has(i.id))
+
+                  return (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            checked={allSelected}
+                            onCheckedChange={(checked) => handleToggleAllQuoteItems(!!checked)}
+                          />
+                          <span className="text-xs text-gray-600">
+                            Seleccionar todos ({mainItems.length} items)
+                          </span>
+                        </div>
+                        <span className="text-xs text-gray-500">
+                          {selectedQuoteItems.size} seleccionados
+                        </span>
+                      </div>
+
+                      <div className="border rounded bg-white max-h-48 overflow-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="bg-gray-50">
+                              <TableHead className="w-8" />
+                              <TableHead className="w-24">Código</TableHead>
+                              <TableHead>Descripción</TableHead>
+                              <TableHead className="text-right w-16">Cant.</TableHead>
+                              <TableHead className="text-right w-28">P.Unit USD</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {mainItems.map((item) => (
+                              <TableRow
+                                key={item.id}
+                                className={selectedQuoteItems.has(item.id) ? 'bg-amber-50' : ''}
+                              >
+                                <TableCell className="py-1">
+                                  <Checkbox
+                                    checked={selectedQuoteItems.has(item.id)}
+                                    onCheckedChange={() => handleToggleQuoteItem(item.id)}
+                                  />
+                                </TableCell>
+                                <TableCell className="py-1 font-mono text-xs">
+                                  {item.product?.sku || item.manualSku || '—'}
+                                </TableCell>
+                                <TableCell className="py-1 text-sm">
+                                  {item.description || item.product?.name}
+                                </TableCell>
+                                <TableCell className="py-1 text-right text-sm">
+                                  {item.quantity}
+                                </TableCell>
+                                <TableCell className="py-1 text-right text-sm font-medium">
+                                  {Number(item.unitPrice).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          onClick={handleImportQuoteItems}
+                          disabled={selectedQuoteItems.size === 0}
+                          className="bg-amber-600 hover:bg-amber-700"
+                        >
+                          <Plus className="h-4 w-4 mr-1" />
+                          Importar {selectedQuoteItems.size} item{selectedQuoteItems.size !== 1 ? 's' : ''}
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
+            )}
+
             {/* Buscador de producto */}
             <div>
               <Label className="text-sm font-semibold mb-2 block">
@@ -949,6 +1186,11 @@ export default function NuevoRemitoPage() {
                         </TableCell>
                         <TableCell className="text-sm">
                           {item.description}
+                          {item.fromQuoteId && (
+                            <Badge variant="outline" className="ml-2 text-xs text-amber-700 border-amber-300 bg-amber-50">
+                              Cotiz.
+                            </Badge>
+                          )}
                         </TableCell>
                         <TableCell className="text-center">
                           <Input
@@ -1098,6 +1340,14 @@ export default function NuevoRemitoPage() {
                   <div>
                     <p className="text-gray-500">Bultos</p>
                     <p className="font-semibold">{bultos}</p>
+                  </div>
+                )}
+                {linkedQuoteId && (
+                  <div>
+                    <p className="text-gray-500">Cotización vinculada</p>
+                    <p className="font-semibold text-amber-700">
+                      {customerQuotes.find((q) => q.id === linkedQuoteId)?.quoteNumber}
+                    </p>
                   </div>
                 )}
               </div>

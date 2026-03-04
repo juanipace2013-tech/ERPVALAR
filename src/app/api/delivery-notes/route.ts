@@ -100,6 +100,7 @@ export async function POST(request: NextRequest) {
       notes,
       items,
       colppyCustomer,
+      quoteId,
     } = body;
 
     let { customerId } = body;
@@ -183,6 +184,7 @@ export async function POST(request: NextRequest) {
       data: {
         deliveryNumber,
         customerId,
+        quoteId: quoteId || null,
         date: date ? new Date(date) : new Date(),
         carrier: carrier || null,
         transportAddress: transportAddress || null,

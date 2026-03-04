@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
     const dateFrom = searchParams.get('dateFrom')
     const dateTo = searchParams.get('dateTo')
     const salesPersonId = searchParams.get('salesPersonId')
+    const customerCuit = searchParams.get('customerCuit')
 
     const where: Record<string, unknown> = {}
 
@@ -50,6 +51,10 @@ export async function GET(request: NextRequest) {
       where.salesPersonId = salesPersonId
     }
 
+    if (customerCuit) {
+      where.customer = { cuit: customerCuit }
+    }
+
     const quotes = await prisma.quote.findMany({
       where,
       include: {
@@ -65,6 +70,17 @@ export async function GET(request: NextRequest) {
             name: true,
           },
         },
+        ...(customerCuit ? {
+          items: {
+            where: { isAlternative: false },
+            include: {
+              product: {
+                select: { id: true, sku: true, name: true, unit: true },
+              },
+            },
+            orderBy: { itemNumber: 'asc' as const },
+          },
+        } : {}),
       },
       orderBy: {
         date: 'desc',

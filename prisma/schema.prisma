@@ -286,6 +286,7 @@ model Supplier {
   purchaseInvoices PurchaseInvoice[]
   payments        SupplierPayment[]
   treasuryPayments Payment[]
+  deliveryStops   DeliveryStop[]
 
   // Timestamps
   createdAt       DateTime       @default(now())
@@ -2325,6 +2326,11 @@ model DeliveryStop {
 
   observations      String?             @db.Text
 
+  // Retiros de proveedores
+  supplierId        String?
+  supplier          Supplier?           @relation(fields: [supplierId], references: [id])
+  materialDescription String?           @db.Text  // Material a retirar
+
   status            DeliveryStopStatus  @default(PENDING)
   completedAt       DateTime?
   signature         String?             // URL foto/firma
@@ -2336,5 +2342,7 @@ model DeliveryStop {
   @@index([deliveryNoteId])
   @@index([status])
   @@index([zone])
+  @@index([supplierId])
+  @@index([type])
   @@map("delivery_stops")
 }

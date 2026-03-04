@@ -24,6 +24,8 @@ import {
 import {
   LineChart,
   Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -31,6 +33,7 @@ import {
   ResponsiveContainer,
   ReferenceArea,
   ReferenceLine,
+  Legend,
 } from 'recharts'
 import {
   Loader2,
@@ -42,6 +45,8 @@ import {
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
+  History,
+  Eye,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -62,7 +67,7 @@ interface Entidad {
 
 interface HistorialPeriodo {
   periodo: string
-  entidades: Array<{ entidad: number; situacion: number; monto?: number }>
+  entidades: Array<{ entidad: number; situacion: number; monto?: number; entidadNombre?: string }>
 }
 
 interface ChequeEntidad {
@@ -117,6 +122,15 @@ interface BcraResult {
   }
 }
 
+interface SearchHistoryItem {
+  id: string
+  cuit: string
+  customerName: string
+  semaforo: string
+  searchDate: string
+  user: { id: string; name: string }
+}
+
 type SortField = 'fechaRechazo' | 'monto' | 'entidad' | 'estado'
 type SortDir = 'asc' | 'desc'
 
@@ -160,6 +174,15 @@ const SITUACION_BADGE: Record<number, string> = {
   5: 'bg-red-100 text-red-800',
 }
 
+// ─── Colores para entidades en gráfico de deuda ──────────────────────────────
+
+const ENTITY_COLORS = [
+  '#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6',
+  '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16',
+  '#06b6d4', '#e11d48', '#10b981', '#d946ef', '#0ea5e9',
+  '#a855f7', '#64748b', '#059669', '#dc2626', '#7c3aed',
+]
+
 // ─── Semáforo ─────────────────────────────────────────────────────────────────
 
 function SemaforoIcon({ semaforo }: { semaforo: 'verde' | 'amarillo' | 'rojo' }) {
@@ -178,6 +201,12 @@ function semaforoColor(s: 'verde' | 'amarillo' | 'rojo'): string {
   if (s === 'verde') return 'border-green-300 bg-green-50'
   if (s === 'amarillo') return 'border-yellow-300 bg-yellow-50'
   return 'border-red-300 bg-red-50'
+}
+
+function semaforoBadgeColor(s: string): string {
+  if (s === 'verde') return 'bg-green-100 text-green-800'
+  if (s === 'amarillo') return 'bg-yellow-100 text-yellow-800'
+  return 'bg-red-100 text-red-800'
 }
 
 // ─── Sort icon ────────────────────────────────────────────────────────────────
@@ -199,6 +228,13 @@ export default function AnalisisCrediticioPage() {
   const [result, setResult] = useState<BcraResult | null>(null)
   const [error, setError] = useState('')
 
+  // ─── Estado historial ────────────────────────────────────────────────────────
+  const [history, setHistory] = useState<SearchHistoryItem[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+  const [histCuitFilter, setHistCuitFilter] = useState('')
+  const [histDateFrom, setHistDateFrom] = useState('')
+  const [histDateTo, setHistDateTo] = useState('')
+
   // ─── Estado filtros y ordenamiento ───────────────────────────────────────────
   const [filtroEntidad, setFiltroEntidad] = useState('todas')
   const [filtroCausal, setFiltroCausal] = useState('todas')
@@ -217,6 +253,57 @@ export default function AnalisisCrediticioPage() {
     setSortField('fechaRechazo')
     setSortDir('desc')
   }, [])
+
+  // ─── Fetch historial ─────────────────────────────────────────────────────────
+
+  const fetchHistory = useCallback(async () => {
+    try {
+      setLoadingHistory(true)
+      const params = new URLSearchParams()
+      if (histCuitFilter) params.append('cuit', histCuitFilter.replace(/\D/g, ''))
+      if (histDateFrom) params.append('dateFrom', histDateFrom)
+      if (histDateTo) params.append('dateTo', histDateTo)
+      params.append('limit', '50')
+
+      const res = await fetch(`/api/bcra/historial?${params.toString()}`)
+      if (res.ok) {
+        const data = await res.json()
+        setHistory(data)
+      }
+    } catch (e) {
+      console.error('Error fetching history:', e)
+    } finally {
+      setLoadingHistory(false)
+    }
+  }, [histCuitFilter, histDateFrom, histDateTo])
+
+  useEffect(() => {
+    fetchHistory()
+  }, [fetchHistory])
+
+  // ─── Cargar resultado desde historial ─────────────────────────────────────────
+
+  const loadFromHistory = async (id: string) => {
+    try {
+      setLoading(true)
+      setError('')
+      setResult(null)
+      resetFiltros()
+
+      const res = await fetch(`/api/bcra/historial/${id}`)
+      if (!res.ok) throw new Error('Error al cargar resultado')
+
+      const data = await res.json()
+      const bcraResult: BcraResult = data.result
+      setResult(bcraResult)
+      setCuitInput(data.cuit)
+      router.replace(`/analisis-crediticio?cuit=${data.cuit}`, { scroll: false })
+    } catch (e) {
+      toast.error('Error al cargar consulta del historial')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const buscar = useCallback(
     async (cuit: string) => {
@@ -244,6 +331,8 @@ export default function AnalisisCrediticioPage() {
           key,
           JSON.stringify({ semaforo: data.resumen.semaforo, ts: Date.now() })
         )
+        // Refrescar historial
+        fetchHistory()
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Error al consultar BCRA')
         toast.error('Error al consultar BCRA')
@@ -251,7 +340,7 @@ export default function AnalisisCrediticioPage() {
         setLoading(false)
       }
     },
-    [router, resetFiltros]
+    [router, resetFiltros, fetchHistory]
   )
 
   // Auto-buscar si viene con ?cuit= en la URL
@@ -264,7 +353,7 @@ export default function AnalisisCrediticioPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ─── Chart data ──────────────────────────────────────────────────────────────
+  // ─── Chart data (situación línea) ──────────────────────────────────────────
 
   const chartData = useMemo(() => {
     const periodos = result?.historicas?.results?.periodos ?? []
@@ -279,6 +368,39 @@ export default function AnalisisCrediticioPage() {
             ? Math.max(...p.entidades.map((e) => Number(e.situacion) || 1))
             : 1,
       }))
+  }, [result])
+
+  // ─── Chart data (deuda por entidad - stacked bar) ──────────────────────────
+
+  const { debtChartData, debtEntityNames } = useMemo(() => {
+    const periodos = result?.historicas?.results?.periodos ?? []
+    if (periodos.length === 0) return { debtChartData: [], debtEntityNames: [] as string[] }
+
+    // Collect all unique entity names
+    const entitySet = new Set<string>()
+    const sorted = [...periodos].sort((a, b) => a.periodo.localeCompare(b.periodo)).slice(-24)
+
+    for (const p of sorted) {
+      for (const e of p.entidades) {
+        const name = e.entidadNombre || `Entidad ${e.entidad}`
+        entitySet.add(name)
+      }
+    }
+    const entityNames = [...entitySet].sort()
+
+    const data = sorted.map((p) => {
+      const row: Record<string, string | number> = { mes: formatPeriodo(p.periodo) }
+      for (const name of entityNames) {
+        row[name] = 0
+      }
+      for (const e of p.entidades) {
+        const name = e.entidadNombre || `Entidad ${e.entidad}`
+        row[name] = e.monto ?? 0
+      }
+      return row
+    })
+
+    return { debtChartData: data, debtEntityNames: entityNames }
   }, [result])
 
   // ─── Entidades deuda actual ───────────────────────────────────────────────────
@@ -441,9 +563,150 @@ export default function AnalisisCrediticioPage() {
         </div>
       )}
 
+      {/* ─── Historial de búsquedas (cuando no hay resultado mostrado) ──────── */}
+      {!result && !loading && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <History className="h-5 w-5 text-blue-600" />
+                Últimas Consultas
+              </CardTitle>
+              <span className="text-sm text-gray-500">{history.length} consultas</span>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Filtros historial */}
+            <div className="flex flex-wrap gap-3 items-end border rounded-lg p-3 bg-gray-50">
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">CUIT</label>
+                <Input
+                  placeholder="Filtrar por CUIT"
+                  value={histCuitFilter}
+                  onChange={(e) => setHistCuitFilter(e.target.value)}
+                  className="h-8 text-sm w-40 font-mono"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Desde</label>
+                <Input
+                  type="date"
+                  value={histDateFrom}
+                  onChange={(e) => setHistDateFrom(e.target.value)}
+                  className="h-8 text-sm w-36"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Hasta</label>
+                <Input
+                  type="date"
+                  value={histDateTo}
+                  onChange={(e) => setHistDateTo(e.target.value)}
+                  className="h-8 text-sm w-36"
+                />
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8"
+                onClick={() => {
+                  setHistCuitFilter('')
+                  setHistDateFrom('')
+                  setHistDateTo('')
+                }}
+              >
+                Limpiar
+              </Button>
+            </div>
+
+            {/* Tabla historial */}
+            {loadingHistory ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+              </div>
+            ) : history.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <History className="h-10 w-10 text-gray-300 mx-auto mb-2" />
+                <p>No hay consultas registradas</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Fecha</TableHead>
+                      <TableHead>CUIT</TableHead>
+                      <TableHead>Denominación</TableHead>
+                      <TableHead>Semáforo</TableHead>
+                      <TableHead>Usuario</TableHead>
+                      <TableHead className="text-right">Acciones</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {history.map((item) => (
+                      <TableRow key={item.id} className="hover:bg-blue-50/30">
+                        <TableCell className="whitespace-nowrap text-sm">
+                          {new Date(item.searchDate).toLocaleDateString('es-AR', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">
+                          {formatCuit(item.cuit)}
+                        </TableCell>
+                        <TableCell className="font-medium">{item.customerName || '—'}</TableCell>
+                        <TableCell>
+                          <Badge className={semaforoBadgeColor(item.semaforo)}>
+                            {item.semaforo === 'verde'
+                              ? 'Normal'
+                              : item.semaforo === 'amarillo'
+                              ? 'Observaciones'
+                              : 'Irregular'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-600">
+                          {item.user.name}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => loadFromHistory(item.id)}
+                          >
+                            <Eye className="h-4 w-4 mr-1" /> Ver
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Resultados */}
       {result && !loading && (
         <>
+          {/* Botón volver al historial */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setResult(null)
+              setCuitInput('')
+              router.replace('/analisis-crediticio', { scroll: false })
+              fetchHistory()
+            }}
+            className="text-gray-600"
+          >
+            <History className="h-4 w-4 mr-1" /> Volver al historial
+          </Button>
+
           {/* Card principal - Semáforo */}
           <Card className={`border-2 ${semaforoColor(result.resumen.semaforo)}`}>
             <CardContent className="pt-6">
@@ -567,7 +830,7 @@ export default function AnalisisCrediticioPage() {
             </Card>
           )}
 
-          {/* Gráfico historial 24 meses */}
+          {/* Gráfico historial 24 meses - situación */}
           {chartData.length > 0 && (
             <Card>
               <CardHeader>
@@ -615,11 +878,64 @@ export default function AnalisisCrediticioPage() {
                     <span className="inline-block w-3 h-3 rounded-sm bg-green-200" /> Normal (1)
                   </span>
                   <span className="flex items-center gap-1">
-                    <span className="inline-block w-3 h-3 rounded-sm bg-yellow-200" /> Seguimiento / Problemas (2–3)
+                    <span className="inline-block w-3 h-3 rounded-sm bg-yellow-200" /> Seguimiento / Problemas (2-3)
                   </span>
                   <span className="flex items-center gap-1">
-                    <span className="inline-block w-3 h-3 rounded-sm bg-red-200" /> Alto riesgo / Irrecup. (4–5)
+                    <span className="inline-block w-3 h-3 rounded-sm bg-red-200" /> Alto riesgo / Irrecup. (4-5)
                   </span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ─── Gráfico deuda por entidad (stacked bar) ──────────────────────── */}
+          {debtChartData.length > 0 && debtEntityNames.length > 0 && (
+            <Card className="bg-gray-900 border-gray-700">
+              <CardHeader>
+                <CardTitle className="text-white">
+                  Evolución de Deuda por Entidad (últimos 24 meses)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={debtChartData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                      <XAxis
+                        dataKey="mes"
+                        tick={{ fontSize: 10, fill: '#9ca3af' }}
+                        interval="preserveStartEnd"
+                      />
+                      <YAxis
+                        tick={{ fontSize: 10, fill: '#9ca3af' }}
+                        tickFormatter={(v) => formatMonto(v)}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#1f2937',
+                          border: '1px solid #374151',
+                          borderRadius: '8px',
+                          color: '#f3f4f6',
+                        }}
+                        formatter={(value: number, name: string) => [
+                          `$${formatMonto(value)}`,
+                          name,
+                        ]}
+                        labelFormatter={(label) => `Período: ${label}`}
+                      />
+                      <Legend
+                        wrapperStyle={{ color: '#d1d5db', fontSize: '11px' }}
+                      />
+                      {debtEntityNames.map((name, idx) => (
+                        <Bar
+                          key={name}
+                          dataKey={name}
+                          stackId="debt"
+                          fill={ENTITY_COLORS[idx % ENTITY_COLORS.length]}
+                        />
+                      ))}
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
               </CardContent>
             </Card>
@@ -794,7 +1110,7 @@ export default function AnalisisCrediticioPage() {
                             Entidad
                             <SortIcon field="entidad" current={sortField} dir={sortDir} />
                           </TableHead>
-                          <TableHead>Nº Cheque</TableHead>
+                          <TableHead>N Cheque</TableHead>
                           <TableHead
                             className="text-right cursor-pointer select-none hover:bg-gray-50"
                             onClick={() => handleSort('monto')}
@@ -858,7 +1174,7 @@ export default function AnalisisCrediticioPage() {
               ) : (
                 <div className="text-center py-6 text-gray-500">
                   <CheckCircle2 className="h-8 w-8 text-green-400 mx-auto mb-2" />
-                  <p>Sin cheques rechazados ✓</p>
+                  <p>Sin cheques rechazados</p>
                 </div>
               )}
             </CardContent>

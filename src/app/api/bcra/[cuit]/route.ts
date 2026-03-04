@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { auth } from '@/auth'
 
 const BCRA_BASE = 'https://api.bcra.gob.ar/CentralDeDeudores/v1.0'
 
@@ -209,6 +210,24 @@ export async function GET(
     update: { data: result as any, consultedAt: new Date() },
     create: { cuit, data: result as any },
   })
+
+  // Save to search history (best-effort, don't fail the response)
+  try {
+    const session = await auth()
+    if (session?.user?.id) {
+      await prisma.bcraSearchHistory.create({
+        data: {
+          cuit,
+          customerName: denominacion || '',
+          semaforo,
+          userId: session.user.id,
+          result: result as any,
+        },
+      })
+    }
+  } catch (e) {
+    console.error('Error saving BCRA search history:', e)
+  }
 
   return NextResponse.json(result)
 }

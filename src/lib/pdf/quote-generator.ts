@@ -289,7 +289,10 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0, 128, 0)
     const bonifAmount = data.subtotal * data.bonification / 100
-    doc.text(`Bonificación (${data.bonification}%):`, totalsLeft + 6, curY + 14)
+    const bonifPct = data.bonification % 1 === 0
+      ? data.bonification.toFixed(0)
+      : data.bonification.toFixed(2).replace('.', ',')
+    doc.text(`Bonif. (${bonifPct}%):`, totalsLeft + 6, curY + 14)
     doc.text(`- ${fmtUSD(bonifAmount)}`, totalsRight - 1, curY + 14, { align: 'right' })
     doc.setTextColor(0, 0, 0)
     bonifOffset = 6

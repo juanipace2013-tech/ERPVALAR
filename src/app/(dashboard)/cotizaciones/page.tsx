@@ -45,6 +45,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import * as XLSX from 'xlsx'
+import { DuplicateQuoteDialog } from '@/components/quotes/DuplicateQuoteDialog'
 
 interface Quote {
   id: string
@@ -100,6 +101,9 @@ export default function CotizacionesPage() {
   const [dateTo, setDateTo] = useState('')
   const [salesPersonId, setSalesPersonId] = useState<string>('ALL')
   const [salesPersons, setSalesPersons] = useState<User[]>([])
+
+  // Duplicate dialog
+  const [duplicateQuote, setDuplicateQuote] = useState<{ id: string; customerName: string } | null>(null)
 
   // Fetch vendedores al montar
   useEffect(() => {
@@ -181,23 +185,8 @@ export default function CotizacionesPage() {
     }
   }
 
-  const handleDuplicate = async (quoteId: string) => {
-    try {
-      const response = await fetch(`/api/quotes/${quoteId}/duplicate`, {
-        method: 'POST',
-      })
-
-      if (!response.ok) {
-        throw new Error('Error al duplicar cotización')
-      }
-
-      const data = await response.json()
-      toast.success('Cotización duplicada exitosamente')
-      router.push(`/cotizaciones/${data.id}`)
-    } catch (error) {
-      console.error('Error:', error)
-      toast.error('Error al duplicar cotización')
-    }
+  const handleDuplicate = (quoteId: string, customerName: string) => {
+    setDuplicateQuote({ id: quoteId, customerName })
   }
 
   const handleExportExcel = () => {
@@ -530,7 +519,7 @@ export default function CotizacionesPage() {
                             <DropdownMenuItem
                               onClick={(e) => {
                                 e.stopPropagation()
-                                handleDuplicate(quote.id)
+                                handleDuplicate(quote.id, quote.customer.name)
                               }}
                             >
                               <Copy className="mr-2 h-4 w-4" />
@@ -557,6 +546,21 @@ export default function CotizacionesPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Dialog: Duplicar Cotización */}
+      {duplicateQuote && (
+        <DuplicateQuoteDialog
+          open={!!duplicateQuote}
+          onOpenChange={(open) => { if (!open) setDuplicateQuote(null) }}
+          quoteId={duplicateQuote.id}
+          customerName={duplicateQuote.customerName}
+          onDuplicated={(newId) => {
+            setDuplicateQuote(null)
+            toast.success('Cotización duplicada exitosamente')
+            router.push(`/cotizaciones/${newId}/ver`)
+          }}
+        />
+      )}
     </div>
   )
 }

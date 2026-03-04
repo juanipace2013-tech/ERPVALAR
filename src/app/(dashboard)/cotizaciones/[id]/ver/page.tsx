@@ -42,11 +42,13 @@ import {
   Ban,
   RotateCcw,
   AlertTriangle,
+  Copy,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber } from '@/lib/utils'
 import { SendQuoteDialog } from '@/components/quotes/SendQuoteDialog'
 import { SendToColppyDialog } from '@/components/quotes/SendToColppyDialog'
+import { DuplicateQuoteDialog } from '@/components/quotes/DuplicateQuoteDialog'
 
 interface Quote {
   id: string
@@ -155,6 +157,9 @@ export default function QuoteViewPage() {
   const [showAcceptDialog, setShowAcceptDialog] = useState(false)
   const [customerResponse, setCustomerResponse] = useState('')
   const [showColppyDialog, setShowColppyDialog] = useState(false)
+
+  // Duplicate dialog
+  const [showDuplicateDialog, setShowDuplicateDialog] = useState(false)
 
   // Revert dialog
   const [showRevertDialog, setShowRevertDialog] = useState(false)
@@ -484,6 +489,11 @@ export default function QuoteViewPage() {
                   <XCircle className="h-4 w-4 mr-2" />
                   Marcar como Rechazada
                 </Button>
+                <div className="w-px h-8 bg-gray-300 mx-1" />
+                <Button variant="outline" onClick={() => setShowDuplicateDialog(true)}>
+                  <Copy className="h-4 w-4 mr-2" />
+                  Duplicar Cotización
+                </Button>
               </>
             )}
 
@@ -535,11 +545,9 @@ export default function QuoteViewPage() {
             {/* RECHAZADA - mostrar motivo y permitir duplicar */}
             {quote.status === 'REJECTED' && (
               <>
-                <Button variant="outline" asChild>
-                  <Link href={`/cotizaciones/nueva?duplicateFrom=${quote.id}`}>
-                    <FileText className="h-4 w-4 mr-2" />
-                    Duplicar Cotización
-                  </Link>
+                <Button variant="outline" onClick={() => setShowDuplicateDialog(true)}>
+                  <FileText className="h-4 w-4 mr-2" />
+                  Duplicar Cotización
                 </Button>
               </>
             )}
@@ -547,11 +555,9 @@ export default function QuoteViewPage() {
             {/* VENCIDA - permitir renovar */}
             {quote.status === 'EXPIRED' && (
               <>
-                <Button variant="outline" asChild>
-                  <Link href={`/cotizaciones/nueva?duplicateFrom=${quote.id}`}>
-                    <Clock className="h-4 w-4 mr-2" />
-                    Renovar Cotización
-                  </Link>
+                <Button variant="outline" onClick={() => setShowDuplicateDialog(true)}>
+                  <Clock className="h-4 w-4 mr-2" />
+                  Renovar Cotización
                 </Button>
               </>
             )}
@@ -576,11 +582,9 @@ export default function QuoteViewPage() {
                   <RotateCcw className="h-4 w-4 mr-2" />
                   Reactivar Cotización
                 </Button>
-                <Button variant="outline" asChild>
-                  <Link href={`/cotizaciones/nueva?duplicateFrom=${quote.id}`}>
-                    <FileText className="h-4 w-4 mr-2" />
-                    Duplicar Cotización
-                  </Link>
+                <Button variant="outline" onClick={() => setShowDuplicateDialog(true)}>
+                  <FileText className="h-4 w-4 mr-2" />
+                  Duplicar Cotización
                 </Button>
               </>
             )}
@@ -1227,6 +1231,20 @@ export default function QuoteViewPage() {
           onSent={() => {
             toast.success('Enviado a Colppy exitosamente')
             fetchQuote()
+          }}
+        />
+      )}
+
+      {/* Dialog: Duplicar Cotización */}
+      {quote && (
+        <DuplicateQuoteDialog
+          open={showDuplicateDialog}
+          onOpenChange={setShowDuplicateDialog}
+          quoteId={quote.id}
+          customerName={quote.customer?.name || 'Cliente'}
+          onDuplicated={(newId) => {
+            toast.success('Cotización duplicada exitosamente')
+            router.push(`/cotizaciones/${newId}/ver`)
           }}
         />
       )}

@@ -115,6 +115,7 @@ export async function POST(
     }
 
     // Obtener descuento de marca
+    // Prioridad: 1) match exacto brand+productType, 2) match genérico brand (cualquier productType)
     let brandDiscount = 0
     if (product.brand) {
       let brandDiscountData = await prisma.brandDiscount.findUnique({
@@ -127,7 +128,7 @@ export async function POST(
       })
       if (!brandDiscountData) {
         brandDiscountData = await prisma.brandDiscount.findFirst({
-          where: { brand: product.brand, productType: null }
+          where: { brand: product.brand }
         })
       }
       if (brandDiscountData) {

@@ -254,18 +254,18 @@ export async function getCotizacionesRecientes(): Promise<CotizacionReciente[]> 
 }
 
 /**
- * Obtener cotizaciones por vencer (próximos 7 días)
+ * Obtener cotizaciones por vencer (próximos 2 días)
  */
 export async function getCotizacionesPorVencer(): Promise<CotizacionPorVencer[]> {
   const hoy = new Date()
-  const mas7Dias = addDays(hoy, 7)
+  const mas2Dias = addDays(hoy, 2)
 
   const cotizaciones = await prisma.quote.findMany({
     where: {
       status: 'SENT',
       validUntil: {
         gte: hoy,
-        lte: mas7Dias
+        lte: mas2Dias
       }
     },
     include: {

@@ -512,7 +512,7 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
           <CardHeader>
             <CardTitle className="text-lg font-semibold text-gray-900 flex items-center gap-2">
               <Calendar className="h-5 w-5 text-orange-600" />
-              Cotizaciones por vencer (próximos 7 días)
+              Cotizaciones por vencer (próximos 2 días)
             </CardTitle>
           </CardHeader>
           <CardContent>

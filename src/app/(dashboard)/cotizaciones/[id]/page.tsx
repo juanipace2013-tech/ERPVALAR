@@ -1964,17 +1964,27 @@ export default function QuoteDetailPage() {
                                       </div>
                                     )}
                                 </div>
-                                <div className="text-right">
+                                <div className="text-right flex flex-col items-end gap-1">
                                   <p className="font-mono font-semibold">
                                     USD {formatNumber(alt.totalPrice)}
                                   </p>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => handleDeleteItem(alt.id)}
-                                  >
-                                    <Trash2 className="h-3 w-3 text-red-600" />
-                                  </Button>
+                                  <div className="flex gap-1">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleOpenEditDialog(alt)}
+                                      title="Editar alternativa"
+                                    >
+                                      <Pencil className="h-3 w-3" />
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => handleDeleteItem(alt.id)}
+                                    >
+                                      <Trash2 className="h-3 w-3 text-red-600" />
+                                    </Button>
+                                  </div>
                                 </div>
                               </div>
                             ))}

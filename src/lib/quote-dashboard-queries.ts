@@ -323,6 +323,7 @@ export interface VendedorRanking {
   cotizaciones: number
   totalUSD: number
   aceptadas: number
+  montoAceptadas: number
   tasaConversion: number
   ticketPromedio: number
 }
@@ -351,12 +352,16 @@ export async function getRankingVendedores(): Promise<VendedorRanking[]> {
       status: { in: ['ACCEPTED', 'CONVERTED'] },
     },
     _count: true,
+    _sum: { total: true },
   })
 
-  // Mapa de aceptadas por salesPersonId
-  const aceptadasMap = new Map<string, number>()
+  // Mapa de aceptadas por salesPersonId (cantidad y monto)
+  const aceptadasMap = new Map<string, { count: number; monto: number }>()
   aceptadasPorVendedor.forEach(v => {
-    aceptadasMap.set(v.salesPersonId, v._count)
+    aceptadasMap.set(v.salesPersonId, {
+      count: v._count,
+      monto: Number(v._sum.total || 0),
+    })
   })
 
   // Traer nombres de usuarios
@@ -374,7 +379,9 @@ export async function getRankingVendedores(): Promise<VendedorRanking[]> {
   const ranking: VendedorRanking[] = vendedores.map(v => {
     const totalUSD = Number(v._sum.total || 0)
     const cotizaciones = v._count
-    const aceptadas = aceptadasMap.get(v.salesPersonId) || 0
+    const aceptadasData = aceptadasMap.get(v.salesPersonId) || { count: 0, monto: 0 }
+    const aceptadas = aceptadasData.count
+    const montoAceptadas = aceptadasData.monto
     const tasaConversion = cotizaciones > 0 ? (aceptadas / cotizaciones) * 100 : 0
     const ticketPromedio = cotizaciones > 0 ? totalUSD / cotizaciones : 0
 
@@ -383,6 +390,7 @@ export async function getRankingVendedores(): Promise<VendedorRanking[]> {
       cotizaciones,
       totalUSD,
       aceptadas,
+      montoAceptadas,
       tasaConversion,
       ticketPromedio,
     }

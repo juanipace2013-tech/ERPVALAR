@@ -34,6 +34,8 @@ interface QuotePDFData {
   exchangeRate: number
   paymentTerms: string
   validityDays: number
+  purchaseOrderNumber?: string
+  purchaseOrderDate?: Date
 }
 
 const PAGE_WIDTH = 210
@@ -185,7 +187,21 @@ function drawFirstPageHeader(doc: jsPDF, data: QuotePDFData): number {
   doc.setTextColor(0, 0, 0)
   doc.text('Por medio de la presente tenemos el agrado de cotizarles los siguientes ítems:', MARGIN_LEFT, y + 10)
 
-  return y + 18 // startY para la tabla
+  let nextY = y + 18
+
+  // OC del cliente (si existe)
+  if (data.purchaseOrderNumber) {
+    doc.setFontSize(9)
+    doc.setFont('helvetica', 'bold')
+    const ocText = data.purchaseOrderDate
+      ? `OC del Cliente: ${data.purchaseOrderNumber} — Fecha: ${formatDate(data.purchaseOrderDate)}`
+      : `OC del Cliente: ${data.purchaseOrderNumber}`
+    doc.text(ocText, MARGIN_LEFT, nextY)
+    doc.setFont('helvetica', 'normal')
+    nextY += 6
+  }
+
+  return nextY // startY para la tabla
 }
 
 export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {

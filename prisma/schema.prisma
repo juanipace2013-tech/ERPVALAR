@@ -910,6 +910,11 @@ model Quote {
   notes           String?      @db.Text  // Notas visibles en PDF
   internalNotes   String?      @db.Text  // Notas internas, no visibles
 
+  // Orden de Compra del cliente
+  purchaseOrderUrl     String?            // Path del archivo adjunto de la OC
+  purchaseOrderNumber  String?            // Número de OC del cliente
+  purchaseOrderDate    DateTime?          // Fecha de la OC
+
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 

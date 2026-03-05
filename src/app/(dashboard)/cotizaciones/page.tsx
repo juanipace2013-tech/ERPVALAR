@@ -42,6 +42,8 @@ import {
   Loader2,
   Download,
   XCircle,
+  CheckCircle2,
+  Paperclip,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import * as XLSX from 'xlsx'
@@ -66,6 +68,7 @@ interface Quote {
     name: string
   }
   validUntil: string | null
+  purchaseOrderUrl: string | null
 }
 
 interface User {
@@ -81,14 +84,18 @@ const statusLabels: Record<string, string> = {
   ACCEPTED: 'Aceptada',
   REJECTED: 'Rechazada',
   EXPIRED: 'Vencida',
+  CANCELLED: 'Cancelada',
+  CONVERTED: 'Facturada',
 }
 
 const statusColors: Record<string, string> = {
-  DRAFT: 'bg-gray-100 text-gray-800',
-  SENT: 'bg-blue-100 text-blue-800',
-  ACCEPTED: 'bg-green-100 text-green-800',
-  REJECTED: 'bg-red-100 text-red-800',
-  EXPIRED: 'bg-orange-100 text-orange-800',
+  DRAFT: 'bg-gray-100 text-gray-700',
+  SENT: 'bg-yellow-100 text-yellow-700',
+  ACCEPTED: 'bg-green-100 text-green-700',
+  REJECTED: 'bg-red-100 text-red-700',
+  EXPIRED: 'bg-gray-200 text-gray-500',
+  CANCELLED: 'bg-gray-200 text-gray-500',
+  CONVERTED: 'bg-purple-100 text-purple-700',
 }
 
 export default function CotizacionesPage() {
@@ -282,6 +289,9 @@ export default function CotizacionesPage() {
         case 'status':
           cmp = (statusLabels[a.status] || '').localeCompare(statusLabels[b.status] || '')
           break
+        case 'purchaseOrder':
+          cmp = (a.purchaseOrderUrl ? 1 : 0) - (b.purchaseOrderUrl ? 1 : 0)
+          break
         case 'validUntil':
           cmp = new Date(a.validUntil || 0).getTime() - new Date(b.validUntil || 0).getTime()
           break
@@ -391,6 +401,8 @@ export default function CotizacionesPage() {
                   <SelectItem value="ACCEPTED">Aceptada</SelectItem>
                   <SelectItem value="REJECTED">Rechazada</SelectItem>
                   <SelectItem value="EXPIRED">Vencida</SelectItem>
+                  <SelectItem value="CANCELLED">Cancelada</SelectItem>
+                  <SelectItem value="CONVERTED">Facturada</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -475,6 +487,11 @@ export default function CotizacionesPage() {
                         Estado<SortArrow column="status" />
                       </span>
                     </TableHead>
+                    <TableHead className="w-[50px] font-semibold text-blue-900 cursor-pointer select-none hover:bg-blue-100 text-center" onClick={() => handleSort('purchaseOrder')}>
+                      <span className={`flex items-center justify-center ${sortColumn === 'purchaseOrder' ? 'text-blue-700' : ''}`} title="Orden de Compra">
+                        OC<SortArrow column="purchaseOrder" />
+                      </span>
+                    </TableHead>
                     <TableHead className="min-w-[110px] font-semibold text-blue-900 cursor-pointer select-none hover:bg-blue-100" onClick={() => handleSort('validUntil')}>
                       <span className={`flex items-center ${sortColumn === 'validUntil' ? 'text-blue-700' : ''}`}>
                         Vigencia<SortArrow column="validUntil" />
@@ -530,6 +547,13 @@ export default function CotizacionesPage() {
                         <Badge className={statusColors[quote.status]}>
                           {statusLabels[quote.status]}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {quote.purchaseOrderUrl ? (
+                          <CheckCircle2 className="h-4 w-4 text-green-600 mx-auto" />
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         {quote.validUntil ? (

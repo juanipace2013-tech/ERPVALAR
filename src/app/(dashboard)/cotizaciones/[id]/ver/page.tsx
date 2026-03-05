@@ -23,6 +23,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import {
@@ -43,6 +44,11 @@ import {
   RotateCcw,
   AlertTriangle,
   Copy,
+  Upload,
+  ExternalLink,
+  RefreshCw,
+  Paperclip,
+  Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber } from '@/lib/utils'
@@ -68,6 +74,9 @@ interface Quote {
   customerResponse: string | null
   rejectionReason: string | null
   responseDate: string | null
+  purchaseOrderUrl: string | null
+  purchaseOrderNumber: string | null
+  purchaseOrderDate: string | null
   customer: {
     id: string
     name: string
@@ -160,6 +169,12 @@ export default function QuoteViewPage() {
 
   // Duplicate dialog
   const [showDuplicateDialog, setShowDuplicateDialog] = useState(false)
+
+  // OC upload
+  const ocFileInputRef = useRef<HTMLInputElement>(null)
+  const [ocUploadLoading, setOcUploadLoading] = useState(false)
+  const [ocNumber, setOcNumber] = useState('')
+  const [ocDate, setOcDate] = useState('')
 
   // Revert dialog
   const [showRevertDialog, setShowRevertDialog] = useState(false)
@@ -369,6 +384,80 @@ export default function QuoteViewPage() {
       toast.error(error instanceof Error ? error.message : 'Error al generar factura')
     } finally {
       setActionLoading(false)
+    }
+  }
+
+  // ── OC handlers ──
+  const handleUploadOC = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf']
+    if (!allowedTypes.includes(file.type)) {
+      toast.error('Tipo de archivo no permitido. Solo JPG, PNG o PDF.')
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('El archivo excede el límite de 10MB.')
+      return
+    }
+
+    try {
+      setOcUploadLoading(true)
+      const formData = new FormData()
+      formData.append('file', file)
+      if (ocNumber.trim()) formData.append('purchaseOrderNumber', ocNumber.trim())
+      if (ocDate) formData.append('purchaseOrderDate', ocDate)
+
+      const response = await fetch(`/api/quotes/${id}/upload-oc`, {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const err = await response.json()
+        throw new Error(err.error || 'Error al subir archivo')
+      }
+
+      const updated = await response.json()
+      setQuote((prev) =>
+        prev
+          ? {
+              ...prev,
+              purchaseOrderUrl: updated.purchaseOrderUrl,
+              purchaseOrderNumber: updated.purchaseOrderNumber,
+              purchaseOrderDate: updated.purchaseOrderDate,
+            }
+          : prev
+      )
+      toast.success('Orden de compra adjuntada correctamente')
+    } catch (error) {
+      console.error('Error:', error)
+      toast.error(error instanceof Error ? error.message : 'Error al subir archivo')
+    } finally {
+      setOcUploadLoading(false)
+      if (ocFileInputRef.current) ocFileInputRef.current.value = ''
+    }
+  }
+
+  const handleDeleteOC = async () => {
+    if (!confirm('¿Eliminar la orden de compra adjunta?')) return
+    try {
+      setOcUploadLoading(true)
+      const response = await fetch(`/api/quotes/${id}/upload-oc`, { method: 'DELETE' })
+      if (!response.ok) throw new Error()
+      setQuote((prev) =>
+        prev
+          ? { ...prev, purchaseOrderUrl: null, purchaseOrderNumber: null, purchaseOrderDate: null }
+          : prev
+      )
+      setOcNumber('')
+      setOcDate('')
+      toast.success('Orden de compra eliminada')
+    } catch {
+      toast.error('Error al eliminar la orden de compra')
+    } finally {
+      setOcUploadLoading(false)
     }
   }
 
@@ -614,6 +703,121 @@ export default function QuoteViewPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Orden de Compra del Cliente — solo para ACCEPTED / CONVERTED */}
+      {(quote.status === 'ACCEPTED' || quote.status === 'CONVERTED') && (
+        <Card className="mb-6 border-amber-200">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Paperclip className="h-5 w-5 text-amber-600" />
+              Orden de Compra del Cliente
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {/* Hidden file input */}
+            <input
+              ref={ocFileInputRef}
+              type="file"
+              accept=".jpg,.jpeg,.png,.pdf"
+              className="hidden"
+              onChange={handleUploadOC}
+            />
+
+            {quote.purchaseOrderUrl ? (
+              /* ── Ya tiene OC adjunta ── */
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  {quote.purchaseOrderNumber && (
+                    <span className="text-sm font-medium text-gray-700">
+                      Nº OC: <span className="font-semibold">{quote.purchaseOrderNumber}</span>
+                    </span>
+                  )}
+                  {quote.purchaseOrderDate && (
+                    <span className="text-sm text-gray-500">
+                      Fecha: {formatDate(quote.purchaseOrderDate)}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-green-300 text-green-700 hover:bg-green-50"
+                    onClick={() => window.open(`/api${quote.purchaseOrderUrl!}`, '_blank')}
+                  >
+                    <ExternalLink className="h-4 w-4 mr-1" />
+                    Ver OC
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => ocFileInputRef.current?.click()}
+                    disabled={ocUploadLoading}
+                  >
+                    <RefreshCw className="h-4 w-4 mr-1" />
+                    Reemplazar
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-600 hover:bg-red-50"
+                    onClick={handleDeleteOC}
+                    disabled={ocUploadLoading}
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    Eliminar
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              /* ── No tiene OC — formulario de carga ── */
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="ocNumber" className="text-sm text-gray-600">
+                      Nº de Orden de Compra
+                    </Label>
+                    <Input
+                      id="ocNumber"
+                      placeholder="Ej: OC-2026-0451"
+                      value={ocNumber}
+                      onChange={(e) => setOcNumber(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="ocDate" className="text-sm text-gray-600">
+                      Fecha de la OC
+                    </Label>
+                    <Input
+                      id="ocDate"
+                      type="date"
+                      value={ocDate}
+                      onChange={(e) => setOcDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => ocFileInputRef.current?.click()}
+                    disabled={ocUploadLoading}
+                  >
+                    {ocUploadLoading ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Upload className="h-4 w-4 mr-2" />
+                    )}
+                    Subir OC
+                  </Button>
+                  <span className="text-xs text-gray-500">
+                    Formatos: PDF, JPG, PNG (máx 10MB)
+                  </span>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Información Principal */}

@@ -145,6 +145,8 @@ export async function GET(
       validityDays: quote.validUntil
         ? Math.ceil((quote.validUntil.getTime() - quote.date.getTime()) / (1000 * 60 * 60 * 24))
         : 5,
+      purchaseOrderNumber: quote.purchaseOrderNumber || undefined,
+      purchaseOrderDate: quote.purchaseOrderDate || undefined,
     }
 
     // Generar PDF

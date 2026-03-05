@@ -122,11 +122,10 @@ export default function ClientesPage() {
     if (customers.length === 0) return
     setLoadingActivity(true)
     try {
-      // Solo enviar CUITs que existen
+      // Enviar todos los CUITs válidos
       const cuits = customers
         .map((c) => c.cuit?.replace(/\D/g, ''))
         .filter((c) => c && c.length === 11)
-        .slice(0, 500) // Limitar para no sobrecargar
 
       if (cuits.length === 0) return
 

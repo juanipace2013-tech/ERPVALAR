@@ -4,8 +4,11 @@ import { prisma } from '@/lib/prisma'
 
 /**
  * POST /api/clientes/batch-activity
- * Recibe un array de CUITs y retorna la última actividad y cotizaciones activas
- * para cada uno. Usado por la listing page del módulo Clientes.
+ * Recibe un array de CUITs (normalizados, solo dígitos) y retorna la última
+ * actividad, cotizaciones activas y vendedor asignado para cada uno.
+ *
+ * Optimizado para manejar 5000+ CUITs: carga todos los clientes locales en
+ * una sola query y los matchea por CUIT normalizado.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -21,66 +24,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ activity: {} })
     }
 
-    // Buscar todos los clientes locales con esos CUITs
-    // Normalizar: buscar tanto con como sin guiones
-    const customers = await prisma.customer.findMany({
-      where: {
-        cuit: { in: cuits },
-      },
-      select: {
-        id: true,
-        cuit: true,
-        salesPerson: {
-          select: { id: true, name: true, email: true },
-        },
-        quotes: {
-          select: {
-            date: true,
-            status: true,
-          },
-          orderBy: { date: 'desc' },
-          take: 1,
-        },
-        deliveryNotes: {
-          select: {
-            date: true,
-          },
-          orderBy: { date: 'desc' },
-          take: 1,
-        },
-        invoices: {
-          select: {
-            issueDate: true,
-          },
-          orderBy: { issueDate: 'desc' },
-          take: 1,
-        },
-        _count: {
-          select: {
-            quotes: {
-              where: {
-                status: { in: ['ACCEPTED', 'SENT', 'DRAFT'] },
-              },
-            },
-          },
-        },
-      },
-    })
+    // Crear Set de CUITs solicitados para filtrar rápido
+    const requestedCuits = new Set(cuits.map(c => c.replace(/\D/g, '')))
 
-    // También buscar CUITs con formato XX-XXXXXXXX-X
-    const formattedCuits = cuits.map((c) => {
-      const digits = c.replace(/\D/g, '')
-      if (digits.length === 11) {
-        return `${digits.slice(0, 2)}-${digits.slice(2, 10)}-${digits.slice(10)}`
-      }
-      return c
-    })
-
-    const customersFormatted = await prisma.customer.findMany({
-      where: {
-        cuit: { in: formattedCuits },
-        id: { notIn: customers.map((c) => c.id) }, // Evitar duplicados
-      },
+    // Cargar TODOS los clientes locales con actividad en una sola query
+    // (más eficiente que dos queries con IN de 5000+ valores)
+    const allCustomers = await prisma.customer.findMany({
       select: {
         id: true,
         cuit: true,
@@ -112,9 +61,7 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    const allCustomers = [...customers, ...customersFormatted]
-
-    // Armar mapa de actividad
+    // Armar mapa de actividad, solo para CUITs solicitados
     const activity: Record<
       string,
       {
@@ -126,8 +73,9 @@ export async function POST(request: NextRequest) {
     > = {}
 
     for (const c of allCustomers) {
-      // Normalizar CUIT a solo dígitos para usar como key
+      if (!c.cuit) continue
       const cuitKey = c.cuit.replace(/\D/g, '')
+      if (!requestedCuits.has(cuitKey)) continue
 
       // Encontrar la fecha más reciente entre cotizaciones, remitos y facturas
       const dates: Date[] = []

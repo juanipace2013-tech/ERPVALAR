@@ -207,7 +207,7 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
         <Card className="lg:col-span-3">
           <CardHeader>
             <CardTitle className="text-lg font-semibold text-gray-900">
-              Cotizaciones por mes (últimos 6 meses)
+              Cotizaciones por mes
             </CardTitle>
           </CardHeader>
           <CardContent>

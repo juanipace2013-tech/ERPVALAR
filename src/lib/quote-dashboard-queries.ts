@@ -1,5 +1,5 @@
 import { prisma } from './prisma'
-import { startOfMonth, endOfMonth, subMonths, format, addDays } from 'date-fns'
+import { startOfMonth, endOfMonth, subMonths, addMonths, format, addDays } from 'date-fns'
 import { es } from 'date-fns/locale'
 
 export interface QuoteDashboardMetrics {
@@ -145,26 +145,47 @@ export async function getQuoteDashboardMetrics(): Promise<QuoteDashboardMetrics>
 }
 
 /**
- * Obtener cotizaciones por mes (últimos 6 meses) agrupadas por estado
+ * Obtener cotizaciones por mes desde marzo 2026 (inicio del sistema)
+ * Muestra 6 meses: desde marzo 2026 hacia adelante.
+ * Cuando el mes actual supere agosto 2026, se desplaza la ventana para
+ * que el mes actual siempre esté incluido.
  */
 export async function getCotizacionesPorMes(): Promise<CotizacionesPorMes[]> {
   const meses: CotizacionesPorMes[] = []
+  const SISTEMA_INICIO = new Date(2026, 2, 1) // Marzo 2026 (mes index 2)
+  const ahora = new Date()
 
-  for (let i = 5; i >= 0; i--) {
-    const mesInicio = startOfMonth(subMonths(new Date(), i))
-    const mesFin = endOfMonth(subMonths(new Date(), i))
+  // Inicio de la ventana: marzo 2026, o desplazar si el mes actual
+  // ya no cabe en los 6 meses desde marzo
+  const mesActual = startOfMonth(ahora)
+  const limiteSinDesplazar = addMonths(SISTEMA_INICIO, 5) // agosto 2026
+  const inicio = mesActual > limiteSinDesplazar
+    ? startOfMonth(subMonths(mesActual, 5))
+    : SISTEMA_INICIO
 
-    const cotizaciones = await prisma.quote.findMany({
-      where: {
-        date: { gte: mesInicio, lte: mesFin }
-      }
+  // Traer todas las cotizaciones del rango completo en una sola query
+  const rangoFin = endOfMonth(addMonths(inicio, 5))
+  const todasCotizaciones = await prisma.quote.findMany({
+    where: {
+      date: { gte: inicio, lte: rangoFin }
+    },
+    select: { date: true, status: true }
+  })
+
+  for (let i = 0; i < 6; i++) {
+    const mesInicio = startOfMonth(addMonths(inicio, i))
+    const mesFin = endOfMonth(addMonths(inicio, i))
+
+    const cotizacionesMes = todasCotizaciones.filter(q => {
+      const d = new Date(q.date)
+      return d >= mesInicio && d <= mesFin
     })
 
     meses.push({
       mes: format(mesInicio, 'MMM', { locale: es }),
-      aceptadas: cotizaciones.filter(q => ['ACCEPTED', 'CONVERTED'].includes(q.status)).length,
-      rechazadas: cotizaciones.filter(q => q.status === 'REJECTED').length,
-      pendientes: cotizaciones.filter(q => q.status === 'SENT').length
+      aceptadas: cotizacionesMes.filter(q => ['ACCEPTED', 'CONVERTED'].includes(q.status)).length,
+      rechazadas: cotizacionesMes.filter(q => q.status === 'REJECTED').length,
+      pendientes: cotizacionesMes.filter(q => q.status === 'SENT').length
     })
   }
 

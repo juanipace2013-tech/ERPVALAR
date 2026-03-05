@@ -83,7 +83,7 @@ export default function ClienteDetailTabs({ colppyCustomer, cuit }: Props) {
 
       <div className="mt-4">
         <TabsContent value="general" className="mt-0">
-          <TabDatosGenerales customer={colppyCustomer} />
+          <TabDatosGenerales customer={colppyCustomer} cuit={cuit} />
         </TabsContent>
 
         <TabsContent value="facturas" className="mt-0">

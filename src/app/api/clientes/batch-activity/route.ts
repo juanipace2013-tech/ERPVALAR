@@ -30,6 +30,9 @@ export async function POST(request: NextRequest) {
       select: {
         id: true,
         cuit: true,
+        salesPerson: {
+          select: { id: true, name: true, email: true },
+        },
         quotes: {
           select: {
             date: true,
@@ -81,6 +84,9 @@ export async function POST(request: NextRequest) {
       select: {
         id: true,
         cuit: true,
+        salesPerson: {
+          select: { id: true, name: true, email: true },
+        },
         quotes: {
           select: { date: true, status: true },
           orderBy: { date: 'desc' },
@@ -111,7 +117,12 @@ export async function POST(request: NextRequest) {
     // Armar mapa de actividad
     const activity: Record<
       string,
-      { lastActivity: string | null; activeQuotes: number; localId: string | null }
+      {
+        lastActivity: string | null
+        activeQuotes: number
+        localId: string | null
+        salesPerson: { id: string; name: string; email: string } | null
+      }
     > = {}
 
     for (const c of allCustomers) {
@@ -133,6 +144,7 @@ export async function POST(request: NextRequest) {
         lastActivity,
         activeQuotes: c._count.quotes,
         localId: c.id,
+        salesPerson: c.salesPerson || null,
       }
     }
 

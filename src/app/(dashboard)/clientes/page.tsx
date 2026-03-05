@@ -34,9 +34,11 @@ import {
   ArrowUp,
   ArrowDown,
   Loader2,
+  Upload,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber, formatCUIT, formatDateAR } from '@/lib/utils'
+import ImportarAsignacionesModal from '@/components/clientes/ImportarAsignacionesModal'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -56,9 +58,10 @@ interface ActivityData {
   lastActivity: string | null
   activeQuotes: number
   localId: string | null
+  salesPerson: { id: string; name: string; email: string } | null
 }
 
-type SortField = 'businessName' | 'cuit' | 'taxConditionDisplay' | 'saldo' | 'lastActivity'
+type SortField = 'businessName' | 'cuit' | 'taxConditionDisplay' | 'saldo' | 'lastActivity' | 'vendedor'
 type SortDir = 'asc' | 'desc'
 
 const PAGE_SIZE = 50
@@ -75,11 +78,16 @@ export default function ClientesPage() {
   const [loadingActivity, setLoadingActivity] = useState(false)
   const [error, setError] = useState('')
 
+  // Users for vendedor filter
+  const [users, setUsers] = useState<{ id: string; name: string }[]>([])
+  const [showImportModal, setShowImportModal] = useState(false)
+
   // Filters
   const [searchQuery, setSearchQuery] = useState('')
   const [filtroIva, setFiltroIva] = useState('todas')
   const [filtroSaldo, setFiltroSaldo] = useState('todos')
   const [filtroCotizaciones, setFiltroCotizaciones] = useState(false)
+  const [filtroVendedor, setFiltroVendedor] = useState('todos')
 
   // Sort
   const [sortField, setSortField] = useState<SortField>('businessName')
@@ -137,6 +145,13 @@ export default function ClientesPage() {
 
   useEffect(() => {
     fetchCustomers()
+    // Cargar usuarios para filtro vendedor
+    fetch('/api/users')
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data?.users) setUsers(data.users)
+      })
+      .catch(() => {})
   }, [fetchCustomers])
 
   useEffect(() => {
@@ -200,6 +215,18 @@ export default function ClientesPage() {
       })
     }
 
+    // Filtro vendedor
+    if (filtroVendedor !== 'todos') {
+      result = result.filter((c) => {
+        const cleanCuit = c.cuit?.replace(/\D/g, '')
+        const activity = activityMap[cleanCuit]
+        if (filtroVendedor === 'sin_asignar') {
+          return !activity?.salesPerson
+        }
+        return activity?.salesPerson?.id === filtroVendedor
+      })
+    }
+
     // Ordenar
     result.sort((a, b) => {
       let cmp = 0
@@ -222,12 +249,18 @@ export default function ClientesPage() {
           cmp = aAct.localeCompare(bAct)
           break
         }
+        case 'vendedor': {
+          const aName = activityMap[a.cuit?.replace(/\D/g, '')]?.salesPerson?.name || ''
+          const bName = activityMap[b.cuit?.replace(/\D/g, '')]?.salesPerson?.name || ''
+          cmp = aName.localeCompare(bName)
+          break
+        }
       }
       return sortDir === 'asc' ? cmp : -cmp
     })
 
     return result
-  }, [allCustomers, searchQuery, filtroIva, filtroSaldo, filtroCotizaciones, activityMap, sortField, sortDir])
+  }, [allCustomers, searchQuery, filtroIva, filtroSaldo, filtroCotizaciones, filtroVendedor, activityMap, sortField, sortDir])
 
   // ─── Paginación ─────────────────────────────────────────────────────────────
 
@@ -241,7 +274,7 @@ export default function ClientesPage() {
   // Reset page on filter change
   useEffect(() => {
     setPage(1)
-  }, [searchQuery, filtroIva, filtroSaldo, filtroCotizaciones])
+  }, [searchQuery, filtroIva, filtroSaldo, filtroCotizaciones, filtroVendedor])
 
   // ─── Sort handler ───────────────────────────────────────────────────────────
 
@@ -298,10 +331,16 @@ export default function ClientesPage() {
             </p>
           </div>
         </div>
-        <Button variant="outline" onClick={handleRefresh} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-          Refrescar
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setShowImportModal(true)}>
+            <Upload className="h-4 w-4 mr-2" />
+            Importar Asignaciones
+          </Button>
+          <Button variant="outline" onClick={handleRefresh} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Refrescar
+          </Button>
+        </div>
       </div>
 
       {/* Filtros */}
@@ -348,6 +387,23 @@ export default function ClientesPage() {
                   <SelectItem value="todos">Todos</SelectItem>
                   <SelectItem value="deudores">Deudores</SelectItem>
                   <SelectItem value="aldia">Al día</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Vendedor */}
+            <div className="min-w-[170px]">
+              <label className="text-xs text-gray-500 mb-1 block">Vendedor</label>
+              <Select value={filtroVendedor} onValueChange={setFiltroVendedor}>
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos</SelectItem>
+                  <SelectItem value="sin_asignar">Sin asignar</SelectItem>
+                  {users.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -430,6 +486,14 @@ export default function ClientesPage() {
                       </TableHead>
                       <TableHead
                         className="cursor-pointer hover:bg-blue-50 select-none"
+                        onClick={() => handleSort('vendedor')}
+                      >
+                        <span className="flex items-center font-semibold text-blue-900">
+                          Vendedor <SortIcon field="vendedor" />
+                        </span>
+                      </TableHead>
+                      <TableHead
+                        className="cursor-pointer hover:bg-blue-50 select-none"
                         onClick={() => handleSort('lastActivity')}
                       >
                         <span className="flex items-center font-semibold text-blue-900">
@@ -464,6 +528,15 @@ export default function ClientesPage() {
                           </TableCell>
                           <TableCell className={`text-right font-mono text-sm font-semibold ${saldoIndicator(customer.saldo)}`}>
                             $ {formatNumber(customer.saldo)}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {loadingActivity ? (
+                              <span className="text-gray-300">...</span>
+                            ) : activity?.salesPerson ? (
+                              <span className="text-gray-700">{activity.salesPerson.name}</span>
+                            ) : (
+                              <span className="text-gray-300">—</span>
+                            )}
                           </TableCell>
                           <TableCell className="text-sm text-gray-500">
                             {loadingActivity ? (
@@ -518,6 +591,16 @@ export default function ClientesPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Modal de importación de asignaciones */}
+      <ImportarAsignacionesModal
+        open={showImportModal}
+        onOpenChange={setShowImportModal}
+        onSuccess={() => {
+          setShowImportModal(false)
+          fetchActivity(allCustomers)
+        }}
+      />
     </div>
   )
 }

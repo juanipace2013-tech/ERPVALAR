@@ -147,6 +147,7 @@ export async function GET(
         : 5,
       purchaseOrderNumber: quote.purchaseOrderNumber || undefined,
       purchaseOrderDate: quote.purchaseOrderDate || undefined,
+      tenderNumber: quote.tenderNumber || undefined,
     }
 
     // Generar PDF

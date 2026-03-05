@@ -70,6 +70,7 @@ interface Quote {
   terms: string | null
   notes: string | null
   internalNotes: string | null
+  tenderNumber: string | null
   statusUpdatedAt: string | null
   customerResponse: string | null
   rejectionReason: string | null
@@ -860,6 +861,12 @@ export default function QuoteViewPage() {
                     <p className="font-semibold">
                       ${formatNumber(quote.exchangeRate)}
                     </p>
+                  </div>
+                )}
+                {quote.tenderNumber && (
+                  <div>
+                    <p className="text-sm text-gray-600">Licitación N°</p>
+                    <p className="font-semibold">{quote.tenderNumber}</p>
                   </div>
                 )}
               </div>

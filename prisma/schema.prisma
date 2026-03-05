@@ -909,6 +909,7 @@ model Quote {
   terms           String?      @db.Text  // Condiciones de pago
   notes           String?      @db.Text  // Notas visibles en PDF
   internalNotes   String?      @db.Text  // Notas internas, no visibles
+  tenderNumber    String?                // Número de licitación (opcional)
 
   // Orden de Compra del cliente
   purchaseOrderUrl     String?            // Path del archivo adjunto de la OC

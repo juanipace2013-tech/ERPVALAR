@@ -36,6 +36,7 @@ interface QuotePDFData {
   validityDays: number
   purchaseOrderNumber?: string
   purchaseOrderDate?: Date
+  tenderNumber?: string
 }
 
 const PAGE_WIDTH = 210
@@ -155,6 +156,14 @@ function drawFirstPageHeader(doc: jsPDF, data: QuotePDFData): number {
     )
     doc.text(addressLines, MARGIN_LEFT, yClient)
     yClient += addressLines.length * 4 + 1
+  }
+  if (data.tenderNumber) {
+    doc.setFont('helvetica', 'bold')
+    doc.text(`Licitación N°: `, MARGIN_LEFT, yClient)
+    const labelWidth = doc.getTextWidth('Licitación N°: ')
+    doc.setFont('helvetica', 'normal')
+    doc.text(data.tenderNumber, MARGIN_LEFT + labelWidth, yClient)
+    yClient += 5
   }
 
   // ── Columna derecha: Vendedor ──

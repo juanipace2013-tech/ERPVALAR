@@ -216,7 +216,7 @@ export async function POST(request: NextRequest) {
       data: {
         quoteNumber,
         customerId,
-        salesPersonId: session.user.id,
+        salesPersonId: body.salesPersonId || session.user.id,
         opportunityId: body.opportunityId,
         date: new Date(body.date || Date.now()),
         exchangeRate: body.exchangeRate,
@@ -227,6 +227,7 @@ export async function POST(request: NextRequest) {
         validUntil: body.validUntil ? new Date(body.validUntil) : null,
         terms: body.terms,
         notes: body.notes,
+        tenderNumber: body.tenderNumber || null,
         status: 'DRAFT',
       },
       include: {

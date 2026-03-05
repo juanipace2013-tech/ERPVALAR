@@ -99,6 +99,7 @@ interface Quote {
   currency: string
   terms: string | null
   notes: string | null
+  tenderNumber: string | null
   subtotal: number
   bonification: number
   total: number
@@ -960,6 +961,11 @@ export default function QuoteDetailPage() {
                 <p className="text-sm text-muted-foreground">
                   Válida hasta:{' '}
                   {new Date(quote.validUntil).toLocaleDateString('es-AR')}
+                </p>
+              )}
+              {quote.tenderNumber && (
+                <p className="text-sm text-muted-foreground mt-1">
+                  Licitación N°: {quote.tenderNumber}
                 </p>
               )}
             </div>

@@ -7,7 +7,14 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft, Save, Loader2, DollarSign } from 'lucide-react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { ArrowLeft, Save, Loader2, DollarSign, UserCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber } from '@/lib/utils'
 import { ColppyCustomerSearch, type ColppyCustomer } from '@/components/ColppyCustomerSearch'
@@ -33,6 +40,9 @@ export default function NuevaCotizacionPage() {
   const [selectedCustomer, setSelectedCustomer] = useState<ColppyCustomer | null>(null)
   const [_products, setProducts] = useState<Product[]>([])
   const [_brandDiscounts, setBrandDiscounts] = useState<BrandDiscount[]>([])
+  const [salesPersonId, setSalesPersonId] = useState<string | null>(null)
+  const [salesPersonPreloaded, setSalesPersonPreloaded] = useState(false)
+  const [users, setUsers] = useState<{ id: string; name: string }[]>([])
 
   // Calcular fecha de vigencia: hoy + 5 días
   const getDefaultValidUntil = () => {
@@ -44,6 +54,7 @@ export default function NuevaCotizacionPage() {
   const [formData, setFormData] = useState({
     terms: '',
     notes: '',
+    tenderNumber: '',
     validUntil: getDefaultValidUntil(),
   })
 
@@ -97,14 +108,21 @@ export default function NuevaCotizacionPage() {
         const data = await brandRes.json()
         setBrandDiscounts(data.discounts || [])
       }
+
+      // Obtener usuarios para selector de vendedor
+      const usersRes = await fetch('/api/users')
+      if (usersRes.ok) {
+        const data = await usersRes.json()
+        setUsers(data.users || [])
+      }
     } catch (error) {
       console.error('Error cargando datos:', error)
       toast.error('Error al cargar datos iniciales')
     }
   }
 
-  // Manejar selección de cliente y autocompletar condición de pago
-  const handleCustomerSelect = (customer: ColppyCustomer | null) => {
+  // Manejar selección de cliente y autocompletar condición de pago + vendedor
+  const handleCustomerSelect = async (customer: ColppyCustomer | null) => {
     setSelectedCustomer(customer)
 
     if (customer) {
@@ -114,12 +132,34 @@ export default function NuevaCotizacionPage() {
         ...prev,
         terms: `Condición de pago: ${condicionTexto}. Precios válidos por 5 días corridos desde la fecha de emisión.`,
       }))
+
+      // Pre-cargar vendedor asignado del cliente
+      try {
+        const cleanCuit = customer.cuit?.replace(/\D/g, '')
+        if (cleanCuit && cleanCuit.length === 11) {
+          const res = await fetch(`/api/clientes/by-cuit/${cleanCuit}`)
+          if (res.ok) {
+            const data = await res.json()
+            if (data.found && data.customer?.salesPerson) {
+              setSalesPersonId(data.customer.salesPerson.id)
+              setSalesPersonPreloaded(true)
+            } else {
+              setSalesPersonId(null)
+              setSalesPersonPreloaded(false)
+            }
+          }
+        }
+      } catch {
+        // No es crítico, se puede asignar manualmente
+      }
     } else {
-      // Si se deselecciona el cliente, limpiar términos
+      // Si se deselecciona el cliente, limpiar términos y vendedor
       setFormData(prev => ({
         ...prev,
         terms: '',
       }))
+      setSalesPersonId(null)
+      setSalesPersonPreloaded(false)
     }
   }
 
@@ -136,10 +176,12 @@ export default function NuevaCotizacionPage() {
 
       const quoteData = {
         colppyCustomer: selectedCustomer, // Enviar datos del cliente de Colppy
+        salesPersonId: salesPersonId || undefined,
         exchangeRate,
         currency: 'USD',
         terms: formData.terms,
         notes: formData.notes,
+        tenderNumber: formData.tenderNumber || null,
         validUntil: formData.validUntil
           ? new Date(formData.validUntil).toISOString()
           : null,
@@ -245,6 +287,40 @@ export default function NuevaCotizacionPage() {
                     </p>
                   </div>
                 )}
+
+                {/* Vendedor */}
+                <div className="space-y-2">
+                  <Label className="text-blue-900 flex items-center gap-1.5">
+                    <UserCheck className="h-4 w-4" />
+                    Vendedor
+                  </Label>
+                  <Select
+                    value={salesPersonId || ''}
+                    onValueChange={(val) => {
+                      setSalesPersonId(val || null)
+                      setSalesPersonPreloaded(false)
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Vendedor actual (automático)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {users.map((u) => (
+                        <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {salesPersonPreloaded && (
+                    <p className="text-xs text-muted-foreground">
+                      Precargado del cliente. Editable.
+                    </p>
+                  )}
+                  {!salesPersonId && (
+                    <p className="text-xs text-muted-foreground">
+                      Si no se selecciona, se asigna al usuario actual.
+                    </p>
+                  )}
+                </div>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
@@ -281,6 +357,20 @@ export default function NuevaCotizacionPage() {
                     Actualizado desde Banco Central
                   </p>
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="tenderNumber" className="text-blue-900">
+                  Licitación N° <span className="text-xs font-normal text-gray-400">(opcional)</span>
+                </Label>
+                <Input
+                  id="tenderNumber"
+                  placeholder="Ej: LP-2026-0451"
+                  value={formData.tenderNumber}
+                  onChange={(e) =>
+                    setFormData({ ...formData, tenderNumber: e.target.value })
+                  }
+                />
               </div>
 
               <div className="space-y-2">

@@ -165,6 +165,7 @@ export async function PUT(
     if (body.exchangeRate !== undefined) updateData.exchangeRate = body.exchangeRate
     if (body.multiplier !== undefined) updateData.multiplier = body.multiplier
     if (body.bonification !== undefined) updateData.bonification = body.bonification
+    if (body.tenderNumber !== undefined) updateData.tenderNumber = body.tenderNumber || null
 
     const quote = await prisma.quote.update({
       where: { id },

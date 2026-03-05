@@ -168,6 +168,11 @@ export default function QuoteDetailPage() {
   const [showEditExchangeRate, setShowEditExchangeRate] = useState(false)
   const [currentTCLoading, setCurrentTCLoading] = useState(false)
 
+  // Referencia (tenderNumber)
+  const [referenceValue, setReferenceValue] = useState('')
+  const [referenceLoading, setReferenceLoading] = useState(false)
+  const [showEditReference, setShowEditReference] = useState(false)
+
   // Bonification
   const [bonificationValue, setBonificationValue] = useState('')
   const [bonificationLoading, setBonificationLoading] = useState(false)
@@ -409,6 +414,25 @@ export default function QuoteDetailPage() {
       toast.error('Error al actualizar multiplicador')
     } finally {
       setMultiplierLoading(false)
+    }
+  }
+
+  const handleReferenceChange = async () => {
+    try {
+      setReferenceLoading(true)
+      const response = await fetch(`/api/quotes/${quoteId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenderNumber: referenceValue.trim() || null }),
+      })
+      if (!response.ok) throw new Error()
+      setShowEditReference(false)
+      toast.success(referenceValue.trim() ? 'Referencia actualizada' : 'Referencia eliminada')
+      await fetchQuoteData()
+    } catch {
+      toast.error('Error al actualizar referencia')
+    } finally {
+      setReferenceLoading(false)
     }
   }
 
@@ -963,11 +987,59 @@ export default function QuoteDetailPage() {
                   {new Date(quote.validUntil).toLocaleDateString('es-AR')}
                 </p>
               )}
-              {quote.tenderNumber && (
-                <p className="text-sm text-muted-foreground mt-1">
-                  Referencia: {quote.tenderNumber}
-                </p>
-              )}
+              <div className="mt-1">
+                <Label className="text-muted-foreground text-xs">Referencia</Label>
+                {showEditReference ? (
+                  <div className="flex items-center gap-2 mt-1">
+                    <Input
+                      type="text"
+                      value={referenceValue}
+                      onChange={(e) => setReferenceValue(e.target.value)}
+                      className="w-48 h-8 text-sm"
+                      disabled={referenceLoading}
+                      placeholder="Ej: Licitación LP-2026-0451"
+                      onKeyDown={(e) => e.key === 'Enter' && handleReferenceChange()}
+                    />
+                    <Button
+                      size="sm"
+                      className="h-8 bg-blue-600 hover:bg-blue-700"
+                      onClick={handleReferenceChange}
+                      disabled={referenceLoading}
+                    >
+                      {referenceLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8"
+                      onClick={() => {
+                        setShowEditReference(false)
+                        setReferenceValue(quote.tenderNumber || '')
+                      }}
+                      disabled={referenceLoading}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <p className="text-sm font-medium">
+                      {quote.tenderNumber || '—'}
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0"
+                      onClick={() => {
+                        setReferenceValue(quote.tenderNumber || '')
+                        setShowEditReference(true)
+                      }}
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                  </div>
+                )}
+              </div>
             </div>
             <div>
               <Label className="text-muted-foreground">Tipo de Cambio</Label>

@@ -2,13 +2,17 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
-// Permitir body grande (hasta 10MB) para archivos con muchas filas
+// Permitir body grande y timeout extendido para archivos con muchas filas
 export const maxDuration = 60 // seconds (Vercel/serverless)
 
 /**
  * POST /api/clientes/asignar-vendedores
  * Asignación masiva de vendedores a clientes por CUIT + email del vendedor.
  * Procesamiento en batch para soportar 1000+ filas sin timeout.
+ *
+ * Normalización de CUIT: quita TODOS los caracteres no numéricos tanto del
+ * archivo como de la base de datos, para que "30-71774084-6", "30717740846",
+ * "30.71774084.6" etc. todos matcheen correctamente.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -42,18 +46,35 @@ export async function POST(request: NextRequest) {
       allUsers.map((u) => [u.email.toLowerCase(), u])
     )
 
-    // 2. Normalizar CUITs y agrupar por vendedor
+    // 2. Pre-cargar TODOS los clientes y construir mapa por CUIT normalizado
+    //    Con 476 customers esto es instantáneo y evita problemas de formato
+    const allCustomers = await prisma.customer.findMany({
+      select: { id: true, cuit: true, salesPersonId: true },
+    })
+    const customerByCuit = new Map<string, { id: string; cuit: string; salesPersonId: string | null }>()
+    for (const customer of allCustomers) {
+      if (customer.cuit) {
+        // Normalizar: quitar todo lo que no sea dígito
+        const normalized = customer.cuit.replace(/\D/g, '')
+        customerByCuit.set(normalized, customer)
+      }
+    }
+
+    // 3. Procesar asignaciones: validar y agrupar por vendedor
     const cuitInvalidos: string[] = []
     const vendedorNoEncontrado: string[] = []
     const vendedorNoEncontradoSet = new Set<string>()
 
-    // Mapa: vendedorId → Set de CUITs normalizados
-    const assignmentsByVendor = new Map<string, Set<string>>()
-    // Mapa: CUIT normalizado → CUIT original (para feedback)
-    const cuitOriginalMap = new Map<string, string>()
+    // Mapa: vendedorId → { customerIds a actualizar, ya asignados, no encontrados }
+    const assignmentsByVendor = new Map<string, {
+      customerIdsToUpdate: string[]
+      alreadyAssigned: number
+    }>()
+    const cuitNoEncontrado: string[] = []
+    let yaAsignados = 0
 
     for (const { cuit, vendedorEmail } of assignments) {
-      // Normalizar CUIT: quitar todo lo que no sea dígito
+      // Normalizar CUIT del archivo: quitar todo lo que no sea dígito
       const normalizedCuit = cuit.replace(/\D/g, '')
       if (normalizedCuit.length !== 11) {
         cuitInvalidos.push(cuit)
@@ -71,98 +92,41 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      // Agrupar por vendedor
+      // Buscar cliente en el mapa normalizado
+      const customer = customerByCuit.get(normalizedCuit)
+      if (!customer) {
+        cuitNoEncontrado.push(cuit)
+        continue
+      }
+
+      // Si ya tiene el mismo vendedor asignado, no hacer nada
+      if (customer.salesPersonId === user.id) {
+        yaAsignados++
+        continue
+      }
+
+      // Agrupar por vendedor para batch update
       if (!assignmentsByVendor.has(user.id)) {
-        assignmentsByVendor.set(user.id, new Set())
+        assignmentsByVendor.set(user.id, { customerIdsToUpdate: [], alreadyAssigned: 0 })
       }
-      assignmentsByVendor.get(user.id)!.add(normalizedCuit)
-      cuitOriginalMap.set(normalizedCuit, cuit)
+      assignmentsByVendor.get(user.id)!.customerIdsToUpdate.push(customer.id)
     }
 
-    // 3. Recolectar TODOS los CUITs a buscar
-    const allCuits = new Set<string>()
-    for (const cuits of assignmentsByVendor.values()) {
-      for (const c of cuits) allCuits.add(c)
-    }
-
-    if (allCuits.size === 0) {
-      return NextResponse.json({
-        total: assignments.length,
-        asignados: 0,
-        yaAsignados: 0,
-        cuitNoEncontrado: [],
-        cuitInvalidos,
-        vendedorNoEncontrado,
-        errores: [],
-      })
-    }
-
-    // 4. Buscar TODOS los clientes en UNA sola query
-    //    Buscar por CUIT normalizado (sin guiones) y también por formato con guiones
-    const allCuitsArray = Array.from(allCuits)
-    // Generar también los formatos con guiones: XX-XXXXXXXX-X
-    const allCuitsFormatted = allCuitsArray.map(c =>
-      `${c.slice(0, 2)}-${c.slice(2, 10)}-${c.slice(10)}`
-    )
-    const allCuitsToSearch = [...allCuitsArray, ...allCuitsFormatted]
-
-    const customers = await prisma.customer.findMany({
-      where: {
-        cuit: { in: allCuitsToSearch },
-      },
-      select: { id: true, cuit: true, salesPersonId: true },
-    })
-
-    // Mapa: CUIT normalizado → customer
-    const customerByCuit = new Map<string, { id: string; cuit: string; salesPersonId: string | null }>()
-    for (const customer of customers) {
-      if (customer.cuit) {
-        const normalized = customer.cuit.replace(/\D/g, '')
-        customerByCuit.set(normalized, customer)
-      }
-    }
-
-    // 5. Procesar en batch por vendedor usando $transaction
+    // 4. Ejecutar batch updates: un updateMany por vendedor
     let asignados = 0
-    let yaAsignados = 0
-    const cuitNoEncontrado: string[] = []
     const errores: { cuit: string; error: string }[] = []
 
-    for (const [vendorId, cuits] of assignmentsByVendor.entries()) {
-      // Separar CUITs encontrados vs no encontrados
-      const customerIdsToUpdate: string[] = []
-      const alreadyAssigned: string[] = []
-
-      for (const cuit of cuits) {
-        const customer = customerByCuit.get(cuit)
-        if (!customer) {
-          cuitNoEncontrado.push(cuitOriginalMap.get(cuit) || cuit)
-          continue
-        }
-
-        // Si ya tiene el mismo vendedor asignado, no hacer nada
-        if (customer.salesPersonId === vendorId) {
-          alreadyAssigned.push(cuit)
-          continue
-        }
-
-        customerIdsToUpdate.push(customer.id)
-      }
-
-      yaAsignados += alreadyAssigned.length
-
-      // Batch update: un solo updateMany por vendedor
-      if (customerIdsToUpdate.length > 0) {
+    for (const [vendorId, data] of assignmentsByVendor.entries()) {
+      if (data.customerIdsToUpdate.length > 0) {
         try {
           const result = await prisma.customer.updateMany({
-            where: { id: { in: customerIdsToUpdate } },
+            where: { id: { in: data.customerIdsToUpdate } },
             data: { salesPersonId: vendorId },
           })
           asignados += result.count
         } catch (err: any) {
-          // Si falla el batch, registrar error para cada CUIT
-          for (const id of customerIdsToUpdate) {
-            const customer = customers.find(c => c.id === id)
+          for (const id of data.customerIdsToUpdate) {
+            const customer = allCustomers.find(c => c.id === id)
             errores.push({
               cuit: customer?.cuit || id,
               error: err.message || 'Error al actualizar',

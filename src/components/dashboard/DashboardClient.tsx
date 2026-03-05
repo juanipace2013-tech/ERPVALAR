@@ -287,7 +287,7 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
             <CardHeader>
               <CardTitle className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                 <Trophy className="h-5 w-5 text-amber-500" />
-                Ranking de Vendedores del mes
+                Ranking de Cotizaciones del mes
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -363,18 +363,18 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
         )
       })()}
 
-      {/* RANKING POR OPERACIONES CERRADAS */}
+      {/* RANKING POR VENTAS CERRADAS */}
       {rankingVendedores.length > 0 && (() => {
         const rankingCerradas = [...rankingVendedores].sort((a, b) => {
-          if (b.aceptadas !== a.aceptadas) return b.aceptadas - a.aceptadas
           return (b.montoAceptadas || 0) - (a.montoAceptadas || 0)
         })
+        const maxMontoCerrado = Math.max(...rankingCerradas.map(v => v.montoAceptadas || 0), 1)
         return (
           <Card>
             <CardHeader>
               <CardTitle className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                 <Trophy className="h-5 w-5 text-green-600" />
-                🏆 Ranking por Operaciones Cerradas
+                Ranking por Ventas Cerradas
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -412,32 +412,29 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
                           <p className="text-sm font-semibold text-gray-900 truncate">
                             {vendedor.nombre}
                           </p>
-                          {index === 0 && vendedor.aceptadas > 0 && (
+                          {index === 0 && (vendedor.montoAceptadas || 0) > 0 && (
                             <Award className="h-4 w-4 text-amber-500 flex-shrink-0" />
                           )}
                         </div>
-                        {/* Barra de progreso = tasa de conversión */}
+                        {/* Barra de progreso = monto relativo al máximo */}
                         <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
                           <div
                             className={`h-2 rounded-full transition-all ${
                               index === 0 ? 'bg-amber-400' : index === 1 ? 'bg-gray-400' : index === 2 ? 'bg-orange-400' : 'bg-blue-400'
                             }`}
-                            style={{ width: `${Math.min(vendedor.tasaConversion, 100)}%` }}
+                            style={{ width: `${((vendedor.montoAceptadas || 0) / maxMontoCerrado) * 100}%` }}
                           />
                         </div>
                         <div className="flex items-center gap-4 text-xs text-gray-500">
-                          <span className="font-medium text-gray-700">
-                            {vendedor.aceptadas} operación{vendedor.aceptadas !== 1 ? 'es' : ''} cerrada{vendedor.aceptadas !== 1 ? 's' : ''}
-                          </span>
-                          <span>Monto: {formatCurrency(vendedor.montoAceptadas || 0)}</span>
+                          <span>{vendedor.aceptadas} operación{vendedor.aceptadas !== 1 ? 'es' : ''} cerrada{vendedor.aceptadas !== 1 ? 's' : ''}</span>
                           <span>Conversión: {formatNumber(vendedor.tasaConversion, 1)}%</span>
                         </div>
                       </div>
 
-                      {/* Cantidad destacada */}
+                      {/* Monto destacado */}
                       <div className="flex-shrink-0 text-right">
-                        <p className="text-lg font-bold text-green-700">
-                          {vendedor.aceptadas}
+                        <p className="text-sm font-bold text-green-700">
+                          {formatCurrency(vendedor.montoAceptadas || 0)}
                         </p>
                         <p className="text-xs text-gray-500">
                           de {vendedor.cotizaciones}

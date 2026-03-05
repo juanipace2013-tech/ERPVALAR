@@ -128,25 +128,31 @@ function drawFirstPageHeader(doc: jsPDF, data: QuotePDFData): number {
   doc.text('CLIENTE', MARGIN_LEFT, 54)
   doc.text('VENDEDOR', RIGHT_COL, 54)
 
-  // Línea vertical separadora entre columnas
-  doc.setDrawColor(220, 220, 220)
-  doc.line(RIGHT_COL - 3, 50, RIGHT_COL - 3, 80)
+  const MAX_CLIENT_WIDTH = RIGHT_COL - MARGIN_LEFT - 5 // ~93mm
 
   // ── Columna izquierda: Cliente ──
   doc.setFontSize(11)
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(0, 0, 0)
-  doc.text((data.customer.legalName || data.customer.name).toUpperCase(), MARGIN_LEFT, 59)
+  const nameLines = doc.splitTextToSize(
+    (data.customer.legalName || data.customer.name).toUpperCase(),
+    MAX_CLIENT_WIDTH
+  )
+  doc.text(nameLines, MARGIN_LEFT, 59)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
-  let y = 64
+  let yClient = 59 + nameLines.length * 5
   if (data.customer.taxId) {
-    doc.text(`CUIT: ${data.customer.taxId}`, MARGIN_LEFT, y)
-    y += 5
+    doc.text(`CUIT: ${data.customer.taxId}`, MARGIN_LEFT, yClient)
+    yClient += 5
   }
   if (data.customer.address) {
-    doc.text(`Dirección: ${data.customer.address}`, MARGIN_LEFT, y)
-    y += 5
+    const addressLines = doc.splitTextToSize(
+      `Dirección: ${data.customer.address}`,
+      MAX_CLIENT_WIDTH
+    )
+    doc.text(addressLines, MARGIN_LEFT, yClient)
+    yClient += addressLines.length * 4 + 1
   }
 
   // ── Columna derecha: Vendedor ──
@@ -157,9 +163,17 @@ function drawFirstPageHeader(doc: jsPDF, data: QuotePDFData): number {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
   doc.text(`Email: ${data.salesPerson.email}`, RIGHT_COL, 64)
+  let yVendor = 69
   if (data.salesPerson.phone) {
-    doc.text(`Tel: ${data.salesPerson.phone}`, RIGHT_COL, 69)
+    doc.text(`Tel: ${data.salesPerson.phone}`, RIGHT_COL, yVendor)
+    yVendor += 5
   }
+
+  const y = Math.max(yClient, yVendor)
+
+  // Línea vertical separadora entre columnas (altura dinámica)
+  doc.setDrawColor(220, 220, 220)
+  doc.line(RIGHT_COL - 3, 50, RIGHT_COL - 3, y + 1)
 
   // Separador horizontal inferior
   doc.setDrawColor(200, 200, 200)

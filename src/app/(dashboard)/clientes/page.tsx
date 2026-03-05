@@ -35,6 +35,7 @@ import {
   ArrowDown,
   Loader2,
   Upload,
+  Database,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber, formatCUIT, formatDateAR } from '@/lib/utils'
@@ -81,6 +82,7 @@ export default function ClientesPage() {
   // Users for vendedor filter
   const [users, setUsers] = useState<{ id: string; name: string }[]>([])
   const [showImportModal, setShowImportModal] = useState(false)
+  const [syncing, setSyncing] = useState(false)
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('')
@@ -171,6 +173,24 @@ export default function ClientesPage() {
       toast.success('Cache de clientes actualizado')
     } catch {
       toast.error('Error al refrescar')
+    }
+  }
+
+  const handleSyncColppy = async () => {
+    setSyncing(true)
+    try {
+      const res = await fetch('/api/clientes/sync-colppy', { method: 'POST' })
+      if (!res.ok) throw new Error('Error al sincronizar')
+      const data = await res.json()
+      toast.success(
+        `Sincronización completada: ${data.creados} creados, ${data.actualizados} actualizados de ${data.total} clientes Colppy`
+      )
+      // Refrescar lista después de sincronizar
+      await handleRefresh()
+    } catch {
+      toast.error('Error al sincronizar clientes de Colppy')
+    } finally {
+      setSyncing(false)
     }
   }
 
@@ -332,6 +352,14 @@ export default function ClientesPage() {
           </div>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={handleSyncColppy} disabled={syncing}>
+            {syncing ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Database className="h-4 w-4 mr-2" />
+            )}
+            {syncing ? 'Sincronizando...' : 'Sync Colppy → DB'}
+          </Button>
           <Button variant="outline" onClick={() => setShowImportModal(true)}>
             <Upload className="h-4 w-4 mr-2" />
             Importar Asignaciones

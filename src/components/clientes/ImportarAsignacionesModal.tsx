@@ -66,6 +66,9 @@ export default function ImportarAsignacionesModal({ open, onOpenChange, onSucces
   const [result, setResult] = useState<{
     total: number
     asignados: number
+    yaAsignados: number
+    cuitNoEncontrado: string[]
+    cuitInvalidos: string[]
     errores: { cuit: string; error: string }[]
     vendedorNoEncontrado: string[]
   } | null>(null)
@@ -225,18 +228,24 @@ export default function ImportarAsignacionesModal({ open, onOpenChange, onSucces
         {/* Resultado final */}
         {result ? (
           <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="text-center p-3 bg-blue-50 rounded-lg">
                 <p className="text-2xl font-bold text-blue-700">{result.total}</p>
                 <p className="text-xs text-blue-600">Total procesados</p>
               </div>
               <div className="text-center p-3 bg-green-50 rounded-lg">
                 <p className="text-2xl font-bold text-green-700">{result.asignados}</p>
-                <p className="text-xs text-green-600">Asignados</p>
+                <p className="text-xs text-green-600">✅ Asignados</p>
+              </div>
+              <div className="text-center p-3 bg-gray-50 rounded-lg">
+                <p className="text-2xl font-bold text-gray-500">{result.yaAsignados || 0}</p>
+                <p className="text-xs text-gray-500">Sin cambios</p>
               </div>
               <div className="text-center p-3 bg-red-50 rounded-lg">
-                <p className="text-2xl font-bold text-red-700">{result.errores.length}</p>
-                <p className="text-xs text-red-600">Errores</p>
+                <p className="text-2xl font-bold text-red-700">
+                  {(result.cuitNoEncontrado?.length || 0) + (result.cuitInvalidos?.length || 0) + result.errores.length}
+                </p>
+                <p className="text-xs text-red-600">⚠️ Con problemas</p>
               </div>
             </div>
 
@@ -244,8 +253,32 @@ export default function ImportarAsignacionesModal({ open, onOpenChange, onSucces
               <Alert className="border-yellow-200 bg-yellow-50">
                 <AlertCircle className="h-4 w-4 text-yellow-600" />
                 <AlertDescription className="text-yellow-800">
-                  <strong>Emails no encontrados:</strong>{' '}
+                  <strong>⚠️ Emails de vendedor no encontrados:</strong>{' '}
                   {result.vendedorNoEncontrado.join(', ')}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {result.cuitNoEncontrado && result.cuitNoEncontrado.length > 0 && (
+              <Alert className="border-orange-200 bg-orange-50">
+                <AlertCircle className="h-4 w-4 text-orange-600" />
+                <AlertDescription className="text-orange-800">
+                  <strong>⚠️ {result.cuitNoEncontrado.length} CUITs no encontrados en la base:</strong>
+                  <div className="mt-1 max-h-[100px] overflow-y-auto text-xs font-mono">
+                    {result.cuitNoEncontrado.join(', ')}
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {result.cuitInvalidos && result.cuitInvalidos.length > 0 && (
+              <Alert className="border-red-200 bg-red-50">
+                <XCircle className="h-4 w-4 text-red-600" />
+                <AlertDescription className="text-red-800">
+                  <strong>⚠️ {result.cuitInvalidos.length} CUITs inválidos (no tienen 11 dígitos):</strong>
+                  <div className="mt-1 max-h-[100px] overflow-y-auto text-xs font-mono">
+                    {result.cuitInvalidos.join(', ')}
+                  </div>
                 </AlertDescription>
               </Alert>
             )}

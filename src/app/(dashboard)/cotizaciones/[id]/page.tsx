@@ -965,7 +965,7 @@ export default function QuoteDetailPage() {
               )}
               {quote.tenderNumber && (
                 <p className="text-sm text-muted-foreground mt-1">
-                  Licitación N°: {quote.tenderNumber}
+                  Referencia: {quote.tenderNumber}
                 </p>
               )}
             </div>

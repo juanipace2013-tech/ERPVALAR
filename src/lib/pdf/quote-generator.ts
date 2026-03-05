@@ -159,8 +159,8 @@ function drawFirstPageHeader(doc: jsPDF, data: QuotePDFData): number {
   }
   if (data.tenderNumber) {
     doc.setFont('helvetica', 'bold')
-    doc.text(`Licitación N°: `, MARGIN_LEFT, yClient)
-    const labelWidth = doc.getTextWidth('Licitación N°: ')
+    doc.text(`Referencia: `, MARGIN_LEFT, yClient)
+    const labelWidth = doc.getTextWidth('Referencia: ')
     doc.setFont('helvetica', 'normal')
     doc.text(data.tenderNumber, MARGIN_LEFT + labelWidth, yClient)
     yClient += 5

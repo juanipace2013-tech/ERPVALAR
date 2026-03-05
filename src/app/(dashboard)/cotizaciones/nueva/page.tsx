@@ -361,11 +361,11 @@ export default function NuevaCotizacionPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="tenderNumber" className="text-blue-900">
-                  Licitación N° <span className="text-xs font-normal text-gray-400">(opcional)</span>
+                  Referencia <span className="text-xs font-normal text-gray-400">(opcional)</span>
                 </Label>
                 <Input
                   id="tenderNumber"
-                  placeholder="Ej: LP-2026-0451"
+                  placeholder="Ej: Licitación LP-2026-0451"
                   value={formData.tenderNumber}
                   onChange={(e) =>
                     setFormData({ ...formData, tenderNumber: e.target.value })

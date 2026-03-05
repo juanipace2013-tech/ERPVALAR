@@ -286,7 +286,8 @@ export default function QuoteViewPage() {
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `Cotizacion-${quote.quoteNumber}.pdf`
+      const safeName = (quote.customer.businessName || quote.customer.name).replace(/[/\\:*?"<>|]/g, '-').trim()
+      link.download = `Cotizacion-${quote.quoteNumber} ${safeName}.pdf`
       link.click()
       URL.revokeObjectURL(url)
     } catch {

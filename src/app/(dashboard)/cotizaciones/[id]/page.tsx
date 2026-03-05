@@ -912,7 +912,8 @@ export default function QuoteDetailPage() {
                 const url = window.URL.createObjectURL(blob)
                 const a = document.createElement('a')
                 a.href = url
-                a.download = `Cotizacion-${quote.quoteNumber}.pdf`
+                const safeName = (quote.customer.businessName || quote.customer.name).replace(/[/\\:*?"<>|]/g, '-').trim()
+                a.download = `Cotizacion-${quote.quoteNumber} ${safeName}.pdf`
                 document.body.appendChild(a)
                 a.click()
                 window.URL.revokeObjectURL(url)

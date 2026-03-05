@@ -174,7 +174,7 @@ export default function CotizacionesPage() {
     dateTo !== '' ||
     salesPersonId !== 'ALL'
 
-  const handleDownloadPDF = async (quoteId: string, quoteNumber: string) => {
+  const handleDownloadPDF = async (quoteId: string, quoteNumber: string, customerName: string) => {
     try {
       const response = await fetch(`/api/cotizaciones/${quoteId}/pdf`)
       if (!response.ok) throw new Error()
@@ -182,7 +182,8 @@ export default function CotizacionesPage() {
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `Cotizacion-${quoteNumber}.pdf`
+      const safeName = customerName.replace(/[/\\:*?"<>|]/g, '-').trim()
+      link.download = `Cotizacion-${quoteNumber} ${safeName}.pdf`
       link.click()
       URL.revokeObjectURL(url)
     } catch {
@@ -615,7 +616,7 @@ export default function CotizacionesPage() {
                             <DropdownMenuItem
                               onClick={(e) => {
                                 e.stopPropagation()
-                                handleDownloadPDF(quote.id, quote.quoteNumber)
+                                handleDownloadPDF(quote.id, quote.quoteNumber, quote.customer.name)
                               }}
                             >
                               <FileDown className="mr-2 h-4 w-4" />

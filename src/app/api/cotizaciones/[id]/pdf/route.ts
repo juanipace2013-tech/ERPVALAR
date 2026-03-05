@@ -156,7 +156,7 @@ export async function GET(
     return new NextResponse(buffer, {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="Cotizacion-${quote.quoteNumber}.pdf"`,
+        'Content-Disposition': `attachment; filename="Cotizacion-${quote.quoteNumber} ${(quote.customer.businessName || quote.customer.name).replace(/[/\\:*?"<>|]/g, '-').trim()}.pdf"`,
       },
     })
   } catch (error) {

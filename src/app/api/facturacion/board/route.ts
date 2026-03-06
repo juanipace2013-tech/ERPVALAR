@@ -7,25 +7,35 @@ import {
 } from '@/lib/facturacion-utils'
 
 /**
- * Determina si un item tiene stock suficiente comparando
- * el stock real del producto vs la cantidad pendiente de facturar.
+ * Indica si el deliveryTime del vendedor es inmediato.
+ */
+function isDeliveryImmediate(deliveryTime: string | null): boolean {
+  if (!deliveryTime) return true // null/vacío = inmediato
+  const normalized = deliveryTime.trim().toLowerCase()
+  return normalized === 'inmediato' || normalized === 'inmediata' || normalized === 'stock'
+}
+
+/**
+ * Determina si un item está listo para facturar.
  *
- * - Si no tiene producto vinculado → se usa deliveryTime como fallback
- * - Si tiene producto → stock real >= cantidad pendiente
+ * Un item está listo si CUALQUIERA de estas condiciones se cumple:
+ * 1. El producto tiene stock real suficiente (stockQuantity >= remainingQuantity)
+ * 2. El vendedor lo marcó como "Inmediato" en la cotización (deliveryTime)
+ *
+ * Ambas señales son válidas: el stock real confirma disponibilidad,
+ * pero el vendedor puede saber que hay stock aunque no esté cargado en el sistema.
  */
 function isItemReady(
   stockQuantity: number | null | undefined,
   remainingQuantity: number,
   deliveryTime: string | null
 ): boolean {
-  // Si hay producto vinculado con stock conocido, usar stock real
-  if (stockQuantity != null) {
-    return stockQuantity >= remainingQuantity
-  }
-  // Fallback para items manuales sin producto: usar deliveryTime
-  if (!deliveryTime) return true
-  const normalized = deliveryTime.trim().toLowerCase()
-  return normalized === 'inmediato' || normalized === 'inmediata' || normalized === 'stock'
+  // Si el vendedor marcó como inmediato → listo
+  if (isDeliveryImmediate(deliveryTime)) return true
+  // Si el producto tiene stock real suficiente → listo
+  if (stockQuantity != null && stockQuantity >= remainingQuantity) return true
+  // No hay stock y no es inmediato → no listo
+  return false
 }
 
 /**

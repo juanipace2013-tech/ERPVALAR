@@ -126,6 +126,8 @@ interface ItemFormData {
   manualSku: string
   manualBrand: string
   manualUnitPrice: string
+  // Brand discount override (percentage, e.g. "40" = 40%)
+  brandDiscountOverride: string
 }
 
 export default function QuoteDetailPage() {
@@ -153,6 +155,7 @@ export default function QuoteDetailPage() {
     manualSku: '',
     manualBrand: '',
     manualUnitPrice: '',
+    brandDiscountOverride: '',
   })
   const [itemFormLoading, setItemFormLoading] = useState(false)
 
@@ -240,7 +243,7 @@ export default function QuoteDetailPage() {
   useEffect(() => {
     calculatePricePreview()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itemFormData.productId, itemFormData.quantity, itemFormData.additionals, quote?.multiplier])
+  }, [itemFormData.productId, itemFormData.quantity, itemFormData.additionals, itemFormData.brandDiscountOverride, quote?.multiplier])
 
   // Búsqueda de productos con debounce (300ms)
   useEffect(() => {
@@ -551,13 +554,11 @@ export default function QuoteDetailPage() {
 
     const subtotalWithAdditionals = listPrice + additionalsTotal
 
-    // Obtener descuento de marca
+    // Obtener descuento de marca (desde el override del formulario)
     let brandDiscountPercent = 0
-    if (selectedProduct.brand) {
-      const discount = brandDiscounts.find((d) => d.brand === selectedProduct.brand)
-      if (discount) {
-        brandDiscountPercent = Number(discount.discountPercent) / 100
-      }
+    const overrideVal = parseFloat(itemFormData.brandDiscountOverride)
+    if (!isNaN(overrideVal) && overrideVal > 0) {
+      brandDiscountPercent = overrideVal / 100
     }
 
     // Aplicar fórmula VAL ARG
@@ -600,6 +601,9 @@ export default function QuoteDetailPage() {
             deliveryTime: itemFormData.deliveryTime,
             isAlternative: itemFormData.isAlternative,
             alternativeToItemId: itemFormData.alternativeToItemId,
+            brandDiscount: itemFormData.brandDiscountOverride
+              ? parseFloat(itemFormData.brandDiscountOverride) / 100
+              : undefined,
             additionals: itemFormData.additionals.map((add) => ({
               productId: add.productId || null,
               listPrice: add.listPrice,
@@ -673,6 +677,9 @@ export default function QuoteDetailPage() {
       manualSku: item.manualSku || '',
       manualBrand: item.manualBrand || '',
       manualUnitPrice: isManual ? String(Number(item.unitPrice).toFixed(2)) : '',
+      brandDiscountOverride: item.productId
+        ? String(Number(item.brandDiscount) * 100)
+        : '',
     })
     setShowItemDialog(true)
   }
@@ -720,6 +727,9 @@ export default function QuoteDetailPage() {
             quantity: itemFormData.quantity,
             description: itemFormData.description || selectedProduct?.name,
             deliveryTime: itemFormData.deliveryTime,
+            brandDiscount: itemFormData.brandDiscountOverride
+              ? parseFloat(itemFormData.brandDiscountOverride) / 100
+              : undefined,
             additionals: itemFormData.additionals.map((add) => ({
               productId: add.productId || null,
               listPrice: add.listPrice,
@@ -849,6 +859,7 @@ export default function QuoteDetailPage() {
       manualSku: '',
       manualBrand: '',
       manualUnitPrice: '',
+      brandDiscountOverride: '',
     })
     setProductSearch('')
     setAddlSearchTerm('')
@@ -1424,10 +1435,19 @@ export default function QuoteDetailPage() {
                               }`}
                               onClick={() => {
                                 setSelectedProduct(product)
+                                // Auto-popular descuento de marca
+                                let autoDiscount = ''
+                                if (product.brand) {
+                                  const discount = brandDiscounts.find((d) => d.brand === product.brand)
+                                  if (discount) {
+                                    autoDiscount = String(Number(discount.discountPercent))
+                                  }
+                                }
                                 setItemFormData({
                                   ...itemFormData,
                                   productId: product.id,
                                   description: product.name,
+                                  brandDiscountOverride: autoDiscount,
                                 })
                                 setProductSearch('')
                               }}
@@ -1480,8 +1500,8 @@ export default function QuoteDetailPage() {
                         </div>
                       )}
 
-                      {/* Cantidad + Descripción */}
-                      <div className="grid gap-4 grid-cols-2">
+                      {/* Cantidad + Desc. Marca + Descripción */}
+                      <div className="grid gap-4 grid-cols-3">
                         <div className="space-y-2">
                           <Label>Cantidad</Label>
                           <Input
@@ -1494,6 +1514,24 @@ export default function QuoteDetailPage() {
                                 quantity: parseInt(e.target.value) || 1,
                               })
                             }
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Desc. Marca (%)</Label>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            max="100"
+                            value={itemFormData.brandDiscountOverride}
+                            onChange={(e) =>
+                              setItemFormData({
+                                ...itemFormData,
+                                brandDiscountOverride: e.target.value,
+                              })
+                            }
+                            placeholder="0"
+                            className="font-mono"
                           />
                         </div>
                         <div className="space-y-2">

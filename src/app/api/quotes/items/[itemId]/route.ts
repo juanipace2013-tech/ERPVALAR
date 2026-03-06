@@ -85,8 +85,12 @@ export async function PATCH(
         product = newProduct
       }
 
+      // Obtener descuento de marca: override del vendedor o lookup automático
       let brandDiscount = 0
-      if (product?.brand) {
+      if (body.brandDiscount !== undefined && body.brandDiscount !== null) {
+        // Override del vendedor (viene como decimal, ej: 0.40 = 40%)
+        brandDiscount = Math.max(0, Math.min(1, Number(body.brandDiscount)))
+      } else if (product?.brand) {
         const brandDiscountData = await prisma.brandDiscount.findFirst({
           where: { brand: product.brand },
         })

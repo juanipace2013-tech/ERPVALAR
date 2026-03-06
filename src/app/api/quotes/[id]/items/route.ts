@@ -115,9 +115,13 @@ export async function POST(
     }
 
     // Obtener descuento de marca
-    // Prioridad: 1) match exacto brand+productType, 2) match genérico brand (cualquier productType)
+    // Si el cliente envió un override, usarlo. Si no, lookup automático.
     let brandDiscount = 0
-    if (product.brand) {
+    if (body.brandDiscount !== undefined && body.brandDiscount !== null) {
+      // Override del vendedor (viene como decimal, ej: 0.40 = 40%)
+      brandDiscount = Math.max(0, Math.min(1, Number(body.brandDiscount)))
+    } else if (product.brand) {
+      // Prioridad: 1) match exacto brand+productType, 2) match genérico brand
       let brandDiscountData = await prisma.brandDiscount.findUnique({
         where: {
           brand_productType: {

@@ -426,10 +426,16 @@ export function SendToColppyDialog({
                       />
                     </td>
                     <td className="p-2">
-                      <Input
+                      <textarea
                         value={item.comentario}
                         onChange={(e) => updateItem(index, 'comentario', e.target.value)}
-                        className="h-8 text-sm"
+                        onInput={(e) => {
+                          const target = e.target as HTMLTextAreaElement;
+                          target.style.height = 'auto';
+                          target.style.height = target.scrollHeight + 'px';
+                        }}
+                        rows={2}
+                        className="w-full min-h-[60px] resize-y rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       />
                     </td>
                     <td className="p-2 text-right font-medium">

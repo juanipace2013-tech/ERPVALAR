@@ -49,6 +49,8 @@ import {
   RefreshCw,
   Paperclip,
   Trash2,
+  Save,
+  X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber } from '@/lib/utils'
@@ -183,6 +185,11 @@ export default function QuoteViewPage() {
   const [revertReason, setRevertReason] = useState('')
   const [revertReasonCustom, setRevertReasonCustom] = useState('')
 
+  // Edición inline de Términos de Pago
+  const [showEditTerms, setShowEditTerms] = useState(false)
+  const [termsValue, setTermsValue] = useState('')
+  const [termsLoading, setTermsLoading] = useState(false)
+
   // BCRA indicator
   const [bcraSemaforo, setBcraSemaforo] = useState<'verde' | 'amarillo' | 'rojo' | null>(null)
   const bcraFetched = useRef(false)
@@ -241,6 +248,25 @@ export default function QuoteViewPage() {
       router.push('/cotizaciones')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleTermsChange = async () => {
+    try {
+      setTermsLoading(true)
+      const response = await fetch(`/api/quotes/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ terms: termsValue.trim() || null }),
+      })
+      if (!response.ok) throw new Error('Error al actualizar')
+      setShowEditTerms(false)
+      toast.success(termsValue.trim() ? 'Condiciones de pago actualizadas' : 'Condiciones de pago eliminadas')
+      fetchQuote()
+    } catch {
+      toast.error('Error al actualizar condiciones de pago')
+    } finally {
+      setTermsLoading(false)
     }
   }
 
@@ -981,29 +1007,112 @@ export default function QuoteViewPage() {
           </Card>
 
           {/* Términos y Notas */}
-          {(quote.terms || quote.notes) && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Términos y Condiciones</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {quote.terms && (
-                  <div>
-                    <p className="text-sm font-semibold text-gray-700 mb-1">
-                      Términos de Pago
-                    </p>
-                    <p className="text-sm text-gray-600">{quote.terms}</p>
+          <Card>
+            <CardHeader>
+              <CardTitle>Términos y Condiciones</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Términos de Pago — editable inline */}
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <p className="text-sm font-semibold text-gray-700">
+                    Términos de Pago
+                  </p>
+                  {!showEditTerms && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0"
+                      onClick={() => {
+                        setTermsValue(quote.terms || '')
+                        setShowEditTerms(true)
+                      }}
+                      title="Editar condiciones de pago"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+
+                {showEditTerms ? (
+                  <div className="space-y-2">
+                    {/* Opciones rápidas */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        'Contado',
+                        'a 15 Días',
+                        'a 30 Días',
+                        'a 60 Días',
+                        '50% anticipo, 50% contra entrega',
+                      ].map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                            termsValue === option
+                              ? 'bg-blue-100 border-blue-400 text-blue-700 font-semibold'
+                              : 'border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600'
+                          }`}
+                          onClick={() => setTermsValue(option)}
+                          disabled={termsLoading}
+                        >
+                          {option}
+                        </button>
+                      ))}
+                    </div>
+                    {/* Textarea editable */}
+                    <Textarea
+                      value={termsValue}
+                      onChange={(e) => setTermsValue(e.target.value)}
+                      placeholder="Ej: Contado, a 30 Días, 50% anticipo..."
+                      className="text-sm min-h-[60px]"
+                      disabled={termsLoading}
+                    />
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        className="h-8 bg-blue-600 hover:bg-blue-700"
+                        onClick={handleTermsChange}
+                        disabled={termsLoading}
+                      >
+                        {termsLoading ? (
+                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        ) : (
+                          <Save className="h-3 w-3 mr-1" />
+                        )}
+                        Guardar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8"
+                        onClick={() => {
+                          setShowEditTerms(false)
+                          setTermsValue(quote.terms || '')
+                        }}
+                        disabled={termsLoading}
+                      >
+                        <X className="h-3 w-3 mr-1" />
+                        Cancelar
+                      </Button>
+                    </div>
                   </div>
+                ) : (
+                  <p className="text-sm text-gray-600">
+                    {quote.terms || <span className="text-gray-400 italic">Sin condiciones de pago definidas</span>}
+                  </p>
                 )}
-                {quote.notes && (
-                  <div>
-                    <p className="text-sm font-semibold text-gray-700 mb-1">Notas</p>
-                    <p className="text-sm text-gray-600">{quote.notes}</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
+              </div>
+
+              {/* Notas (solo lectura) */}
+              {quote.notes && (
+                <div>
+                  <p className="text-sm font-semibold text-gray-700 mb-1">Notas</p>
+                  <p className="text-sm text-gray-600">{quote.notes}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Historial de Estados */}
           {quote.statusHistory.length > 0 && (

@@ -2,11 +2,45 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import {
-  isItemInStock,
-  classifyQuote,
   getFarthestDelivery,
   type KanbanColumn,
 } from '@/lib/facturacion-utils'
+
+/**
+ * Determina si un item tiene stock suficiente comparando
+ * el stock real del producto vs la cantidad pendiente de facturar.
+ *
+ * - Si no tiene producto vinculado → se usa deliveryTime como fallback
+ * - Si tiene producto → stock real >= cantidad pendiente
+ */
+function isItemReady(
+  stockQuantity: number | null | undefined,
+  remainingQuantity: number,
+  deliveryTime: string | null
+): boolean {
+  // Si hay producto vinculado con stock conocido, usar stock real
+  if (stockQuantity != null) {
+    return stockQuantity >= remainingQuantity
+  }
+  // Fallback para items manuales sin producto: usar deliveryTime
+  if (!deliveryTime) return true
+  const normalized = deliveryTime.trim().toLowerCase()
+  return normalized === 'inmediato' || normalized === 'inmediata' || normalized === 'stock'
+}
+
+/**
+ * Clasifica una cotización en columna Kanban según cuántos items
+ * tienen stock suficiente.
+ */
+function classifyByStock(
+  items: Array<{ isReady: boolean }>
+): KanbanColumn {
+  if (items.length === 0) return 'pending'
+  const readyCount = items.filter((i) => i.isReady).length
+  if (readyCount === items.length) return 'ready'
+  if (readyCount === 0) return 'pending'
+  return 'partial'
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -46,7 +80,7 @@ export async function GET(request: NextRequest) {
         items: {
           where: { isAlternative: false },
           include: {
-            product: { select: { sku: true, name: true } },
+            product: { select: { sku: true, name: true, stockQuantity: true } },
             invoiceItems: {
               include: {
                 invoice: { select: { status: true, notes: true, createdAt: true } },
@@ -59,11 +93,48 @@ export async function GET(request: NextRequest) {
     })
 
     // Procesar cada cotización
-    const boardCards = []
+    interface ProcessedItem {
+      id: string
+      itemNumber: number
+      description: string
+      productSku: string | null
+      quantity: number
+      invoicedQuantity: number
+      remainingQuantity: number
+      unitPrice: number
+      totalPrice: number
+      deliveryTime: string | null
+      isInStock: boolean
+      isAlternative: boolean
+      sentToColppy: boolean
+      stockQuantity: number | null
+    }
+
+    interface BoardCardType {
+      id: string
+      quoteNumber: string
+      customer: typeof quotes[0]['customer']
+      salesPerson: typeof quotes[0]['salesPerson']
+      currency: string
+      total: number
+      exchangeRate: number
+      terms: string | null
+      notes: string | null
+      date: string
+      readyItemsCount: number
+      totalItemsCount: number
+      farthestDelivery: string
+      items: ProcessedItem[]
+      column: KanbanColumn
+      colppySyncedAt: string | null
+      colppyInvoiceId: string | null
+    }
+
+    const boardCards: BoardCardType[] = []
 
     for (const quote of quotes) {
       // Calcular cantidad facturada por ítem
-      const processedItems = quote.items.map((item) => {
+      const processedItems: ProcessedItem[] = quote.items.map((item) => {
         const invoicedQuantity = item.invoiceItems
           .filter((ii) => ii.invoice.status !== 'CANCELLED')
           .reduce((sum, ii) => sum + Number(ii.quantity), 0)
@@ -74,6 +145,8 @@ export async function GET(request: NextRequest) {
         const sentToColppy = item.invoiceItems.some(
           (ii) => ii.invoice.status === 'DRAFT' && ii.invoice.notes?.includes('Colppy')
         )
+
+        const stockQty = item.product?.stockQuantity ?? null
 
         return {
           id: item.id,
@@ -86,9 +159,11 @@ export async function GET(request: NextRequest) {
           unitPrice: Number(item.unitPrice),
           totalPrice: Number(item.totalPrice),
           deliveryTime: item.deliveryTime,
-          isInStock: isItemInStock(item.deliveryTime),
+          // Clasificar por stock REAL, no por deliveryTime
+          isInStock: isItemReady(stockQty, Math.max(remainingQuantity, 0), item.deliveryTime),
           isAlternative: item.isAlternative,
           sentToColppy,
+          stockQuantity: stockQty,
         }
       })
 
@@ -96,16 +171,16 @@ export async function GET(request: NextRequest) {
       const isFullyInvoiced = processedItems.every((item) => item.remainingQuantity <= 0)
       if (isFullyInvoiced) continue // No mostrar en el tablero
 
-      // Clasificar
-      const column = classifyQuote(
-        quote.items.map((i) => ({
-          deliveryTime: i.deliveryTime,
-          isAlternative: i.isAlternative,
-        }))
+      // Solo items pendientes de facturar para clasificación
+      const pendingItems = processedItems.filter((i) => i.remainingQuantity > 0)
+
+      // Clasificar por stock real
+      const column = classifyByStock(
+        pendingItems.map((i) => ({ isReady: i.isInStock }))
       )
 
-      const readyItemsCount = processedItems.filter((i) => i.isInStock).length
-      const totalItemsCount = processedItems.length
+      const readyItemsCount = pendingItems.filter((i) => i.isInStock).length
+      const totalItemsCount = pendingItems.length
 
       // Determinar estado Colppy de la cotización
       const colppySyncedAt = quote.colppySyncedAt
@@ -141,7 +216,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Agrupar por columna
-    const columns: Record<KanbanColumn, typeof boardCards> = {
+    const columns: Record<KanbanColumn, BoardCardType[]> = {
       ready: [],
       partial: [],
       pending: [],
@@ -152,7 +227,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Calcular totales por columna
-    const computeColumnStats = (cards: typeof boardCards) => ({
+    const computeColumnStats = (cards: BoardCardType[]) => ({
       quotes: cards,
       count: cards.length,
       totalUSD: cards

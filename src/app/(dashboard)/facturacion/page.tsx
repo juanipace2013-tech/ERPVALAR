@@ -52,6 +52,7 @@ interface BoardItem {
   isInStock: boolean
   isAlternative: boolean
   sentToColppy: boolean
+  stockQuantity: number | null
 }
 
 interface BoardCard {
@@ -169,38 +170,8 @@ export default function FacturacionPage() {
 
       toast.success(`Stock actualizado: ${result.total} productos sincronizados desde Colppy`)
 
-      // Paso 2: Recalcular estados de cotizaciones según stock real
-      try {
-        const recalcResponse = await fetch('/api/facturacion/recalculate-stock', {
-          method: 'POST',
-        })
-
-        if (recalcResponse.ok) {
-          const recalcData = await recalcResponse.json()
-
-          if (recalcData.changes && recalcData.changes.length > 0) {
-            // Mostrar resumen de cambios
-            const changeLines = recalcData.changes
-              .map((c: { quoteNumber: string; customerName: string; from: string; to: string }) =>
-                `${c.quoteNumber} ${c.customerName}: ${c.from} → ${c.to}`
-              )
-              .join('\n')
-
-            toast.success(
-              `Stock actualizado. ${recalcData.changes.length} cotización(es) cambiaron de estado:\n${changeLines}`,
-              { duration: 8000 }
-            )
-          } else if (recalcData.itemsUpdated > 0) {
-            toast.info(`${recalcData.itemsUpdated} ítems actualizados, sin cambios de columna`)
-          }
-        }
-      } catch (recalcError) {
-        console.error('Error recalculating:', recalcError)
-        // No bloquear el flujo si falla el recálculo
-      }
-
-      // Paso 3: Recargar el tablero
-      fetchBoard()
+      // Paso 2: Recargar el tablero (la clasificación por stock real se hace en el board)
+      await fetchBoard()
     } catch (error) {
       console.error('Error refreshing stock:', error)
       toast.error('Error al actualizar stock desde Colppy')
@@ -832,8 +803,12 @@ function QuoteCard({
 
                   <div className="flex-1 min-w-0">
                     <p className="truncate font-medium">{item.description}</p>
-                    {!item.isInStock && !isFullyInvoiced && !item.sentToColppy && item.deliveryTime && (
-                      <p className="text-[10px] text-red-500">{item.deliveryTime}</p>
+                    {!item.isInStock && !isFullyInvoiced && !item.sentToColppy && (
+                      <p className="text-[10px] text-red-500">
+                        {item.stockQuantity != null
+                          ? `Stock: ${item.stockQuantity} / Necesita: ${item.remainingQuantity}`
+                          : item.deliveryTime || 'Sin stock'}
+                      </p>
                     )}
                     {item.invoicedQuantity > 0 && !isFullyInvoiced && (
                       <p className="text-[10px] text-blue-500">

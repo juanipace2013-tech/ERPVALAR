@@ -22,11 +22,14 @@ export async function GET(request: NextRequest) {
     const dateTo = searchParams.get('dateTo')
     const salesPersonId = searchParams.get('salesPersonId')
     const customerCuit = searchParams.get('customerCuit')
+    const excludeStatus = searchParams.get('excludeStatus')
 
     const where: Record<string, unknown> = {}
 
     if (status && status !== 'ALL') {
       where.status = status
+    } else if (excludeStatus) {
+      where.status = { not: excludeStatus }
     }
 
     if (search) {

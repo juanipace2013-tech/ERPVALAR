@@ -84,7 +84,7 @@ const statusLabels: Record<string, string> = {
   ACCEPTED: 'Aceptada',
   REJECTED: 'Rechazada',
   EXPIRED: 'Vencida',
-  CANCELLED: 'Cancelada',
+  CANCELLED: 'Anulada',
   CONVERTED: 'Facturada',
 }
 
@@ -94,7 +94,7 @@ const statusColors: Record<string, string> = {
   ACCEPTED: 'bg-green-100 text-green-700',
   REJECTED: 'bg-red-100 text-red-700',
   EXPIRED: 'bg-gray-200 text-gray-500',
-  CANCELLED: 'bg-gray-200 text-gray-500',
+  CANCELLED: 'bg-gray-100 text-gray-400',
   CONVERTED: 'bg-purple-100 text-purple-700',
 }
 
@@ -103,7 +103,7 @@ export default function CotizacionesPage() {
   const [quotes, setQuotes] = useState<Quote[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('ALL')
+  const [statusFilter, setStatusFilter] = useState<string>('ACTIVE')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [salesPersonId, setSalesPersonId] = useState<string>('ALL')
@@ -115,6 +115,9 @@ export default function CotizacionesPage() {
 
   // Duplicate dialog
   const [duplicateQuote, setDuplicateQuote] = useState<{ id: string; customerName: string } | null>(null)
+
+  // Cancel (anular) loading
+  const [cancellingId, setCancellingId] = useState<string | null>(null)
 
   // Fetch vendedores al montar
   useEffect(() => {
@@ -128,7 +131,11 @@ export default function CotizacionesPage() {
     try {
       setLoading(true)
       const params = new URLSearchParams()
-      if (statusFilter !== 'ALL') params.append('status', statusFilter)
+      if (statusFilter === 'ACTIVE') {
+        params.append('excludeStatus', 'CANCELLED')
+      } else if (statusFilter !== 'ALL') {
+        params.append('status', statusFilter)
+      }
       if (search) params.append('search', search)
       if (dateFrom) params.append('dateFrom', dateFrom)
       if (dateTo) params.append('dateTo', dateTo)
@@ -161,7 +168,7 @@ export default function CotizacionesPage() {
 
   const handleClearFilters = () => {
     setSearch('')
-    setStatusFilter('ALL')
+    setStatusFilter('ACTIVE')
     setDateFrom('')
     setDateTo('')
     setSalesPersonId('ALL')
@@ -169,7 +176,7 @@ export default function CotizacionesPage() {
 
   const hasActiveFilters =
     search !== '' ||
-    statusFilter !== 'ALL' ||
+    (statusFilter !== 'ACTIVE' && statusFilter !== 'ALL') ||
     dateFrom !== '' ||
     dateTo !== '' ||
     salesPersonId !== 'ALL'
@@ -199,6 +206,28 @@ export default function CotizacionesPage() {
 
   const handleDuplicate = (quoteId: string, customerName: string) => {
     setDuplicateQuote({ id: quoteId, customerName })
+  }
+
+  const handleCancelQuote = async (quoteId: string, quoteNumber: string) => {
+    if (!confirm(`¿Estás seguro de anular ${quoteNumber}?\nEsta acción no se puede deshacer.`)) return
+    try {
+      setCancellingId(quoteId)
+      const response = await fetch(`/api/quotes/${quoteId}/change-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'CANCELLED' }),
+      })
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Error al anular cotización')
+      }
+      toast.success(`Cotización ${quoteNumber} anulada`)
+      fetchQuotes()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Error al anular cotización')
+    } finally {
+      setCancellingId(null)
+    }
   }
 
   const handleExportExcel = () => {
@@ -396,13 +425,14 @@ export default function CotizacionesPage() {
                   <SelectValue placeholder="Estado" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="ACTIVE">Activas (sin anuladas)</SelectItem>
                   <SelectItem value="ALL">Todos los estados</SelectItem>
                   <SelectItem value="DRAFT">Borrador</SelectItem>
                   <SelectItem value="SENT">Enviada</SelectItem>
                   <SelectItem value="ACCEPTED">Aceptada</SelectItem>
                   <SelectItem value="REJECTED">Rechazada</SelectItem>
                   <SelectItem value="EXPIRED">Vencida</SelectItem>
-                  <SelectItem value="CANCELLED">Cancelada</SelectItem>
+                  <SelectItem value="CANCELLED">Anulada</SelectItem>
                   <SelectItem value="CONVERTED">Facturada</SelectItem>
                 </SelectContent>
               </Select>
@@ -510,14 +540,16 @@ export default function CotizacionesPage() {
                   {sortedQuotes.map((quote) => (
                     <TableRow
                       key={quote.id}
-                      className="cursor-pointer hover:bg-blue-50 transition-colors"
+                      className={`cursor-pointer hover:bg-blue-50 transition-colors ${
+                        quote.status === 'CANCELLED' ? 'opacity-50' : ''
+                      }`}
                       onClick={() => router.push(`/cotizaciones/${quote.id}`)}
                     >
-                      <TableCell className="font-mono text-sm font-medium text-blue-700">
+                      <TableCell className={`font-mono text-sm font-medium ${quote.status === 'CANCELLED' ? 'text-gray-400 line-through' : 'text-blue-700'}`}>
                         {quote.quoteNumber}
                       </TableCell>
                       <TableCell>
-                        <div className="font-medium text-gray-900">
+                        <div className={`font-medium ${quote.status === 'CANCELLED' ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
                           {quote.customer.name}
                         </div>
                       </TableCell>
@@ -622,6 +654,26 @@ export default function CotizacionesPage() {
                               <FileDown className="mr-2 h-4 w-4" />
                               Descargar PDF
                             </DropdownMenuItem>
+                            {quote.status === 'DRAFT' && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleCancelQuote(quote.id, quote.quoteNumber)
+                                  }}
+                                  disabled={cancellingId === quote.id}
+                                  className="text-red-600 focus:text-red-600"
+                                >
+                                  {cancellingId === quote.id ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <XCircle className="mr-2 h-4 w-4" />
+                                  )}
+                                  Anular cotización
+                                </DropdownMenuItem>
+                              </>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>

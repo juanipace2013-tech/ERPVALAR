@@ -72,16 +72,18 @@ export async function getQuoteDashboardMetrics(): Promise<QuoteDashboardMetrics>
   const inicioMesAnterior = startOfMonth(subMonths(now, 1))
   const finMesAnterior = endOfMonth(subMonths(now, 1))
 
-  // 1. Cotizaciones del mes
+  // 1. Cotizaciones del mes (excluir anuladas)
   const cotizacionesMes = await prisma.quote.findMany({
     where: {
-      date: { gte: inicioMes, lte: finMes }
+      date: { gte: inicioMes, lte: finMes },
+      status: { not: 'CANCELLED' }
     }
   })
 
   const cotizacionesMesAnterior = await prisma.quote.findMany({
     where: {
-      date: { gte: inicioMesAnterior, lte: finMesAnterior }
+      date: { gte: inicioMesAnterior, lte: finMesAnterior },
+      status: { not: 'CANCELLED' }
     }
   })
 
@@ -163,11 +165,12 @@ export async function getCotizacionesPorMes(): Promise<CotizacionesPorMes[]> {
     ? startOfMonth(subMonths(mesActual, 5))
     : SISTEMA_INICIO
 
-  // Traer todas las cotizaciones del rango completo en una sola query
+  // Traer todas las cotizaciones del rango completo en una sola query (excluir anuladas)
   const rangoFin = endOfMonth(addMonths(inicio, 5))
   const todasCotizaciones = await prisma.quote.findMany({
     where: {
-      date: { gte: inicio, lte: rangoFin }
+      date: { gte: inicio, lte: rangoFin },
+      status: { not: 'CANCELLED' }
     },
     select: { date: true, status: true }
   })
@@ -201,7 +204,8 @@ export async function getTopClientesMes(): Promise<TopCliente[]> {
 
   const cotizaciones = await prisma.quote.findMany({
     where: {
-      date: { gte: inicioMes, lte: finMes }
+      date: { gte: inicioMes, lte: finMes },
+      status: { not: 'CANCELLED' }
     },
     include: {
       customer: true
@@ -301,7 +305,8 @@ export async function getProductosMasCotizados(): Promise<ProductoMasCotizado[]>
   const items = await prisma.quoteItem.findMany({
     where: {
       quote: {
-        date: { gte: inicioMes }
+        date: { gte: inicioMes },
+        status: { not: 'CANCELLED' }
       }
     },
     include: {
@@ -357,10 +362,10 @@ export async function getRankingVendedores(): Promise<VendedorRanking[]> {
   const inicioMes = startOfMonth(now)
   const finMes = endOfMonth(now)
 
-  // Todas las cotizaciones del mes agrupadas por vendedor
+  // Todas las cotizaciones del mes agrupadas por vendedor (excluir anuladas)
   const vendedores = await prisma.quote.groupBy({
     by: ['salesPersonId'],
-    where: { date: { gte: inicioMes, lte: finMes } },
+    where: { date: { gte: inicioMes, lte: finMes }, status: { not: 'CANCELLED' } },
     _sum: { total: true },
     _count: true,
   })

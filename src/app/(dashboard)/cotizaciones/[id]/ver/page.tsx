@@ -129,7 +129,7 @@ const statusLabels: Record<string, string> = {
   ACCEPTED: '✅ Aceptada',
   REJECTED: '❌ Rechazada',
   EXPIRED: '⏰ Vencida',
-  CANCELLED: '🚫 Cancelada',
+  CANCELLED: '🚫 Anulada',
   CONVERTED: '🔄 Convertida',
 }
 
@@ -184,6 +184,9 @@ export default function QuoteViewPage() {
   const [revertTarget, setRevertTarget] = useState<string>('')
   const [revertReason, setRevertReason] = useState('')
   const [revertReasonCustom, setRevertReasonCustom] = useState('')
+
+  // Anular cotización
+  const [cancellingQuote, setCancellingQuote] = useState(false)
 
   // Edición inline de Términos de Pago
   const [showEditTerms, setShowEditTerms] = useState(false)
@@ -346,6 +349,29 @@ export default function QuoteViewPage() {
     changeStatus('REJECTED', { rejectionReason })
     setShowRejectDialog(false)
     setRejectionReason('')
+  }
+
+  const handleCancelQuote = async () => {
+    if (!quote) return
+    if (!confirm(`¿Estás seguro de anular la cotización ${quote.quoteNumber}?\nEsta acción se puede revertir posteriormente.`)) return
+    try {
+      setCancellingQuote(true)
+      const response = await fetch(`/api/quotes/${id}/change-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'CANCELLED' }),
+      })
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Error al anular cotización')
+      }
+      toast.success(`Cotización ${quote.quoteNumber} anulada`)
+      fetchQuote()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Error al anular cotización')
+    } finally {
+      setCancellingQuote(false)
+    }
   }
 
   const openRevertDialog = (target: string) => {
@@ -610,6 +636,20 @@ export default function QuoteViewPage() {
                 <Button variant="outline" onClick={() => setShowDuplicateDialog(true)}>
                   <Copy className="h-4 w-4 mr-2" />
                   Duplicar Cotización
+                </Button>
+                <div className="w-px h-8 bg-gray-300 mx-1" />
+                <Button
+                  variant="outline"
+                  onClick={handleCancelQuote}
+                  disabled={cancellingQuote}
+                  className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                >
+                  {cancellingQuote ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Ban className="h-4 w-4 mr-2" />
+                  )}
+                  Anular
                 </Button>
               </>
             )}

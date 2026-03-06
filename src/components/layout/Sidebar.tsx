@@ -24,6 +24,7 @@ import {
   Route,
   Map,
   ArrowDownToLine,
+  Building2,
 } from 'lucide-react'
 
 interface SubNavItem {
@@ -110,6 +111,26 @@ const navItems: NavItem[] = [
     href: '/productos',
     icon: Package,
     roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
+  },
+  {
+    title: 'Proveedores',
+    href: '/proveedores',
+    icon: Building2,
+    roles: ['ADMIN', 'GERENTE', 'VENDEDOR', 'CONTADOR'],
+    subItems: [
+      {
+        title: 'Facturas Compra',
+        href: '/proveedores/facturas-compra',
+        icon: Receipt,
+        roles: ['ADMIN', 'GERENTE', 'VENDEDOR', 'CONTADOR'],
+      },
+      {
+        title: 'Órdenes de Compra',
+        href: '/proveedores/ordenes-compra',
+        icon: ShoppingCart,
+        roles: ['ADMIN', 'GERENTE', 'VENDEDOR', 'CONTADOR'],
+      },
+    ],
   },
   {
     title: 'Inventario (En proceso)',

@@ -8,8 +8,13 @@ const geistSans = GeistSans
 const geistMono = GeistMono
 
 export const metadata: Metadata = {
-  title: "Valarg ERP/CRM",
-  description: "Sistema de gestión empresarial para distribuidora industrial",
+  title: "ERP VAL ARG",
+  description: "ERP VAL ARG S.R.L.",
+  icons: {
+    icon: "/favicon.png",
+    shortcut: "/favicon.png",
+    apple: "/favicon.png",
+  },
 }
 
 export default function RootLayout({

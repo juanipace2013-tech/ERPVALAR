@@ -109,6 +109,7 @@ export async function PUT(
         maxStock: validatedData.maxStock,
         unit: validatedData.unit,
         lastCost: validatedData.lastCost,
+        lastCostUsd: validatedData.lastCostUsd,
         averageCost: validatedData.averageCost,
         listPriceUSD: validatedData.listPriceUSD,
         status: validatedData.status,

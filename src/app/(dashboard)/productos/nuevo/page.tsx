@@ -48,6 +48,7 @@ export default function NuevoProductoPage() {
     maxStock: '',
     unit: 'UN',
     lastCost: '',
+    lastCostUsd: '',
     averageCost: '',
     listPriceUSD: '',
     status: 'ACTIVE',
@@ -124,6 +125,7 @@ export default function NuevoProductoPage() {
         maxStock: formData.maxStock ? parseInt(formData.maxStock) : null,
         unit: formData.unit,
         lastCost: formData.lastCost ? parseFloat(formData.lastCost) : null,
+        lastCostUsd: formData.lastCostUsd ? parseFloat(formData.lastCostUsd) : null,
         averageCost: formData.averageCost ? parseFloat(formData.averageCost) : null,
         listPriceUSD: formData.listPriceUSD ? parseFloat(formData.listPriceUSD) : null,
         status: formData.status,
@@ -441,13 +443,13 @@ export default function NuevoProductoPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="lastCost">Último Costo</Label>
+                  <Label htmlFor="lastCostUsd">Último Costo (USD)</Label>
                   <Input
-                    id="lastCost"
+                    id="lastCostUsd"
                     type="number"
                     step="0.01"
-                    value={formData.lastCost}
-                    onChange={(e) => handleChange('lastCost', e.target.value)}
+                    value={formData.lastCostUsd}
+                    onChange={(e) => handleChange('lastCostUsd', e.target.value)}
                     placeholder="0.00"
                   />
                 </div>

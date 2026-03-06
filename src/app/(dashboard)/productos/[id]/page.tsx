@@ -52,6 +52,7 @@ interface Product {
   maxStock: number | null
   unit: string
   lastCost: string | number | null
+  lastCostUsd: string | number | null
   averageCost: string | number | null
   listPriceUSD: string | number | null
   status: string
@@ -134,6 +135,7 @@ export default function ProductoDetallePage() {
     maxStock: '',
     unit: 'UN',
     lastCost: '',
+    lastCostUsd: '',
     averageCost: '',
     listPriceUSD: '',
     status: 'ACTIVE',
@@ -182,6 +184,7 @@ export default function ProductoDetallePage() {
       maxStock: p.maxStock != null ? String(p.maxStock) : '',
       unit: p.unit || 'UN',
       lastCost: p.lastCost != null ? String(Number(p.lastCost)) : '',
+      lastCostUsd: p.lastCostUsd != null ? String(Number(p.lastCostUsd)) : '',
       averageCost: p.averageCost != null ? String(Number(p.averageCost)) : '',
       listPriceUSD: p.listPriceUSD != null ? String(Number(p.listPriceUSD)) : '',
       status: p.status || 'ACTIVE',
@@ -254,6 +257,7 @@ export default function ProductoDetallePage() {
         maxStock: formData.maxStock ? parseInt(formData.maxStock) : null,
         unit: formData.unit,
         lastCost: formData.lastCost ? parseFloat(formData.lastCost) : null,
+        lastCostUsd: formData.lastCostUsd ? parseFloat(formData.lastCostUsd) : null,
         averageCost: formData.averageCost ? parseFloat(formData.averageCost) : null,
         listPriceUSD: formData.listPriceUSD ? parseFloat(formData.listPriceUSD) : null,
         status: formData.status,
@@ -660,12 +664,12 @@ export default function ProductoDetallePage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>&Uacute;ltimo Costo</Label>
+                    <Label>Último Costo (USD)</Label>
                     <Input
                       type="number"
                       step="0.01"
-                      value={formData.lastCost}
-                      onChange={(e) => handleChange('lastCost', e.target.value)}
+                      value={formData.lastCostUsd}
+                      onChange={(e) => handleChange('lastCostUsd', e.target.value)}
                       placeholder="0.00"
                     />
                   </div>
@@ -695,9 +699,9 @@ export default function ProductoDetallePage() {
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-500">&Uacute;ltimo Costo</span>
+                    <span className="text-sm text-gray-500">Último Costo (USD)</span>
                     <span className="text-sm font-semibold">
-                      {formatCurrency(product.lastCost, 'ARS')}
+                      {formatCurrency(product.lastCostUsd, 'USD')}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">

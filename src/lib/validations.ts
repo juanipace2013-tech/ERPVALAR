@@ -117,6 +117,7 @@ export const productSchema = z.object({
 
   // Costos y precios
   lastCost: z.number().nonnegative('El costo no puede ser negativo').nullable().optional(),
+  lastCostUsd: z.number().nonnegative('El costo USD no puede ser negativo').nullable().optional(),
   averageCost: z.number().nonnegative('El costo promedio no puede ser negativo').nullable().optional(),
   listPriceUSD: z.number().nonnegative('El precio lista USD no puede ser negativo').nullable().optional(),
 

@@ -688,6 +688,7 @@ model Product {
 
   // Costos y precios
   lastCost        Decimal?      @db.Decimal(12, 2) // Último costo de compra
+  lastCostUsd     Decimal?      @db.Decimal(15, 2) // Último costo en USD
   averageCost     Decimal?      @db.Decimal(12, 2) // Costo promedio calculado
   listPriceUSD    Decimal?      @db.Decimal(12, 2) // Precio lista en USD (para cotizaciones)
 

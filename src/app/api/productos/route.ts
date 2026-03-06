@@ -161,6 +161,7 @@ export async function POST(request: NextRequest) {
         maxStock: validatedData.maxStock,
         unit: validatedData.unit,
         lastCost: validatedData.lastCost,
+        lastCostUsd: validatedData.lastCostUsd,
         averageCost: validatedData.averageCost,
         listPriceUSD: validatedData.listPriceUSD,
         status: validatedData.status,

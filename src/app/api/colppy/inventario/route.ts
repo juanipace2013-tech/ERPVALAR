@@ -12,6 +12,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { prisma } from '@/lib/prisma';
 
 // ============================================================================
 // CONFIGURACIÓN
@@ -301,23 +302,98 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/colppy/inventario
- * Refresca el cache de inventario manualmente
+ * Refresca el cache de inventario desde Colppy Y persiste stockQuantity
+ * en la tabla products (match por SKU o colppyItemId).
+ *
+ * Esto es crítico para el tablero de facturación que lee stockQuantity de la DB.
  */
 export async function POST() {
   try {
-    console.log('[Colppy Inventario] Refrescando cache manualmente...');
+    console.log('[Colppy Inventario] Refrescando cache y persistiendo stock en DB...');
 
     // Invalidar cache
     cacheTimestamp = 0;
     inventoryCache = new Map();
 
-    // Recargar
+    // Recargar desde Colppy
     const inventory = loadAllInventory();
+
+    // ====================================================================
+    // PERSISTIR stockQuantity EN LA TABLA products
+    // ====================================================================
+
+    // Obtener todos los productos de la DB con su SKU y colppyItemId
+    const products = await prisma.product.findMany({
+      select: {
+        id: true,
+        sku: true,
+        colppyItemId: true,
+        stockQuantity: true,
+      },
+    });
+
+    // Crear mapa inverso colppyItemId → InventoryItem para match alternativo
+    const colppyIdMap = new Map<number, InventoryItem>();
+    for (const item of inventory.values()) {
+      colppyIdMap.set(item.colppyItemId, item);
+    }
+
+    let updated = 0;
+    let unchanged = 0;
+    let notFound = 0;
+
+    // Actualizar en batch usando transacciones
+    const updates: Array<{ id: string; stockQuantity: number }> = [];
+
+    for (const product of products) {
+      // Intentar match por SKU primero, luego por colppyItemId
+      let colppyItem = inventory.get(product.sku);
+
+      if (!colppyItem && product.colppyItemId) {
+        colppyItem = colppyIdMap.get(product.colppyItemId);
+      }
+
+      if (!colppyItem) {
+        notFound++;
+        continue;
+      }
+
+      const newStock = Math.floor(colppyItem.disponibilidad); // Int en schema
+
+      if (product.stockQuantity !== newStock) {
+        updates.push({ id: product.id, stockQuantity: newStock });
+        updated++;
+      } else {
+        unchanged++;
+      }
+    }
+
+    // Ejecutar updates en batch (transacción)
+    if (updates.length > 0) {
+      await prisma.$transaction(
+        updates.map((u) =>
+          prisma.product.update({
+            where: { id: u.id },
+            data: { stockQuantity: u.stockQuantity },
+          })
+        )
+      );
+    }
+
+    console.log(
+      `[Colppy Inventario] Stock persistido: ${updated} actualizados, ${unchanged} sin cambios, ${notFound} sin match`
+    );
 
     return NextResponse.json({
       success: true,
       message: `Cache refrescado: ${inventory.size} items cargados`,
       total: inventory.size,
+      stockSync: {
+        updated,
+        unchanged,
+        notFound,
+        totalProducts: products.length,
+      },
     });
   } catch (error: any) {
     console.error('Error refrescando cache:', error);

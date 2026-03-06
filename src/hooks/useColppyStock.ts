@@ -101,9 +101,13 @@ export function useColppySingleStock(sku: string | null, enabled: boolean = true
 }
 
 /**
- * Función helper para refrescar el cache de inventario
+ * Función helper para refrescar el cache de inventario y persistir stock en DB
  */
-export async function refreshInventoryCache(): Promise<{ success: boolean; total: number }> {
+export async function refreshInventoryCache(): Promise<{
+  success: boolean;
+  total: number;
+  stockSync?: { updated: number; unchanged: number; notFound: number; totalProducts: number };
+}> {
   try {
     const response = await fetch('/api/colppy/inventario', {
       method: 'POST',
@@ -114,7 +118,11 @@ export async function refreshInventoryCache(): Promise<{ success: boolean; total
     }
 
     const data = await response.json();
-    return { success: true, total: data.total || 0 };
+    return {
+      success: true,
+      total: data.total || 0,
+      stockSync: data.stockSync || undefined,
+    };
   } catch (error) {
     console.error('Error refreshing inventory cache:', error);
     return { success: false, total: 0 };

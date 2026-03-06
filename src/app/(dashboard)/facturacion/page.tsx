@@ -161,16 +161,23 @@ export default function FacturacionPage() {
     try {
       setRefreshingStock(true)
 
-      // Paso 1: Sincronizar stock desde Colppy
+      // Paso 1: Sincronizar stock desde Colppy → persiste stockQuantity en DB
       const result = await refreshInventoryCache()
       if (!result.success) {
         toast.error('Error al actualizar stock desde Colppy')
         return
       }
 
-      toast.success(`Stock actualizado: ${result.total} productos sincronizados desde Colppy`)
+      const sync = result.stockSync
+      if (sync) {
+        toast.success(
+          `Stock sincronizado: ${sync.updated} productos actualizados, ${sync.unchanged} sin cambios`
+        )
+      } else {
+        toast.success(`Stock actualizado: ${result.total} productos desde Colppy`)
+      }
 
-      // Paso 2: Recargar el tablero (la clasificación por stock real se hace en el board)
+      // Paso 2: Recargar el tablero (ahora stockQuantity en DB está actualizado)
       await fetchBoard()
     } catch (error) {
       console.error('Error refreshing stock:', error)

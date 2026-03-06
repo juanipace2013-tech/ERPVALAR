@@ -159,13 +159,48 @@ export default function FacturacionPage() {
   const handleRefreshStock = async () => {
     try {
       setRefreshingStock(true)
+
+      // Paso 1: Sincronizar stock desde Colppy
       const result = await refreshInventoryCache()
-      if (result.success) {
-        toast.success(`Stock actualizado: ${result.total} productos sincronizados desde Colppy`)
-        fetchBoard()
-      } else {
+      if (!result.success) {
         toast.error('Error al actualizar stock desde Colppy')
+        return
       }
+
+      toast.success(`Stock actualizado: ${result.total} productos sincronizados desde Colppy`)
+
+      // Paso 2: Recalcular estados de cotizaciones según stock real
+      try {
+        const recalcResponse = await fetch('/api/facturacion/recalculate-stock', {
+          method: 'POST',
+        })
+
+        if (recalcResponse.ok) {
+          const recalcData = await recalcResponse.json()
+
+          if (recalcData.changes && recalcData.changes.length > 0) {
+            // Mostrar resumen de cambios
+            const changeLines = recalcData.changes
+              .map((c: { quoteNumber: string; customerName: string; from: string; to: string }) =>
+                `${c.quoteNumber} ${c.customerName}: ${c.from} → ${c.to}`
+              )
+              .join('\n')
+
+            toast.success(
+              `Stock actualizado. ${recalcData.changes.length} cotización(es) cambiaron de estado:\n${changeLines}`,
+              { duration: 8000 }
+            )
+          } else if (recalcData.itemsUpdated > 0) {
+            toast.info(`${recalcData.itemsUpdated} ítems actualizados, sin cambios de columna`)
+          }
+        }
+      } catch (recalcError) {
+        console.error('Error recalculating:', recalcError)
+        // No bloquear el flujo si falla el recálculo
+      }
+
+      // Paso 3: Recargar el tablero
+      fetchBoard()
     } catch (error) {
       console.error('Error refreshing stock:', error)
       toast.error('Error al actualizar stock desde Colppy')

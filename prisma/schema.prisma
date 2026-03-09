@@ -464,6 +464,10 @@ model PurchaseInvoice {
   description           String?
   internalNotes         String?               @db.Text
 
+  // Integración con Colppy
+  colppyInvoiceId       String?               @db.Text  // ID de la factura en Colppy
+  colppySyncedAt        DateTime?             // Fecha de envío a Colppy
+
   // Usuario
   createdBy             String
   createdByUser         User                  @relation(fields: [createdBy], references: [id])
@@ -481,6 +485,7 @@ model PurchaseInvoice {
   @@index([invoiceDate])
   @@index([status])
   @@index([createdBy])
+  @@index([colppyInvoiceId])
   @@map("purchase_invoices")
 }
 

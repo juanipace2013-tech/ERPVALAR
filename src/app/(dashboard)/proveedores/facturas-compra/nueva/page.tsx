@@ -37,6 +37,7 @@ import {
   X,
   AlertCircle,
   CheckCircle2,
+  Send,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -544,7 +545,9 @@ export default function NewPurchaseInvoicePage() {
 
   // ============ SUBMIT ============
 
-  const handleSubmit = async () => {
+  const [sendingToColppy, setSendingToColppy] = useState(false)
+
+  const handleSubmit = async (sendToColppy = false) => {
     if (!supplierId) {
       toast.error('Debe seleccionar un proveedor')
       return
@@ -560,6 +563,7 @@ export default function NewPurchaseInvoicePage() {
 
     try {
       setLoading(true)
+      if (sendToColppy) setSendingToColppy(true)
 
       const perceptions: Array<{
         jurisdiction: string
@@ -632,6 +636,7 @@ export default function NewPurchaseInvoicePage() {
         }
       }
 
+      // 1. Guardar la factura en el ERP
       const response = await fetch('/api/purchase-invoices', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -673,12 +678,32 @@ export default function NewPurchaseInvoicePage() {
 
       const invoice = await response.json()
       toast.success('Factura de compra creada correctamente')
+
+      // 2. Si pidió enviar a Colppy, hacerlo ahora
+      if (sendToColppy) {
+        try {
+          const colppyResponse = await fetch(`/api/purchase-invoices/${invoice.id}/send-to-colppy`, {
+            method: 'POST',
+          })
+          const colppyData = await colppyResponse.json()
+
+          if (colppyResponse.ok) {
+            toast.success(colppyData.message || 'Factura enviada a Colppy')
+          } else {
+            toast.error(`Factura guardada, pero falló Colppy: ${colppyData.error}`)
+          }
+        } catch (colppyError: any) {
+          toast.error(`Factura guardada, pero error al enviar a Colppy: ${colppyError.message}`)
+        }
+      }
+
       router.push(`/proveedores/facturas-compra/${invoice.id}`)
     } catch (error) {
       console.error('Error:', error)
       toast.error(error instanceof Error ? error.message : 'Error al crear factura')
     } finally {
       setLoading(false)
+      setSendingToColppy(false)
     }
   }
 
@@ -839,10 +864,22 @@ export default function NewPurchaseInvoicePage() {
           <Button variant="outline" onClick={() => router.back()}>
             Cancelar
           </Button>
-          <Button onClick={handleSubmit} disabled={loading}>
-            {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+          <Button onClick={() => handleSubmit(false)} disabled={loading || sendingToColppy}>
+            {loading && !sendingToColppy && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             <Save className="h-4 w-4 mr-2" />
-            Guardar Factura
+            Guardar
+          </Button>
+          <Button
+            onClick={() => handleSubmit(true)}
+            disabled={loading || sendingToColppy}
+            className="bg-purple-600 hover:bg-purple-700"
+          >
+            {sendingToColppy ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4 mr-2" />
+            )}
+            Guardar y Enviar a Colppy
           </Button>
         </div>
       </div>
@@ -1440,15 +1477,28 @@ export default function NewPurchaseInvoicePage() {
             </CardContent>
           </Card>
 
-          {/* Bottom Save Button */}
+          {/* Bottom Save Buttons */}
           <div className="flex justify-end gap-2 pb-8">
             <Button variant="outline" onClick={() => router.back()}>
               Cancelar
             </Button>
-            <Button onClick={handleSubmit} disabled={loading} size="lg">
-              {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            <Button onClick={() => handleSubmit(false)} disabled={loading || sendingToColppy} size="lg">
+              {loading && !sendingToColppy && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               <Save className="h-4 w-4 mr-2" />
-              Guardar Factura
+              Guardar
+            </Button>
+            <Button
+              onClick={() => handleSubmit(true)}
+              disabled={loading || sendingToColppy}
+              size="lg"
+              className="bg-purple-600 hover:bg-purple-700"
+            >
+              {sendingToColppy ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4 mr-2" />
+              )}
+              Guardar y Enviar a Colppy
             </Button>
           </div>
         </div>

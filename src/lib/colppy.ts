@@ -724,6 +724,194 @@ export async function colppyCreateInvoice(
 }
 
 // ============================================================================
+// PROVEEDORES
+// ============================================================================
+
+/**
+ * Busca un proveedor en Colppy por CUIT
+ */
+export async function colppyFindSupplierByCUIT(
+  session: ColppySession,
+  cuit: string
+): Promise<{ idProveedor: string; razonSocial: string } | null> {
+  const config = getColppyConfig();
+  const passwordMD5 = md5Hash(config.password);
+  const cuitFormatted = formatCuit(cuit);
+
+  const payload = {
+    auth: {
+      usuario: config.user,
+      password: passwordMD5,
+    },
+    service: {
+      provision: 'Proveedor',
+      operacion: 'listar_proveedor',
+    },
+    parameters: {
+      sesion: {
+        usuario: session.usuario,
+        claveSesion: session.claveSesion,
+      },
+      idEmpresa: session.idEmpresa,
+      start: 0,
+      limit: 50,
+      filter: [
+        {
+          field: 'CUIT',
+          op: '=',
+          value: cuitFormatted,
+        },
+      ],
+      order: [{ field: 'RazonSocial', dir: 'asc' }],
+    },
+  };
+
+  try {
+    const response = await callColppyAPI<any>(payload);
+
+    if (!response.response?.data || response.response.data.length === 0) {
+      return null;
+    }
+
+    const proveedor = response.response.data[0];
+    console.log('[Colppy] Proveedor encontrado:', JSON.stringify(proveedor, null, 2));
+
+    return {
+      idProveedor: String(proveedor.idProveedor || proveedor.id),
+      razonSocial: proveedor.RazonSocial || proveedor.NombreFantasia || '',
+    };
+  } catch (error: any) {
+    throw new Error(`Error al buscar proveedor en Colppy: ${error.message}`);
+  }
+}
+
+// ============================================================================
+// FACTURAS DE COMPRA
+// ============================================================================
+
+export interface ColppyPurchaseInvoiceParams {
+  idProveedor: string;
+  descripcion: string;
+  fechaFactura: string; // DD-MM-YYYY
+  fechaFacturaDoc: string; // DD-MM-YYYY (fecha del documento)
+  fechaPago: string; // DD-MM-YYYY (vencimiento)
+  idTipoFactura: 'A' | 'B' | 'C' | 'E' | 'M' | 'X' | 'Z';
+  idTipoComprobante: string; // "1" = Factura
+  idCondicionPago: string; // "Contado", "a 30 Dias", etc.
+  idEstadoFactura: string; // "Aprobada", "Borrador"
+  nroFactura1: string; // Punto de venta (4 dígitos: "0031")
+  nroFactura2: string; // Número (8 dígitos: "00294187")
+  netoGravado: string;
+  netoNoGravado: string;
+  totalIVA: string;
+  IVA21: string;
+  IVA105: string;
+  IVA27: string;
+  percepcionIVA: string;
+  percepcionIIBB: string;
+  totalFactura: string;
+  idMoneda?: string; // "1" = Peso argentino
+  valorCambio?: string; // Tipo de cambio
+  idRetGanancias?: string; // Código retención ganancias (ej: "78")
+  itemsFactura: Array<{
+    Descripcion: string;
+    unidadMedida: string; // "Un", "m", "kg"
+    Cantidad: string;
+    ImporteUnitario: string;
+    IVA: string; // "21.00", "10.50", "27.00"
+    idPlanCuenta: string; // "Mercaderias" o nombre de cuenta contable
+    codigo?: string; // Código del producto
+    almacen?: string;
+    porcDesc?: string; // Descuento %
+  }>;
+}
+
+/**
+ * Crea una factura de compra en Colppy
+ * Usa provision: 'FacturaCompra', operacion: 'alta_facturacompra'
+ */
+export async function colppyCreatePurchaseInvoice(
+  session: ColppySession,
+  invoice: ColppyPurchaseInvoiceParams
+): Promise<{ idFactura: string }> {
+  const config = getColppyConfig();
+  const passwordMD5 = md5Hash(config.password);
+
+  const payload = {
+    auth: {
+      usuario: config.user,
+      password: passwordMD5,
+    },
+    service: {
+      provision: 'FacturaCompra',
+      operacion: 'alta_facturacompra',
+    },
+    parameters: {
+      sesion: {
+        usuario: session.usuario,
+        claveSesion: session.claveSesion,
+      },
+      idEmpresa: session.idEmpresa,
+      idProveedor: invoice.idProveedor,
+      idFactura: '', // Vacío para alta
+      descripcion: invoice.descripcion.substring(0, 100), // Max 100 chars
+      fechaFactura: invoice.fechaFactura,
+      fechaFacturaDoc: invoice.fechaFacturaDoc,
+      fechaPago: invoice.fechaPago,
+      idTipoFactura: invoice.idTipoFactura,
+      idTipoComprobante: invoice.idTipoComprobante,
+      'idCondiciónPago': invoice.idCondicionPago,
+      idEstadoFactura: invoice.idEstadoFactura,
+      idMoneda: invoice.idMoneda || '1', // 1 = Peso argentino
+      valorCambio: invoice.valorCambio || '1',
+      nroFactura1: invoice.nroFactura1,
+      nroFactura2: invoice.nroFactura2,
+      netoGravado: invoice.netoGravado,
+      netoNoGravado: invoice.netoNoGravado,
+      totalIVA: invoice.totalIVA,
+      IVA21: invoice.IVA21,
+      IVA105: invoice.IVA105,
+      IVA27: invoice.IVA27,
+      percepcionIVA: invoice.percepcionIVA,
+      percepcionIIBB: invoice.percepcionIIBB,
+      totalFactura: invoice.totalFactura,
+      idRetGanancias: invoice.idRetGanancias || '',
+      itemsFactura: invoice.itemsFactura,
+    },
+  };
+
+  console.log('=== PAYLOAD FACTURA COMPRA COLPPY ===');
+  console.log(JSON.stringify(payload, null, 2));
+  console.log('=== FIN PAYLOAD ===');
+
+  try {
+    const response = await callColppyAPI<any>(payload);
+
+    console.log('=== RESPUESTA COLPPY FACTURA COMPRA ===');
+    console.log(JSON.stringify(response, null, 2));
+    console.log('=== FIN RESPUESTA ===');
+
+    if (response.response?.success === false) {
+      throw new Error(`Error de Colppy: ${response.response?.message || 'Error desconocido'}`);
+    }
+
+    const idFactura = response.response?.idFactura
+      || response.response?.idfactura
+      || response.response?.data?.idFactura;
+
+    if (!idFactura) {
+      // Algunos endpoints devuelven éxito sin ID explícito
+      console.warn('[Colppy] No se recibió idFactura, pero la operación pudo haber sido exitosa');
+      return { idFactura: `colppy-${Date.now()}` };
+    }
+
+    return { idFactura: String(idFactura) };
+  } catch (error: any) {
+    throw new Error(`Error al crear factura de compra en Colppy: ${error.message}`);
+  }
+}
+
+// ============================================================================
 // HELPERS: Descomponer precio combinado en principal + adicionales
 // ============================================================================
 

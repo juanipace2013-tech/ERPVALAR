@@ -26,6 +26,7 @@ import {
   Package,
   Receipt,
   CreditCard,
+  Send,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber } from '@/lib/utils'
@@ -66,6 +67,8 @@ interface PurchaseInvoice {
   internalNotes: string | null
   stockImpact: boolean
   stockImpactedAt: string | null
+  colppyInvoiceId: string | null
+  colppySyncedAt: string | null
   supplier: {
     id: string
     name: string
@@ -175,6 +178,9 @@ export default function PurchaseInvoiceDetailPage() {
   const [paymentReference, setPaymentReference] = useState('')
   const [paymentNotes, setPaymentNotes] = useState('')
 
+  // Colppy state
+  const [sendingToColppy, setSendingToColppy] = useState(false)
+
   // Credit note dialog state
   const [showCreditNoteDialog, setShowCreditNoteDialog] = useState(false)
   const [creatingCreditNote, setCreatingCreditNote] = useState(false)
@@ -229,6 +235,31 @@ export default function PurchaseInvoiceDetailPage() {
       toast.error(error.message || 'Error al aprobar factura de compra')
     } finally {
       setApproving(false)
+    }
+  }
+
+  const handleSendToColppy = async () => {
+    if (!invoice) return
+
+    try {
+      setSendingToColppy(true)
+      const response = await fetch(`/api/purchase-invoices/${invoice.id}/send-to-colppy`, {
+        method: 'POST',
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Error al enviar a Colppy')
+      }
+
+      toast.success(data.message || 'Factura enviada a Colppy correctamente')
+      fetchInvoice()
+    } catch (error: any) {
+      console.error('Error enviando a Colppy:', error)
+      toast.error(error.message || 'Error al enviar factura a Colppy')
+    } finally {
+      setSendingToColppy(false)
     }
   }
 
@@ -446,6 +477,32 @@ export default function PurchaseInvoiceDetailPage() {
                 </>
               )}
             </Button>
+          )}
+          {/* Enviar a Colppy - solo si no fue enviada aún */}
+          {!invoice.colppyInvoiceId && (invoice.status === 'APPROVED' || invoice.status === 'PENDING') && (
+            <Button
+              onClick={handleSendToColppy}
+              disabled={sendingToColppy}
+              variant="outline"
+              className="border-purple-600 text-purple-600 hover:bg-purple-50"
+            >
+              {sendingToColppy ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Enviando a Colppy...
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4 mr-2" />
+                  Enviar a Colppy
+                </>
+              )}
+            </Button>
+          )}
+          {invoice.colppyInvoiceId && (
+            <Badge className="bg-purple-100 text-purple-800">
+              ✓ En Colppy
+            </Badge>
           )}
           {(invoice.status === 'APPROVED' || invoice.status === 'PENDING') && Number(invoice.balance) > 0 && (
             <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>

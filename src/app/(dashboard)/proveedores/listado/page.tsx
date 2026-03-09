@@ -27,6 +27,8 @@ import {
   ArrowUp,
   ArrowDown,
   Star,
+  Loader2,
+  CloudDownload,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -71,6 +73,38 @@ export default function ProveedoresPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState('name')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+  const [syncing, setSyncing] = useState(false)
+
+  const handleSyncColppy = async () => {
+    try {
+      setSyncing(true)
+      toast.info('Sincronizando proveedores desde Colppy...')
+
+      const response = await fetch('/api/proveedores/sync-colppy', {
+        method: 'POST',
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Error al sincronizar')
+      }
+
+      toast.success(
+        `Sync completada: ${data.creados} creados, ${data.actualizados} actualizados` +
+        (data.omitidos > 0 ? `, ${data.omitidos} omitidos` : '') +
+        ` (${(data.tiempoMs / 1000).toFixed(1)}s)`
+      )
+
+      // Refrescar listado
+      fetchSuppliers()
+    } catch (error: any) {
+      console.error('Error sync Colppy:', error)
+      toast.error(error.message || 'Error al sincronizar proveedores')
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   useEffect(() => {
     fetchSuppliers()
@@ -190,6 +224,19 @@ export default function ProveedoresPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={handleSyncColppy}
+            disabled={syncing}
+            className="border-purple-600 text-purple-600 hover:bg-purple-50"
+          >
+            {syncing ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <CloudDownload className="h-4 w-4 mr-2" />
+            )}
+            {syncing ? 'Sincronizando...' : 'Sync Colppy → DB'}
+          </Button>
           <Button variant="outline" onClick={fetchSuppliers}>
             <RefreshCw className="h-4 w-4 mr-2" />
             Actualizar

@@ -280,6 +280,9 @@ model Supplier {
   notes           String?        @db.Text
   internalNotes   String?        @db.Text // Notas privadas internas
 
+  // Integración Colppy
+  colppyId        String?        // ID del proveedor en Colppy
+
   // Relaciones
   products        Product[]         @relation("SupplierProducts")
   purchaseOrders  PurchaseOrder[]
@@ -297,6 +300,7 @@ model Supplier {
   @@index([status])
   @@index([buyerUserId])
   @@index([isPreferred])
+  @@index([colppyId])
   @@map("suppliers")
 }
 

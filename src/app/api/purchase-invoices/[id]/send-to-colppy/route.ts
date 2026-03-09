@@ -168,9 +168,10 @@ export async function POST(
       const fechaFacturaDoc = fmtDate(invoice.invoiceDate)
       const fechaPago = fmtDate(invoice.dueDate)
 
-      // Mapear condición de pago — el valor ya viene normalizado del formulario
-      // (dropdown con valores válidos de Colppy), pero normalizamos por seguridad
-      const idCondicionPago = normalizePaymentTermForColppy(invoice.paymentTerms || '')
+      // Mapear condición de pago — normalizar por seguridad (no depender del frontend)
+      const rawPaymentTerms = invoice.paymentTerms || ''
+      const idCondicionPago = normalizePaymentTermForColppy(rawPaymentTerms)
+      console.log(`[Colppy FC] paymentTerms DB: "${rawPaymentTerms}" → normalizado: "${idCondicionPago}"`)
 
       // Tipo de comprobante: FA=1 (Factura), NC=3 (Nota Crédito), ND=2 (Nota Débito)
       const tipoComprobanteMap: Record<string, string> = {

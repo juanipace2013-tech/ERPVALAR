@@ -837,6 +837,33 @@ export async function colppyCreatePurchaseInvoice(
   const config = getColppyConfig();
   const passwordMD5 = md5Hash(config.password);
 
+  // Valores válidos de condición de pago para Colppy
+  const VALID_PAYMENT_TERMS = [
+    'Contado', 'a 7 Dias', 'a 15 Dias', 'a 30 Dias', 'a 45 Dias',
+    'a 60 Dias', 'a 90 Dias', 'a 120 Dias', 'a 150 Dias', 'a 180 Dias',
+  ];
+  const VALID_DAYS = [7, 15, 30, 45, 60, 90, 120, 150, 180];
+
+  // Normalizar condición de pago — safety net para cualquier valor que llegue
+  let normalizedCondicionPago = invoice.idCondicionPago || 'Contado';
+  if (!VALID_PAYMENT_TERMS.includes(normalizedCondicionPago)) {
+    // Intentar extraer días del texto
+    const daysMatch = normalizedCondicionPago.match(/(\d+)/);
+    if (daysMatch) {
+      const dias = parseInt(daysMatch[1]);
+      const closest = VALID_DAYS.reduce((prev, curr) =>
+        Math.abs(curr - dias) < Math.abs(prev - dias) ? curr : prev
+      );
+      normalizedCondicionPago = `a ${closest} Dias`;
+    } else if (normalizedCondicionPago.toLowerCase().includes('contado') || normalizedCondicionPago.toLowerCase().includes('efectivo')) {
+      normalizedCondicionPago = 'Contado';
+    } else {
+      normalizedCondicionPago = 'a 30 Dias'; // Default seguro
+    }
+  }
+
+  console.log(`[Colppy FC] idCondicionPago original: "${invoice.idCondicionPago}" → normalizado: "${normalizedCondicionPago}"`);
+
   const payload = {
     auth: {
       usuario: config.user,
@@ -860,7 +887,7 @@ export async function colppyCreatePurchaseInvoice(
       fechaPago: invoice.fechaPago,
       idTipoFactura: invoice.idTipoFactura,
       idTipoComprobante: invoice.idTipoComprobante,
-      'idCondiciónPago': invoice.idCondicionPago,
+      idCondicionPago: normalizedCondicionPago,
       idEstadoFactura: invoice.idEstadoFactura,
       idMoneda: invoice.idMoneda || '1', // 1 = Peso argentino
       valorCambio: invoice.valorCambio || '1',

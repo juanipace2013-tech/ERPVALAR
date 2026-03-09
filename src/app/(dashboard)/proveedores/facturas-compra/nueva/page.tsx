@@ -173,7 +173,7 @@ export default function NewPurchaseInvoicePage() {
   // Items
   const [items, setItems] = useState<InvoiceItem[]>([
     {
-      id: '1',
+      id: 'default-1',
       productId: null,
       supplierProductCode: '',
       description: '',
@@ -289,12 +289,6 @@ export default function NewPurchaseInvoicePage() {
 
       const result = await response.json()
       if (result.success && result.data) {
-        // Debug: log raw OCR response
-        console.log('=== OCR RAW RESPONSE ===')
-        console.log('Debug info:', result.debug)
-        console.log('Items raw:', JSON.stringify(result.data.items?.slice(0, 3), null, 2))
-        console.log('Totales:', JSON.stringify(result.data.totales, null, 2))
-        console.log('Factura:', JSON.stringify(result.data.factura, null, 2))
         if (result.debug?.truncated) {
           toast.warning('⚠️ La respuesta de IA fue truncada. Algunos items pueden faltar.')
         }
@@ -377,27 +371,17 @@ export default function NewPurchaseInvoicePage() {
 
     // Items
     if (data.items && data.items.length > 0) {
-      const mappedItems = data.items.map((item, idx) => {
-        const mapped = {
-          id: String(idx + 1),
-          productId: null,
-          supplierProductCode: item.codigo || '',
-          description: item.descripcion || '',
-          unit: item.unidad || 'UN',
-          quantity: Number(item.cantidad) || 0,
-          listPrice: Number(item.precioUnitario) || 0,
-          bonificacion: Number(item.descuento) || Number(item.bonificacion) || 0,
-          taxRate: Number(item.alicuotaIva) || 21,
-        }
-        if (idx < 3) {
-          console.log(`=== Item ${idx} mapping ===`)
-          console.log('  Raw cantidad:', item.cantidad, '→ mapped:', mapped.quantity)
-          console.log('  Raw precioUnitario:', item.precioUnitario, '→ mapped:', mapped.listPrice)
-          console.log('  Raw descuento:', item.descuento, '/ bonificacion:', item.bonificacion, '→ mapped:', mapped.bonificacion)
-          console.log('  All raw keys:', Object.keys(item))
-        }
-        return mapped
-      })
+      const mappedItems = data.items.map((item, idx) => ({
+        id: `ocr-${idx}-${Date.now()}`,
+        productId: null,
+        supplierProductCode: item.codigo || '',
+        description: item.descripcion || '',
+        unit: item.unidad || 'UN',
+        quantity: Number(item.cantidad) || 0,
+        listPrice: Number(item.precioUnitario) || 0,
+        bonificacion: Number(item.descuento) || Number(item.bonificacion) || 0,
+        taxRate: Number(item.alicuotaIva) || 21,
+      }))
       setItems(mappedItems)
     }
 
@@ -464,7 +448,7 @@ export default function NewPurchaseInvoicePage() {
     setItems([
       ...items,
       {
-        id: Date.now().toString(),
+        id: `manual-${Date.now()}`,
         productId: null,
         supplierProductCode: '',
         description: '',
@@ -1158,8 +1142,8 @@ export default function NewPurchaseInvoicePage() {
                             className="h-8 text-xs text-right"
                             type="number"
                             min="0"
-                            step="0.01"
-                            value={item.quantity || ''}
+                            step="any"
+                            value={item.quantity > 0 ? String(item.quantity) : ''}
                             onChange={(e) => updateItem(item.id, 'quantity', Number(e.target.value))}
                           />
                         </TableCell>
@@ -1168,8 +1152,8 @@ export default function NewPurchaseInvoicePage() {
                             className="h-8 text-xs text-right"
                             type="number"
                             min="0"
-                            step="0.01"
-                            value={item.listPrice || ''}
+                            step="any"
+                            value={item.listPrice > 0 ? String(item.listPrice) : ''}
                             onChange={(e) => updateItem(item.id, 'listPrice', Number(e.target.value))}
                           />
                         </TableCell>
@@ -1179,8 +1163,8 @@ export default function NewPurchaseInvoicePage() {
                             type="number"
                             min="0"
                             max="100"
-                            step="0.01"
-                            value={item.bonificacion || ''}
+                            step="any"
+                            value={item.bonificacion > 0 ? String(item.bonificacion) : ''}
                             onChange={(e) => updateItem(item.id, 'bonificacion', Number(e.target.value))}
                           />
                         </TableCell>

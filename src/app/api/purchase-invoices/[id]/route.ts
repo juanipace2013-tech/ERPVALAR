@@ -114,9 +114,9 @@ export async function DELETE(
 
     const { id } = await params;
 
-    // Verificar que no esté aprobada ni pagada
     const invoice = await prisma.purchaseInvoice.findUnique({
       where: { id },
+      include: { payments: { select: { id: true } } },
     });
 
     if (!invoice) {
@@ -126,13 +126,31 @@ export async function DELETE(
       );
     }
 
-    if (invoice.status !== 'DRAFT' && invoice.status !== 'PENDING') {
+    // No permitir eliminar si fue sincronizada con Colppy
+    if (invoice.colppyInvoiceId) {
       return NextResponse.json(
-        { error: 'No se puede eliminar una factura aprobada o pagada' },
+        { error: 'No se puede eliminar una factura sincronizada con Colppy' },
         { status: 400 }
       );
     }
 
+    // Solo permitir eliminar en estado DRAFT o PENDING
+    if (invoice.status !== 'DRAFT' && invoice.status !== 'PENDING') {
+      return NextResponse.json(
+        { error: 'Solo se pueden eliminar facturas en estado Borrador o Pendiente' },
+        { status: 400 }
+      );
+    }
+
+    // No permitir eliminar si tiene pagos asociados
+    if (invoice.payments.length > 0) {
+      return NextResponse.json(
+        { error: 'No se puede eliminar una factura que tiene pagos registrados' },
+        { status: 400 }
+      );
+    }
+
+    // Items, taxes y perceptions se eliminan en cascada (onDelete: Cascade)
     await prisma.purchaseInvoice.delete({
       where: { id },
     });

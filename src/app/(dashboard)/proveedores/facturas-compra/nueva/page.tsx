@@ -53,7 +53,6 @@ interface Product {
   id: string
   sku: string
   name: string
-  costPrice: number | null
 }
 
 interface InvoiceItem {
@@ -131,6 +130,125 @@ interface OcrData {
   }
 }
 
+// ============ PRODUCT SEARCH CELL ============
+
+function ProductSearchCell({
+  itemId,
+  productId,
+  linkedProduct,
+  onSelect,
+  onClear,
+}: {
+  itemId: string
+  productId: string | null
+  linkedProduct: { sku: string; name: string } | undefined
+  onSelect: (product: Product) => void
+  onClear: () => void
+}) {
+  const [searchTerm, setSearchTerm] = useState('')
+  const [results, setResults] = useState<Product[]>([])
+  const [loading, setLoading] = useState(false)
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Debounced search
+  useEffect(() => {
+    if (searchTerm.length >= 2) {
+      const timeout = setTimeout(async () => {
+        setLoading(true)
+        try {
+          const params = new URLSearchParams({ search: searchTerm, limit: '20', status: 'ACTIVE' })
+          const res = await fetch(`/api/productos?${params}`)
+          if (res.ok) {
+            const data = await res.json()
+            setResults(data.products || [])
+          }
+        } catch (err) {
+          console.error('Product search error:', err)
+        } finally {
+          setLoading(false)
+        }
+      }, 300)
+      return () => clearTimeout(timeout)
+    } else {
+      setResults([])
+    }
+  }, [searchTerm])
+
+  // Click outside to close
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  if (productId && linkedProduct) {
+    return (
+      <div className="flex items-center gap-1 min-w-0">
+        <span
+          className="text-xs truncate flex-1 font-mono text-green-700 bg-green-50 px-1.5 py-1 rounded"
+          title={`${linkedProduct.sku} - ${linkedProduct.name}`}
+        >
+          {linkedProduct.sku}
+        </span>
+        <button
+          type="button"
+          onClick={onClear}
+          className="flex-shrink-0 text-gray-400 hover:text-red-500 p-0.5"
+          title="Desvincular producto"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      <Input
+        className="h-8 text-xs"
+        placeholder="Buscar SKU/nombre..."
+        value={searchTerm}
+        onChange={(e) => { setSearchTerm(e.target.value); setOpen(true) }}
+        onFocus={() => { if (searchTerm.length >= 2) setOpen(true) }}
+        onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false) }}
+      />
+      {open && (results.length > 0 || loading) && (
+        <div className="absolute z-50 top-full left-0 w-72 mt-1 bg-white border rounded-md shadow-lg max-h-52 overflow-y-auto">
+          {loading && results.length === 0 && (
+            <div className="px-3 py-2 text-xs text-gray-500 flex items-center gap-2">
+              <Loader2 className="h-3 w-3 animate-spin" /> Buscando...
+            </div>
+          )}
+          {results.map(p => (
+            <button
+              key={p.id}
+              type="button"
+              className="w-full text-left px-2 py-1.5 text-xs hover:bg-blue-50 border-b last:border-0 flex gap-1"
+              onClick={() => {
+                onSelect(p)
+                setSearchTerm('')
+                setOpen(false)
+                setResults([])
+              }}
+            >
+              <span className="font-mono font-semibold text-blue-700 whitespace-nowrap">{p.sku}</span>
+              <span className="text-gray-600 truncate">{p.name}</span>
+            </button>
+          ))}
+          {!loading && results.length === 0 && searchTerm.length >= 2 && (
+            <div className="px-3 py-2 text-xs text-gray-400">Sin resultados</div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ============ COMPONENT ============
 
 export default function NewPurchaseInvoicePage() {
@@ -149,7 +267,7 @@ export default function NewPurchaseInvoicePage() {
 
   // Data
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
-  const [products, setProducts] = useState<Product[]>([])
+  const [linkedProducts, setLinkedProducts] = useState<Record<string, { sku: string; name: string }>>({})
 
   // Invoice form fields
   const [supplierId, setSupplierId] = useState('')
@@ -217,22 +335,9 @@ export default function NewPurchaseInvoicePage() {
     }
   }, [])
 
-  const fetchProducts = useCallback(async () => {
-    try {
-      const response = await fetch('/api/productos?limit=1000')
-      if (response.ok) {
-        const data = await response.json()
-        setProducts(Array.isArray(data) ? data : (data.products || data.data || []))
-      }
-    } catch (error) {
-      console.error('Error:', error)
-    }
-  }, [])
-
   useEffect(() => {
     fetchSuppliers()
-    fetchProducts()
-  }, [fetchSuppliers, fetchProducts])
+  }, [fetchSuppliers])
 
   useEffect(() => {
     if (currency === 'USD') {
@@ -253,6 +358,90 @@ export default function NewPurchaseInvoicePage() {
       }
     } catch (error) {
       console.error('Error fetching exchange rate:', error)
+    }
+  }
+
+  // ============ PRODUCT AUTO-LINK ============
+
+  /**
+   * Genera variantes de SKU quitando progresivamente ceros iniciales de la primera parte.
+   * Ej: "0012416 04" → ["2416 04", "12416 04", "012416 04", "0012416 04"]
+   */
+  const generateSkuVariants = (supplierCode: string): string[] => {
+    const code = supplierCode.trim()
+    if (!code) return []
+
+    const parts = code.split(/\s+/)
+    const variants: string[] = []
+    const seen = new Set<string>()
+
+    const addVariant = (v: string) => {
+      if (!seen.has(v)) { seen.add(v); variants.push(v) }
+    }
+
+    // Strip all leading zeros from first part (most aggressive)
+    const firstPartStripped = parts[0].replace(/^0+/, '') || parts[0]
+    const rest = parts.slice(1)
+    addVariant([firstPartStripped, ...rest].join(' '))
+
+    // Progressively add back leading zeros
+    let current = firstPartStripped
+    for (let i = 1; i <= parts[0].length - firstPartStripped.length; i++) {
+      current = '0' + current
+      addVariant([current, ...rest].join(' '))
+    }
+
+    // Original code (if not already added)
+    addVariant(code)
+
+    return variants
+  }
+
+  /**
+   * Después del OCR, intenta vincular automáticamente cada item con un producto
+   * del ERP buscando por SKU con normalización de ceros iniciales.
+   */
+  const autoLinkProducts = async (ocrItems: InvoiceItem[]) => {
+    const itemsWithCode = ocrItems.filter(item => item.supplierProductCode.trim())
+    if (itemsWithCode.length === 0) return
+
+    const newLinked: Record<string, { sku: string; name: string }> = {}
+    const updates: Record<string, string> = {} // itemId → productId
+
+    await Promise.all(itemsWithCode.map(async (item) => {
+      const variants = generateSkuVariants(item.supplierProductCode)
+      if (variants.length === 0) return
+
+      // Buscar con la variante más corta (sin ceros) para máximo alcance
+      const searchTerm = variants[0]
+      try {
+        const params = new URLSearchParams({ search: searchTerm, limit: '20', status: 'ACTIVE' })
+        const res = await fetch(`/api/productos?${params}`)
+        if (!res.ok) return
+        const data = await res.json()
+        const prods: Product[] = data.products || []
+
+        // Buscar match exacto de SKU contra cualquier variante
+        const variantsLower = variants.map(v => v.toLowerCase())
+        const match = prods.find(p => variantsLower.includes(p.sku.toLowerCase().trim()))
+
+        if (match) {
+          updates[item.id] = match.id
+          newLinked[item.id] = { sku: match.sku, name: match.name }
+        }
+      } catch (err) {
+        console.error('Auto-link error for code:', item.supplierProductCode, err)
+      }
+    }))
+
+    const matchCount = Object.keys(updates).length
+    if (matchCount > 0) {
+      setItems(prev => prev.map(item => {
+        const productId = updates[item.id]
+        return productId ? { ...item, productId } : item
+      }))
+      setLinkedProducts(prev => ({ ...prev, ...newLinked }))
+      toast.success(`${matchCount} producto(s) vinculados automáticamente`)
     }
   }
 
@@ -384,6 +573,8 @@ export default function NewPurchaseInvoicePage() {
         taxRate: Number(item.alicuotaIva) || 21,
       }))
       setItems(mappedItems)
+      // Auto-vincular productos por código de proveedor
+      autoLinkProducts(mappedItems)
     }
 
     // Totals - percepciones
@@ -476,22 +667,30 @@ export default function NewPurchaseInvoicePage() {
     )
   }
 
-  const handleProductSelect = (itemId: string, productId: string) => {
-    const product = products.find((p) => p.id === productId)
-    if (product) {
-      setItems(
-        items.map((item) =>
-          item.id === itemId
-            ? {
-                ...item,
-                productId: product.id,
-                description: product.name,
-                listPrice: Number(product.costPrice) || item.listPrice,
-              }
-            : item
-        )
+  const handleProductLink = (itemId: string, product: Product) => {
+    setItems(
+      items.map((item) =>
+        item.id === itemId
+          ? { ...item, productId: product.id }
+          : item
       )
-    }
+    )
+    setLinkedProducts(prev => ({ ...prev, [itemId]: { sku: product.sku, name: product.name } }))
+  }
+
+  const handleProductClear = (itemId: string) => {
+    setItems(
+      items.map((item) =>
+        item.id === itemId
+          ? { ...item, productId: null }
+          : item
+      )
+    )
+    setLinkedProducts(prev => {
+      const next = { ...prev }
+      delete next[itemId]
+      return next
+    })
   }
 
   const calculateItemSubtotal = (item: InvoiceItem) => {
@@ -1145,10 +1344,10 @@ export default function NewPurchaseInvoicePage() {
             </CardHeader>
             <CardContent>
               <div className="border rounded-lg overflow-x-auto">
-                <Table className="min-w-[900px]">
+                <Table className="min-w-[960px]">
                   <TableHeader>
                     <TableRow className="bg-gray-50">
-                      <TableHead className="w-40">Producto</TableHead>
+                      <TableHead className="w-52">Producto</TableHead>
                       <TableHead className="w-24">Cód.Prov</TableHead>
                       <TableHead className="min-w-[180px]">Descripción</TableHead>
                       <TableHead className="w-[75px] text-right">Cant</TableHead>
@@ -1162,25 +1361,14 @@ export default function NewPurchaseInvoicePage() {
                   <TableBody>
                     {items.map((item) => (
                       <TableRow key={item.id}>
-                        <TableCell>
-                          <Select
-                            value={item.productId || 'none'}
-                            onValueChange={(value) => {
-                              if (value !== 'none') handleProductSelect(item.id, value)
-                            }}
-                          >
-                            <SelectTrigger className="h-8 text-xs">
-                              <SelectValue placeholder="—" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">— Sin vincular</SelectItem>
-                              {products.map((product) => (
-                                <SelectItem key={product.id} value={product.id}>
-                                  {product.sku} - {product.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                        <TableCell className="w-52">
+                          <ProductSearchCell
+                            itemId={item.id}
+                            productId={item.productId}
+                            linkedProduct={linkedProducts[item.id]}
+                            onSelect={(product) => handleProductLink(item.id, product)}
+                            onClear={() => handleProductClear(item.id)}
+                          />
                         </TableCell>
                         <TableCell>
                           <Input

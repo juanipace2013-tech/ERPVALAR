@@ -2,63 +2,74 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 
-const EXTRACTION_PROMPT = `Analizá esta factura de compra argentina y extraé los siguientes datos en formato JSON.
-Respondé SOLO con el JSON, sin texto adicional, sin markdown, sin backticks.
+const EXTRACTION_PROMPT = `Analizá esta factura de compra argentina y extraé TODOS los datos con precisión.
+Es CRÍTICO que extraigas las cantidades, precios unitarios e importes EXACTOS como figuran en la factura.
+Respondé SOLO con JSON válido, sin texto adicional, sin markdown, sin backticks.
 
 {
   "proveedor": {
-    "razonSocial": "string",
-    "cuit": "string (formato XX-XXXXXXXX-X)",
-    "condicionIva": "string",
-    "direccion": "string"
+    "razonSocial": "nombre exacto del emisor de la factura",
+    "cuit": "CUIT del emisor en formato XX-XXXXXXXX-X",
+    "condicionIva": "Responsable Inscripto, Monotributista, etc",
+    "direccion": "dirección del emisor"
   },
   "factura": {
-    "tipo": "string (A, B o C)",
-    "tipoComprobante": "string (FA, NC, ND)",
-    "puntoVenta": "string (4-5 dígitos, con ceros a la izquierda)",
-    "numero": "string (8 dígitos, con ceros a la izquierda)",
-    "fecha": "string (YYYY-MM-DD)",
-    "fechaVencimiento": "string (YYYY-MM-DD) o null",
-    "cae": "string o null",
-    "vencimientoCae": "string (YYYY-MM-DD) o null",
-    "condicionPago": "string o null",
-    "moneda": "string (ARS o USD)",
-    "tipoCambio": "number o null"
+    "tipo": "FC A, FC B, FC C, ND A, NC A, etc (detectar de la letra y tipo)",
+    "puntoVenta": "4 dígitos del punto de venta",
+    "numero": "8 dígitos del número de comprobante",
+    "fecha": "YYYY-MM-DD",
+    "fechaVencimiento": "YYYY-MM-DD o null",
+    "cae": "número CAE completo",
+    "vencimientoCae": "YYYY-MM-DD",
+    "condicionPago": "texto completo de la condición de venta/pago (ej: CUENTA CORRIENTE 30 DIAS)",
+    "moneda": "ARS o USD (la moneda en que están los importes de la factura)",
+    "tipoCambio": "tipo de cambio si aparece, o null",
+    "descuentoGeneral": "porcentaje de descuento general si aparece (ej: 30.00), o 0",
+    "totalUsd": "monto en USD si aparece en la factura, o null"
   },
   "items": [
     {
-      "codigo": "string o null",
-      "descripcion": "string",
-      "cantidad": "number",
-      "precioUnitario": "number",
-      "bonificacion": "number (%) o 0",
-      "subtotal": "number",
-      "alicuotaIva": "number (21, 10.5, 27, 0, etc)"
+      "codigo": "código de artículo del proveedor (puede tener espacios, ej: '0012416 04')",
+      "descripcion": "descripción completa del artículo",
+      "unidad": "UNI, KG, MT, etc",
+      "cantidad": "número EXACTO de la columna CANT",
+      "descuento": "porcentaje de descuento por item si existe, o 0",
+      "precioUnitario": "número EXACTO de la columna P.UNI (precio unitario antes de descuento)",
+      "importe": "número EXACTO de la columna IMPORTE (cantidad x precio unitario)",
+      "alicuotaIva": 21
     }
   ],
   "totales": {
-    "subtotal": "number (neto gravado)",
-    "netoNoGravado": "number o 0",
-    "exento": "number o 0",
-    "iva21": "number o 0",
-    "iva105": "number o 0",
-    "iva27": "number o 0",
-    "percepcionIIBB": "number o 0",
-    "percepcionIva": "number o 0",
-    "impuestosInternos": "number o 0",
-    "otrosImpuestos": "number o 0",
-    "descuento": "number o 0",
-    "total": "number"
+    "subtotalBruto": "suma de importes de items ANTES del descuento general",
+    "descuentoGeneral": "monto del descuento general aplicado",
+    "subtotalNeto": "subtotal después del descuento (neto gravado)",
+    "iva21": "monto IVA 21%",
+    "iva105": "monto IVA 10.5% o 0",
+    "iva27": "monto IVA 27% o 0",
+    "percepciones": [
+      {
+        "descripcion": "nombre de la percepción (ej: PERCEP. AGIP 352/22 G11)",
+        "porcentaje": "porcentaje si aparece, o null",
+        "monto": "monto de la percepción"
+      }
+    ],
+    "totalPercepciones": "suma de todas las percepciones",
+    "total": "TOTAL final de la factura"
   }
 }
 
 IMPORTANTE:
-- Los montos deben ser números, no strings
-- Si no podés leer un campo, poné null
+- Todos los montos deben ser números, no strings
+- Los precios unitarios e importes pueden tener puntos como separador de miles y comas para decimales (formato argentino). Convertí a números (ej: 1.234.567,89 => 1234567.89)
+- Extraé TODOS los items, no resumas ni agrupes
+- El descuento general se aplica al subtotal, NO al precio unitario
+- Las percepciones de IIBB pueden ser varias (AGIP, Buenos Aires, Jujuy, Salta, etc). Extraelas TODAS como array
+- Si hay tipo de cambio (TC BASE), extraelo
+- Si hay monto en USD, extraelo en totalUsd
 - Las fechas en formato YYYY-MM-DD
-- El punto de venta y número deben tener los ceros a la izquierda
-- Si hay descuento por línea, reflejalo en bonificacion del item
-- Calculá correctamente los subtotales de cada item (cantidad * precioUnitario * (1 - bonificacion/100))
+- El punto de venta y número deben tener ceros a la izquierda
+- Si no podés leer un campo, poné null
+- En condicionPago incluí el texto COMPLETO (ej: "CUENTA CORRIENTE 30 DIAS", no solo "CUENTA CORRIENTE")
 `
 
 export async function POST(request: NextRequest) {

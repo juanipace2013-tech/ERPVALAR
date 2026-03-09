@@ -67,6 +67,12 @@ interface InvoiceItem {
   taxRate: number
 }
 
+interface OcrPercepcion {
+  descripcion: string
+  porcentaje: number | null
+  monto: number
+}
+
 interface OcrData {
   proveedor: {
     razonSocial: string
@@ -76,7 +82,7 @@ interface OcrData {
   }
   factura: {
     tipo: string
-    tipoComprobante: string
+    tipoComprobante?: string // legacy support
     puntoVenta: string
     numero: string
     fecha: string
@@ -86,28 +92,40 @@ interface OcrData {
     condicionPago: string | null
     moneda: string
     tipoCambio: number | null
+    descuentoGeneral?: number
+    totalUsd?: number | null
   }
   items: Array<{
     codigo: string | null
     descripcion: string
+    unidad?: string
     cantidad: number
     precioUnitario: number
-    bonificacion: number
-    subtotal: number
+    descuento?: number
+    bonificacion?: number // legacy support
+    importe?: number
+    subtotal?: number // legacy support
     alicuotaIva: number
   }>
   totales: {
-    subtotal: number
-    netoNoGravado: number
-    exento: number
+    // New format
+    subtotalBruto?: number
+    descuentoGeneral?: number
+    subtotalNeto?: number
+    percepciones?: OcrPercepcion[]
+    totalPercepciones?: number
+    // Legacy format support
+    subtotal?: number
+    netoNoGravado?: number
+    exento?: number
     iva21: number
     iva105: number
     iva27: number
-    percepcionIIBB: number
-    percepcionIva: number
-    impuestosInternos: number
-    otrosImpuestos: number
-    descuento: number
+    percepcionIIBB?: number
+    percepcionIva?: number
+    impuestosInternos?: number
+    otrosImpuestos?: number
+    descuento?: number
     total: number
   }
 }
@@ -167,10 +185,22 @@ export default function NewPurchaseInvoicePage() {
     },
   ])
 
-  // Percepciones
+  // Percepciones (array dinámico)
+  interface PercepcionItem {
+    id: string
+    descripcion: string
+    porcentaje: number | null
+    monto: number
+  }
+  const [percepciones, setPercepciones] = useState<PercepcionItem[]>([])
+
+  // Legacy fields - still used for manual entry compatibility
   const [percepcionIIBB, setPercepcionIIBB] = useState(0)
   const [percepcionIva, setPercepcionIva] = useState(0)
   const [otrosImpuestos, setOtrosImpuestos] = useState(0)
+
+  // Total USD
+  const [totalUsd, setTotalUsd] = useState<number | null>(null)
 
   // ============ DATA FETCHING ============
 
@@ -296,7 +326,24 @@ export default function NewPurchaseInvoicePage() {
     // Invoice data
     if (data.factura) {
       const f = data.factura
-      if (f.tipo) setVoucherType(f.tipo)
+
+      // Parse tipo: new format "FC A" → voucherType="A", invoiceType="FA"
+      // Also handles "ND A", "NC A", etc.
+      if (f.tipo) {
+        const tipoStr = f.tipo.toUpperCase().trim()
+        // New format: "FC A", "FC B", "ND A", "NC A", etc.
+        const match = tipoStr.match(/^(FC|ND|NC|FA)\s*([ABC])$/)
+        if (match) {
+          const compType = match[1] === 'FC' ? 'FA' : match[1]
+          setInvoiceType(compType)
+          setVoucherType(match[2])
+        } else if (['A', 'B', 'C'].includes(tipoStr)) {
+          // Legacy format: just the letter
+          setVoucherType(tipoStr)
+        } else {
+          setVoucherType(tipoStr)
+        }
+      }
       if (f.tipoComprobante) setInvoiceType(f.tipoComprobante)
       if (f.puntoVenta) setPointOfSale(f.puntoVenta)
       if (f.numero) setInvoiceNumberSuffix(f.numero)
@@ -307,6 +354,16 @@ export default function NewPurchaseInvoicePage() {
       if (f.condicionPago) setPaymentTerms(f.condicionPago)
       if (f.moneda) setCurrency(f.moneda)
       if (f.tipoCambio) setExchangeRate(f.tipoCambio)
+
+      // Descuento general from factura (new format)
+      if (f.descuentoGeneral && f.descuentoGeneral > 0) {
+        setGeneralDiscount(f.descuentoGeneral)
+      }
+
+      // Total USD
+      if (f.totalUsd) {
+        setTotalUsd(f.totalUsd)
+      }
     }
 
     // Items
@@ -317,10 +374,10 @@ export default function NewPurchaseInvoicePage() {
           productId: null,
           supplierProductCode: item.codigo || '',
           description: item.descripcion || '',
-          unit: 'UN',
+          unit: item.unidad || 'UN',
           quantity: Number(item.cantidad) || 0,
           listPrice: Number(item.precioUnitario) || 0,
-          bonificacion: Number(item.bonificacion) || 0,
+          bonificacion: Number(item.descuento) || Number(item.bonificacion) || 0,
           taxRate: Number(item.alicuotaIva) || 21,
         }))
       )
@@ -328,12 +385,45 @@ export default function NewPurchaseInvoicePage() {
 
     // Totals - percepciones
     if (data.totales) {
-      setPercepcionIIBB(Number(data.totales.percepcionIIBB) || 0)
-      setPercepcionIva(Number(data.totales.percepcionIva) || 0)
-      setOtrosImpuestos(
-        (Number(data.totales.impuestosInternos) || 0) + (Number(data.totales.otrosImpuestos) || 0)
-      )
-      if (data.totales.descuento && data.totales.subtotal) {
+      // New format: percepciones as array
+      if (data.totales.percepciones && Array.isArray(data.totales.percepciones) && data.totales.percepciones.length > 0) {
+        const percItems = data.totales.percepciones.map((p, idx) => ({
+          id: String(idx + 1),
+          descripcion: p.descripcion || `Percepción ${idx + 1}`,
+          porcentaje: p.porcentaje ? Number(p.porcentaje) : null,
+          monto: Number(p.monto) || 0,
+        }))
+        setPercepciones(percItems)
+
+        // Also set legacy fields for calculation compatibility
+        const totalPerc = percItems.reduce((sum, p) => sum + p.monto, 0)
+        // Split between IIBB and others heuristically
+        const iibbPerc = percItems.filter((p) =>
+          /iibb|ingresos brutos|agip|arba|buenos aires|jujuy|salta|córdoba|mendoza|santa fe/i.test(p.descripcion)
+        )
+        const ivaPerc = percItems.filter((p) => /iva|percep.*iva/i.test(p.descripcion) && !/iibb/i.test(p.descripcion))
+        const otherPerc = percItems.filter(
+          (p) =>
+            !iibbPerc.includes(p) && !ivaPerc.includes(p)
+        )
+        setPercepcionIIBB(iibbPerc.reduce((s, p) => s + p.monto, 0))
+        setPercepcionIva(ivaPerc.reduce((s, p) => s + p.monto, 0))
+        setOtrosImpuestos(otherPerc.reduce((s, p) => s + p.monto, 0))
+      } else {
+        // Legacy format: flat fields
+        setPercepcionIIBB(Number(data.totales.percepcionIIBB) || 0)
+        setPercepcionIva(Number(data.totales.percepcionIva) || 0)
+        setOtrosImpuestos(
+          (Number(data.totales.impuestosInternos) || 0) + (Number(data.totales.otrosImpuestos) || 0)
+        )
+      }
+
+      // Descuento general fallback from totales
+      if (!data.factura?.descuentoGeneral && data.totales.descuentoGeneral && data.totales.subtotalBruto) {
+        const discPct = (data.totales.descuentoGeneral / data.totales.subtotalBruto) * 100
+        setGeneralDiscount(Math.round(discPct * 100) / 100)
+      } else if (!data.factura?.descuentoGeneral && data.totales.descuento && data.totales.subtotal) {
+        // Legacy fallback
         const discPct = (data.totales.descuento / data.totales.subtotal) * 100
         setGeneralDiscount(Math.round(discPct * 100) / 100)
       }
@@ -440,6 +530,9 @@ export default function NewPurchaseInvoicePage() {
   }
 
   const calculatePerceptionsTotal = () => {
+    if (percepciones.length > 0) {
+      return percepciones.reduce((sum, p) => sum + p.monto, 0)
+    }
     return percepcionIIBB + percepcionIva + otrosImpuestos
   }
 
@@ -466,24 +559,75 @@ export default function NewPurchaseInvoicePage() {
     try {
       setLoading(true)
 
-      const perceptions = []
-      if (percepcionIIBB > 0) {
-        perceptions.push({
-          jurisdiction: 'CABA',
-          perceptionType: 'IIBB',
-          rate: 0,
-          baseAmount: calculateNetAmount(),
-          amount: percepcionIIBB,
-        })
-      }
-      if (percepcionIva > 0) {
-        perceptions.push({
-          jurisdiction: 'NACIONAL',
-          perceptionType: 'IVA',
-          rate: 0,
-          baseAmount: calculateNetAmount(),
-          amount: percepcionIva,
-        })
+      const perceptions: Array<{
+        jurisdiction: string
+        perceptionType: string
+        rate: number
+        baseAmount: number
+        amount: number
+        description?: string
+      }> = []
+
+      if (percepciones.length > 0) {
+        // Use individual percepciones from OCR
+        for (const perc of percepciones) {
+          if (perc.monto > 0) {
+            // Detect jurisdiction from description
+            let jurisdiction = 'NACIONAL'
+            let perceptionType = 'IIBB'
+            const desc = (perc.descripcion || '').toUpperCase()
+            if (/AGIP|CABA|C\.A\.B\.A/i.test(desc)) jurisdiction = 'CABA'
+            else if (/ARBA|BUENOS AIRES|PBA/i.test(desc)) jurisdiction = 'BUENOS AIRES'
+            else if (/JUJUY/i.test(desc)) jurisdiction = 'JUJUY'
+            else if (/SALTA/i.test(desc)) jurisdiction = 'SALTA'
+            else if (/CÓRDOBA|CORDOBA/i.test(desc)) jurisdiction = 'CORDOBA'
+            else if (/MENDOZA/i.test(desc)) jurisdiction = 'MENDOZA'
+            else if (/SANTA FE/i.test(desc)) jurisdiction = 'SANTA FE'
+
+            if (/IVA/i.test(desc) && !/IIBB/i.test(desc)) {
+              perceptionType = 'IVA'
+              jurisdiction = 'NACIONAL'
+            }
+
+            perceptions.push({
+              jurisdiction,
+              perceptionType,
+              rate: perc.porcentaje || 0,
+              baseAmount: calculateNetAmount(),
+              amount: perc.monto,
+              description: perc.descripcion,
+            })
+          }
+        }
+      } else {
+        // Legacy manual entry
+        if (percepcionIIBB > 0) {
+          perceptions.push({
+            jurisdiction: 'CABA',
+            perceptionType: 'IIBB',
+            rate: 0,
+            baseAmount: calculateNetAmount(),
+            amount: percepcionIIBB,
+          })
+        }
+        if (percepcionIva > 0) {
+          perceptions.push({
+            jurisdiction: 'NACIONAL',
+            perceptionType: 'IVA',
+            rate: 0,
+            baseAmount: calculateNetAmount(),
+            amount: percepcionIva,
+          })
+        }
+        if (otrosImpuestos > 0) {
+          perceptions.push({
+            jurisdiction: 'NACIONAL',
+            perceptionType: 'OTROS',
+            rate: 0,
+            baseAmount: calculateNetAmount(),
+            amount: otrosImpuestos,
+          })
+        }
       }
 
       const response = await fetch('/api/purchase-invoices', {
@@ -1053,43 +1197,135 @@ export default function NewPurchaseInvoicePage() {
               </div>
 
               {/* Percepciones */}
-              <div className="mt-4 grid grid-cols-3 gap-4">
-                <div>
-                  <Label className="text-xs">Percepción IIBB</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={percepcionIIBB || ''}
-                    onChange={(e) => setPercepcionIIBB(Number(e.target.value))}
-                    className="h-8 text-sm"
-                    placeholder="0.00"
-                  />
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <Label className="text-sm font-medium">Percepciones e Impuestos</Label>
+                  {percepciones.length === 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        setPercepciones([
+                          ...percepciones,
+                          { id: Date.now().toString(), descripcion: '', porcentaje: null, monto: 0 },
+                        ])
+                      }
+                    >
+                      <Plus className="h-3 w-3 mr-1" /> Agregar
+                    </Button>
+                  )}
                 </div>
-                <div>
-                  <Label className="text-xs">Percepción IVA</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={percepcionIva || ''}
-                    onChange={(e) => setPercepcionIva(Number(e.target.value))}
-                    className="h-8 text-sm"
-                    placeholder="0.00"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">Otros Impuestos</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={otrosImpuestos || ''}
-                    onChange={(e) => setOtrosImpuestos(Number(e.target.value))}
-                    className="h-8 text-sm"
-                    placeholder="0.00"
-                  />
-                </div>
+
+                {/* Individual percepciones from OCR */}
+                {percepciones.length > 0 ? (
+                  <div className="space-y-2">
+                    {percepciones.map((perc) => (
+                      <div key={perc.id} className="flex items-center gap-2">
+                        <Input
+                          value={perc.descripcion}
+                          onChange={(e) =>
+                            setPercepciones(
+                              percepciones.map((p) =>
+                                p.id === perc.id ? { ...p, descripcion: e.target.value } : p
+                              )
+                            )
+                          }
+                          className="h-8 text-sm flex-1"
+                          placeholder="Descripción (ej: PERCEP. AGIP)"
+                        />
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={perc.monto || ''}
+                          onChange={(e) => {
+                            const newMonto = Number(e.target.value)
+                            setPercepciones(
+                              percepciones.map((p) =>
+                                p.id === perc.id ? { ...p, monto: newMonto } : p
+                              )
+                            )
+                            // Update legacy totals
+                            const updated = percepciones.map((p) =>
+                              p.id === perc.id ? { ...p, monto: newMonto } : p
+                            )
+                            const total = updated.reduce((s, p) => s + p.monto, 0)
+                            setPercepcionIIBB(total)
+                            setPercepcionIva(0)
+                            setOtrosImpuestos(0)
+                          }}
+                          className="h-8 text-sm w-36"
+                          placeholder="Monto"
+                        />
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            const updated = percepciones.filter((p) => p.id !== perc.id)
+                            setPercepciones(updated)
+                            const total = updated.reduce((s, p) => s + p.monto, 0)
+                            setPercepcionIIBB(total)
+                            setPercepcionIva(0)
+                            setOtrosImpuestos(0)
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3 text-red-600" />
+                        </Button>
+                      </div>
+                    ))}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        setPercepciones([
+                          ...percepciones,
+                          { id: Date.now().toString(), descripcion: '', porcentaje: null, monto: 0 },
+                        ])
+                      }
+                    >
+                      <Plus className="h-3 w-3 mr-1" /> Agregar percepción
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <Label className="text-xs">Percepción IIBB</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={percepcionIIBB || ''}
+                        onChange={(e) => setPercepcionIIBB(Number(e.target.value))}
+                        className="h-8 text-sm"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Percepción IVA</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={percepcionIva || ''}
+                        onChange={(e) => setPercepcionIva(Number(e.target.value))}
+                        className="h-8 text-sm"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Otros Impuestos</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={otrosImpuestos || ''}
+                        onChange={(e) => setOtrosImpuestos(Number(e.target.value))}
+                        className="h-8 text-sm"
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Totales */}
@@ -1118,11 +1354,22 @@ export default function NewPurchaseInvoicePage() {
                   <span className="text-gray-600">IVA:</span>
                   <span className="font-mono font-semibold">${fmt(calculateTaxAmount())}</span>
                 </div>
-                {calculatePerceptionsTotal() > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Percepciones:</span>
-                    <span className="font-mono font-semibold">${fmt(calculatePerceptionsTotal())}</span>
-                  </div>
+                {percepciones.length > 0 ? (
+                  percepciones.filter((p) => p.monto > 0).map((perc) => (
+                    <div key={perc.id} className="flex justify-between text-sm">
+                      <span className="text-gray-600 truncate max-w-[200px]" title={perc.descripcion}>
+                        {perc.descripcion || 'Percepción'}:
+                      </span>
+                      <span className="font-mono font-semibold">${fmt(perc.monto)}</span>
+                    </div>
+                  ))
+                ) : (
+                  calculatePerceptionsTotal() > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Percepciones:</span>
+                      <span className="font-mono font-semibold">${fmt(calculatePerceptionsTotal())}</span>
+                    </div>
+                  )
                 )}
                 <div className="flex justify-between text-lg pt-2 border-t">
                   <span className="font-bold">TOTAL:</span>
@@ -1130,6 +1377,14 @@ export default function NewPurchaseInvoicePage() {
                     ${fmt(calculateTotal())}
                   </span>
                 </div>
+                {totalUsd && (
+                  <div className="flex justify-between text-sm text-gray-500">
+                    <span>Total USD:</span>
+                    <span className="font-mono font-semibold text-green-700">
+                      USD {totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

@@ -157,6 +157,7 @@ function buildRemitoSheet(
   setCell(ws, 'N6', data.customerInvoiceNumber || '', FONT_DEFAULT, { vertical: 'middle' })
 
   // ----- Fila 8: Orden de compra -----
+  setCell(ws, 'B8', 'OC N°:', FONT_OC, { vertical: 'middle' })
   ws.mergeCells('C8:L8')
   setCell(ws, 'C8', data.purchaseOrder || '', FONT_OC, { vertical: 'middle' })
 
@@ -186,6 +187,7 @@ function buildRemitoSheet(
   }
 
   // ----- Fila 18: Bultos -----
+  setCell(ws, 'B18', 'BULTOS:', FONT_BOLD_12, { vertical: 'middle' })
   ws.mergeCells('C18:J18')
   setCell(
     ws,
@@ -196,6 +198,7 @@ function buildRemitoSheet(
   )
 
   // ----- Fila 19: Valor declarado -----
+  setCell(ws, 'B19', 'VD $:', FONT_BOLD_12, { vertical: 'middle' })
   ws.mergeCells('C19:J19')
   const valorDeclarado = data.totalAmountARS != null
     ? formatARS(data.totalAmountARS)

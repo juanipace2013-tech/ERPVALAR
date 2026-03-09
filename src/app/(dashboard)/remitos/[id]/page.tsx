@@ -328,6 +328,31 @@ export default function DeliveryNoteDetailPage() {
     }
   }
 
+  const handleDownloadExcel = async () => {
+    if (!deliveryNote) return
+    try {
+      toast.info('Generando Excel...')
+      const response = await fetch(`/api/delivery-notes/${id}/excel`)
+      if (!response.ok) {
+        const err = await response.json()
+        throw new Error(err.error || 'Error al generar Excel')
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Remito-${deliveryNote.deliveryNumber.replace(/\s/g, '-')}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast.success('Excel generado correctamente')
+    } catch (error) {
+      console.error('Error downloading Excel:', error)
+      toast.error(error instanceof Error ? error.message : 'Error al generar el Excel')
+    }
+  }
+
   const handleUploadSigned = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -486,6 +511,11 @@ export default function DeliveryNoteDetailPage() {
             <Button variant="outline" onClick={handleDownloadPDF}>
               <Download className="h-4 w-4 mr-2" />
               Descargar PDF
+            </Button>
+
+            <Button variant="outline" onClick={handleDownloadExcel}>
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              Descargar Excel
             </Button>
 
             {/* Signed document upload/view */}

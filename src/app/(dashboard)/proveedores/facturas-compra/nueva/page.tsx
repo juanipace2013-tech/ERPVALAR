@@ -289,6 +289,15 @@ export default function NewPurchaseInvoicePage() {
 
       const result = await response.json()
       if (result.success && result.data) {
+        // Debug: log raw OCR response
+        console.log('=== OCR RAW RESPONSE ===')
+        console.log('Debug info:', result.debug)
+        console.log('Items raw:', JSON.stringify(result.data.items?.slice(0, 3), null, 2))
+        console.log('Totales:', JSON.stringify(result.data.totales, null, 2))
+        console.log('Factura:', JSON.stringify(result.data.factura, null, 2))
+        if (result.debug?.truncated) {
+          toast.warning('⚠️ La respuesta de IA fue truncada. Algunos items pueden faltar.')
+        }
         applyOcrData(result.data)
         setOcrUsed(true)
         setStep('form')
@@ -368,8 +377,8 @@ export default function NewPurchaseInvoicePage() {
 
     // Items
     if (data.items && data.items.length > 0) {
-      setItems(
-        data.items.map((item, idx) => ({
+      const mappedItems = data.items.map((item, idx) => {
+        const mapped = {
           id: String(idx + 1),
           productId: null,
           supplierProductCode: item.codigo || '',
@@ -379,8 +388,17 @@ export default function NewPurchaseInvoicePage() {
           listPrice: Number(item.precioUnitario) || 0,
           bonificacion: Number(item.descuento) || Number(item.bonificacion) || 0,
           taxRate: Number(item.alicuotaIva) || 21,
-        }))
-      )
+        }
+        if (idx < 3) {
+          console.log(`=== Item ${idx} mapping ===`)
+          console.log('  Raw cantidad:', item.cantidad, '→ mapped:', mapped.quantity)
+          console.log('  Raw precioUnitario:', item.precioUnitario, '→ mapped:', mapped.listPrice)
+          console.log('  Raw descuento:', item.descuento, '/ bonificacion:', item.bonificacion, '→ mapped:', mapped.bonificacion)
+          console.log('  All raw keys:', Object.keys(item))
+        }
+        return mapped
+      })
+      setItems(mappedItems)
     }
 
     // Totals - percepciones

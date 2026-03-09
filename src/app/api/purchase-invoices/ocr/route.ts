@@ -166,7 +166,7 @@ export async function POST(request: NextRequest) {
     // Llamar a Claude
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
+      max_tokens: 8192,
       messages: [
         {
           role: 'user',
@@ -203,10 +203,35 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Debug logging - items extraction
+    if (extractedData.items && extractedData.items.length > 0) {
+      console.log('=== OCR DEBUG: Items extraídos ===')
+      console.log(`Total items: ${extractedData.items.length}`)
+      extractedData.items.slice(0, 3).forEach((item: Record<string, unknown>, idx: number) => {
+        console.log(`Item ${idx}:`, JSON.stringify(item))
+      })
+      console.log('=== OCR DEBUG: Totales ===')
+      console.log(JSON.stringify(extractedData.totales))
+      console.log('=== OCR DEBUG: Factura ===')
+      console.log(JSON.stringify(extractedData.factura))
+    }
+
+    // Check stop reason - if max_tokens, the response was truncated
+    const stopReason = response.stop_reason
+    if (stopReason === 'max_tokens') {
+      console.warn('⚠️ OCR response was TRUNCATED (max_tokens reached)')
+    }
+
     return NextResponse.json({
       success: true,
       data: extractedData,
       fileName: file.name,
+      debug: {
+        stopReason,
+        itemCount: extractedData.items?.length || 0,
+        firstItem: extractedData.items?.[0] || null,
+        truncated: stopReason === 'max_tokens',
+      },
     })
   } catch (error) {
     console.error('Error in OCR endpoint:', error)

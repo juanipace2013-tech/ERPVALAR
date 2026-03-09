@@ -206,15 +206,19 @@ export default function ProductoDetallePage() {
     try {
       const [catRes, supRes] = await Promise.all([
         fetch('/api/productos/categories'),
-        fetch('/api/proveedores?status=ACTIVE'),
+        fetch('/api/proveedores?status=ACTIVE&limit=9999'),
       ])
       if (catRes.ok) {
         const data = await catRes.json()
         setCategories(data.categories || [])
+      } else {
+        console.error('Error loading categories:', catRes.status, catRes.statusText)
       }
       if (supRes.ok) {
         const data = await supRes.json()
         setSuppliers(data.suppliers || [])
+      } else {
+        console.error('Error loading suppliers:', supRes.status, supRes.statusText)
       }
     } catch (err) {
       console.error('Error loading categories/suppliers:', err)
@@ -457,7 +461,7 @@ export default function ProductoDetallePage() {
                 <div className="space-y-2">
                   <Label>Categor&iacute;a</Label>
                   {editing ? (
-                    <Select value={formData.categoryId} onValueChange={(v) => handleChange('categoryId', v)}>
+                    <Select value={formData.categoryId || undefined} onValueChange={(v) => handleChange('categoryId', v)}>
                       <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
                       <SelectContent>
                         {categories.map((cat) => (
@@ -486,7 +490,7 @@ export default function ProductoDetallePage() {
               <div className="space-y-2">
                 <Label>Proveedor</Label>
                 {editing ? (
-                  <Select value={formData.supplierId} onValueChange={(v) => handleChange('supplierId', v)}>
+                  <Select value={formData.supplierId || undefined} onValueChange={(v) => handleChange('supplierId', v)}>
                     <SelectTrigger><SelectValue placeholder="Seleccionar proveedor" /></SelectTrigger>
                     <SelectContent>
                       {suppliers.map((sup) => (

@@ -72,17 +72,21 @@ export default function NuevoProductoPage() {
       // Cargar categorías y proveedores
       const [categoriesRes, suppliersRes] = await Promise.all([
         fetch('/api/productos/categories'),
-        fetch('/api/proveedores?status=ACTIVE'),
+        fetch('/api/proveedores?status=ACTIVE&limit=9999'),
       ])
 
       if (categoriesRes.ok) {
         const data = await categoriesRes.json()
         setCategories(data.categories || [])
+      } else {
+        console.error('Error loading categories:', categoriesRes.status, categoriesRes.statusText)
       }
 
       if (suppliersRes.ok) {
         const data = await suppliersRes.json()
         setSuppliers(data.suppliers || [])
+      } else {
+        console.error('Error loading suppliers:', suppliersRes.status, suppliersRes.statusText)
       }
     } catch (error) {
       console.error('Error loading data:', error)
@@ -266,7 +270,7 @@ export default function NuevoProductoPage() {
 
                   <div className="space-y-2">
                     <Label htmlFor="categoryId">Categoría</Label>
-                    <Select value={formData.categoryId} onValueChange={(value) => handleChange('categoryId', value)}>
+                    <Select value={formData.categoryId || undefined} onValueChange={(value) => handleChange('categoryId', value)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Seleccionar" />
                       </SelectTrigger>
@@ -293,7 +297,7 @@ export default function NuevoProductoPage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="supplierId">Proveedor Principal</Label>
-                  <Select value={formData.supplierId} onValueChange={(value) => handleChange('supplierId', value)}>
+                  <Select value={formData.supplierId || undefined} onValueChange={(value) => handleChange('supplierId', value)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Seleccionar proveedor" />
                     </SelectTrigger>

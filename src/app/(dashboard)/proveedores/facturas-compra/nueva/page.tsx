@@ -687,6 +687,13 @@ export default function NewPurchaseInvoicePage() {
   const fmt = (n: number) =>
     n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
+  // Helper para inputs numéricos como text: parsea valor, permite solo números y punto
+  const parseNumericInput = (val: string): number => {
+    const cleaned = val.replace(/[^0-9.]/g, '')
+    return Number(cleaned) || 0
+  }
+  const fmtInput = (n: number): string => (n > 0 ? String(n) : '')
+
   // ============ RENDER ============
 
   // --- STEP 1: UPLOAD ---
@@ -1139,33 +1146,29 @@ export default function NewPurchaseInvoicePage() {
                         </TableCell>
                         <TableCell>
                           <Input
-                            className="h-8 text-xs text-right"
-                            type="number"
-                            min="0"
-                            step="any"
-                            value={item.quantity > 0 ? String(item.quantity) : ''}
-                            onChange={(e) => updateItem(item.id, 'quantity', Number(e.target.value))}
+                            className="h-8 text-xs text-right font-mono"
+                            inputMode="decimal"
+                            value={fmtInput(item.quantity)}
+                            placeholder="0"
+                            onChange={(e) => updateItem(item.id, 'quantity', parseNumericInput(e.target.value))}
                           />
                         </TableCell>
                         <TableCell>
                           <Input
-                            className="h-8 text-xs text-right"
-                            type="number"
-                            min="0"
-                            step="any"
-                            value={item.listPrice > 0 ? String(item.listPrice) : ''}
-                            onChange={(e) => updateItem(item.id, 'listPrice', Number(e.target.value))}
+                            className="h-8 text-xs text-right font-mono"
+                            inputMode="decimal"
+                            value={fmtInput(item.listPrice)}
+                            placeholder="0.00"
+                            onChange={(e) => updateItem(item.id, 'listPrice', parseNumericInput(e.target.value))}
                           />
                         </TableCell>
                         <TableCell>
                           <Input
-                            className="h-8 text-xs text-right"
-                            type="number"
-                            min="0"
-                            max="100"
-                            step="any"
-                            value={item.bonificacion > 0 ? String(item.bonificacion) : ''}
-                            onChange={(e) => updateItem(item.id, 'bonificacion', Number(e.target.value))}
+                            className="h-8 text-xs text-right font-mono"
+                            inputMode="decimal"
+                            value={fmtInput(item.bonificacion)}
+                            placeholder="0"
+                            onChange={(e) => updateItem(item.id, 'bonificacion', parseNumericInput(e.target.value))}
                           />
                         </TableCell>
                         <TableCell>

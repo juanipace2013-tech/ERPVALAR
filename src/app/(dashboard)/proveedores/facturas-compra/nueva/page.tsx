@@ -41,6 +41,49 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 
+// ============ PAYMENT TERM NORMALIZATION ============
+
+const VALID_PAYMENT_DAYS = [7, 15, 30, 45, 60, 90, 120, 150, 180]
+
+/**
+ * Normaliza el texto de condición de pago del OCR al formato de Colppy.
+ * Ej: "CUENTA CORRIENTE 30 DIAS" → "a 30 Dias"
+ *     "Contado" → "Contado"
+ */
+function normalizePaymentTerm(raw: string): string {
+  if (!raw) return ''
+  const lower = raw.toLowerCase()
+
+  if (lower.includes('contado') || lower.includes('efectivo')) return 'Contado'
+
+  // Buscar número de días
+  const match = lower.match(/(\d+)\s*d[ií]as?/)
+  if (match) {
+    const dias = parseInt(match[1])
+    const closest = VALID_PAYMENT_DAYS.reduce((prev, curr) =>
+      Math.abs(curr - dias) < Math.abs(prev - dias) ? curr : prev
+    )
+    return `a ${closest} Dias`
+  }
+
+  // Si tiene solo un número
+  const numMatch = lower.match(/\b(\d+)\b/)
+  if (numMatch) {
+    const dias = parseInt(numMatch[1])
+    if (dias >= 7 && dias <= 180) {
+      const closest = VALID_PAYMENT_DAYS.reduce((prev, curr) =>
+        Math.abs(curr - dias) < Math.abs(prev - dias) ? curr : prev
+      )
+      return `a ${closest} Dias`
+    }
+  }
+
+  // Si dice "cuenta corriente" sin número, asumir 30 días
+  if (lower.includes('cuenta corriente') || lower.includes('cta cte')) return 'a 30 Dias'
+
+  return ''
+}
+
 // ============ TYPES ============
 
 interface Supplier {
@@ -544,7 +587,7 @@ export default function NewPurchaseInvoicePage() {
       if (f.fechaVencimiento) setDueDate(f.fechaVencimiento)
       if (f.cae) setCae(f.cae)
       if (f.vencimientoCae) setCaeExpiration(f.vencimientoCae)
-      if (f.condicionPago) setPaymentTerms(f.condicionPago)
+      if (f.condicionPago) setPaymentTerms(normalizePaymentTerm(f.condicionPago))
       if (f.moneda) setCurrency(f.moneda)
       if (f.tipoCambio) setExchangeRate(f.tipoCambio)
 
@@ -1286,12 +1329,23 @@ export default function NewPurchaseInvoicePage() {
                 </div>
                 <div>
                   <Label htmlFor="paymentTerms">Condición Pago</Label>
-                  <Input
-                    id="paymentTerms"
-                    value={paymentTerms}
-                    onChange={(e) => setPaymentTerms(e.target.value)}
-                    placeholder="Ej: 30 días"
-                  />
+                  <Select value={paymentTerms || undefined} onValueChange={setPaymentTerms}>
+                    <SelectTrigger id="paymentTerms">
+                      <SelectValue placeholder="Seleccionar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Contado">Contado</SelectItem>
+                      <SelectItem value="a 7 Dias">7 Días</SelectItem>
+                      <SelectItem value="a 15 Dias">15 Días</SelectItem>
+                      <SelectItem value="a 30 Dias">30 Días</SelectItem>
+                      <SelectItem value="a 45 Dias">45 Días</SelectItem>
+                      <SelectItem value="a 60 Dias">60 Días</SelectItem>
+                      <SelectItem value="a 90 Dias">90 Días</SelectItem>
+                      <SelectItem value="a 120 Dias">120 Días</SelectItem>
+                      <SelectItem value="a 150 Dias">150 Días</SelectItem>
+                      <SelectItem value="a 180 Dias">180 Días</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <Label htmlFor="generalDiscount">Desc. General %</Label>

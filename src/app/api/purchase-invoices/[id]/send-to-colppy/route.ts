@@ -10,6 +10,57 @@ import {
   ColppySessionExpiredError,
 } from '@/lib/colppy'
 
+// Valores válidos de condición de pago en Colppy
+const COLPPY_PAYMENT_TERMS = [
+  'Contado', 'a 7 Dias', 'a 15 Dias', 'a 30 Dias', 'a 45 Dias',
+  'a 60 Dias', 'a 90 Dias', 'a 120 Dias', 'a 150 Dias', 'a 180 Dias',
+] as const
+
+const VALID_DAYS = [7, 15, 30, 45, 60, 90, 120, 150, 180]
+
+/**
+ * Normaliza cualquier texto de condición de pago al formato exacto de Colppy.
+ * Ej: "CUENTA CORRIENTE 30 DIAS" → "a 30 Dias"
+ *     "a 30 Dias" → "a 30 Dias" (ya normalizado)
+ *     "Contado" → "Contado"
+ */
+function normalizePaymentTermForColppy(raw: string): string {
+  if (!raw) return 'Contado'
+
+  // Si ya es un valor exacto de Colppy, devolverlo
+  if ((COLPPY_PAYMENT_TERMS as readonly string[]).includes(raw)) return raw
+
+  const lower = raw.toLowerCase()
+
+  // Contado
+  if (lower.includes('contado') || lower.includes('efectivo')) return 'Contado'
+
+  // Buscar número de días en el texto
+  const match = lower.match(/(\d+)\s*d[ií]as?/)
+  if (match) {
+    const dias = parseInt(match[1])
+    // Buscar el valor válido más cercano
+    const closest = VALID_DAYS.reduce((prev, curr) =>
+      Math.abs(curr - dias) < Math.abs(prev - dias) ? curr : prev
+    )
+    return `a ${closest} Dias`
+  }
+
+  // Si tiene solo un número (ej: "30", "60")
+  const numMatch = lower.match(/\b(\d+)\b/)
+  if (numMatch) {
+    const dias = parseInt(numMatch[1])
+    if (dias >= 7 && dias <= 180) {
+      const closest = VALID_DAYS.reduce((prev, curr) =>
+        Math.abs(curr - dias) < Math.abs(prev - dias) ? curr : prev
+      )
+      return `a ${closest} Dias`
+    }
+  }
+
+  return 'a 30 Dias' // Default razonable para cuenta corriente
+}
+
 /**
  * POST /api/purchase-invoices/[id]/send-to-colppy
  *
@@ -117,16 +168,9 @@ export async function POST(
       const fechaFacturaDoc = fmtDate(invoice.invoiceDate)
       const fechaPago = fmtDate(invoice.dueDate)
 
-      // Mapear condición de pago
-      const paymentTermsText = invoice.paymentTerms || ''
-      let idCondicionPago = 'Contado'
-      if (paymentTermsText.toLowerCase().includes('30')) idCondicionPago = 'a 30 Dias'
-      else if (paymentTermsText.toLowerCase().includes('60')) idCondicionPago = 'a 60 Dias'
-      else if (paymentTermsText.toLowerCase().includes('45')) idCondicionPago = 'a 45 Dias'
-      else if (paymentTermsText.toLowerCase().includes('90')) idCondicionPago = 'a 90 Dias'
-      else if (paymentTermsText.toLowerCase().includes('15')) idCondicionPago = 'a 15 Dias'
-      else if (paymentTermsText.toLowerCase().includes('7')) idCondicionPago = 'a 7 Dias'
-      else if (paymentTermsText.toLowerCase().includes('120')) idCondicionPago = 'a 120 Dias'
+      // Mapear condición de pago — el valor ya viene normalizado del formulario
+      // (dropdown con valores válidos de Colppy), pero normalizamos por seguridad
+      const idCondicionPago = normalizePaymentTermForColppy(invoice.paymentTerms || '')
 
       // Tipo de comprobante: FA=1 (Factura), NC=3 (Nota Crédito), ND=2 (Nota Débito)
       const tipoComprobanteMap: Record<string, string> = {

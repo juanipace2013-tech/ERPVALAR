@@ -181,41 +181,50 @@ export async function POST(
       }
       const idTipoComprobante = tipoComprobanteMap[invoice.invoiceType] || '1'
 
-      // Calcular IVA por alícuota
-      let iva21 = 0
-      let iva105 = 0
-      let iva27 = 0
-
-      // Calcular neto por item aplicando descuento general
-      const generalDiscount = Number(invoice.generalDiscount) / 100
+      // ===================================================================
+      // Calcular TODOS los totales desde los items redondeados
+      // para garantizar consistencia con la validación de Colppy.
+      // Colppy recalcula IVA desde los items y lo compara con el header.
+      // ===================================================================
+      let calcIva21 = 0
+      let calcIva105 = 0
+      let calcIva27 = 0
+      let calcNetoGravado = 0
 
       const itemsFactura = invoice.items.map((item) => {
         const qty = Number(item.quantity)
-        const listPrice = Number(item.listPrice)
-        const itemDiscount = Number(item.discountPercent) / 100
-        // El unitPrice ya tiene el descuento aplicado
-        const unitPrice = Number(item.unitPrice)
+        const unitPrice = Number(item.unitPrice) // Ya tiene descuento aplicado
         const taxRate = Number(item.taxRate)
 
-        // Acumular IVA por alícuota
-        const itemNet = unitPrice * qty
-        const itemIva = itemNet * (taxRate / 100)
+        // Redondear a 2 decimales — MISMO valor que Colppy verá en ImporteUnitario
+        const roundedUnitPrice = Math.round(unitPrice * 100) / 100
+        const itemNet = Math.round(roundedUnitPrice * qty * 100) / 100
+        // Redondear IVA POR ITEM — así calcula Colppy
+        const itemIva = Math.round(itemNet * taxRate / 100 * 100) / 100
 
-        if (taxRate === 21) iva21 += itemIva
-        else if (taxRate === 10.5) iva105 += itemIva
-        else if (taxRate === 27) iva27 += itemIva
+        calcNetoGravado += itemNet
+        if (taxRate === 21) calcIva21 += itemIva
+        else if (taxRate === 10.5) calcIva105 += itemIva
+        else if (taxRate === 27) calcIva27 += itemIva
 
         return {
           Descripcion: item.description,
           unidadMedida: item.unit || 'Un',
           Cantidad: String(qty),
-          ImporteUnitario: unitPrice.toFixed(2),
+          ImporteUnitario: roundedUnitPrice.toFixed(2),
           IVA: taxRate.toFixed(2),
           idPlanCuenta: 'Mercaderias',
           codigo: item.supplierProductCode || '',
           porcDesc: '0', // El descuento ya está aplicado en unitPrice
         }
       })
+
+      // Redondear totales acumulados
+      calcNetoGravado = Math.round(calcNetoGravado * 100) / 100
+      calcIva21 = Math.round(calcIva21 * 100) / 100
+      calcIva105 = Math.round(calcIva105 * 100) / 100
+      calcIva27 = Math.round(calcIva27 * 100) / 100
+      const calcTotalIva = Math.round((calcIva21 + calcIva105 + calcIva27) * 100) / 100
 
       // Calcular percepciones totales
       let percepcionIVA = 0
@@ -229,11 +238,23 @@ export async function POST(
           percepcionIIBB += Number(perc.amount)
         }
       }
+      percepcionIVA = Math.round(percepcionIVA * 100) / 100
+      percepcionIIBB = Math.round(percepcionIIBB * 100) / 100
 
-      const netoGravado = Number(invoice.netAmount)
-      const netoNoGravado = Number(invoice.notTaxedAmount) + Number(invoice.exemptAmount)
-      const totalIVA = Number(invoice.taxAmount)
-      const totalFactura = Number(invoice.total)
+      const netoNoGravado = Math.round((Number(invoice.notTaxedAmount) + Number(invoice.exemptAmount)) * 100) / 100
+
+      // Recalcular totalFactura desde valores consistentes
+      const calcTotalFactura = Math.round((calcNetoGravado + calcTotalIva + netoNoGravado + percepcionIVA + percepcionIIBB) * 100) / 100
+
+      // Log DB vs calculado para debugging
+      const dbNeto = Number(invoice.netAmount)
+      const dbIva = Number(invoice.taxAmount)
+      const dbTotal = Number(invoice.total)
+      console.log(`[Colppy FC] === COMPARACIÓN DB vs CALCULADO ===`)
+      console.log(`[Colppy FC] Neto:  DB=${dbNeto} vs Calc=${calcNetoGravado} ${dbNeto !== calcNetoGravado ? '⚠️ DIFF' : '✓'}`)
+      console.log(`[Colppy FC] IVA:   DB=${dbIva} vs Calc=${calcTotalIva} (21%=${calcIva21}, 10.5%=${calcIva105}, 27%=${calcIva27}) ${dbIva !== calcTotalIva ? '⚠️ DIFF' : '✓'}`)
+      console.log(`[Colppy FC] Total: DB=${dbTotal} vs Calc=${calcTotalFactura} ${dbTotal !== calcTotalFactura ? '⚠️ DIFF' : '✓'}`)
+      console.log(`[Colppy FC] Percepciones: IVA=${percepcionIVA} IIBB=${percepcionIIBB} NoGravado=${netoNoGravado}`)
 
       // 5. Enviar a Colppy
       const result = await withRetry((s) =>
@@ -249,15 +270,15 @@ export async function POST(
           idEstadoFactura: 'Aprobada',
           nroFactura1: invoice.pointOfSale,
           nroFactura2: invoice.invoiceNumberSuffix,
-          netoGravado: netoGravado.toFixed(2),
+          netoGravado: calcNetoGravado.toFixed(2),
           netoNoGravado: netoNoGravado.toFixed(2),
-          totalIVA: totalIVA.toFixed(2),
-          IVA21: iva21.toFixed(2),
-          IVA105: iva105.toFixed(2),
-          IVA27: iva27.toFixed(2),
+          totalIVA: calcTotalIva.toFixed(2),
+          IVA21: calcIva21.toFixed(2),
+          IVA105: calcIva105.toFixed(2),
+          IVA27: calcIva27.toFixed(2),
           percepcionIVA: percepcionIVA.toFixed(2),
           percepcionIIBB: percepcionIIBB.toFixed(2),
-          totalFactura: totalFactura.toFixed(2),
+          totalFactura: calcTotalFactura.toFixed(2),
           idMoneda: invoice.currency === 'USD' ? '2' : '1',
           valorCambio: invoice.currency === 'USD' ? String(Number(invoice.exchangeRate)) : '1',
           itemsFactura,

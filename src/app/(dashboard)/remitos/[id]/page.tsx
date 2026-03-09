@@ -44,6 +44,8 @@ import {
   Upload,
   ExternalLink,
   RefreshCw,
+  Pencil,
+  Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { generateRemitoPDF, type RemitoPDFData } from '@/lib/pdf/remito-generator'
@@ -353,6 +355,30 @@ export default function DeliveryNoteDetailPage() {
     }
   }
 
+  const handleDelete = async () => {
+    if (!deliveryNote) return
+    const confirmed = window.confirm(
+      `¿Estás seguro de eliminar el remito ${deliveryNote.deliveryNumber}?\n\nEsta acción no se puede deshacer.`
+    )
+    if (!confirmed) return
+
+    try {
+      setActionLoading(true)
+      const response = await fetch(`/api/delivery-notes/${id}`, { method: 'DELETE' })
+      if (!response.ok) {
+        const err = await response.json()
+        throw new Error(err.error || 'Error al eliminar')
+      }
+      toast.success('Remito eliminado correctamente')
+      router.push('/remitos')
+    } catch (error) {
+      console.error('Error deleting delivery note:', error)
+      toast.error(error instanceof Error ? error.message : 'Error al eliminar el remito')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   const handleUploadSigned = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -517,6 +543,31 @@ export default function DeliveryNoteDetailPage() {
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               Descargar Excel
             </Button>
+
+            {deliveryNote.status === 'PENDING' && (
+              <Button
+                variant="outline"
+                asChild
+              >
+                <Link href={`/remitos/${id}/editar`}>
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Editar
+                </Link>
+              </Button>
+            )}
+
+            {['PENDING', 'PREPARING', 'READY'].includes(deliveryNote.status) &&
+              deliveryNote.invoices.length === 0 && (
+                <Button
+                  variant="outline"
+                  className="border-red-300 text-red-700 hover:bg-red-50"
+                  onClick={handleDelete}
+                  disabled={actionLoading}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Eliminar
+                </Button>
+              )}
 
             {/* Signed document upload/view */}
             <input

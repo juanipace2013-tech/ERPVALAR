@@ -127,14 +127,12 @@ function buildRemitoSheet(
     ws.getRow(Number(row)).height = height
   }
 
-  // ----- Fila 1: Fecha + Número de remito -----
+  // ----- Fila 1: Solo fecha (el número de remito ya está en el preimpreso) -----
   const d = data.date
   setCell(ws, 'M1', d.getDate(), FONT_DEFAULT)
   setCell(ws, 'N1', d.getMonth() + 1, FONT_DEFAULT)
   setCell(ws, 'O1', d.getFullYear() % 100, FONT_DEFAULT)
-
-  ws.mergeCells('P1:Q1')
-  setCell(ws, 'P1', data.deliveryNumber, FONT_DEFAULT)
+  // P1:Q1 = Número de remito — NO se pone, ya viene en la hoja preimpresa
 
   // ----- Fila 2: Razón social del cliente -----
   ws.mergeCells('C2:K2')

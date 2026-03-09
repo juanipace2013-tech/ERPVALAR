@@ -40,6 +40,8 @@ import {
   Filter,
   Plus,
   CheckCircle2,
+  Pencil,
+  Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -199,6 +201,26 @@ export default function RemitosPage() {
       return sortDirection === 'asc' ? cmp : -cmp
     })
   }, [filteredDeliveryNotes, sortColumn, sortDirection])
+
+  const handleDelete = async (dn: DeliveryNote) => {
+    const confirmed = window.confirm(
+      `¿Estás seguro de eliminar el remito ${dn.deliveryNumber}?\n\nEsta acción no se puede deshacer.`
+    )
+    if (!confirmed) return
+
+    try {
+      const response = await fetch(`/api/delivery-notes/${dn.id}`, { method: 'DELETE' })
+      if (!response.ok) {
+        const err = await response.json()
+        throw new Error(err.error || 'Error al eliminar')
+      }
+      toast.success('Remito eliminado correctamente')
+      fetchDeliveryNotes()
+    } catch (error) {
+      console.error('Error deleting delivery note:', error)
+      toast.error(error instanceof Error ? error.message : 'Error al eliminar el remito')
+    }
+  }
 
   const SortArrow = ({ column }: { column: string }) => {
     if (sortColumn !== column) return null
@@ -466,6 +488,17 @@ export default function RemitosPage() {
                               <Eye className="mr-2 h-4 w-4" />
                               Ver Detalle
                             </DropdownMenuItem>
+                            {dn.status === 'PENDING' && (
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  router.push(`/remitos/${dn.id}/editar`)
+                                }}
+                              >
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Editar
+                              </DropdownMenuItem>
+                            )}
                             {dn.invoices.length === 0 &&
                               (dn.status === 'READY' ||
                                 dn.status === 'DISPATCHED' ||
@@ -479,6 +512,22 @@ export default function RemitosPage() {
                                   <FileSpreadsheet className="mr-2 h-4 w-4" />
                                   Generar Factura
                                 </DropdownMenuItem>
+                              )}
+                            {['PENDING', 'PREPARING', 'READY'].includes(dn.status) &&
+                              dn.invoices.length === 0 && (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    className="text-red-600 focus:text-red-700"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleDelete(dn)
+                                    }}
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Eliminar
+                                  </DropdownMenuItem>
+                                </>
                               )}
                           </DropdownMenuContent>
                         </DropdownMenu>

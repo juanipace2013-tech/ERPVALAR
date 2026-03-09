@@ -687,12 +687,27 @@ export default function NewPurchaseInvoicePage() {
   const fmt = (n: number) =>
     n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-  // Helper para inputs numéricos como text: parsea valor, permite solo números y punto
+  // Helper para inputs numéricos como text
+  // Soporta formato argentino: 38.289,75 (punto=miles, coma=decimal) y también 38289.75
   const parseNumericInput = (val: string): number => {
+    if (!val) return 0
+    // Si tiene coma, asumir formato AR: quitar puntos de miles, coma→punto decimal
+    if (val.includes(',')) {
+      const cleaned = val.replace(/[^0-9.,]/g, '').replace(/\./g, '').replace(',', '.')
+      return Number(cleaned) || 0
+    }
+    // Formato estándar: solo números y punto decimal
     const cleaned = val.replace(/[^0-9.]/g, '')
     return Number(cleaned) || 0
   }
+  // Formato simple para Cant y Bonif% (sin separadores de miles)
   const fmtInput = (n: number): string => (n > 0 ? String(n) : '')
+  // Formato argentino para P.Unit y montos (con separadores de miles y 2 decimales)
+  const fmtInputAR = (n: number): string =>
+    n > 0 ? n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''
+
+  // Track qué input tiene foco para no formatear mientras se edita
+  const [editingField, setEditingField] = useState<string | null>(null)
 
   // ============ RENDER ============
 
@@ -1093,17 +1108,17 @@ export default function NewPurchaseInvoicePage() {
             </CardHeader>
             <CardContent>
               <div className="border rounded-lg overflow-x-auto">
-                <Table>
+                <Table className="min-w-[900px]">
                   <TableHeader>
                     <TableRow className="bg-gray-50">
                       <TableHead className="w-40">Producto</TableHead>
                       <TableHead className="w-24">Cód.Prov</TableHead>
-                      <TableHead>Descripción</TableHead>
-                      <TableHead className="w-20">Cant</TableHead>
-                      <TableHead className="w-28">P.Unit</TableHead>
-                      <TableHead className="w-20">Bonif%</TableHead>
+                      <TableHead className="min-w-[180px]">Descripción</TableHead>
+                      <TableHead className="w-[75px] text-right">Cant</TableHead>
+                      <TableHead className="w-[130px] text-right">P.Unit</TableHead>
+                      <TableHead className="w-[75px] text-right">Bonif%</TableHead>
                       <TableHead className="w-20">IVA%</TableHead>
-                      <TableHead className="w-28 text-right">Subtotal</TableHead>
+                      <TableHead className="w-[140px] text-right">Subtotal</TableHead>
                       <TableHead className="w-12"></TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1137,34 +1152,37 @@ export default function NewPurchaseInvoicePage() {
                             onChange={(e) => updateItem(item.id, 'supplierProductCode', e.target.value)}
                           />
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="min-w-[180px]">
                           <Input
-                            className="h-8 text-xs"
+                            className="h-8 text-xs truncate"
+                            title={item.description}
                             value={item.description}
                             onChange={(e) => updateItem(item.id, 'description', e.target.value)}
                           />
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="w-[75px]">
                           <Input
-                            className="h-8 text-xs text-right font-mono"
+                            className="h-8 text-xs text-right font-mono w-full"
                             inputMode="decimal"
                             value={fmtInput(item.quantity)}
                             placeholder="0"
                             onChange={(e) => updateItem(item.id, 'quantity', parseNumericInput(e.target.value))}
                           />
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="w-[130px]">
                           <Input
-                            className="h-8 text-xs text-right font-mono"
+                            className="h-8 text-xs text-right font-mono w-full"
                             inputMode="decimal"
-                            value={fmtInput(item.listPrice)}
-                            placeholder="0.00"
+                            value={editingField === `price-${item.id}` ? fmtInput(item.listPrice) : fmtInputAR(item.listPrice)}
+                            placeholder="0,00"
+                            onFocus={() => setEditingField(`price-${item.id}`)}
+                            onBlur={() => setEditingField(null)}
                             onChange={(e) => updateItem(item.id, 'listPrice', parseNumericInput(e.target.value))}
                           />
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="w-[75px]">
                           <Input
-                            className="h-8 text-xs text-right font-mono"
+                            className="h-8 text-xs text-right font-mono w-full"
                             inputMode="decimal"
                             value={fmtInput(item.bonificacion)}
                             placeholder="0"
@@ -1187,7 +1205,7 @@ export default function NewPurchaseInvoicePage() {
                             </SelectContent>
                           </Select>
                         </TableCell>
-                        <TableCell className="text-right font-mono text-xs">
+                        <TableCell className="text-right font-mono text-xs w-[140px] whitespace-nowrap">
                           ${fmt(calculateItemSubtotal(item))}
                         </TableCell>
                         <TableCell>

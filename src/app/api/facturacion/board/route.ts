@@ -177,10 +177,6 @@ export async function GET(request: NextRequest) {
         }
       })
 
-      // Verificar si está completamente facturada
-      const isFullyInvoiced = processedItems.every((item) => item.remainingQuantity <= 0)
-      if (isFullyInvoiced) continue // No mostrar en el tablero
-
       // Solo items pendientes de facturar para clasificación
       const pendingItems = processedItems.filter((i) => i.remainingQuantity > 0)
 

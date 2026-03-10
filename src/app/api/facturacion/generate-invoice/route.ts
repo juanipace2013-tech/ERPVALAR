@@ -295,7 +295,8 @@ export async function POST(request: NextRequest) {
         return totalInvoiced >= item.quantity
       })
 
-      if (isFullyInvoiced) {
+      if (isFullyInvoiced && colppyResult.facturaId) {
+        // Solo marcar como CONVERTED si se creó una factura real (no solo remito)
         await tx.quote.update({
           where: { id: quoteId },
           data: {

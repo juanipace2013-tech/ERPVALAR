@@ -27,7 +27,18 @@ import {
   AlertCircle,
   Send,
   RefreshCw,
+  History,
+  FileText,
+  Truck,
 } from 'lucide-react'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { toast } from 'sonner'
 import { formatCurrency, formatNumber, formatCUIT } from '@/lib/utils'
 import {
@@ -100,6 +111,29 @@ interface BoardData {
   }
 }
 
+interface HistorialItem {
+  id: string
+  date: string
+  colppyRef: string
+  quoteNumber: string
+  customer: { id: string; name: string; cuit: string }
+  salesPerson: { id: string; name: string } | null
+  currency: string
+  totalUSD: number | null
+  totalARS: number | null
+  isFactura: boolean
+  isRemito: boolean
+  status: string
+}
+
+interface HistorialData {
+  historial: HistorialItem[]
+  filters: {
+    vendedores: Array<{ id: string; name: string }>
+    clientes: Array<{ id: string; name: string }>
+  }
+}
+
 // ─── Main Component ──────────────────────────────────
 
 export default function FacturacionPage() {
@@ -126,8 +160,17 @@ export default function FacturacionPage() {
   const [showColppyDialog, setShowColppyDialog] = useState(false)
   const [colppyQuoteId, setColppyQuoteId] = useState<string | null>(null)
 
+  // Historial state
+  const [historialData, setHistorialData] = useState<HistorialData | null>(null)
+  const [historialLoading, setHistorialLoading] = useState(false)
+  const [historialVendedor, setHistorialVendedor] = useState('all')
+  const [historialCliente, setHistorialCliente] = useState('')
+  const [historialDateFrom, setHistorialDateFrom] = useState('')
+  const [historialDateTo, setHistorialDateTo] = useState('')
+
   useEffect(() => {
     fetchBoard()
+    fetchHistorial()
   }, [])
 
   const fetchBoard = async () => {
@@ -150,6 +193,27 @@ export default function FacturacionPage() {
       toast.error('Error al cargar tablero de facturación')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchHistorial = async () => {
+    try {
+      setHistorialLoading(true)
+      const params = new URLSearchParams()
+      if (historialVendedor !== 'all') params.append('vendedorId', historialVendedor)
+      if (historialCliente) params.append('clienteId', historialCliente)
+      if (historialDateFrom) params.append('dateFrom', historialDateFrom)
+      if (historialDateTo) params.append('dateTo', historialDateTo)
+
+      const response = await fetch(`/api/facturacion/historial?${params.toString()}`)
+      if (!response.ok) throw new Error('Error al cargar historial')
+
+      const data = await response.json()
+      setHistorialData(data)
+    } catch (error) {
+      console.error('Error:', error)
+    } finally {
+      setHistorialLoading(false)
     }
   }
 
@@ -575,6 +639,184 @@ export default function FacturacionPage() {
         />
       </div>
 
+      {/* ─── Historial de Facturación ─── */}
+      <Card className="mt-8">
+        <div className="p-6 pb-4">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <History className="h-5 w-5 text-blue-600" />
+              Historial de Facturación
+              {historialData && (
+                <span className="text-sm font-normal text-gray-500">
+                  {historialData.historial.length} registros
+                </span>
+              )}
+            </h2>
+          </div>
+
+          {/* Filtros historial */}
+          <div className="flex flex-wrap gap-3 items-end border rounded-lg p-3 bg-gray-50 mb-4">
+            <div className="w-40">
+              <Label className="text-xs text-gray-500">Vendedor</Label>
+              <Select value={historialVendedor} onValueChange={setHistorialVendedor}>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {historialData?.filters.vendedores.map((v) => (
+                    <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-48">
+              <Label className="text-xs text-gray-500">Cliente</Label>
+              <Select value={historialCliente || 'all'} onValueChange={(v) => setHistorialCliente(v === 'all' ? '' : v)}>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {historialData?.filters.clientes.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-gray-500">Desde</Label>
+              <Input
+                type="date"
+                value={historialDateFrom}
+                onChange={(e) => setHistorialDateFrom(e.target.value)}
+                className="h-9 w-36"
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-gray-500">Hasta</Label>
+              <Input
+                type="date"
+                value={historialDateTo}
+                onChange={(e) => setHistorialDateTo(e.target.value)}
+                className="h-9 w-36"
+              />
+            </div>
+            <Button size="sm" onClick={fetchHistorial} className="h-9">
+              Filtrar
+            </Button>
+            {(historialVendedor !== 'all' || historialCliente || historialDateFrom || historialDateTo) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 text-xs"
+                onClick={() => {
+                  setHistorialVendedor('all')
+                  setHistorialCliente('')
+                  setHistorialDateFrom('')
+                  setHistorialDateTo('')
+                  setTimeout(fetchHistorial, 0)
+                }}
+              >
+                Limpiar
+              </Button>
+            )}
+          </div>
+
+          {/* Tabla historial */}
+          {historialLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+            </div>
+          ) : !historialData || historialData.historial.length === 0 ? (
+            <div className="text-center py-8 text-gray-400">
+              <Receipt className="h-10 w-10 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">No hay facturas enviadas a Colppy</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead>Nº Factura / Remito</TableHead>
+                    <TableHead>Cotización</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>CUIT</TableHead>
+                    <TableHead>Vendedor</TableHead>
+                    <TableHead className="text-right">Total USD</TableHead>
+                    <TableHead className="text-right">Total ARS</TableHead>
+                    <TableHead className="text-center">Estado</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {historialData.historial.map((item) => (
+                    <TableRow key={item.id} className="hover:bg-blue-50/30">
+                      <TableCell className="whitespace-nowrap text-sm">
+                        {new Date(item.date).toLocaleDateString('es-AR', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </TableCell>
+                      <TableCell className="font-mono text-sm font-medium">
+                        {item.colppyRef}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        <Link
+                          href={`/cotizaciones/${item.id}`}
+                          className="text-blue-600 hover:underline"
+                        >
+                          {item.quoteNumber}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="text-sm font-medium">
+                        {item.customer.name}
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">
+                        {formatCUIT(item.customer.cuit)}
+                      </TableCell>
+                      <TableCell className="text-sm text-gray-600">
+                        {item.salesPerson?.name || '—'}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {item.totalUSD != null ? `USD ${formatNumber(item.totalUSD)}` : '—'}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {item.totalARS != null ? `$ ${formatNumber(item.totalARS)}` : '—'}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          {item.isFactura && (
+                            <Badge className="bg-green-100 text-green-800 hover:bg-green-100 text-xs">
+                              <FileText className="h-3 w-3 mr-1" />
+                              Factura
+                            </Badge>
+                          )}
+                          {item.isRemito && (
+                            <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100 text-xs">
+                              <Truck className="h-3 w-3 mr-1" />
+                              Remito
+                            </Badge>
+                          )}
+                          {!item.isFactura && !item.isRemito && (
+                            <Badge className="bg-gray-100 text-gray-600 hover:bg-gray-100 text-xs">
+                              Enviado
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
+      </Card>
+
       {/* Reutilizar el mismo dialog de Cotizaciones */}
       {colppyDialogQuote && (
         <SendToColppyDialog
@@ -584,6 +826,7 @@ export default function FacturacionPage() {
           onSent={() => {
             setShowColppyDialog(false)
             fetchBoard()
+            fetchHistorial()
           }}
           onSend={handleColppySend}
           subtitle={`Facturación parcial: ${colppyDialogQuote.items.length} ítem(s) seleccionados`}

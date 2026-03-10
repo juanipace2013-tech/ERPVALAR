@@ -166,7 +166,8 @@ export default function QuoteViewPage() {
   // Dialogs
   const [showSendDialog, setShowSendDialog] = useState(false)
   const [showRejectDialog, setShowRejectDialog] = useState(false)
-  const [rejectionReason, setRejectionReason] = useState('')
+  const [selectedRejectReason, setSelectedRejectReason] = useState<string | null>(null)
+  const [rejectDetail, setRejectDetail] = useState('')
   const [showAcceptDialog, setShowAcceptDialog] = useState(false)
   const [customerResponse, setCustomerResponse] = useState('')
   const [showColppyDialog, setShowColppyDialog] = useState(false)
@@ -339,17 +340,27 @@ export default function QuoteViewPage() {
   }
 
   const handleReject = () => {
+    setSelectedRejectReason(null)
+    setRejectDetail('')
     setShowRejectDialog(true)
   }
 
   const confirmReject = () => {
-    if (!rejectionReason.trim()) {
-      toast.error('Debe ingresar un motivo de rechazo')
+    if (!selectedRejectReason) {
+      toast.error('Debe seleccionar un motivo de rechazo')
       return
     }
-    changeStatus('REJECTED', { rejectionReason })
+    if (selectedRejectReason === 'Otro' && !rejectDetail.trim()) {
+      toast.error('Debe especificar el motivo de rechazo')
+      return
+    }
+    const reason = rejectDetail.trim()
+      ? `${selectedRejectReason} - ${rejectDetail.trim()}`
+      : selectedRejectReason
+    changeStatus('REJECTED', { rejectionReason: reason })
     setShowRejectDialog(false)
-    setRejectionReason('')
+    setSelectedRejectReason(null)
+    setRejectDetail('')
   }
 
   const handleCancelQuote = async () => {
@@ -1422,14 +1433,14 @@ export default function QuoteViewPage() {
 
       {/* Dialog: Rechazar Cotización */}
       <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-600">
               <XCircle className="h-5 w-5" />
               Marcar como Rechazada
             </DialogTitle>
             <DialogDescription>
-              Indique el motivo por el cual el cliente rechazó la cotización. Esta información es importante para el seguimiento comercial.
+              Seleccione el motivo por el cual el cliente rechazó la cotización.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -1442,21 +1453,51 @@ export default function QuoteViewPage() {
               </p>
             </div>
             <div>
-              <Label htmlFor="rejectionReason" className="text-sm font-semibold">
+              <Label className="text-sm font-semibold">
                 Motivo de Rechazo *
               </Label>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {[
+                  'Precio',
+                  'Plazo de entrega',
+                  'No cumple técnicamente',
+                  'Eligió otro proveedor',
+                  'Proyecto cancelado/postergado',
+                  'Sin presupuesto',
+                  'Sin respuesta del cliente',
+                  'Otro',
+                ].map((reason) => (
+                  <button
+                    key={reason}
+                    type="button"
+                    onClick={() => setSelectedRejectReason(selectedRejectReason === reason ? null : reason)}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                      selectedRejectReason === reason
+                        ? 'bg-blue-100 border-blue-500 text-blue-700'
+                        : 'bg-gray-50 border-gray-300 text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    {reason}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="rejectDetail" className="text-sm font-semibold">
+                Detalle adicional {selectedRejectReason === 'Otro' ? '*' : '(opcional)'}
+              </Label>
               <Textarea
-                id="rejectionReason"
-                value={rejectionReason}
-                onChange={(e) => setRejectionReason(e.target.value)}
-                placeholder="Ej: Precio muy alto, eligió otra opción, proyecto cancelado, requiere más tiempo..."
-                rows={4}
-                required
+                id="rejectDetail"
+                value={rejectDetail}
+                onChange={(e) => setRejectDetail(e.target.value)}
+                placeholder={
+                  selectedRejectReason === 'Otro'
+                    ? 'Especifique el motivo de rechazo...'
+                    : 'Agregue información adicional si lo desea...'
+                }
+                rows={3}
                 className="mt-1"
               />
-              <p className="text-xs text-gray-500 mt-1">
-                Este motivo se guardará en el historial de la cotización
-              </p>
             </div>
           </div>
           <DialogFooter>
@@ -1470,7 +1511,7 @@ export default function QuoteViewPage() {
             <Button
               variant="destructive"
               onClick={confirmReject}
-              disabled={actionLoading || !rejectionReason.trim()}
+              disabled={actionLoading || !selectedRejectReason || (selectedRejectReason === 'Otro' && !rejectDetail.trim())}
             >
               {actionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               <XCircle className="h-4 w-4 mr-2" />

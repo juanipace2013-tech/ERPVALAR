@@ -69,6 +69,8 @@ interface Quote {
   }
   validUntil: string | null
   purchaseOrderUrl: string | null
+  rejectionReason: string | null
+  statusUpdatedAt: string | null
 }
 
 interface User {
@@ -246,6 +248,10 @@ export default function CotizacionesPage() {
       'Bonificación %': Number(q.bonification),
       'Total USD': Number(q.total),
       'Total ARS': Number((q.total * Number(q.exchangeRate)).toFixed(2)),
+      'Motivo de Rechazo': q.rejectionReason ? q.rejectionReason.split(' - ')[0] : '',
+      'Detalle Rechazo': q.rejectionReason?.includes(' - ') ? q.rejectionReason.split(' - ').slice(1).join(' - ') : '',
+      'Fecha Rechazo': q.status === 'REJECTED' && q.statusUpdatedAt
+        ? new Date(q.statusUpdatedAt).toLocaleDateString('es-AR') : '',
     }))
 
     const ws = XLSX.utils.json_to_sheet(data)
@@ -270,6 +276,34 @@ export default function CotizacionesPage() {
     const today = new Date().toISOString().split('T')[0].replace(/-/g, '')
     XLSX.writeFile(wb, `Cotizaciones_VAL_ARG_${today}.xlsx`)
     toast.success('Excel descargado correctamente')
+  }
+
+  const handleExportRejections = async () => {
+    try {
+      const params = new URLSearchParams()
+      if (dateFrom) params.set('desde', dateFrom)
+      if (dateTo) params.set('hasta', dateTo)
+      if (salesPersonId && salesPersonId !== 'ALL') params.set('vendedor', salesPersonId)
+
+      const res = await fetch(`/api/quotes/export-rejections?${params.toString()}`)
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Error al generar reporte')
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      const today = new Date().toISOString().split('T')[0].replace(/-/g, '')
+      a.href = url
+      a.download = `Analisis_Rechazos_${today}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast.success('Reporte de rechazos descargado')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Error al descargar reporte')
+    }
   }
 
   const formatCurrency = (amount: number, currency: string = 'USD') => {
@@ -355,6 +389,14 @@ export default function CotizacionesPage() {
           >
             <Download className="mr-2 h-4 w-4" />
             Descargar Excel
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleExportRejections}
+            className="border-red-300 text-red-700 hover:bg-red-50"
+          >
+            <FileDown className="mr-2 h-4 w-4" />
+            Análisis de Rechazos
           </Button>
           <Link href="/cotizaciones/nueva">
             <Button className="bg-blue-600 hover:bg-blue-700">

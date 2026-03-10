@@ -179,6 +179,7 @@ export default function NuevaCotizacionPage() {
         salesPersonId: salesPersonId || undefined,
         exchangeRate,
         currency: 'USD',
+        multiplier: selectedCustomer.priceMultiplier, // Precargar multiplicador del cliente
         terms: formData.terms,
         notes: formData.notes,
         tenderNumber: formData.tenderNumber || null,

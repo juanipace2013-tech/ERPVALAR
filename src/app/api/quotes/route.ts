@@ -128,6 +128,12 @@ export async function POST(request: NextRequest) {
 
       if (existingCustomer) {
         // Actualizar datos del cliente existente
+        // Si el multiplicador en DB es 1.0 (default) y la tabla tiene uno configurado, sincronizar
+        const razonSocial = colppyCustomer.businessName || colppyCustomer.name
+        const configuredMultiplier = getMultiplierForClient(razonSocial)
+        const currentMultiplier = Number(existingCustomer.priceMultiplier)
+        const shouldSyncMultiplier = currentMultiplier === 1.0 && configuredMultiplier !== 1.0
+
         const updatedCustomer = await prisma.customer.update({
           where: { id: existingCustomer.id },
           data: {
@@ -141,12 +147,17 @@ export async function POST(request: NextRequest) {
             city: colppyCustomer.city || existingCustomer.city,
             province: colppyCustomer.province || existingCustomer.province,
             postalCode: colppyCustomer.postalCode || existingCustomer.postalCode,
-            // NO sobreescribir priceMultiplier: se gestiona manualmente por el usuario
+            // Sincronizar multiplicador solo si está en default (1.0) y hay uno configurado
+            ...(shouldSyncMultiplier && { priceMultiplier: configuredMultiplier }),
             balance: colppyCustomer.saldo || existingCustomer.balance,
           },
         })
         customerId = updatedCustomer.id
-        console.log('✅ Cliente actualizado desde Colppy:', updatedCustomer.name)
+        if (shouldSyncMultiplier) {
+          console.log(`✅ Cliente actualizado desde Colppy: ${updatedCustomer.name} (multiplicador sincronizado: ${configuredMultiplier}x)`)
+        } else {
+          console.log('✅ Cliente actualizado desde Colppy:', updatedCustomer.name)
+        }
       } else {
         // Crear nuevo cliente - buscar multiplicador preconfigurado por razón social
         const razonSocial = colppyCustomer.businessName || colppyCustomer.name

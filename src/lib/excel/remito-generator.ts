@@ -53,9 +53,9 @@ const COLUMN_WIDTHS = [
 
 // Alturas de fila (1-20)
 const ROW_HEIGHTS: Record<number, number> = {
-  1: 64.9, 2: 90.0, 3: 26.25, 4: 5.25, 5: 30.75,
+  1: 78.0, 2: 73.5, 3: 33.75, 4: 5.25, 5: 30.75,
   6: 33.0, 7: 22.9, 8: 27.0,
-  9: 24.75, 10: 24.75, 11: 24.75, 12: 24.75, 13: 24.75,
+  9: 55.5, 10: 24.75, 11: 24.75, 12: 24.75, 13: 24.75,
   14: 24.75, 15: 24.75, 16: 24.75, 17: 24.75,
   18: 20.25, 19: 20.25, 20: 27.75,
 }
@@ -169,21 +169,20 @@ function buildRemitoSheet(
     // SKU en columna B
     setCell(ws, `B${row}`, item?.sku || '', FONT_DEFAULT, { vertical: 'middle' })
 
-    // Descripción en C:N (merge)
-    ws.mergeCells(`C${row}:N${row}`)
+    // Descripción en C:M (merge)
+    ws.mergeCells(`C${row}:M${row}`)
     setCell(ws, `C${row}`, item?.description || '', FONT_DEFAULT, {
+      horizontal: 'left',
       vertical: 'middle',
       wrapText: true,
     })
 
     // Cantidad en O:Q (merge)
     ws.mergeCells(`O${row}:Q${row}`)
-    if (item) {
-      setCell(ws, `O${row}`, item.quantity, FONT_DEFAULT, {
-        vertical: 'middle',
-        horizontal: 'center',
-      })
-    }
+    setCell(ws, `O${row}`, item ? item.quantity : '', FONT_DEFAULT, {
+      horizontal: 'center',
+      vertical: 'middle',
+    })
   }
 
   // ----- Fila 18: Bultos -----

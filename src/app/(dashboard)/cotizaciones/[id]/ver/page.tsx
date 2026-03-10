@@ -80,6 +80,7 @@ interface Quote {
   purchaseOrderUrl: string | null
   purchaseOrderNumber: string | null
   purchaseOrderDate: string | null
+  colppySyncedAt: string | null
   customer: {
     id: string
     name: string
@@ -719,12 +720,30 @@ export default function QuoteViewPage() {
               </>
             )}
 
-            {/* CONVERTIDA - ya tiene factura/remito, pero se puede revertir */}
+            {/* CONVERTIDA - factura enviada, pero remito puede faltar */}
             {quote.status === 'CONVERTED' && (
               <>
-                <div className="text-sm text-gray-600 py-2 mr-4">
-                  Esta cotización ya fue convertida en factura o remito.
-                </div>
+                {quote.colppySyncedAt && (
+                  <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100 py-2 px-3">
+                    <Send className="h-3.5 w-3.5 mr-1.5" />
+                    Factura enviada a Colppy
+                  </Badge>
+                )}
+                {quote.deliveryNotes.length === 0 && (
+                  <Button onClick={() => router.push(`/remitos/nuevo?quoteId=${id}`)} variant="outline">
+                    <Package className="h-4 w-4 mr-2" />
+                    Generar Remito
+                  </Button>
+                )}
+                {quote.deliveryNotes.length > 0 && (
+                  <Button variant="outline" asChild>
+                    <Link href={`/remitos/${quote.deliveryNotes[0].id}`}>
+                      <Package className="h-4 w-4 mr-2" />
+                      Ver Remito
+                    </Link>
+                  </Button>
+                )}
+                <div className="w-px h-8 bg-gray-300 mx-1" />
                 <Button variant="outline" onClick={() => openRevertDialog('ACCEPTED')} disabled={actionLoading}>
                   <Undo2 className="h-4 w-4 mr-2" />
                   Revertir a Aceptada

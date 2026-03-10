@@ -179,8 +179,8 @@ export async function generateDeliveryNoteFromQuote(
     throw new Error('Cotización no encontrada');
   }
 
-  if (quote.status !== 'ACCEPTED') {
-    throw new Error('Solo se pueden generar remitos de cotizaciones aceptadas');
+  if (quote.status !== 'ACCEPTED' && quote.status !== 'CONVERTED') {
+    throw new Error('Solo se pueden generar remitos de cotizaciones aceptadas o convertidas');
   }
 
   // Generar número de remito
@@ -237,22 +237,13 @@ export async function generateDeliveryNoteFromQuote(
       }
     });
 
-    // Marcar cotización como convertida
-    await tx.quote.update({
-      where: { id: quoteId },
-      data: {
-        status: 'CONVERTED',
-        statusUpdatedAt: new Date(),
-        statusUpdatedBy: 'system'
-      }
-    });
-
-    // Crear registro en historial
+    // Registrar en historial sin cambiar el status
+    // (el status cambia a CONVERTED solo al enviar factura a Colppy)
     await tx.quoteStatusHistory.create({
       data: {
         quoteId,
-        fromStatus: 'ACCEPTED',
-        toStatus: 'CONVERTED',
+        fromStatus: quote.status,
+        toStatus: quote.status,
         changedBy: 'system',
         notes: `Remito ${deliveryNumber} generado`
       }

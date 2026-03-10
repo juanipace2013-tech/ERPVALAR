@@ -46,10 +46,12 @@ export async function PATCH(
     let updatedItem
 
     if (isManualItem) {
-      // ── ITEM MANUAL: precio directo, sin multiplicador ──
+      // ── ITEM MANUAL: aplicar multiplicador del cliente ──
       const manualPrice = body.manualUnitPrice !== undefined
         ? Number(body.manualUnitPrice)
-        : Number(existingItem.unitPrice)
+        : Number(existingItem.listPrice)
+      const customerMultiplier = Number(existingItem.quote.multiplier) || 1
+      const unitPrice = manualPrice * customerMultiplier
       const quantity = body.quantity !== undefined ? body.quantity : existingItem.quantity
 
       updatedItem = await prisma.quoteItem.update({
@@ -62,9 +64,9 @@ export async function PATCH(
           quantity,
           listPrice: manualPrice,
           brandDiscount: 0,
-          customerMultiplier: 1,
-          unitPrice: manualPrice,
-          totalPrice: manualPrice * quantity,
+          customerMultiplier,
+          unitPrice,
+          totalPrice: unitPrice * quantity,
           deliveryTime: body.deliveryTime !== undefined ? body.deliveryTime : existingItem.deliveryTime,
         },
         include: {

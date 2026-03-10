@@ -1,6 +1,17 @@
 import { prisma } from '@/lib/prisma';
 import { QuoteStatus, DeliveryNoteStatus } from '@prisma/client';
 
+/**
+ * Calcula la fecha de vencimiento según los días de la condición de pago del cliente.
+ * Si no hay condición de pago, fecha vencimiento = fecha emisión (contado).
+ */
+export function calcDueDate(issueDate: Date, paymentTermsDays: number | null | undefined): Date {
+  const days = paymentTermsDays && paymentTermsDays > 0 ? paymentTermsDays : 0;
+  const dueDate = new Date(issueDate);
+  dueDate.setDate(dueDate.getDate() + days);
+  return dueDate;
+}
+
 // Transiciones permitidas de estado para cotizaciones
 const ALLOWED_TRANSITIONS: Record<QuoteStatus, QuoteStatus[]> = {
   DRAFT: ['SENT', 'ACCEPTED', 'REJECTED', 'CANCELLED'],
@@ -376,7 +387,7 @@ export async function generateInvoiceFromDeliveryNote(
       total,
       balance: total,
       issueDate: new Date(),
-      dueDate: data?.dueDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      dueDate: data?.dueDate || calcDueDate(new Date(), deliveryNote.customer.paymentTerms),
       notes: data?.notes || null,
       afipStatus: 'PENDING',
       paymentStatus: 'UNPAID',
@@ -483,7 +494,7 @@ export async function generateInvoiceFromQuote(
         total,
         balance: total,
         issueDate: new Date(),
-        dueDate: data?.dueDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        dueDate: data?.dueDate || calcDueDate(new Date(), quote.customer.paymentTerms),
         notes: data?.notes || null,
         afipStatus: 'PENDING',
         paymentStatus: 'UNPAID',

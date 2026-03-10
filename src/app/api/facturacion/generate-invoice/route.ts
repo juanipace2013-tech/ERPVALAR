@@ -13,6 +13,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { sendQuoteToColppy, type SendToColppyOptions, buildSplitItem, calcComponentPrice } from '@/lib/colppy'
+import { calcDueDate } from '@/lib/quote-workflow'
 
 interface InvoiceItemRequest {
   quoteItemId: string
@@ -237,7 +238,7 @@ export async function POST(request: NextRequest) {
           total: subtotal,
           balance: subtotal,
           issueDate: now,
-          dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          dueDate: calcDueDate(now, quote.customer.paymentTerms),
           notes: `Borrador enviado a Colppy el ${now.toLocaleString('es-AR')}. ${colppyResult.facturaNumber ? `Factura: ${colppyResult.facturaNumber}` : ''} ${colppyResult.remitoNumber ? `Remito: ${colppyResult.remitoNumber}` : ''}`.trim(),
           afipStatus: 'PENDING',
           paymentStatus: 'UNPAID',

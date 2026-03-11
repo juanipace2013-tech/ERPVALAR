@@ -208,12 +208,11 @@ export async function POST(
         }
       })
 
-      // --- Totales de cabecera: DIRECTOS desde la DB ---
+      // --- Totales de cabecera desde la DB ---
       const netoGravado = Number(invoice.netAmount)
       const netoNoGravado = Number(invoice.notTaxedAmount) + Number(invoice.exemptAmount)
-      const totalFactura = Number(invoice.total)
 
-      // IVA desglosado desde la tabla taxes (no recalculado)
+      // IVA desglosado desde la tabla taxes
       let iva21 = 0
       let iva105 = 0
       let iva27 = 0
@@ -239,12 +238,16 @@ export async function POST(
         }
       }
 
+      // SIEMPRE recalcular totalFactura como la suma de las partes.
+      // Colppy valida: totalFactura == netoGravado + netoNoGravado + totalIVA + percepcionIVA + percepcionIIBB
+      // Si usamos invoice.total de la DB puede no coincidir exactamente por redondeo.
+      const totalFactura = Math.round((netoGravado + netoNoGravado + totalIva + percepcionIVA + percepcionIIBB) * 100) / 100
+
       // === BALANCE CHECK ===
-      const debe = netoGravado + totalIva + percepcionIVA + percepcionIIBB + netoNoGravado
+      const dbTotal = Number(invoice.total)
       console.log(`[Colppy FC] === BALANCE CHECK ===`)
-      console.log(`[Colppy FC] DEBE: Neto=${netoGravado} + IVA=${totalIva} (21%=${iva21} 10.5%=${iva105} 27%=${iva27}) + PercIVA=${percepcionIVA} + PercIIBB=${percepcionIIBB} + NoGrav=${netoNoGravado} = ${debe.toFixed(2)}`)
-      console.log(`[Colppy FC] HABER: TotalFactura=${totalFactura}`)
-      console.log(`[Colppy FC] Diff: ${(debe - totalFactura).toFixed(2)} ${Math.abs(debe - totalFactura) < 0.01 ? '✓ BALANCEA' : '⚠️ NO BALANCEA'}`)
+      console.log(`[Colppy FC] netoGravado=${netoGravado.toFixed(2)} netoNoGravado=${netoNoGravado.toFixed(2)} totalIVA=${totalIva.toFixed(2)} (21%=${iva21.toFixed(2)} 10.5%=${iva105.toFixed(2)} 27%=${iva27.toFixed(2)}) percIVA=${percepcionIVA.toFixed(2)} percIIBB=${percepcionIIBB.toFixed(2)}`)
+      console.log(`[Colppy FC] totalFactura (calculado)=${totalFactura.toFixed(2)} | DB total=${dbTotal.toFixed(2)} | diff=${(totalFactura - dbTotal).toFixed(2)}`)
 
       // 5. Enviar a Colppy
       // NOTA: Solo se envía percepcionIIBB como total, sin desglosar por jurisdicción.

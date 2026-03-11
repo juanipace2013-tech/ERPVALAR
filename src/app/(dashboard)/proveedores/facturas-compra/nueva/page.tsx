@@ -179,15 +179,21 @@ function ProductSearchCell({
   itemId,
   productId,
   linkedProduct,
+  supplierProductCode,
   onSelect,
   onClear,
 }: {
   itemId: string
   productId: string | null
   linkedProduct: { sku: string; name: string } | undefined
+  supplierProductCode?: string
   onSelect: (product: Product) => void
   onClear: () => void
 }) {
+  // Código Colppy: quitar primeros 3 dígitos del código proveedor
+  const colppyCode = supplierProductCode && supplierProductCode.length > 3
+    ? supplierProductCode.substring(3)
+    : supplierProductCode || ''
   const [searchTerm, setSearchTerm] = useState('')
   const [results, setResults] = useState<Product[]>([])
   const [loading, setLoading] = useState(false)
@@ -252,14 +258,24 @@ function ProductSearchCell({
 
   return (
     <div ref={containerRef} className="relative">
-      <Input
-        className="h-8 text-xs"
-        placeholder="Buscar SKU/nombre..."
-        value={searchTerm}
-        onChange={(e) => { setSearchTerm(e.target.value); setOpen(true) }}
-        onFocus={() => { if (searchTerm.length >= 2) setOpen(true) }}
-        onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false) }}
-      />
+      {colppyCode && !searchTerm ? (
+        <div
+          className="h-8 text-xs font-mono text-gray-500 bg-gray-50 px-2 py-1.5 rounded border cursor-text truncate"
+          title={`Cód. Colppy: ${colppyCode} (click para buscar)`}
+          onClick={() => { setSearchTerm(colppyCode); setOpen(true) }}
+        >
+          {colppyCode}
+        </div>
+      ) : (
+        <Input
+          className="h-8 text-xs"
+          placeholder="Buscar SKU/nombre..."
+          value={searchTerm}
+          onChange={(e) => { setSearchTerm(e.target.value); setOpen(true) }}
+          onFocus={() => { if (searchTerm.length >= 2) setOpen(true) }}
+          onKeyDown={(e) => { if (e.key === 'Escape') { setOpen(false); setSearchTerm('') } }}
+        />
+      )}
       {open && (results.length > 0 || loading) && (
         <div className="absolute z-50 top-full left-0 w-72 mt-1 bg-white border rounded-md shadow-lg max-h-52 overflow-y-auto">
           {loading && results.length === 0 && (
@@ -1420,6 +1436,7 @@ export default function NewPurchaseInvoicePage() {
                             itemId={item.id}
                             productId={item.productId}
                             linkedProduct={linkedProducts[item.id]}
+                            supplierProductCode={item.supplierProductCode}
                             onSelect={(product) => handleProductLink(item.id, product)}
                             onClear={() => handleProductClear(item.id)}
                           />

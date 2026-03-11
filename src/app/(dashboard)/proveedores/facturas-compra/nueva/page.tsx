@@ -825,7 +825,7 @@ export default function NewPurchaseInvoicePage() {
             let perceptionType = 'IIBB'
             const desc = (perc.descripcion || '').toUpperCase()
             if (/AGIP|CABA|C\.A\.B\.A/i.test(desc)) jurisdiction = 'CABA'
-            else if (/ARBA|BUENOS AIRES|PBA/i.test(desc)) jurisdiction = 'BUENOS AIRES'
+            else if (/ARBA|BUENOS AIRES|BS\.?AS|PBA/i.test(desc)) jurisdiction = 'ARBA'
             else if (/JUJUY/i.test(desc)) jurisdiction = 'JUJUY'
             else if (/SALTA/i.test(desc)) jurisdiction = 'SALTA'
             else if (/CÓRDOBA|CORDOBA/i.test(desc)) jurisdiction = 'CORDOBA'

@@ -199,12 +199,13 @@ export default function PurchaseInvoiceDetailPage() {
     }
   }
 
-  const handleSendToColppy = async () => {
+  const handleSendToColppy = async (diagMode?: 'skipIIBB' | 'isoDate') => {
     if (!invoice) return
 
     try {
       setSendingToColppy(true)
-      const response = await fetch(`/api/purchase-invoices/${invoice.id}/send-to-colppy`, {
+      const queryParams = diagMode === 'skipIIBB' ? '?skipIIBB=true' : diagMode === 'isoDate' ? '?isoDate=true' : ''
+      const response = await fetch(`/api/purchase-invoices/${invoice.id}/send-to-colppy${queryParams}`, {
         method: 'POST',
       })
 
@@ -368,24 +369,45 @@ export default function PurchaseInvoiceDetailPage() {
           </Badge>
           {/* Enviar a Colppy - solo si no fue enviada aún */}
           {!invoice.colppyInvoiceId && (invoice.status === 'APPROVED' || invoice.status === 'PENDING') && (
-            <Button
-              onClick={handleSendToColppy}
-              disabled={sendingToColppy}
-              variant="outline"
-              className="border-purple-600 text-purple-600 hover:bg-purple-50"
-            >
-              {sendingToColppy ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Enviando a Colppy...
-                </>
-              ) : (
-                <>
-                  <Send className="h-4 w-4 mr-2" />
-                  Enviar a Colppy
-                </>
-              )}
-            </Button>
+            <>
+              <Button
+                onClick={() => handleSendToColppy()}
+                disabled={sendingToColppy}
+                variant="outline"
+                className="border-purple-600 text-purple-600 hover:bg-purple-50"
+              >
+                {sendingToColppy ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Enviando...
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-4 w-4 mr-2" />
+                    Enviar a Colppy
+                  </>
+                )}
+              </Button>
+              {/* Botones de diagnóstico — TEMPORALES */}
+              <Button
+                onClick={() => handleSendToColppy('skipIIBB')}
+                disabled={sendingToColppy}
+                variant="outline"
+                size="sm"
+                className="border-orange-500 text-orange-500 hover:bg-orange-50 text-xs"
+              >
+                Sin IIBB
+              </Button>
+              <Button
+                onClick={() => handleSendToColppy('isoDate')}
+                disabled={sendingToColppy}
+                variant="outline"
+                size="sm"
+                className="border-orange-500 text-orange-500 hover:bg-orange-50 text-xs"
+              >
+                ISO Date
+              </Button>
+            </>
           )}
           {invoice.colppyInvoiceId && (
             <Badge className="bg-purple-100 text-purple-800">

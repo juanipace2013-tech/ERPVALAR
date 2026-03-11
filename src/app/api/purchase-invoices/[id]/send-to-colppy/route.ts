@@ -85,6 +85,13 @@ export async function POST(
 
     const { id } = await params
 
+    // Parámetros de diagnóstico (query string)
+    const url = new URL(request.url)
+    const skipIIBB = url.searchParams.get('skipIIBB') === 'true'
+    const isoDate = url.searchParams.get('isoDate') === 'true'
+    if (skipIIBB) console.log('[Colppy FC] ⚠️ MODO DIAGNÓSTICO: skipIIBB=true, percepciones IIBB en 0')
+    if (isoDate) console.log('[Colppy FC] ⚠️ MODO DIAGNÓSTICO: isoDate=true, fechas en YYYY-MM-DD')
+
     // 1. Obtener la factura del ERP con todos sus datos
     const invoice = await prisma.purchaseInvoice.findUnique({
       where: { id },
@@ -183,7 +190,7 @@ export async function POST(
         const dd = String(d.getDate()).padStart(2, '0')
         const mm = String(d.getMonth() + 1).padStart(2, '0')
         const yyyy = d.getFullYear()
-        return `${dd}-${mm}-${yyyy}`
+        return isoDate ? `${yyyy}-${mm}-${dd}` : `${dd}-${mm}-${yyyy}`
       }
 
       const fechaFactura = fmtDate(invoice.invoiceDate)
@@ -299,13 +306,17 @@ export async function POST(
       let percIvaCents = 0
       let percIibbCents = 0
 
-      for (const perc of invoice.perceptions) {
-        const amountCents = r2(Number(perc.amount))
-        if (perc.perceptionType === 'IVA' || perc.perceptionType === 'Ganancias') {
-          percIvaCents += amountCents
-        } else {
-          percIibbCents += amountCents
+      if (!skipIIBB) {
+        for (const perc of invoice.perceptions) {
+          const amountCents = r2(Number(perc.amount))
+          if (perc.perceptionType === 'IVA' || perc.perceptionType === 'Ganancias') {
+            percIvaCents += amountCents
+          } else {
+            percIibbCents += amountCents
+          }
         }
+      } else {
+        console.log(`[Colppy FC] skipIIBB: Percepciones IIBB forzadas a 0 (${invoice.perceptions.length} percepciones ignoradas)`)
       }
 
       // totalFactura = suma exacta de las partes (en centavos, sin errores de float)

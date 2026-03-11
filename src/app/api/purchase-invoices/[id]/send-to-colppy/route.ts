@@ -303,8 +303,28 @@ export async function POST(
       console.log(`[Colppy FC] IVA FINAL: 21%=${iva21Cents} 10.5%=${iva105Cents} 27%=${iva27Cents} total=${totalIvaCents} (dbTaxAmount=${dbTaxAmountCents})`)
 
       // Percepciones
+      // Mapeo jurisdicción DB → nombre exacto Colppy
+      const jurisdictionToColppy: Record<string, string> = {
+        'CABA': 'CABA', 'AGIP': 'CABA',
+        'ARBA': 'Buenos Aires', 'BS.AS.': 'Buenos Aires', 'BUENOS AIRES': 'Buenos Aires',
+        'JUJUY': 'Jujuy', 'SALTA': 'Salta',
+        'CORDOBA': 'Córdoba', 'CÓRDOBA': 'Córdoba',
+        'MENDOZA': 'Mendoza', 'SANTA FE': 'Santa Fe',
+        'TUCUMAN': 'Tucumán', 'TUCUMÁN': 'Tucumán',
+        'ENTRE RIOS': 'Entre Ríos', 'MISIONES': 'Misiones',
+        'CHACO': 'Chaco', 'CORRIENTES': 'Corrientes',
+        'FORMOSA': 'Formosa', 'CATAMARCA': 'Catamarca',
+        'LA RIOJA': 'La Rioja', 'SAN JUAN': 'San Juan',
+        'SAN LUIS': 'San Luis', 'SANTIAGO DEL ESTERO': 'Santiago del Estero',
+        'NEUQUEN': 'Neuquén', 'NEUQUÉN': 'Neuquén',
+        'RIO NEGRO': 'Río Negro', 'CHUBUT': 'Chubut',
+        'SANTA CRUZ': 'Santa Cruz', 'TIERRA DEL FUEGO': 'Tierra del Fuego',
+        'LA PAMPA': 'La Pampa',
+      }
+
       let percIvaCents = 0
       let percIibbCents = 0
+      const iibbByJurisdiction: Record<string, number> = {} // cents por jurisdicción
 
       if (!skipIIBB) {
         for (const perc of invoice.perceptions) {
@@ -313,11 +333,33 @@ export async function POST(
             percIvaCents += amountCents
           } else {
             percIibbCents += amountCents
+            const colppyName = jurisdictionToColppy[(perc.jurisdiction || '').toUpperCase()] || perc.jurisdiction || 'CABA'
+            iibbByJurisdiction[colppyName] = (iibbByJurisdiction[colppyName] || 0) + amountCents
           }
         }
       } else {
         console.log(`[Colppy FC] skipIIBB: Percepciones IIBB forzadas a 0 (${invoice.perceptions.length} percepciones ignoradas)`)
       }
+
+      // Colppy soporta máx 2 jurisdicciones: IIBBLocal + IIBBOtro
+      // Mayor monto → IIBBLocal, resto sumado → IIBBOtro
+      const iibbEntries = Object.entries(iibbByJurisdiction).sort((a, b) => b[1] - a[1])
+
+      let iibbLocal = ''
+      let percIibb1Cents = 0
+      let iibbOtro = ''
+      let percIibb2Cents = 0
+
+      if (iibbEntries.length >= 1) {
+        iibbLocal = iibbEntries[0][0]
+        percIibb1Cents = iibbEntries[0][1]
+      }
+      if (iibbEntries.length >= 2) {
+        iibbOtro = iibbEntries[1][0] // nombre de la 2da jurisdicción más grande
+        percIibb2Cents = iibbEntries.slice(1).reduce((sum, [, c]) => sum + c, 0) // suma de todas las restantes
+      }
+
+      console.log(`[Colppy FC] IIBB: total=${percIibbCents} | IIBBLocal="${iibbLocal}" ${percIibb1Cents} | IIBBOtro="${iibbOtro}" ${percIibb2Cents} | jurisdicciones=${iibbEntries.length}`)
 
       // totalFactura = suma exacta de las partes (en centavos, sin errores de float)
       const totalFacturaCents = netoGravadoCents + netoNoGravadoCents + totalIvaCents + percIvaCents + percIibbCents
@@ -349,6 +391,10 @@ export async function POST(
         IVA27: c2d(iva27Cents),
         percepcionIVA: c2d(percIvaCents),
         percepcionIIBB: c2d(percIibbCents),
+        IIBBLocal: iibbLocal,
+        percepcionIIBB1: c2d(percIibb1Cents),
+        IIBBOtro: iibbOtro,
+        percepcionIIBB2: c2d(percIibb2Cents),
         totalFactura: c2d(totalFacturaCents),
         idMoneda: invoice.currency === 'USD' ? '2' : '1',
         valorCambio: invoice.currency === 'USD' ? String(Number(invoice.exchangeRate)) : '1',

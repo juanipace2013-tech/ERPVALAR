@@ -85,6 +85,9 @@ export async function POST(
 
     const { id } = await params
 
+    const { searchParams } = new URL(request.url)
+    const sinIIBB = searchParams.get('sinIIBB') === 'true'
+
     // 1. Obtener la factura del ERP con todos sus datos
     const invoice = await prisma.purchaseInvoice.findUnique({
       where: { id },
@@ -349,6 +352,17 @@ export async function POST(
       }
 
       console.log(`[Colppy FC] IIBB: total=${percIibbCents} | IIBBLocal="${iibbLocal}" ${percIibb1Cents} | IIBBOtro="${iibbOtro}" ${percIibb2Cents} | jurisdicciones=${iibbEntries.length}`)
+
+      // Override "Sin IIBB": enviar sin percepciones para diagnóstico
+      if (sinIIBB) {
+        console.log(`[Colppy FC] ⚠️ sinIIBB=true → zeroing percepciones (IVA=${percIvaCents}, IIBB=${percIibbCents})`)
+        percIvaCents = 0
+        percIibbCents = 0
+        percIibb1Cents = 0
+        percIibb2Cents = 0
+        iibbLocal = ''
+        iibbOtro = ''
+      }
 
       // totalFactura = suma exacta de las partes (en centavos, sin errores de float)
       const totalFacturaCents = netoGravadoCents + netoNoGravadoCents + totalIvaCents + percIvaCents + percIibbCents

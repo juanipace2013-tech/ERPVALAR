@@ -208,78 +208,85 @@ export async function POST(
         }
       })
 
-      // --- Totales de cabecera desde la DB ---
-      const netoGravado = Number(invoice.netAmount)
-      const netoNoGravado = Number(invoice.notTaxedAmount) + Number(invoice.exemptAmount)
+      // ===================================================================
+      // ARITMÉTICA EN CENTAVOS (enteros) para eliminar errores de punto
+      // flotante. Colppy valida:
+      //   totalFactura == netoGravado + netoNoGravado + totalIVA + percepcionIVA + percepcionIIBB
+      // y también que el asiento contable (débitos/créditos) balancea.
+      // ===================================================================
+      const r2 = (n: number) => Math.round(n * 100)  // a centavos
+      const c2d = (cents: number) => (cents / 100).toFixed(2) // centavos a string "X.XX"
+
+      // Cabecera desde DB (ya son Decimal con 2 dígitos, pero convertimos a centavos por seguridad)
+      const netoGravadoCents = r2(Number(invoice.netAmount))
+      const netoNoGravadoCents = r2(Number(invoice.notTaxedAmount)) + r2(Number(invoice.exemptAmount))
 
       // IVA desglosado desde la tabla taxes
-      let iva21 = 0
-      let iva105 = 0
-      let iva27 = 0
+      let iva21Cents = 0
+      let iva105Cents = 0
+      let iva27Cents = 0
       for (const tax of invoice.taxes) {
         const rate = Number(tax.rate)
-        const amount = Number(tax.taxAmount)
-        if (rate === 21) iva21 += amount
-        else if (rate === 10.5) iva105 += amount
-        else if (rate === 27) iva27 += amount
+        const amountCents = r2(Number(tax.taxAmount))
+        if (rate === 21) iva21Cents += amountCents
+        else if (rate === 10.5) iva105Cents += amountCents
+        else if (rate === 27) iva27Cents += amountCents
       }
-      const totalIva = iva21 + iva105 + iva27
+      const totalIvaCents = iva21Cents + iva105Cents + iva27Cents
 
-      // --- Percepciones ---
-      let percepcionIVA = 0
-      let percepcionIIBB = 0
+      // Percepciones
+      let percIvaCents = 0
+      let percIibbCents = 0
 
       for (const perc of invoice.perceptions) {
-        const amount = Number(perc.amount)
+        const amountCents = r2(Number(perc.amount))
         if (perc.perceptionType === 'IVA' || perc.perceptionType === 'Ganancias') {
-          percepcionIVA += amount
+          percIvaCents += amountCents
         } else {
-          percepcionIIBB += amount
+          percIibbCents += amountCents
         }
       }
 
-      // SIEMPRE recalcular totalFactura como la suma de las partes.
-      // Colppy valida: totalFactura == netoGravado + netoNoGravado + totalIVA + percepcionIVA + percepcionIIBB
-      // Si usamos invoice.total de la DB puede no coincidir exactamente por redondeo.
-      const totalFactura = Math.round((netoGravado + netoNoGravado + totalIva + percepcionIVA + percepcionIIBB) * 100) / 100
+      // totalFactura = suma exacta de las partes (en centavos, sin errores de float)
+      const totalFacturaCents = netoGravadoCents + netoNoGravadoCents + totalIvaCents + percIvaCents + percIibbCents
 
       // === BALANCE CHECK ===
       const dbTotal = Number(invoice.total)
-      console.log(`[Colppy FC] === BALANCE CHECK ===`)
-      console.log(`[Colppy FC] netoGravado=${netoGravado.toFixed(2)} netoNoGravado=${netoNoGravado.toFixed(2)} totalIVA=${totalIva.toFixed(2)} (21%=${iva21.toFixed(2)} 10.5%=${iva105.toFixed(2)} 27%=${iva27.toFixed(2)}) percIVA=${percepcionIVA.toFixed(2)} percIIBB=${percepcionIIBB.toFixed(2)}`)
-      console.log(`[Colppy FC] totalFactura (calculado)=${totalFactura.toFixed(2)} | DB total=${dbTotal.toFixed(2)} | diff=${(totalFactura - dbTotal).toFixed(2)}`)
+      console.log(`[Colppy FC] === TOTALES (centavos) ===`)
+      console.log(`[Colppy FC] netoGravado=${netoGravadoCents} netoNoGravado=${netoNoGravadoCents} totalIVA=${totalIvaCents} (21%=${iva21Cents} 10.5%=${iva105Cents} 27%=${iva27Cents}) percIVA=${percIvaCents} percIIBB=${percIibbCents}`)
+      console.log(`[Colppy FC] totalFactura=${totalFacturaCents} (${c2d(totalFacturaCents)}) | DB total=${dbTotal} | diff=${(totalFacturaCents/100 - dbTotal).toFixed(2)}`)
 
       // 5. Enviar a Colppy
-      // NOTA: Solo se envía percepcionIIBB como total, sin desglosar por jurisdicción.
-      // Colppy suma percepcionIIBB + percepcionIIBB1 + percepcionIIBB2, lo que duplicaba
-      // el monto y causaba "totalFactura debe ser igual a netoGravado + ... + percepcionIIBB".
-      // Las jurisdicciones se corrigen manualmente en Colppy después.
+      const colppyParams = {
+        idProveedor: supplier.idProveedor,
+        descripcion: `FC ${invoice.invoiceNumber}`,
+        fechaFactura,
+        fechaFacturaDoc,
+        fechaPago,
+        idTipoFactura: invoice.voucherType as 'A' | 'B' | 'C',
+        idTipoComprobante,
+        idCondicionPago,
+        idEstadoFactura: 'Aprobada',
+        nroFactura1: invoice.pointOfSale,
+        nroFactura2: invoice.invoiceNumberSuffix,
+        netoGravado: c2d(netoGravadoCents),
+        netoNoGravado: c2d(netoNoGravadoCents),
+        totalIVA: c2d(totalIvaCents),
+        IVA21: c2d(iva21Cents),
+        IVA105: c2d(iva105Cents),
+        IVA27: c2d(iva27Cents),
+        percepcionIVA: c2d(percIvaCents),
+        percepcionIIBB: c2d(percIibbCents),
+        totalFactura: c2d(totalFacturaCents),
+        idMoneda: invoice.currency === 'USD' ? '2' : '1',
+        valorCambio: invoice.currency === 'USD' ? String(Number(invoice.exchangeRate)) : '1',
+        itemsFactura,
+      }
+
+      console.log(`[Colppy FC] PARAMS:`, JSON.stringify(colppyParams, null, 2))
+
       const result = await withRetry((s) =>
-        colppyCreatePurchaseInvoice(s, {
-          idProveedor: supplier.idProveedor,
-          descripcion: `FC ${invoice.invoiceNumber}`,
-          fechaFactura,
-          fechaFacturaDoc,
-          fechaPago,
-          idTipoFactura: invoice.voucherType as 'A' | 'B' | 'C',
-          idTipoComprobante,
-          idCondicionPago,
-          idEstadoFactura: 'Aprobada',
-          nroFactura1: invoice.pointOfSale,
-          nroFactura2: invoice.invoiceNumberSuffix,
-          netoGravado: netoGravado.toFixed(2),
-          netoNoGravado: netoNoGravado.toFixed(2),
-          totalIVA: totalIva.toFixed(2),
-          IVA21: iva21.toFixed(2),
-          IVA105: iva105.toFixed(2),
-          IVA27: iva27.toFixed(2),
-          percepcionIVA: percepcionIVA.toFixed(2),
-          percepcionIIBB: percepcionIIBB.toFixed(2),
-          totalFactura: totalFactura.toFixed(2),
-          idMoneda: invoice.currency === 'USD' ? '2' : '1',
-          valorCambio: invoice.currency === 'USD' ? String(Number(invoice.exchangeRate)) : '1',
-          itemsFactura,
-        })
+        colppyCreatePurchaseInvoice(s, colppyParams)
       )
 
       // 6. Guardar el ID de Colppy en la factura del ERP

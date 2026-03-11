@@ -221,17 +221,48 @@ export async function POST(
       const netoGravadoCents = r2(Number(invoice.netAmount))
       const netoNoGravadoCents = r2(Number(invoice.notTaxedAmount)) + r2(Number(invoice.exemptAmount))
 
-      // IVA desglosado desde la tabla taxes
+      // IVA desglosado: intentar desde tabla taxes, si no calcular desde items
       let iva21Cents = 0
       let iva105Cents = 0
       let iva27Cents = 0
-      for (const tax of invoice.taxes) {
-        const rate = Number(tax.rate)
-        const amountCents = r2(Number(tax.taxAmount))
-        if (rate === 21) iva21Cents += amountCents
-        else if (rate === 10.5) iva105Cents += amountCents
-        else if (rate === 27) iva27Cents += amountCents
+
+      if (invoice.taxes && invoice.taxes.length > 0) {
+        // Fuente 1: tabla purchase_invoice_taxes
+        for (const tax of invoice.taxes) {
+          const rate = Number(tax.rate)
+          const amountCents = r2(Number(tax.taxAmount))
+          if (rate === 21) iva21Cents += amountCents
+          else if (rate === 10.5) iva105Cents += amountCents
+          else if (rate === 27) iva27Cents += amountCents
+        }
+        console.log(`[Colppy FC] IVA desde taxes table: 21%=${iva21Cents} 10.5%=${iva105Cents} 27%=${iva27Cents}`)
+      } else {
+        // Fuente 2: calcular desde los items (la tabla taxes puede estar vacía)
+        console.log(`[Colppy FC] ⚠️ taxes table vacía, calculando IVA desde items`)
+        for (const item of invoice.items) {
+          const qty = Number(item.quantity)
+          const unitPrice = Number(item.unitPrice)
+          const taxRate = Number(item.taxRate)
+          const itemNetCents = r2(Math.round(unitPrice * 100) / 100 * qty)
+          const itemIvaCents = Math.round(itemNetCents * taxRate / 100)
+          if (taxRate === 21) iva21Cents += itemIvaCents
+          else if (taxRate === 10.5) iva105Cents += itemIvaCents
+          else if (taxRate === 27) iva27Cents += itemIvaCents
+        }
+        console.log(`[Colppy FC] IVA desde items: 21%=${iva21Cents} 10.5%=${iva105Cents} 27%=${iva27Cents}`)
+
+        // Validar contra taxAmount de la cabecera
+        const totalIvaFromItems = iva21Cents + iva105Cents + iva27Cents
+        const dbTaxAmountCents = r2(Number(invoice.taxAmount))
+        if (Math.abs(totalIvaFromItems - dbTaxAmountCents) > 1) {
+          // Si difiere, usar el valor de la DB como IVA21 (caso más común)
+          console.log(`[Colppy FC] ⚠️ IVA items=${totalIvaFromItems} vs DB=${dbTaxAmountCents}, usando DB`)
+          iva21Cents = dbTaxAmountCents
+          iva105Cents = 0
+          iva27Cents = 0
+        }
       }
+
       const totalIvaCents = iva21Cents + iva105Cents + iva27Cents
 
       // Percepciones

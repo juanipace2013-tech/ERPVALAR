@@ -102,6 +102,28 @@ export async function POST(
       return NextResponse.json({ error: 'Factura no encontrada' }, { status: 404 })
     }
 
+    // === DEBUG: Datos completos de la factura ===
+    console.log('=== INVOICE DATA ===')
+    console.log('id:', invoice.id)
+    console.log('invoiceNumber:', invoice.invoiceNumber)
+    console.log('netAmount:', String(invoice.netAmount))
+    console.log('taxAmount:', String(invoice.taxAmount))
+    console.log('notTaxedAmount:', String(invoice.notTaxedAmount))
+    console.log('exemptAmount:', String(invoice.exemptAmount))
+    console.log('perceptionsAmount:', String(invoice.perceptionsAmount))
+    console.log('total:', String(invoice.total))
+    console.log('taxes:', JSON.stringify(invoice.taxes, null, 2))
+    console.log('perceptions:', JSON.stringify(invoice.perceptions, null, 2))
+    console.log('items count:', invoice.items.length)
+    console.log('items:', JSON.stringify(invoice.items.map(i => ({
+      desc: i.description?.substring(0, 40),
+      qty: String(i.quantity),
+      unitPrice: String(i.unitPrice),
+      taxRate: String(i.taxRate),
+      subtotal: String(i.subtotal),
+    })), null, 2))
+    console.log('=== FIN INVOICE DATA ===')
+
     // Verificar que no fue ya enviada
     if (invoice.colppyInvoiceId) {
       return NextResponse.json(

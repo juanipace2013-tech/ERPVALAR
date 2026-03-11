@@ -243,13 +243,16 @@ export async function POST(
       const netoGravadoCents = r2(Number(invoice.netAmount))
       const netoNoGravadoCents = r2(Number(invoice.notTaxedAmount)) + r2(Number(invoice.exemptAmount))
 
-      // IVA desglosado: intentar desde tabla taxes, si no calcular desde items
+      // IVA: La fuente de verdad es invoice.taxAmount de la cabecera.
+      // Para el desglose por alícuota, intentamos:
+      // 1) tabla taxes, 2) items, 3) todo como IVA21 (caso más común).
+      const dbTaxAmountCents = r2(Number(invoice.taxAmount))
       let iva21Cents = 0
       let iva105Cents = 0
       let iva27Cents = 0
 
+      // Intentar desglose desde tabla taxes
       if (invoice.taxes && invoice.taxes.length > 0) {
-        // Fuente 1: tabla purchase_invoice_taxes
         for (const tax of invoice.taxes) {
           const rate = Number(tax.rate)
           const amountCents = r2(Number(tax.taxAmount))
@@ -258,34 +261,39 @@ export async function POST(
           else if (rate === 27) iva27Cents += amountCents
         }
         console.log(`[Colppy FC] IVA desde taxes table: 21%=${iva21Cents} 10.5%=${iva105Cents} 27%=${iva27Cents}`)
-      } else {
-        // Fuente 2: calcular desde los items (la tabla taxes puede estar vacía)
-        console.log(`[Colppy FC] ⚠️ taxes table vacía, calculando IVA desde items`)
+      }
+
+      // Si la tabla taxes dio 0 o está vacía, calcular desde items
+      if (iva21Cents + iva105Cents + iva27Cents === 0 && dbTaxAmountCents > 0) {
+        console.log(`[Colppy FC] ⚠️ taxes table sin datos útiles, calculando IVA desde items (dbTaxAmount=${dbTaxAmountCents})`)
         for (const item of invoice.items) {
           const qty = Number(item.quantity)
-          const unitPrice = Number(item.unitPrice)
+          const unitPriceCents = r2(Number(item.unitPrice))
           const taxRate = Number(item.taxRate)
-          const itemNetCents = r2(Math.round(unitPrice * 100) / 100 * qty)
+          const itemNetCents = Math.round(unitPriceCents * qty)
           const itemIvaCents = Math.round(itemNetCents * taxRate / 100)
           if (taxRate === 21) iva21Cents += itemIvaCents
           else if (taxRate === 10.5) iva105Cents += itemIvaCents
           else if (taxRate === 27) iva27Cents += itemIvaCents
         }
         console.log(`[Colppy FC] IVA desde items: 21%=${iva21Cents} 10.5%=${iva105Cents} 27%=${iva27Cents}`)
+      }
 
-        // Validar contra taxAmount de la cabecera
-        const totalIvaFromItems = iva21Cents + iva105Cents + iva27Cents
-        const dbTaxAmountCents = r2(Number(invoice.taxAmount))
-        if (Math.abs(totalIvaFromItems - dbTaxAmountCents) > 1) {
-          // Si difiere, usar el valor de la DB como IVA21 (caso más común)
-          console.log(`[Colppy FC] ⚠️ IVA items=${totalIvaFromItems} vs DB=${dbTaxAmountCents}, usando DB`)
-          iva21Cents = dbTaxAmountCents
-          iva105Cents = 0
-          iva27Cents = 0
-        }
+      // Última línea de defensa: si sigue en 0 pero la DB tiene IVA, usar DB como IVA21
+      const totalIvaCalcCents = iva21Cents + iva105Cents + iva27Cents
+      if (totalIvaCalcCents === 0 && dbTaxAmountCents > 0) {
+        console.log(`[Colppy FC] ⚠️ IVA sigue en 0, usando dbTaxAmount=${dbTaxAmountCents} como IVA21`)
+        iva21Cents = dbTaxAmountCents
+      } else if (Math.abs(totalIvaCalcCents - dbTaxAmountCents) > 100) {
+        // Diferencia > $1: algo está muy mal, usar DB
+        console.log(`[Colppy FC] ⚠️ IVA calc=${totalIvaCalcCents} vs DB=${dbTaxAmountCents} (diff>${Math.abs(totalIvaCalcCents - dbTaxAmountCents)}), usando DB`)
+        iva21Cents = dbTaxAmountCents
+        iva105Cents = 0
+        iva27Cents = 0
       }
 
       const totalIvaCents = iva21Cents + iva105Cents + iva27Cents
+      console.log(`[Colppy FC] IVA FINAL: 21%=${iva21Cents} 10.5%=${iva105Cents} 27%=${iva27Cents} total=${totalIvaCents} (dbTaxAmount=${dbTaxAmountCents})`)
 
       // Percepciones
       let percIvaCents = 0

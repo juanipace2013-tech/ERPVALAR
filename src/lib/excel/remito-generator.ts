@@ -34,18 +34,18 @@ const ITEMS_PER_PAGE = 9
 const COLUMN_WIDTHS = [
   6.29,   // A
   11.71,  // B
-  4.0,    // C
+  4.00,   // C
   3.57,   // D
   2.29,   // E
-  5.0,    // F
+  5.00,   // F
   5.71,   // G
-  5.0,    // H
+  5.00,   // H
   2.71,   // I
-  16.71,  // J
+  14.00,  // J
   4.14,   // K
   1.14,   // L
   6.29,   // M
-  6.0,    // N
+  6.00,   // N
   5.57,   // O
   1.86,   // P
   2.43,   // Q
@@ -53,11 +53,11 @@ const COLUMN_WIDTHS = [
 
 // Alturas de fila (1-20)
 const ROW_HEIGHTS: Record<number, number> = {
-  1: 78.0, 2: 73.5, 3: 33.75, 4: 5.25, 5: 30.75,
+  1: 78.00, 2: 78.75, 3: 33.75, 4: 5.25, 5: 30.75,
   6: 33.0, 7: 22.9, 8: 27.0,
   9: 55.5, 10: 24.75, 11: 24.75, 12: 24.75, 13: 24.75,
   14: 24.75, 15: 24.75, 16: 24.75, 17: 24.75,
-  18: 20.25, 19: 20.25, 20: 27.75,
+  18: 20.25, 19: 20.25,
 }
 
 // Fuentes
@@ -129,9 +129,9 @@ function buildRemitoSheet(
 
   // ----- Fila 1: Solo fecha (el número de remito ya está en el preimpreso) -----
   const d = data.date
-  setCell(ws, 'M1', d.getDate(), FONT_DEFAULT)
-  setCell(ws, 'N1', d.getMonth() + 1, FONT_DEFAULT)
-  setCell(ws, 'O1', d.getFullYear() % 100, FONT_DEFAULT)
+  setCell(ws, 'M1', d.getDate(), FONT_DEFAULT, { horizontal: 'right' })
+  setCell(ws, 'N1', d.getMonth() + 1, FONT_DEFAULT, { horizontal: 'right' })
+  setCell(ws, 'O1', d.getFullYear() % 100, FONT_DEFAULT, { horizontal: 'right' })
   // P1:Q1 = Número de remito — NO se pone, ya viene en la hoja preimpresa
 
   // ----- Fila 2: Razón social del cliente -----
@@ -146,15 +146,15 @@ function buildRemitoSheet(
   setCell(ws, 'C3', data.customer.address, FONT_DEFAULT, { vertical: 'middle' })
 
   ws.mergeCells('L3:Q3')
-  setCell(ws, 'L3', data.customer.city, FONT_DEFAULT, { vertical: 'middle' })
+  setCell(ws, 'L3', data.customer.city, FONT_DEFAULT, { horizontal: 'center', vertical: 'middle' })
 
   // ----- Fila 5: CUIT -----
   ws.mergeCells('N5:Q5')
-  setCell(ws, 'N5', data.customer.cuit, FONT_DEFAULT, { vertical: 'middle' })
+  setCell(ws, 'N5', data.customer.cuit, FONT_DEFAULT, { horizontal: 'right', vertical: 'middle' })
 
   // ----- Fila 6: Número de factura -----
   ws.mergeCells('N6:Q6')
-  setCell(ws, 'N6', data.customerInvoiceNumber || '', FONT_DEFAULT, { vertical: 'middle' })
+  setCell(ws, 'N6', data.customerInvoiceNumber || '', FONT_DEFAULT, { horizontal: 'right', vertical: 'middle' })
 
   // ----- Fila 8: Orden de compra -----
   setCell(ws, 'B8', 'OC N°:', FONT_OC, { vertical: 'middle' })

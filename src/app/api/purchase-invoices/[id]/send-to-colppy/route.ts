@@ -195,14 +195,26 @@ export async function POST(
 
       const itemsFactura = invoice.items.map((item) => {
         const qty = Number(item.quantity)
-        const unitPrice = Number(item.unitPrice) // Ya tiene descuento aplicado
+        const unitPrice = Number(item.unitPrice) // Precio neto (con descuento aplicado)
+        const listPrice = Number(item.listPrice) // Precio bruto (antes de descuento)
+        const discountPercent = Number(item.discountPercent) // % de descuento
         const taxRate = Number(item.taxRate)
 
-        // Redondear unitPrice a 2 decimales (el valor que Colppy verá)
-        const unitPriceCents = Math.round(unitPrice * 100)
-        const roundedUnitPrice = unitPriceCents / 100
+        // Colppy espera el precio BRUTO (listPrice) + el % de descuento.
+        // Colppy calcula internamente: listPrice * qty - descuento% = neto
+        // Si listPrice > 0 y hay descuento, enviar bruto + descuento.
+        // Si no hay descuento (o listPrice === unitPrice), enviar unitPrice con desc 0.
+        const hasDiscount = discountPercent > 0 && listPrice > 0 && listPrice !== unitPrice
+        const importeUnitario = hasDiscount ? listPrice : unitPrice
+        const porcDesc = hasDiscount ? discountPercent : 0
 
-        // Neto del item en centavos
+        // Redondear a 2 decimales
+        const importeCents = Math.round(importeUnitario * 100)
+        const roundedImporte = importeCents / 100
+
+        // Neto del item en centavos (después de descuento, como Colppy lo calculará)
+        const roundedUnitPriceCents = Math.round(unitPrice * 100)
+        const roundedUnitPrice = roundedUnitPriceCents / 100
         const itemNetCents = Math.round(roundedUnitPrice * qty * 100)
         // IVA del item en centavos (redondeado per-item como Colppy)
         const itemIvaCents = Math.round(itemNetCents * taxRate / 100)
@@ -216,11 +228,11 @@ export async function POST(
           Descripcion: item.description,
           unidadMedida: item.unit || 'Un',
           Cantidad: String(qty),
-          ImporteUnitario: roundedUnitPrice.toFixed(2),
+          ImporteUnitario: roundedImporte.toFixed(2),
           IVA: taxRate.toFixed(2),
           idPlanCuenta: 'Mercaderias',
           codigo: item.supplierProductCode || '',
-          porcDesc: '0', // El descuento ya está aplicado en unitPrice
+          porcDesc: porcDesc.toFixed(2),
         }
       })
 

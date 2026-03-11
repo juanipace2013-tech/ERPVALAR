@@ -818,6 +818,7 @@ export interface ColppyPurchaseInvoiceParams {
   valorCambio?: string; // Tipo de cambio
   idRetGanancias?: string; // Código retención ganancias (ej: "78")
   itemsFactura: Array<{
+    idItem?: string; // ID del item en inventario Colppy (vincula código automáticamente)
     Descripcion: string;
     unidadMedida: string; // "Un", "m", "kg"
     Cantidad: string;

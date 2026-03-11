@@ -6,6 +6,7 @@ import {
   colppyLogout,
   colppyFindSupplierByCUIT,
   colppyCreatePurchaseInvoice,
+  getColppyItemId,
   ColppySession,
   ColppySessionExpiredError,
 } from '@/lib/colppy'
@@ -210,25 +211,46 @@ export async function POST(
       // Los items se envían con precio neto y porcDesc=0.
       // ===================================================================
 
-      const itemsFactura = invoice.items.map((item) => {
+      // Buscar idItem en inventario de Colppy por código (con caché)
+      const idItemCache: Record<string, string> = {}
+      const getIdItem = async (supplierCode: string): Promise<string> => {
+        const colppyCode = (supplierCode || '').substring(3).trim()
+        if (!colppyCode) return ''
+        if (idItemCache[colppyCode] !== undefined) return idItemCache[colppyCode]
+        try {
+          const idItem = await withRetry((s) => getColppyItemId(s, colppyCode))
+          idItemCache[colppyCode] = idItem !== '0' ? idItem : ''
+          console.log(`[Colppy FC] Item "${colppyCode}" → idItem=${idItemCache[colppyCode] || '(no encontrado)'}`)
+          return idItemCache[colppyCode]
+        } catch (err: any) {
+          console.warn(`[Colppy FC] Error buscando item "${colppyCode}":`, err.message)
+          idItemCache[colppyCode] = ''
+          return ''
+        }
+      }
+
+      const itemsFactura = await Promise.all(invoice.items.map(async (item) => {
         const qty = Number(item.quantity)
         const unitPrice = Number(item.unitPrice) // Precio neto (ya con descuento aplicado)
         const taxRate = Number(item.taxRate)
+        const colppyCode = (item.supplierProductCode || '').substring(3).trim()
+        const idItem = await getIdItem(item.supplierProductCode || '')
 
         // Redondear a 2 decimales
         const roundedUnitPrice = Math.round(unitPrice * 100) / 100
 
         return {
+          idItem,
           Descripcion: item.description,
           unidadMedida: item.unit || 'Un',
           Cantidad: String(qty),
           ImporteUnitario: roundedUnitPrice.toFixed(2),
           IVA: taxRate.toFixed(2),
           idPlanCuenta: 'Mercaderias',
-          codigo: (item.supplierProductCode || '').substring(3),
+          codigo: colppyCode,
           porcDesc: '0',
         }
-      })
+      }))
 
       // ===================================================================
       // ARITMÉTICA EN CENTAVOS (enteros) para eliminar errores de punto

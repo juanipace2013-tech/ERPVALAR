@@ -126,20 +126,9 @@ export async function DELETE(
       );
     }
 
-    // No permitir eliminar si fue sincronizada con Colppy
+    // Advertencia en log si fue sincronizada con Colppy (se elimina solo del ERP)
     if (invoice.colppyInvoiceId) {
-      return NextResponse.json(
-        { error: 'No se puede eliminar una factura sincronizada con Colppy' },
-        { status: 400 }
-      );
-    }
-
-    // Solo permitir eliminar en estado DRAFT o PENDING
-    if (invoice.status !== 'DRAFT' && invoice.status !== 'PENDING') {
-      return NextResponse.json(
-        { error: 'Solo se pueden eliminar facturas en estado Borrador o Pendiente' },
-        { status: 400 }
-      );
+      console.log(`[DELETE] Factura ${invoice.invoiceNumber} sincronizada con Colppy (ID: ${invoice.colppyInvoiceId}). Se elimina solo del ERP.`)
     }
 
     // No permitir eliminar si tiene pagos asociados

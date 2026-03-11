@@ -138,17 +138,12 @@ export default function PurchaseInvoicesPage() {
   }
 
   const handleDelete = async (invoice: PurchaseInvoice) => {
-    if (invoice.colppyInvoiceId) {
-      toast.error('No se puede eliminar una factura sincronizada con Colppy')
-      return
-    }
-    if (invoice.status !== 'DRAFT' && invoice.status !== 'PENDING') {
-      toast.error('Solo se pueden eliminar facturas en estado Borrador o Pendiente')
-      return
-    }
+    const colppyWarning = invoice.colppyInvoiceId
+      ? '\n⚠️ Esta factura ya fue enviada a Colppy. Se eliminará solo del ERP, NO de Colppy.'
+      : ''
 
     const confirmed = window.confirm(
-      `¿Estás seguro de eliminar la factura ${invoice.invoiceNumber}?\nEsta acción no se puede deshacer.`
+      `¿Estás seguro de eliminar la factura ${invoice.invoiceNumber}?${colppyWarning}\nEsta acción no se puede deshacer.`
     )
     if (!confirmed) return
 
@@ -407,21 +402,17 @@ export default function PurchaseInvoicesPage() {
                               <Eye className="mr-2 h-4 w-4" />
                               Ver Detalle
                             </DropdownMenuItem>
-                            {(invoice.status === 'DRAFT' || invoice.status === 'PENDING') && !invoice.colppyInvoiceId && (
-                              <>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  className="text-red-600 focus:text-red-600"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleDelete(invoice)
-                                  }}
-                                >
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  Eliminar factura
-                                </DropdownMenuItem>
-                              </>
-                            )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-red-600 focus:text-red-600"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleDelete(invoice)
+                              }}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Eliminar factura
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>

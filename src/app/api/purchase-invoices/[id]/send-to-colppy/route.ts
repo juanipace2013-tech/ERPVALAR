@@ -182,64 +182,51 @@ export async function POST(
       const idTipoComprobante = tipoComprobanteMap[invoice.invoiceType] || '1'
 
       // ===================================================================
-      // ARITMÉTICA EN CENTAVOS (enteros) para evitar errores de punto
-      // flotante y GARANTIZAR que el asiento contable balancea:
-      //   DEBE (Mercaderías + IVA CF + Percepciones) = HABER (Total)
+      // ESTRATEGIA: Usar valores EXACTOS de la DB para los totales de
+      // cabecera. NO recalcular desde items para evitar diferencias de
+      // redondeo que causan "El total de débitos y créditos no es igual".
+      // Los items se envían con precio neto y porcDesc=0.
       // ===================================================================
-
-      // Acumuladores en CENTAVOS (enteros — sin errores de punto flotante)
-      let netoCents = 0
-      let iva21Cents = 0
-      let iva105Cents = 0
-      let iva27Cents = 0
 
       const itemsFactura = invoice.items.map((item) => {
         const qty = Number(item.quantity)
-        const unitPrice = Number(item.unitPrice) // Precio neto (con descuento aplicado)
-        const listPrice = Number(item.listPrice) // Precio bruto (antes de descuento)
-        const discountPercent = Number(item.discountPercent) // % de descuento
+        const unitPrice = Number(item.unitPrice) // Precio neto (ya con descuento aplicado)
         const taxRate = Number(item.taxRate)
 
-        // Colppy espera el precio BRUTO (listPrice) + el % de descuento.
-        // Colppy calcula internamente: listPrice * qty - descuento% = neto
-        // Si listPrice > 0 y hay descuento, enviar bruto + descuento.
-        // Si no hay descuento (o listPrice === unitPrice), enviar unitPrice con desc 0.
-        const hasDiscount = discountPercent > 0 && listPrice > 0 && listPrice !== unitPrice
-        const importeUnitario = hasDiscount ? listPrice : unitPrice
-        const porcDesc = hasDiscount ? discountPercent : 0
-
         // Redondear a 2 decimales
-        const importeCents = Math.round(importeUnitario * 100)
-        const roundedImporte = importeCents / 100
-
-        // Neto del item en centavos (después de descuento, como Colppy lo calculará)
-        const roundedUnitPriceCents = Math.round(unitPrice * 100)
-        const roundedUnitPrice = roundedUnitPriceCents / 100
-        const itemNetCents = Math.round(roundedUnitPrice * qty * 100)
-        // IVA del item en centavos (redondeado per-item como Colppy)
-        const itemIvaCents = Math.round(itemNetCents * taxRate / 100)
-
-        netoCents += itemNetCents
-        if (taxRate === 21) iva21Cents += itemIvaCents
-        else if (taxRate === 10.5) iva105Cents += itemIvaCents
-        else if (taxRate === 27) iva27Cents += itemIvaCents
+        const roundedUnitPrice = Math.round(unitPrice * 100) / 100
 
         return {
           Descripcion: item.description,
           unidadMedida: item.unit || 'Un',
           Cantidad: String(qty),
-          ImporteUnitario: roundedImporte.toFixed(2),
+          ImporteUnitario: roundedUnitPrice.toFixed(2),
           IVA: taxRate.toFixed(2),
           idPlanCuenta: 'Mercaderias',
           codigo: item.supplierProductCode || '',
-          porcDesc: porcDesc.toFixed(2),
+          porcDesc: '0',
         }
       })
 
-      // Percepciones en centavos
-      let percIvaCents = 0
-      let percIibbCents = 0
+      // --- Totales de cabecera: DIRECTOS desde la DB ---
+      const netoGravado = Number(invoice.netAmount)
+      const netoNoGravado = Number(invoice.notTaxedAmount) + Number(invoice.exemptAmount)
+      const totalFactura = Number(invoice.total)
 
+      // IVA desglosado desde la tabla taxes (no recalculado)
+      let iva21 = 0
+      let iva105 = 0
+      let iva27 = 0
+      for (const tax of invoice.taxes) {
+        const rate = Number(tax.rate)
+        const amount = Number(tax.taxAmount)
+        if (rate === 21) iva21 += amount
+        else if (rate === 10.5) iva105 += amount
+        else if (rate === 27) iva27 += amount
+      }
+      const totalIva = iva21 + iva105 + iva27
+
+      // --- Percepciones ---
       // Mapeo de jurisdicción DB → nombre Colppy
       const jurisdictionToColppy: Record<string, string> = {
         'CABA': 'CABA',
@@ -272,77 +259,52 @@ export async function POST(
         'NACIONAL': '',
       }
 
-      // Agrupar percepciones IIBB por jurisdicción (Colppy soporta max 2)
-      const iibbByJurisdiction: Record<string, number> = {} // cents
+      let percepcionIVA = 0
+      let percepcionIIBB = 0
+      const iibbByJurisdiction: Record<string, number> = {} // en pesos (decimal)
 
       for (const perc of invoice.perceptions) {
-        const amountCents = Math.round(Number(perc.amount) * 100)
+        const amount = Number(perc.amount)
         if (perc.perceptionType === 'IVA' || perc.perceptionType === 'Ganancias') {
-          percIvaCents += amountCents
+          percepcionIVA += amount
         } else {
           // IIBB - agrupar por jurisdicción
-          percIibbCents += amountCents
+          percepcionIIBB += amount
           const colppyJuris = jurisdictionToColppy[perc.jurisdiction?.toUpperCase() || ''] || perc.jurisdiction || ''
-          iibbByJurisdiction[colppyJuris] = (iibbByJurisdiction[colppyJuris] || 0) + amountCents
+          iibbByJurisdiction[colppyJuris] = (iibbByJurisdiction[colppyJuris] || 0) + amount
         }
       }
 
-      // Tomar las 2 jurisdicciones con mayor monto para IIBBLocal/IIBBOtro
+      // Colppy soporta máximo 2 jurisdicciones IIBB: IIBBLocal + IIBBOtro
+      // Tomar las 2 con mayor monto, agrupar resto en la segunda
       const iibbEntries = Object.entries(iibbByJurisdiction)
-        .sort((a, b) => b[1] - a[1]) // Mayor monto primero
+        .sort((a, b) => b[1] - a[1])
 
       let iibbLocal = ''
-      let percIibb1Cents = 0
+      let percIibb1 = 0
       let iibbOtro = ''
-      let percIibb2Cents = 0
+      let percIibb2 = 0
 
       if (iibbEntries.length >= 1) {
         iibbLocal = iibbEntries[0][0]
-        percIibb1Cents = iibbEntries[0][1]
+        percIibb1 = iibbEntries[0][1]
       }
       if (iibbEntries.length >= 2) {
-        // Si hay más de 2 jurisdicciones, agrupar las restantes en la segunda
         iibbOtro = iibbEntries[1][0]
-        percIibb2Cents = iibbEntries.slice(1).reduce((sum, [, cents]) => sum + cents, 0)
+        percIibb2 = iibbEntries.slice(1).reduce((sum, [, amount]) => sum + amount, 0)
         if (iibbEntries.length > 2) {
-          console.log(`[Colppy FC] ⚠️ ${iibbEntries.length} jurisdicciones IIBB, agrupando ${iibbEntries.length - 1} en IIBBOtro`)
+          console.log(`[Colppy FC] ⚠️ ${iibbEntries.length} jurisdicciones IIBB, agrupando ${iibbEntries.length - 1} en IIBBOtro="${iibbOtro}"`)
         }
       }
 
-      console.log(`[Colppy FC] IIBB desglose: IIBBLocal="${iibbLocal}" $${(percIibb1Cents/100).toFixed(2)}, IIBBOtro="${iibbOtro}" $${(percIibb2Cents/100).toFixed(2)}`)
-
-      const noGravCents = Math.round((Number(invoice.notTaxedAmount) + Number(invoice.exemptAmount)) * 100)
-
-      // IVA total = suma de alícuotas EN CENTAVOS (sin re-redondear)
-      const totalIvaCents = iva21Cents + iva105Cents + iva27Cents
-
-      // Total factura = SUMA EXACTA en centavos → GARANTIZA balance contable
-      const totalFacturaCents = netoCents + totalIvaCents + noGravCents + percIvaCents + percIibbCents
-
-      // Convertir a decimales para enviar a Colppy
-      const netoGravado = netoCents / 100
-      const iva21 = iva21Cents / 100
-      const iva105 = iva105Cents / 100
-      const iva27 = iva27Cents / 100
-      const totalIva = totalIvaCents / 100
-      const netoNoGravado = noGravCents / 100
-      const percepcionIVA = percIvaCents / 100
-      const percepcionIIBB = percIibbCents / 100
-      const totalFactura = totalFacturaCents / 100
-
       // === BALANCE CHECK ===
-      const debe = netoCents + totalIvaCents + percIvaCents + percIibbCents + noGravCents
-      const haber = totalFacturaCents
-      const dbNeto = Number(invoice.netAmount)
-      const dbIva = Number(invoice.taxAmount)
-      const dbTotal = Number(invoice.total)
-      console.log(`[Colppy FC] === BALANCE CHECK (centavos) ===`)
-      console.log(`[Colppy FC] DEBE: Neto=${netoCents} + IVA=${totalIvaCents} + PercIVA=${percIvaCents} + PercIIBB=${percIibbCents} + NoGrav=${noGravCents} = ${debe}`)
-      console.log(`[Colppy FC] HABER: TotalFactura=${haber}`)
-      console.log(`[Colppy FC] Balance: ${debe === haber ? '✓ BALANCEA' : `⚠️ DIFF ${debe - haber} centavos`}`)
-      console.log(`[Colppy FC] Valores a enviar: neto=${netoGravado} iva=${totalIva} (21%=${iva21} 10.5%=${iva105} 27%=${iva27}) percIVA=${percepcionIVA} percIIBB=${percepcionIIBB} noGrav=${netoNoGravado} total=${totalFactura}`)
-      console.log(`[Colppy FC] DB original: neto=${dbNeto} iva=${dbIva} total=${dbTotal}`)
-      console.log(`[Colppy FC] Diffs DB vs Calc: neto=${(dbNeto - netoGravado).toFixed(2)} iva=${(dbIva - totalIva).toFixed(2)} total=${(dbTotal - totalFactura).toFixed(2)}`)
+      const debe = netoGravado + totalIva + percepcionIVA + percepcionIIBB + netoNoGravado
+      console.log(`[Colppy FC] === BALANCE CHECK ===`)
+      console.log(`[Colppy FC] DEBE: Neto=${netoGravado} + IVA=${totalIva} (21%=${iva21} 10.5%=${iva105} 27%=${iva27}) + PercIVA=${percepcionIVA} + PercIIBB=${percepcionIIBB} + NoGrav=${netoNoGravado} = ${debe.toFixed(2)}`)
+      console.log(`[Colppy FC] HABER: TotalFactura=${totalFactura}`)
+      console.log(`[Colppy FC] Diff: ${(debe - totalFactura).toFixed(2)} ${Math.abs(debe - totalFactura) < 0.01 ? '✓ BALANCEA' : '⚠️ NO BALANCEA'}`)
+      console.log(`[Colppy FC] IIBB desglose: IIBBLocal="${iibbLocal}" $${percIibb1.toFixed(2)}, IIBBOtro="${iibbOtro}" $${percIibb2.toFixed(2)}`)
+      console.log(`[Colppy FC] IIBB total: ${percepcionIIBB.toFixed(2)}, sum desglose: ${(percIibb1 + percIibb2).toFixed(2)}`)
 
       // 5. Enviar a Colppy
       const result = await withRetry((s) =>
@@ -367,9 +329,9 @@ export async function POST(
           percepcionIVA: percepcionIVA.toFixed(2),
           percepcionIIBB: percepcionIIBB.toFixed(2),
           IIBBLocal: iibbLocal,
-          percepcionIIBB1: (percIibb1Cents / 100).toFixed(2),
+          percepcionIIBB1: percIibb1.toFixed(2),
           IIBBOtro: iibbOtro,
-          percepcionIIBB2: (percIibb2Cents / 100).toFixed(2),
+          percepcionIIBB2: percIibb2.toFixed(2),
           totalFactura: totalFactura.toFixed(2),
           idMoneda: invoice.currency === 'USD' ? '2' : '1',
           valorCambio: invoice.currency === 'USD' ? String(Number(invoice.exchangeRate)) : '1',

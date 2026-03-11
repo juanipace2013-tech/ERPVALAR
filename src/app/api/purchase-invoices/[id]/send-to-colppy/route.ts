@@ -227,73 +227,15 @@ export async function POST(
       const totalIva = iva21 + iva105 + iva27
 
       // --- Percepciones ---
-      // Mapeo de jurisdicción DB → nombre Colppy
-      const jurisdictionToColppy: Record<string, string> = {
-        'CABA': 'CABA',
-        'ARBA': 'Buenos Aires',
-        'BS.AS.': 'Buenos Aires',
-        'BUENOS AIRES': 'Buenos Aires',
-        'JUJUY': 'Jujuy',
-        'SALTA': 'Salta',
-        'CORDOBA': 'Córdoba',
-        'CÓRDOBA': 'Córdoba',
-        'MENDOZA': 'Mendoza',
-        'SANTA FE': 'Santa Fe',
-        'TUCUMAN': 'Tucumán',
-        'ENTRE RIOS': 'Entre Ríos',
-        'MISIONES': 'Misiones',
-        'CHACO': 'Chaco',
-        'CORRIENTES': 'Corrientes',
-        'FORMOSA': 'Formosa',
-        'CATAMARCA': 'Catamarca',
-        'LA RIOJA': 'La Rioja',
-        'SAN JUAN': 'San Juan',
-        'SAN LUIS': 'San Luis',
-        'SANTIAGO DEL ESTERO': 'Santiago del Estero',
-        'NEUQUEN': 'Neuquén',
-        'RIO NEGRO': 'Río Negro',
-        'CHUBUT': 'Chubut',
-        'SANTA CRUZ': 'Santa Cruz',
-        'TIERRA DEL FUEGO': 'Tierra del Fuego',
-        'LA PAMPA': 'La Pampa',
-        'NACIONAL': '',
-      }
-
       let percepcionIVA = 0
       let percepcionIIBB = 0
-      const iibbByJurisdiction: Record<string, number> = {} // en pesos (decimal)
 
       for (const perc of invoice.perceptions) {
         const amount = Number(perc.amount)
         if (perc.perceptionType === 'IVA' || perc.perceptionType === 'Ganancias') {
           percepcionIVA += amount
         } else {
-          // IIBB - agrupar por jurisdicción
           percepcionIIBB += amount
-          const colppyJuris = jurisdictionToColppy[perc.jurisdiction?.toUpperCase() || ''] || perc.jurisdiction || ''
-          iibbByJurisdiction[colppyJuris] = (iibbByJurisdiction[colppyJuris] || 0) + amount
-        }
-      }
-
-      // Colppy soporta máximo 2 jurisdicciones IIBB: IIBBLocal + IIBBOtro
-      // Tomar las 2 con mayor monto, agrupar resto en la segunda
-      const iibbEntries = Object.entries(iibbByJurisdiction)
-        .sort((a, b) => b[1] - a[1])
-
-      let iibbLocal = ''
-      let percIibb1 = 0
-      let iibbOtro = ''
-      let percIibb2 = 0
-
-      if (iibbEntries.length >= 1) {
-        iibbLocal = iibbEntries[0][0]
-        percIibb1 = iibbEntries[0][1]
-      }
-      if (iibbEntries.length >= 2) {
-        iibbOtro = iibbEntries[1][0]
-        percIibb2 = iibbEntries.slice(1).reduce((sum, [, amount]) => sum + amount, 0)
-        if (iibbEntries.length > 2) {
-          console.log(`[Colppy FC] ⚠️ ${iibbEntries.length} jurisdicciones IIBB, agrupando ${iibbEntries.length - 1} en IIBBOtro="${iibbOtro}"`)
         }
       }
 
@@ -303,10 +245,12 @@ export async function POST(
       console.log(`[Colppy FC] DEBE: Neto=${netoGravado} + IVA=${totalIva} (21%=${iva21} 10.5%=${iva105} 27%=${iva27}) + PercIVA=${percepcionIVA} + PercIIBB=${percepcionIIBB} + NoGrav=${netoNoGravado} = ${debe.toFixed(2)}`)
       console.log(`[Colppy FC] HABER: TotalFactura=${totalFactura}`)
       console.log(`[Colppy FC] Diff: ${(debe - totalFactura).toFixed(2)} ${Math.abs(debe - totalFactura) < 0.01 ? '✓ BALANCEA' : '⚠️ NO BALANCEA'}`)
-      console.log(`[Colppy FC] IIBB desglose: IIBBLocal="${iibbLocal}" $${percIibb1.toFixed(2)}, IIBBOtro="${iibbOtro}" $${percIibb2.toFixed(2)}`)
-      console.log(`[Colppy FC] IIBB total: ${percepcionIIBB.toFixed(2)}, sum desglose: ${(percIibb1 + percIibb2).toFixed(2)}`)
 
       // 5. Enviar a Colppy
+      // NOTA: Solo se envía percepcionIIBB como total, sin desglosar por jurisdicción.
+      // Colppy suma percepcionIIBB + percepcionIIBB1 + percepcionIIBB2, lo que duplicaba
+      // el monto y causaba "totalFactura debe ser igual a netoGravado + ... + percepcionIIBB".
+      // Las jurisdicciones se corrigen manualmente en Colppy después.
       const result = await withRetry((s) =>
         colppyCreatePurchaseInvoice(s, {
           idProveedor: supplier.idProveedor,
@@ -328,10 +272,6 @@ export async function POST(
           IVA27: iva27.toFixed(2),
           percepcionIVA: percepcionIVA.toFixed(2),
           percepcionIIBB: percepcionIIBB.toFixed(2),
-          IIBBLocal: iibbLocal,
-          percepcionIIBB1: percIibb1.toFixed(2),
-          IIBBOtro: iibbOtro,
-          percepcionIIBB2: percIibb2.toFixed(2),
           totalFactura: totalFactura.toFixed(2),
           idMoneda: invoice.currency === 'USD' ? '2' : '1',
           valorCambio: invoice.currency === 'USD' ? String(Number(invoice.exchangeRate)) : '1',

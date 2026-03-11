@@ -85,13 +85,6 @@ export async function POST(
 
     const { id } = await params
 
-    // Parámetros de diagnóstico (query string)
-    const url = new URL(request.url)
-    const skipIIBB = url.searchParams.get('skipIIBB') === 'true'
-    const isoDate = url.searchParams.get('isoDate') === 'true'
-    if (skipIIBB) console.log('[Colppy FC] ⚠️ MODO DIAGNÓSTICO: skipIIBB=true, percepciones IIBB en 0')
-    if (isoDate) console.log('[Colppy FC] ⚠️ MODO DIAGNÓSTICO: isoDate=true, fechas en YYYY-MM-DD')
-
     // 1. Obtener la factura del ERP con todos sus datos
     const invoice = await prisma.purchaseInvoice.findUnique({
       where: { id },
@@ -190,7 +183,7 @@ export async function POST(
         const dd = String(d.getDate()).padStart(2, '0')
         const mm = String(d.getMonth() + 1).padStart(2, '0')
         const yyyy = d.getFullYear()
-        return isoDate ? `${yyyy}-${mm}-${dd}` : `${dd}-${mm}-${yyyy}`
+        return `${dd}-${mm}-${yyyy}`
       }
 
       const fechaFactura = fmtDate(invoice.invoiceDate)
@@ -232,7 +225,7 @@ export async function POST(
           ImporteUnitario: roundedUnitPrice.toFixed(2),
           IVA: taxRate.toFixed(2),
           idPlanCuenta: 'Mercaderias',
-          codigo: item.supplierProductCode || '',
+          codigo: (item.supplierProductCode || '').substring(3),
           porcDesc: '0',
         }
       })
@@ -326,19 +319,15 @@ export async function POST(
       let percIibbCents = 0
       const iibbByJurisdiction: Record<string, number> = {} // cents por jurisdicción
 
-      if (!skipIIBB) {
-        for (const perc of invoice.perceptions) {
-          const amountCents = r2(Number(perc.amount))
-          if (perc.perceptionType === 'IVA' || perc.perceptionType === 'Ganancias') {
-            percIvaCents += amountCents
-          } else {
-            percIibbCents += amountCents
-            const colppyName = jurisdictionToColppy[(perc.jurisdiction || '').toUpperCase()] || perc.jurisdiction || 'CABA'
-            iibbByJurisdiction[colppyName] = (iibbByJurisdiction[colppyName] || 0) + amountCents
-          }
+      for (const perc of invoice.perceptions) {
+        const amountCents = r2(Number(perc.amount))
+        if (perc.perceptionType === 'IVA' || perc.perceptionType === 'Ganancias') {
+          percIvaCents += amountCents
+        } else {
+          percIibbCents += amountCents
+          const colppyName = jurisdictionToColppy[(perc.jurisdiction || '').toUpperCase()] || perc.jurisdiction || 'CABA'
+          iibbByJurisdiction[colppyName] = (iibbByJurisdiction[colppyName] || 0) + amountCents
         }
-      } else {
-        console.log(`[Colppy FC] skipIIBB: Percepciones IIBB forzadas a 0 (${invoice.perceptions.length} percepciones ignoradas)`)
       }
 
       // Colppy soporta máx 2 jurisdicciones: IIBBLocal + IIBBOtro

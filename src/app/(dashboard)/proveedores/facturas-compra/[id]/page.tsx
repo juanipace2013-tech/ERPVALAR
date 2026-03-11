@@ -199,13 +199,12 @@ export default function PurchaseInvoiceDetailPage() {
     }
   }
 
-  const handleSendToColppy = async (diagMode?: 'skipIIBB' | 'isoDate') => {
+  const handleSendToColppy = async () => {
     if (!invoice) return
 
     try {
       setSendingToColppy(true)
-      const queryParams = diagMode === 'skipIIBB' ? '?skipIIBB=true' : diagMode === 'isoDate' ? '?isoDate=true' : ''
-      const response = await fetch(`/api/purchase-invoices/${invoice.id}/send-to-colppy${queryParams}`, {
+      const response = await fetch(`/api/purchase-invoices/${invoice.id}/send-to-colppy`, {
         method: 'POST',
       })
 
@@ -387,25 +386,6 @@ export default function PurchaseInvoiceDetailPage() {
                     Enviar a Colppy
                   </>
                 )}
-              </Button>
-              {/* Botones de diagnóstico — TEMPORALES */}
-              <Button
-                onClick={() => handleSendToColppy('skipIIBB')}
-                disabled={sendingToColppy}
-                variant="outline"
-                size="sm"
-                className="border-orange-500 text-orange-500 hover:bg-orange-50 text-xs"
-              >
-                Sin IIBB
-              </Button>
-              <Button
-                onClick={() => handleSendToColppy('isoDate')}
-                disabled={sendingToColppy}
-                variant="outline"
-                size="sm"
-                className="border-orange-500 text-orange-500 hover:bg-orange-50 text-xs"
-              >
-                ISO Date
               </Button>
             </>
           )}

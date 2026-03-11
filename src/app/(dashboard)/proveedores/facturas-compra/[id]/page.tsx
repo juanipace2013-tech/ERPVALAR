@@ -14,18 +14,15 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Loader2,
   ArrowLeft,
-  CheckCircle,
   FileText,
   Truck,
   Calendar,
   DollarSign,
   Package,
   Receipt,
-  CreditCard,
   Send,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -41,7 +38,6 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 
 interface PurchaseInvoice {
   id: string
@@ -167,17 +163,6 @@ export default function PurchaseInvoiceDetailPage() {
   const params = useParams()
   const [invoice, setInvoice] = useState<PurchaseInvoice | null>(null)
   const [loading, setLoading] = useState(true)
-  const [approving, setApproving] = useState(false)
-
-  // Payment dialog state
-  const [showPaymentDialog, setShowPaymentDialog] = useState(false)
-  const [registeringPayment, setRegisteringPayment] = useState(false)
-  const [paymentAmount, setPaymentAmount] = useState('')
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0])
-  const [paymentMethod, setPaymentMethod] = useState('TRANSFER')
-  const [paymentReference, setPaymentReference] = useState('')
-  const [paymentNotes, setPaymentNotes] = useState('')
-
   // Colppy state
   const [sendingToColppy, setSendingToColppy] = useState(false)
 
@@ -214,30 +199,6 @@ export default function PurchaseInvoiceDetailPage() {
     }
   }
 
-  const handleApprove = async () => {
-    if (!invoice) return
-
-    try {
-      setApproving(true)
-      const response = await fetch(`/api/purchase-invoices/${invoice.id}/approve`, {
-        method: 'POST',
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Error al aprobar factura')
-      }
-
-      toast.success('Factura aprobada correctamente')
-      fetchInvoice()
-    } catch (error: any) {
-      console.error('Error:', error)
-      toast.error(error.message || 'Error al aprobar factura de compra')
-    } finally {
-      setApproving(false)
-    }
-  }
-
   const handleSendToColppy = async () => {
     if (!invoice) return
 
@@ -260,60 +221,6 @@ export default function PurchaseInvoiceDetailPage() {
       toast.error(error.message || 'Error al enviar factura a Colppy')
     } finally {
       setSendingToColppy(false)
-    }
-  }
-
-  const handleRegisterPayment = async () => {
-    if (!invoice) return
-
-    // Validations
-    if (!paymentAmount || parseFloat(paymentAmount) <= 0) {
-      toast.error('Ingrese un monto válido')
-      return
-    }
-
-    if (parseFloat(paymentAmount) > Number(invoice.balance)) {
-      toast.error('El monto excede el saldo pendiente')
-      return
-    }
-
-    try {
-      setRegisteringPayment(true)
-
-      const response = await fetch(`/api/purchase-invoices/${invoice.id}/payments`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          amount: parseFloat(paymentAmount),
-          paymentDate,
-          paymentMethod,
-          reference: paymentReference || null,
-          notes: paymentNotes || null,
-        }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Error al registrar pago')
-      }
-
-      toast.success('Pago registrado correctamente')
-      setShowPaymentDialog(false)
-      // Reset form
-      setPaymentAmount('')
-      setPaymentDate(new Date().toISOString().split('T')[0])
-      setPaymentMethod('TRANSFER')
-      setPaymentReference('')
-      setPaymentNotes('')
-      // Refresh invoice
-      fetchInvoice()
-    } catch (error: any) {
-      console.error('Error:', error)
-      toast.error(error.message || 'Error al registrar pago')
-    } finally {
-      setRegisteringPayment(false)
     }
   }
 
@@ -459,25 +366,6 @@ export default function PurchaseInvoiceDetailPage() {
           <Badge className={statusColors[invoice.status]}>
             {statusLabels[invoice.status]}
           </Badge>
-          {invoice.status === 'PENDING' && (
-            <Button
-              onClick={handleApprove}
-              disabled={approving}
-              className="bg-green-600 hover:bg-green-700"
-            >
-              {approving ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Aprobando...
-                </>
-              ) : (
-                <>
-                  <CheckCircle className="h-4 w-4 mr-2" />
-                  Aprobar Factura
-                </>
-              )}
-            </Button>
-          )}
           {/* Enviar a Colppy - solo si no fue enviada aún */}
           {!invoice.colppyInvoiceId && (invoice.status === 'APPROVED' || invoice.status === 'PENDING') && (
             <Button
@@ -503,110 +391,6 @@ export default function PurchaseInvoiceDetailPage() {
             <Badge className="bg-purple-100 text-purple-800">
               ✓ En Colppy
             </Badge>
-          )}
-          {(invoice.status === 'APPROVED' || invoice.status === 'PENDING') && Number(invoice.balance) > 0 && (
-            <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
-              <DialogTrigger asChild>
-                <Button className="bg-blue-600 hover:bg-blue-700">
-                  <CreditCard className="h-4 w-4 mr-2" />
-                  Registrar Pago
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Registrar Pago</DialogTitle>
-                  <DialogDescription>
-                    Registre un pago para la factura {invoice.invoiceNumber}. Saldo pendiente: {formatCurrency(invoice.balance)}
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="paymentAmount">Monto *</Label>
-                      <Input
-                        id="paymentAmount"
-                        type="number"
-                        value={paymentAmount}
-                        onChange={(e) => setPaymentAmount(e.target.value)}
-                        placeholder="0.00"
-                        step="0.01"
-                        min="0"
-                        max={Number(invoice.balance)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="paymentDate">Fecha *</Label>
-                      <Input
-                        id="paymentDate"
-                        type="date"
-                        value={paymentDate}
-                        onChange={(e) => setPaymentDate(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="paymentMethod">Método de Pago *</Label>
-                    <select
-                      id="paymentMethod"
-                      value={paymentMethod}
-                      onChange={(e) => setPaymentMethod(e.target.value)}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <option value="CASH">Efectivo</option>
-                      <option value="TRANSFER">Transferencia</option>
-                      <option value="CHECK">Cheque</option>
-                      <option value="DEBIT">Débito</option>
-                      <option value="CREDIT">Crédito</option>
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="paymentReference">Referencia</Label>
-                    <Input
-                      id="paymentReference"
-                      value={paymentReference}
-                      onChange={(e) => setPaymentReference(e.target.value)}
-                      placeholder="Número de transferencia, cheque, etc."
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="paymentNotes">Notas</Label>
-                    <Textarea
-                      id="paymentNotes"
-                      value={paymentNotes}
-                      onChange={(e) => setPaymentNotes(e.target.value)}
-                      placeholder="Notas adicionales..."
-                      rows={3}
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowPaymentDialog(false)}
-                    disabled={registeringPayment}
-                  >
-                    Cancelar
-                  </Button>
-                  <Button
-                    onClick={handleRegisterPayment}
-                    disabled={registeringPayment}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    {registeringPayment ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Registrando...
-                      </>
-                    ) : (
-                      <>
-                        <CreditCard className="h-4 w-4 mr-2" />
-                        Registrar Pago
-                      </>
-                    )}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
           )}
           {(invoice.status === 'APPROVED' || invoice.status === 'PAID') && invoice.invoiceType === 'FA' && (
             <Dialog open={showCreditNoteDialog} onOpenChange={setShowCreditNoteDialog}>
@@ -810,15 +594,8 @@ export default function PurchaseInvoiceDetailPage() {
         </Card>
       </div>
 
-      {/* Tabs */}
-      <Tabs defaultValue="factura" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="factura">Información de Factura</TabsTrigger>
-          <TabsTrigger value="adicional">Información Adicional</TabsTrigger>
-        </TabsList>
-
-        {/* Tab: Información de Factura */}
-        <TabsContent value="factura" className="space-y-6">
+      {/* Información de Factura */}
+      <div className="space-y-6">
           {/* Supplier Info */}
           <Card>
             <CardHeader>
@@ -1108,175 +885,7 @@ export default function PurchaseInvoiceDetailPage() {
               </CardContent>
             </Card>
           )}
-        </TabsContent>
-
-        {/* Tab: Información Adicional */}
-        <TabsContent value="adicional" className="space-y-6">
-          {/* Journal Entry */}
-          {invoice.journalEntry ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  Asiento Contable #{invoice.journalEntry.entryNumber}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="mb-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <p className="text-sm text-gray-600">Fecha</p>
-                      <p className="font-semibold">
-                        {formatDate(invoice.journalEntry.date)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Estado</p>
-                      <Badge variant="outline" className="bg-green-50 text-green-700">
-                        {invoice.journalEntry.status}
-                      </Badge>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Referencia</p>
-                      <p className="font-semibold">
-                        {invoice.journalEntry.reference || '-'}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="mt-4">
-                    <p className="text-sm text-gray-600">Descripción</p>
-                    <p className="font-semibold">{invoice.journalEntry.description}</p>
-                  </div>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Código</TableHead>
-                        <TableHead>Cuenta</TableHead>
-                        <TableHead>Descripción</TableHead>
-                        <TableHead className="text-right">Debe</TableHead>
-                        <TableHead className="text-right">Haber</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {invoice.journalEntry.lines.map((line) => (
-                        <TableRow key={line.id}>
-                          <TableCell className="font-mono">
-                            {line.account.code}
-                          </TableCell>
-                          <TableCell>{line.account.name}</TableCell>
-                          <TableCell className="text-gray-600">
-                            {line.description}
-                          </TableCell>
-                          <TableCell className="text-right font-semibold">
-                            {Number(line.debit) > 0
-                              ? formatCurrency(line.debit)
-                              : '-'}
-                          </TableCell>
-                          <TableCell className="text-right font-semibold">
-                            {Number(line.credit) > 0
-                              ? formatCurrency(line.credit)
-                              : '-'}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      <TableRow className="font-bold border-t-2">
-                        <TableCell colSpan={3} className="text-right">
-                          Totales:
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(
-                            invoice.journalEntry.lines.reduce(
-                              (sum, line) => sum + Number(line.debit),
-                              0
-                            )
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(
-                            invoice.journalEntry.lines.reduce(
-                              (sum, line) => sum + Number(line.credit),
-                              0
-                            )
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-600">
-                  No hay asiento contable generado
-                </p>
-                <p className="text-sm text-gray-500 mt-2">
-                  El asiento se generará automáticamente al aprobar la factura
-                </p>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Payments */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <DollarSign className="h-5 w-5" />
-                Historial de Pagos
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {invoice.payments.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Fecha</TableHead>
-                      <TableHead>Método</TableHead>
-                      <TableHead className="text-right">Importe</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {invoice.payments.map((payment) => (
-                      <TableRow key={payment.id}>
-                        <TableCell>{formatDate(payment.paymentDate)}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{payment.paymentMethod}</Badge>
-                        </TableCell>
-                        <TableCell className="text-right font-semibold">
-                          {formatCurrency(payment.amount)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <div className="text-center py-8">
-                  <p className="text-gray-600">No hay pagos registrados</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Internal Notes */}
-          {invoice.internalNotes && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Notas Internas</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-gray-700 whitespace-pre-wrap">
-                  {invoice.internalNotes}
-                </p>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-      </Tabs>
+      </div>
     </div>
   )
 }

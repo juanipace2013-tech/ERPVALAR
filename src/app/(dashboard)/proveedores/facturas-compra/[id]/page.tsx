@@ -199,13 +199,12 @@ export default function PurchaseInvoiceDetailPage() {
     }
   }
 
-  const handleSendToColppy = async (sinIIBB = false) => {
+  const handleSendToColppy = async () => {
     if (!invoice) return
 
     try {
       setSendingToColppy(true)
-      const url = `/api/purchase-invoices/${invoice.id}/send-to-colppy${sinIIBB ? '?sinIIBB=true' : ''}`
-      const response = await fetch(url, {
+      const response = await fetch(`/api/purchase-invoices/${invoice.id}/send-to-colppy`, {
         method: 'POST',
       })
 
@@ -387,15 +386,6 @@ export default function PurchaseInvoiceDetailPage() {
                     Enviar a Colppy
                   </>
                 )}
-              </Button>
-              <Button
-                onClick={() => handleSendToColppy(true)}
-                disabled={sendingToColppy}
-                variant="outline"
-                size="sm"
-              >
-                <Send className="h-4 w-4 mr-2" />
-                Sin IIBB
               </Button>
             </>
           )}

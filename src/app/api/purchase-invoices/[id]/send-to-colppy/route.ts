@@ -85,9 +85,6 @@ export async function POST(
 
     const { id } = await params
 
-    const { searchParams } = new URL(request.url)
-    const sinIIBB = searchParams.get('sinIIBB') === 'true'
-
     // 1. Obtener la factura del ERP con todos sus datos
     const invoice = await prisma.purchaseInvoice.findUnique({
       where: { id },
@@ -353,16 +350,15 @@ export async function POST(
 
       console.log(`[Colppy FC] IIBB: total=${percIibbCents} | IIBBLocal="${iibbLocal}" ${percIibb1Cents} | IIBBOtro="${iibbOtro}" ${percIibb2Cents} | jurisdicciones=${iibbEntries.length}`)
 
-      // Override "Sin IIBB": enviar sin percepciones para diagnóstico
-      if (sinIIBB) {
-        console.log(`[Colppy FC] ⚠️ sinIIBB=true → zeroing percepciones (IVA=${percIvaCents}, IIBB=${percIibbCents})`)
-        percIvaCents = 0
-        percIibbCents = 0
-        percIibb1Cents = 0
-        percIibb2Cents = 0
-        iibbLocal = ''
-        iibbOtro = ''
-      }
+      // SIEMPRE enviar sin percepciones IIBB — se cargan manualmente en Colppy
+      const iibbOriginalCents = percIibbCents
+      const iibbJurisdictionCount = iibbEntries.length
+      console.log(`[Colppy FC] ⚠️ Zeroing IIBB para borrador (original: ${percIibbCents} cents, ${iibbJurisdictionCount} jurisdicciones)`)
+      percIibbCents = 0
+      percIibb1Cents = 0
+      percIibb2Cents = 0
+      iibbLocal = ''
+      iibbOtro = ''
 
       // totalFactura = suma exacta de las partes (en centavos, sin errores de float)
       const totalFacturaCents = netoGravadoCents + netoNoGravadoCents + totalIvaCents + percIvaCents + percIibbCents
@@ -383,7 +379,7 @@ export async function POST(
         idTipoFactura: invoice.voucherType as 'A' | 'B' | 'C',
         idTipoComprobante,
         idCondicionPago,
-        idEstadoFactura: 'Aprobada',
+        idEstadoFactura: 'Borrador',
         nroFactura1: invoice.pointOfSale,
         nroFactura2: invoice.invoiceNumberSuffix,
         netoGravado: c2d(netoGravadoCents),
@@ -419,12 +415,21 @@ export async function POST(
         },
       })
 
-      console.log(`[Colppy] Factura de compra ${invoice.invoiceNumber} enviada exitosamente. ID Colppy: ${result.idFactura}`)
+      console.log(`[Colppy] Factura de compra ${invoice.invoiceNumber} enviada como borrador. ID Colppy: ${result.idFactura}`)
+
+      // Mensaje con info de percepciones IIBB pendientes
+      let message = `Factura ${invoice.invoiceNumber} creada como BORRADOR en Colppy.`
+      if (iibbOriginalCents > 0) {
+        message += ` Tiene $${c2d(iibbOriginalCents)} en percepciones IIBB (${iibbJurisdictionCount} jurisdicci${iibbJurisdictionCount === 1 ? 'ón' : 'ones'}) que deben cargarse manualmente en Colppy antes de aprobar.`
+      }
 
       return NextResponse.json({
         success: true,
         colppyInvoiceId: result.idFactura,
-        message: `Factura ${invoice.invoiceNumber} enviada a Colppy exitosamente`,
+        message,
+        iibbPendiente: iibbOriginalCents > 0,
+        iibbTotal: c2d(iibbOriginalCents),
+        iibbJurisdicciones: iibbJurisdictionCount,
       })
     } finally {
       if (colppySession) {

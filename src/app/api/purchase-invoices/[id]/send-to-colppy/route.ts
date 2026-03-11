@@ -240,14 +240,76 @@ export async function POST(
       let percIvaCents = 0
       let percIibbCents = 0
 
+      // Mapeo de jurisdicción DB → nombre Colppy
+      const jurisdictionToColppy: Record<string, string> = {
+        'CABA': 'CABA',
+        'ARBA': 'Buenos Aires',
+        'BS.AS.': 'Buenos Aires',
+        'BUENOS AIRES': 'Buenos Aires',
+        'JUJUY': 'Jujuy',
+        'SALTA': 'Salta',
+        'CORDOBA': 'Córdoba',
+        'CÓRDOBA': 'Córdoba',
+        'MENDOZA': 'Mendoza',
+        'SANTA FE': 'Santa Fe',
+        'TUCUMAN': 'Tucumán',
+        'ENTRE RIOS': 'Entre Ríos',
+        'MISIONES': 'Misiones',
+        'CHACO': 'Chaco',
+        'CORRIENTES': 'Corrientes',
+        'FORMOSA': 'Formosa',
+        'CATAMARCA': 'Catamarca',
+        'LA RIOJA': 'La Rioja',
+        'SAN JUAN': 'San Juan',
+        'SAN LUIS': 'San Luis',
+        'SANTIAGO DEL ESTERO': 'Santiago del Estero',
+        'NEUQUEN': 'Neuquén',
+        'RIO NEGRO': 'Río Negro',
+        'CHUBUT': 'Chubut',
+        'SANTA CRUZ': 'Santa Cruz',
+        'TIERRA DEL FUEGO': 'Tierra del Fuego',
+        'LA PAMPA': 'La Pampa',
+        'NACIONAL': '',
+      }
+
+      // Agrupar percepciones IIBB por jurisdicción (Colppy soporta max 2)
+      const iibbByJurisdiction: Record<string, number> = {} // cents
+
       for (const perc of invoice.perceptions) {
         const amountCents = Math.round(Number(perc.amount) * 100)
         if (perc.perceptionType === 'IVA' || perc.perceptionType === 'Ganancias') {
           percIvaCents += amountCents
         } else {
+          // IIBB - agrupar por jurisdicción
           percIibbCents += amountCents
+          const colppyJuris = jurisdictionToColppy[perc.jurisdiction?.toUpperCase() || ''] || perc.jurisdiction || ''
+          iibbByJurisdiction[colppyJuris] = (iibbByJurisdiction[colppyJuris] || 0) + amountCents
         }
       }
+
+      // Tomar las 2 jurisdicciones con mayor monto para IIBBLocal/IIBBOtro
+      const iibbEntries = Object.entries(iibbByJurisdiction)
+        .sort((a, b) => b[1] - a[1]) // Mayor monto primero
+
+      let iibbLocal = ''
+      let percIibb1Cents = 0
+      let iibbOtro = ''
+      let percIibb2Cents = 0
+
+      if (iibbEntries.length >= 1) {
+        iibbLocal = iibbEntries[0][0]
+        percIibb1Cents = iibbEntries[0][1]
+      }
+      if (iibbEntries.length >= 2) {
+        // Si hay más de 2 jurisdicciones, agrupar las restantes en la segunda
+        iibbOtro = iibbEntries[1][0]
+        percIibb2Cents = iibbEntries.slice(1).reduce((sum, [, cents]) => sum + cents, 0)
+        if (iibbEntries.length > 2) {
+          console.log(`[Colppy FC] ⚠️ ${iibbEntries.length} jurisdicciones IIBB, agrupando ${iibbEntries.length - 1} en IIBBOtro`)
+        }
+      }
+
+      console.log(`[Colppy FC] IIBB desglose: IIBBLocal="${iibbLocal}" $${(percIibb1Cents/100).toFixed(2)}, IIBBOtro="${iibbOtro}" $${(percIibb2Cents/100).toFixed(2)}`)
 
       const noGravCents = Math.round((Number(invoice.notTaxedAmount) + Number(invoice.exemptAmount)) * 100)
 
@@ -304,6 +366,10 @@ export async function POST(
           IVA27: iva27.toFixed(2),
           percepcionIVA: percepcionIVA.toFixed(2),
           percepcionIIBB: percepcionIIBB.toFixed(2),
+          IIBBLocal: iibbLocal,
+          percepcionIIBB1: (percIibb1Cents / 100).toFixed(2),
+          IIBBOtro: iibbOtro,
+          percepcionIIBB2: (percIibb2Cents / 100).toFixed(2),
           totalFactura: totalFactura.toFixed(2),
           idMoneda: invoice.currency === 'USD' ? '2' : '1',
           valorCambio: invoice.currency === 'USD' ? String(Number(invoice.exchangeRate)) : '1',

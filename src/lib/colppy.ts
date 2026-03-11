@@ -809,6 +809,10 @@ export interface ColppyPurchaseInvoiceParams {
   IVA27: string;
   percepcionIVA: string;
   percepcionIIBB: string;
+  IIBBLocal?: string; // Jurisdicción IIBB 1 (ej: "CABA", "Buenos Aires")
+  percepcionIIBB1?: string; // Monto percepción IIBB jurisdicción 1
+  IIBBOtro?: string; // Jurisdicción IIBB 2
+  percepcionIIBB2?: string; // Monto percepción IIBB jurisdicción 2
   totalFactura: string;
   idMoneda?: string; // "1" = Peso argentino
   valorCambio?: string; // Tipo de cambio
@@ -901,6 +905,10 @@ export async function colppyCreatePurchaseInvoice(
       IVA27: invoice.IVA27,
       percepcionIVA: invoice.percepcionIVA,
       percepcionIIBB: invoice.percepcionIIBB,
+      IIBBLocal: invoice.IIBBLocal || '',
+      percepcionIIBB1: invoice.percepcionIIBB1 || '0.00',
+      IIBBOtro: invoice.IIBBOtro || '',
+      percepcionIIBB2: invoice.percepcionIIBB2 || '0.00',
       totalFactura: invoice.totalFactura,
       idRetGanancias: invoice.idRetGanancias || '',
       itemsFactura: invoice.itemsFactura,

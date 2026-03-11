@@ -18,7 +18,7 @@ const nextConfig: NextConfig = {
               "img-src 'self' data: https:",
               "font-src 'self' data:",
               "connect-src 'self' https://api.anthropic.com https://dolarapi.com",
-              "frame-src 'self'"
+              "frame-src 'self' blob:"
             ].join('; ')
           }
         ],

@@ -27,6 +27,7 @@ import {
   Pencil,
   RefreshCw,
   Search,
+  CalendarDays,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber } from '@/lib/utils'
@@ -175,6 +176,11 @@ export default function QuoteDetailPage() {
   const [referenceValue, setReferenceValue] = useState('')
   const [referenceLoading, setReferenceLoading] = useState(false)
   const [showEditReference, setShowEditReference] = useState(false)
+
+  // Validity date
+  const [showEditValidity, setShowEditValidity] = useState(false)
+  const [validityValue, setValidityValue] = useState('')
+  const [validityLoading, setValidityLoading] = useState(false)
 
   // Bonification
   const [bonificationValue, setBonificationValue] = useState('')
@@ -418,6 +424,36 @@ export default function QuoteDetailPage() {
     } finally {
       setMultiplierLoading(false)
     }
+  }
+
+  const handleValidityChange = async (dateStr: string) => {
+    if (!dateStr) return
+    try {
+      setValidityLoading(true)
+      const response = await fetch(`/api/quotes/${quoteId}/extend-validity`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ validUntil: new Date(dateStr).toISOString() }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Error al actualizar')
+      setShowEditValidity(false)
+      toast.success('Fecha de vencimiento actualizada')
+      await fetchQuoteData()
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Error al actualizar fecha'
+      toast.error(message)
+    } finally {
+      setValidityLoading(false)
+    }
+  }
+
+  const handleQuickValidity = (days: number) => {
+    const date = new Date()
+    date.setDate(date.getDate() + days)
+    const dateStr = date.toISOString().split('T')[0]
+    setValidityValue(dateStr)
+    handleValidityChange(dateStr)
   }
 
   const handleReferenceChange = async () => {
@@ -992,12 +1028,79 @@ export default function QuoteDetailPage() {
               <p className="font-medium">
                 {new Date(quote.date).toLocaleDateString('es-AR')}
               </p>
-              {quote.validUntil && (
-                <p className="text-sm text-muted-foreground">
-                  Válida hasta:{' '}
-                  {new Date(quote.validUntil).toLocaleDateString('es-AR')}
-                </p>
-              )}
+              {/* Válida hasta - editable en DRAFT y SENT */}
+              <div className="mt-1">
+                <Label className="text-muted-foreground text-xs">Válida hasta</Label>
+                {showEditValidity ? (
+                  <div className="space-y-2 mt-1">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="date"
+                        value={validityValue}
+                        onChange={(e) => setValidityValue(e.target.value)}
+                        className="w-44 h-8 text-sm"
+                        disabled={validityLoading}
+                        min={new Date().toISOString().split('T')[0]}
+                      />
+                      <Button
+                        size="sm"
+                        className="h-8 bg-blue-600 hover:bg-blue-700"
+                        onClick={() => handleValidityChange(validityValue)}
+                        disabled={validityLoading || !validityValue}
+                      >
+                        {validityLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8"
+                        onClick={() => setShowEditValidity(false)}
+                        disabled={validityLoading}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                    <div className="flex gap-1 flex-wrap">
+                      {[7, 15, 30, 60].map(days => (
+                        <button
+                          key={days}
+                          type="button"
+                          className="text-xs px-2 py-0.5 rounded border border-gray-200 text-gray-600 hover:border-blue-300 hover:text-blue-600 transition-colors cursor-pointer"
+                          onClick={() => handleQuickValidity(days)}
+                          disabled={validityLoading}
+                        >
+                          {days}d
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <p className="text-sm text-muted-foreground">
+                      {quote.validUntil
+                        ? new Date(quote.validUntil).toLocaleDateString('es-AR')
+                        : 'Sin fecha'}
+                    </p>
+                    {(quote.status === 'DRAFT' || quote.status === 'SENT') && (
+                      <button
+                        type="button"
+                        className="text-gray-400 hover:text-blue-600 transition-colors"
+                        onClick={() => {
+                          setValidityValue(
+                            quote.validUntil
+                              ? new Date(quote.validUntil).toISOString().split('T')[0]
+                              : ''
+                          )
+                          setShowEditValidity(true)
+                        }}
+                        title="Editar fecha de vencimiento"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
               <div className="mt-1">
                 <Label className="text-muted-foreground text-xs">Referencia</Label>
                 {showEditReference ? (

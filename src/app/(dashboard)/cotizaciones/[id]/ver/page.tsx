@@ -175,6 +175,11 @@ export default function QuoteViewPage() {
   // Duplicate dialog
   const [showDuplicateDialog, setShowDuplicateDialog] = useState(false)
 
+  // Validity edit
+  const [showEditValidity, setShowEditValidity] = useState(false)
+  const [validityValue, setValidityValue] = useState('')
+  const [validityLoading, setValidityLoading] = useState(false)
+
   // OC upload
   const ocFileInputRef = useRef<HTMLInputElement>(null)
   const [ocUploadLoading, setOcUploadLoading] = useState(false)
@@ -535,6 +540,36 @@ export default function QuoteViewPage() {
     })}`
   }
 
+  const handleValidityChange = async (dateStr: string) => {
+    if (!dateStr || !quote) return
+    try {
+      setValidityLoading(true)
+      const response = await fetch(`/api/quotes/${quote.id}/extend-validity`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ validUntil: new Date(dateStr).toISOString() }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Error al actualizar')
+      setShowEditValidity(false)
+      toast.success('Fecha de vencimiento actualizada')
+      await fetchQuote()
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Error al actualizar fecha'
+      toast.error(message)
+    } finally {
+      setValidityLoading(false)
+    }
+  }
+
+  const handleQuickValidity = (days: number) => {
+    const date = new Date()
+    date.setDate(date.getDate() + days)
+    const dateStr = date.toISOString().split('T')[0]
+    setValidityValue(dateStr)
+    handleValidityChange(dateStr)
+  }
+
   const formatDate = (date: string) => {
     return new Date(date).toLocaleDateString('es-AR', {
       day: '2-digit',
@@ -782,12 +817,65 @@ export default function QuoteViewPage() {
           </div>
 
           {/* Información adicional según estado */}
-          {quote.status === 'SENT' && quote.validUntil && (
+          {(quote.status === 'SENT' || quote.status === 'DRAFT') && quote.validUntil && (
             <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <p className="text-sm text-blue-800">
-                <Clock className="h-4 w-4 inline mr-1" />
-                Esta cotización es válida hasta el {formatDate(quote.validUntil)}
-              </p>
+              {showEditValidity ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-blue-600" />
+                    <Input
+                      type="date"
+                      value={validityValue}
+                      onChange={(e) => setValidityValue(e.target.value)}
+                      className="w-44 h-8 text-sm"
+                      disabled={validityLoading}
+                      min={new Date().toISOString().split('T')[0]}
+                    />
+                    <Button
+                      size="sm"
+                      className="h-8 bg-blue-600 hover:bg-blue-700"
+                      onClick={() => handleValidityChange(validityValue)}
+                      disabled={validityLoading || !validityValue}
+                    >
+                      {validityLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-8" onClick={() => setShowEditValidity(false)} disabled={validityLoading}>
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  <div className="flex gap-1 ml-6">
+                    {[7, 15, 30, 60].map(days => (
+                      <button
+                        key={days}
+                        type="button"
+                        className="text-xs px-2 py-0.5 rounded border border-blue-200 text-blue-600 hover:bg-blue-100 transition-colors cursor-pointer"
+                        onClick={() => handleQuickValidity(days)}
+                        disabled={validityLoading}
+                      >
+                        {days} días
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <p className="text-sm text-blue-800">
+                    <Clock className="h-4 w-4 inline mr-1" />
+                    Esta cotización es válida hasta el {formatDate(quote.validUntil)}
+                  </p>
+                  <button
+                    type="button"
+                    className="text-blue-400 hover:text-blue-700 transition-colors"
+                    onClick={() => {
+                      setValidityValue(new Date(quote.validUntil!).toISOString().split('T')[0])
+                      setShowEditValidity(true)
+                    }}
+                    title="Editar fecha de vencimiento"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

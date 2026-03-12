@@ -207,7 +207,53 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json(purchaseInvoice, { status: 201 });
+    // Auto-vincular items por código de proveedor → SKU del catálogo
+    let autoLinkedCount = 0
+    for (const item of purchaseInvoice.items) {
+      if (item.productId) continue // ya vinculado
+      if (!item.supplierProductCode) continue
+
+      // Intentar con el código tal cual y sin prefijo "001" (GENEBRE)
+      const codeVariants = [item.supplierProductCode.trim()]
+      if (item.supplierProductCode.startsWith('001') && item.supplierProductCode.length > 3) {
+        codeVariants.push(item.supplierProductCode.substring(3).trim())
+      }
+
+      let matched = false
+      for (const code of codeVariants) {
+        if (matched) break
+        const product = await prisma.product.findFirst({
+          where: { sku: code, status: 'ACTIVE' },
+        })
+        if (product) {
+          await prisma.purchaseInvoiceItem.update({
+            where: { id: item.id },
+            data: { productId: product.id },
+          })
+          autoLinkedCount++
+          matched = true
+        }
+      }
+    }
+
+    if (autoLinkedCount > 0) {
+      console.log(`[FC Auto-link] ${autoLinkedCount}/${purchaseInvoice.items.length} items auto-vinculados`)
+    }
+
+    // Re-fetch with updated links
+    const finalInvoice = autoLinkedCount > 0
+      ? await prisma.purchaseInvoice.findUnique({
+          where: { id: purchaseInvoice.id },
+          include: {
+            supplier: true,
+            items: { include: { product: true } },
+            taxes: true,
+            perceptions: true,
+          },
+        })
+      : purchaseInvoice
+
+    return NextResponse.json(finalInvoice, { status: 201 });
   } catch (error) {
     console.error('Error creating purchase invoice:', error);
     return NextResponse.json(

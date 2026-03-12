@@ -209,6 +209,20 @@ export async function POST(request: NextRequest) {
       console.warn('⚠️ OCR response was TRUNCATED (max_tokens reached)')
     }
 
+    // Limpiar códigos de proveedor: eliminar prefijo "001" de facturas GENEBRE
+    // OCR extrae "0012835AE 11" pero el catálogo tiene "2835AE 11"
+    if (extractedData.items && Array.isArray(extractedData.items)) {
+      for (const item of extractedData.items) {
+        const code = item.codigo || item.code || item.supplierProductCode || ''
+        if (typeof code === 'string' && code.startsWith('001')) {
+          const cleanCode = code.substring(3)
+          if (item.codigo !== undefined) item.codigo = cleanCode
+          if (item.code !== undefined) item.code = cleanCode
+          if (item.supplierProductCode !== undefined) item.supplierProductCode = cleanCode
+        }
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: extractedData,

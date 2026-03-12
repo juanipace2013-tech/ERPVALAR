@@ -38,12 +38,26 @@ export async function GET(request: NextRequest) {
     const itemsWithSuggestions = items.map(item => {
       const suggestions: Array<{ id: string; sku: string; name: string; brand: string | null; matchType: string }> = []
 
-      // Match by supplier product code ~ sku
+      // Match by supplier product code ~ sku (try original + without "001" prefix)
       if (item.supplierProductCode) {
         const codeClean = item.supplierProductCode.trim().toLowerCase()
+        // Build code variants: original code + without first 3 chars (GENEBRE prefix "001")
+        const codeVariants = [codeClean]
+        if (codeClean.startsWith('001') && codeClean.length > 3) {
+          codeVariants.push(codeClean.substring(3))
+        }
+        // Also try without prefix for any 3-digit prefix
+        if (codeClean.length > 3 && !codeVariants.includes(codeClean.substring(3))) {
+          codeVariants.push(codeClean.substring(3))
+        }
+
         for (const p of allProducts) {
-          if (p.sku.toLowerCase().includes(codeClean) || codeClean.includes(p.sku.toLowerCase())) {
-            suggestions.push({ ...p, matchType: 'código' })
+          const skuLower = p.sku.toLowerCase()
+          for (const variant of codeVariants) {
+            if (skuLower.includes(variant) || variant.includes(skuLower)) {
+              suggestions.push({ ...p, matchType: 'código' })
+              break // avoid duplicates for same product
+            }
           }
         }
       }

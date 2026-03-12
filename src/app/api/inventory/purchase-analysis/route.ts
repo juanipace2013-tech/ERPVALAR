@@ -22,10 +22,10 @@ export async function GET(request: NextRequest) {
     if (groupBy === 'product') {
       const supplierFilter = supplierId
         ? Prisma.sql`AND p."supplierId" = ${supplierId}`
-        : Prisma.empty
+        : Prisma.sql``
       const productFilter = productId
         ? Prisma.sql`AND p.id = ${productId}`
-        : Prisma.empty
+        : Prisma.sql``
 
       const data = await prisma.$queryRaw<Array<{
         productId: string; sku: string; name: string; brand: string | null;
@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
     if (groupBy === 'supplier') {
       const supplierFilter = supplierId
         ? Prisma.sql`AND s.id = ${supplierId}`
-        : Prisma.empty
+        : Prisma.sql``
 
       const data = await prisma.$queryRaw<Array<{
         supplierId: string; supplierName: string;

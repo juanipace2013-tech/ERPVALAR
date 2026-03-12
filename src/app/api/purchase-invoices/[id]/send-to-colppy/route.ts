@@ -189,11 +189,26 @@ export async function POST(
 
       const fechaFactura = fmtDate(invoice.invoiceDate)
       const fechaFacturaDoc = fmtDate(invoice.invoiceDate)
-      const fechaPago = fmtDate(invoice.dueDate)
 
       // Mapear condición de pago — normalizar por seguridad (no depender del frontend)
       const rawPaymentTerms = invoice.paymentTerms || ''
       const idCondicionPago = normalizePaymentTermForColppy(rawPaymentTerms)
+
+      // Calcular fecha de vencimiento/pago
+      // Prioridad 1: dueDate de la factura si existe y es distinta a invoiceDate
+      // Prioridad 2: calcular desde condición de pago del proveedor
+      let fechaPagoDate: Date
+      if (invoice.dueDate && invoice.dueDate.getTime() !== invoice.invoiceDate.getTime()) {
+        fechaPagoDate = invoice.dueDate
+      } else {
+        const paymentTermsSource = rawPaymentTerms || invoice.supplier.paymentTerms || ''
+        const match = paymentTermsSource.match(/(\d+)\s*[Dd][ií]as?/)
+        const dias = match ? parseInt(match[1]) : 0
+        fechaPagoDate = new Date(invoice.invoiceDate)
+        fechaPagoDate.setDate(fechaPagoDate.getDate() + dias)
+        console.log(`[Colppy FC] fechaPago calculada: invoiceDate + ${dias} días (terms: "${paymentTermsSource}")`)
+      }
+      const fechaPago = fmtDate(fechaPagoDate)
       console.log(`[Colppy FC] paymentTerms DB: "${rawPaymentTerms}" → normalizado: "${idCondicionPago}"`)
 
       // Tipo de comprobante: FA=1 (Factura), NC=3 (Nota Crédito), ND=2 (Nota Débito)

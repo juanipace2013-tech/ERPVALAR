@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
 
     const supplierFilter = supplierId
       ? Prisma.sql`AND p."supplierId" = ${supplierId}`
-      : Prisma.empty
+      : Prisma.sql``
 
     // Get all purchase movements in the period grouped by product
     const productPurchases = await prisma.$queryRaw<Array<{

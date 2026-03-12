@@ -26,10 +26,10 @@ export async function GET(request: NextRequest) {
     // Build conditional SQL fragments
     const supplierFilter = supplierId
       ? Prisma.sql`AND "supplierId" = ${supplierId}`
-      : Prisma.empty
+      : Prisma.sql``
     const supplierFilterP = supplierId
       ? Prisma.sql`AND p."supplierId" = ${supplierId}`
-      : Prisma.empty
+      : Prisma.sql``
 
     const [
       totalProducts,

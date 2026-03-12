@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
-import { Prisma } from '@prisma/client'
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,38 +17,31 @@ export async function GET(request: NextRequest) {
     const periodStart = new Date(now.getFullYear(), now.getMonth() - period, now.getDate())
     const periodDays = Math.floor((now.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24))
 
-    const supplierFilter = supplierId
-      ? Prisma.sql`AND p."supplierId" = ${supplierId}`
-      : Prisma.sql``
+    // Get all purchase movements in the period with product data
+    const movements = await prisma.stockMovement.findMany({
+      where: {
+        type: 'COMPRA',
+        date: { gte: periodStart },
+        ...(supplierId ? { product: { supplierId } } : {}),
+      },
+      select: {
+        id: true,
+        productId: true,
+        quantity: true,
+        totalCost: true,
+        date: true,
+        product: {
+          select: {
+            id: true, sku: true, name: true, brand: true,
+            stockQuantity: true, minStock: true,
+            supplier: { select: { name: true } },
+          },
+        },
+      },
+      orderBy: { date: 'asc' },
+    })
 
-    // Get all purchase movements in the period grouped by product
-    const productPurchases = await prisma.$queryRaw<Array<{
-      productId: string; sku: string; name: string; brand: string | null;
-      supplierName: string | null; currentStock: number; minStock: number;
-      purchaseCount: number; totalQtyPurchased: number;
-      totalValuePurchased: number; firstPurchaseDate: Date;
-      lastPurchaseDate: Date;
-    }>>`
-      SELECT
-        p.id as "productId", p.sku, p.name, p.brand,
-        s.name as "supplierName",
-        p."stockQuantity" as "currentStock",
-        p."minStock",
-        COUNT(DISTINCT sm.id)::int as "purchaseCount",
-        SUM(sm.quantity)::int as "totalQtyPurchased",
-        SUM(sm."totalCost")::float as "totalValuePurchased",
-        MIN(sm.date) as "firstPurchaseDate",
-        MAX(sm.date) as "lastPurchaseDate"
-      FROM stock_movements sm
-      JOIN products p ON p.id = sm."productId"
-      LEFT JOIN suppliers s ON s.id = p."supplierId"
-      WHERE sm.type = 'COMPRA' AND sm.date >= ${periodStart}
-        ${supplierFilter}
-      GROUP BY p.id, p.sku, p.name, p.brand, s.name, p."stockQuantity", p."minStock"
-      ORDER BY SUM(sm."totalCost") DESC
-    `
-
-    if (productPurchases.length === 0) {
+    if (movements.length === 0) {
       return NextResponse.json({
         products: [],
         summary: {
@@ -61,51 +53,95 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Calculate total value for ABC
-    const totalValue = productPurchases.reduce((sum, p) => sum + p.totalValuePurchased, 0)
+    // Group movements by productId
+    const grouped = new Map<string, {
+      product: typeof movements[0]['product'];
+      movementIds: Set<string>;
+      totalQty: number;
+      totalValue: number;
+      dates: Date[];
+    }>()
+
+    for (const m of movements) {
+      const existing = grouped.get(m.productId)
+      if (existing) {
+        existing.movementIds.add(m.id)
+        existing.totalQty += m.quantity
+        existing.totalValue += Number(m.totalCost || 0)
+        existing.dates.push(m.date)
+      } else {
+        grouped.set(m.productId, {
+          product: m.product,
+          movementIds: new Set([m.id]),
+          totalQty: m.quantity,
+          totalValue: Number(m.totalCost || 0),
+          dates: [m.date],
+        })
+      }
+    }
+
+    // Sort by total value descending for ABC classification
+    const sortedEntries = Array.from(grouped.entries())
+      .sort((a, b) => b[1].totalValue - a[1].totalValue)
+
+    const totalValue = sortedEntries.reduce((sum, [, data]) => sum + data.totalValue, 0)
 
     // ABC Classification + metrics
     let cumulativeValue = 0
-    const products = productPurchases.map(p => {
-      cumulativeValue += p.totalValuePurchased
-      const cumulativePercent = (cumulativeValue / totalValue) * 100
+    const products = sortedEntries.map(([productId, data]) => {
+      cumulativeValue += data.totalValue
+      const cumulativePercent = totalValue > 0 ? (cumulativeValue / totalValue) * 100 : 0
 
       let abcCategory: 'A' | 'B' | 'C'
       if (cumulativePercent <= 80) abcCategory = 'A'
       else if (cumulativePercent <= 95) abcCategory = 'B'
       else abcCategory = 'C'
 
-      const avgQtyPerPurchase = p.purchaseCount > 0
-        ? Math.round(p.totalQtyPurchased / p.purchaseCount)
+      const purchaseCount = data.movementIds.size
+      const avgQtyPerPurchase = purchaseCount > 0
+        ? Math.round(data.totalQty / purchaseCount)
         : 0
 
       // Average days between purchases
-      const firstDate = new Date(p.firstPurchaseDate)
-      const lastDate = new Date(p.lastPurchaseDate)
+      const sortedDates = data.dates.sort((a, b) => a.getTime() - b.getTime())
+      const firstDate = sortedDates[0]
+      const lastDate = sortedDates[sortedDates.length - 1]
       const daySpan = Math.max(1, Math.floor((lastDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24)))
-      const avgDaysBetweenPurchases = p.purchaseCount > 1
-        ? Math.round(daySpan / (p.purchaseCount - 1))
+      const avgDaysBetweenPurchases = purchaseCount > 1
+        ? Math.round(daySpan / (purchaseCount - 1))
         : periodDays
 
       const daysSinceLastPurchase = Math.floor(
-        (now.getTime() - new Date(p.lastPurchaseDate).getTime()) / (1000 * 60 * 60 * 24)
+        (now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24)
       )
 
       // Daily consumption estimate
-      const dailyConsumption = p.totalQtyPurchased / periodDays
+      const dailyConsumption = data.totalQty / periodDays
+      const currentStock = data.product.stockQuantity
       const estimatedDaysUntilStockout = dailyConsumption > 0
-        ? Math.round(p.currentStock / dailyConsumption)
-        : p.currentStock > 0 ? 999 : 0
+        ? Math.round(currentStock / dailyConsumption)
+        : currentStock > 0 ? 999 : 0
 
-      // Suggested reorder: cover avg lead time (use avgDaysBetweenPurchases) + 50% safety
+      // Suggested reorder
       const leadTimeDays = avgDaysBetweenPurchases
       const suggestedReorderQty = Math.max(
         0,
-        Math.round(dailyConsumption * leadTimeDays * 1.5) - p.currentStock
+        Math.round(dailyConsumption * leadTimeDays * 1.5) - currentStock
       )
 
       return {
-        ...p,
+        productId,
+        sku: data.product.sku,
+        name: data.product.name,
+        brand: data.product.brand,
+        supplierName: data.product.supplier?.name || null,
+        currentStock,
+        minStock: data.product.minStock,
+        purchaseCount,
+        totalQtyPurchased: data.totalQty,
+        totalValuePurchased: data.totalValue,
+        firstPurchaseDate: firstDate,
+        lastPurchaseDate: lastDate,
         avgQtyPerPurchase,
         avgDaysBetweenPurchases,
         daysSinceLastPurchase,

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
-import { Prisma } from '@prisma/client'
 
 export async function GET(request: NextRequest) {
   try {
@@ -23,24 +22,15 @@ export async function GET(request: NextRequest) {
       ...(supplierId ? { supplierId } : {}),
     }
 
-    // Build conditional SQL fragments
-    const supplierFilter = supplierId
-      ? Prisma.sql`AND "supplierId" = ${supplierId}`
-      : Prisma.sql``
-    const supplierFilterP = supplierId
-      ? Prisma.sql`AND p."supplierId" = ${supplierId}`
-      : Prisma.sql``
-
     const [
       totalProducts,
       productsWithStock,
-      productsBelowMinRaw,
       productsOutOfStock,
-      inventoryValue,
-      belowMinimum,
+      allTrackedProducts,
       recentMovements,
-      purchaseMovements90d,
+      purchaseGrouped,
       allProductsForNoMovement,
+      purchaseMovementsForMonthly,
     ] = await Promise.all([
       // Total products tracked
       prisma.product.count({ where: productWhere }),
@@ -48,44 +38,19 @@ export async function GET(request: NextRequest) {
       // Products with stock > 0
       prisma.product.count({ where: { ...productWhere, stockQuantity: { gt: 0 } } }),
 
-      // Products below min stock (self-referencing comparison needs raw SQL)
-      prisma.$queryRaw<[{ count: bigint }]>`
-        SELECT COUNT(*)::bigint as count FROM products
-        WHERE "trackInventory" = true AND status = 'ACTIVE'
-        AND "minStock" > 0 AND "stockQuantity" < "minStock"
-        ${supplierFilter}
-      `,
-
       // Products out of stock with minStock set
       prisma.product.count({
         where: { ...productWhere, minStock: { gt: 0 }, stockQuantity: { equals: 0 } },
       }),
 
-      // Total inventory value
-      prisma.$queryRaw<[{ total: number }]>`
-        SELECT COALESCE(SUM("stockQuantity" * COALESCE("averageCost", 0)), 0)::float as total
-        FROM products WHERE "trackInventory" = true AND status = 'ACTIVE'
-        ${supplierFilter}
-      `,
-
-      // Below minimum - top 20
-      prisma.$queryRaw<Array<{
-        id: string; sku: string; name: string; brand: string | null;
-        supplierId: string | null; stockQuantity: number; minStock: number;
-        deficit: number; lastCost: number; averageCost: number;
-      }>>`
-        SELECT p.id, p.sku, p.name, p.brand, p."supplierId",
-          p."stockQuantity", p."minStock",
-          (p."minStock" - p."stockQuantity") as deficit,
-          COALESCE(p."lastCost", 0)::float as "lastCost",
-          COALESCE(p."averageCost", 0)::float as "averageCost"
-        FROM products p
-        WHERE p."trackInventory" = true AND p.status = 'ACTIVE'
-          AND p."minStock" > 0 AND p."stockQuantity" < p."minStock"
-          ${supplierFilterP}
-        ORDER BY (p."minStock" - p."stockQuantity") DESC
-        LIMIT 20
-      `,
+      // All tracked products with minStock > 0 (for below-min count + list + inventory value)
+      prisma.product.findMany({
+        where: { ...productWhere, minStock: { gt: 0 } },
+        select: {
+          id: true, sku: true, name: true, brand: true, supplierId: true,
+          stockQuantity: true, minStock: true, lastCost: true, averageCost: true,
+        },
+      }),
 
       // Recent 20 movements
       prisma.stockMovement.findMany({
@@ -97,25 +62,20 @@ export async function GET(request: NextRequest) {
         },
       }),
 
-      // Top purchased last 90 days
-      prisma.$queryRaw<Array<{
-        productId: string; sku: string; name: string; brand: string | null;
-        totalQtyPurchased: number; totalValuePurchased: number;
-        purchaseCount: number; lastPurchaseDate: Date;
-      }>>`
-        SELECT sm."productId", p.sku, p.name, p.brand,
-          SUM(sm.quantity)::int as "totalQtyPurchased",
-          SUM(sm."totalCost")::float as "totalValuePurchased",
-          COUNT(*)::int as "purchaseCount",
-          MAX(sm.date) as "lastPurchaseDate"
-        FROM stock_movements sm
-        JOIN products p ON p.id = sm."productId"
-        WHERE sm.type = 'COMPRA' AND sm.date >= ${ninetyDaysAgo}
-          ${supplierFilterP}
-        GROUP BY sm."productId", p.sku, p.name, p.brand
-        ORDER BY SUM(sm."totalCost") DESC
-        LIMIT 15
-      `,
+      // Top purchased last 90 days - groupBy productId
+      prisma.stockMovement.groupBy({
+        by: ['productId'],
+        where: {
+          type: 'COMPRA',
+          date: { gte: ninetyDaysAgo },
+          ...(supplierId ? { product: { supplierId } } : {}),
+        },
+        _sum: { quantity: true, totalCost: true },
+        _count: { id: true },
+        _max: { date: true },
+        orderBy: { _sum: { totalCost: 'desc' } },
+        take: 15,
+      }),
 
       // Products for no-movement check
       prisma.product.findMany({
@@ -130,9 +90,70 @@ export async function GET(request: NextRequest) {
           },
         },
       }),
+
+      // All purchase movements for monthly chart
+      prisma.stockMovement.findMany({
+        where: { type: 'COMPRA', date: { gte: twelveMonthsAgo } },
+        select: { date: true, totalCost: true, quantity: true, purchaseInvoiceId: true },
+      }),
     ])
 
-    // Calculate no-movement products
+    // --- Compute below minimum (column comparison done in JS) ---
+    const belowMinProducts = allTrackedProducts
+      .filter(p => p.stockQuantity < p.minStock)
+
+    const productsBelowMin = belowMinProducts.length
+
+    const belowMinimum = belowMinProducts
+      .map(p => ({
+        id: p.id,
+        sku: p.sku,
+        name: p.name,
+        brand: p.brand,
+        supplierId: p.supplierId,
+        stockQuantity: p.stockQuantity,
+        minStock: p.minStock,
+        deficit: p.minStock - p.stockQuantity,
+        lastCost: Number(p.lastCost || 0),
+        averageCost: Number(p.averageCost || 0),
+      }))
+      .sort((a, b) => b.deficit - a.deficit)
+      .slice(0, 20)
+
+    // --- Inventory value (all tracked products with stock) ---
+    const allForValue = await prisma.product.findMany({
+      where: { ...productWhere, stockQuantity: { gt: 0 } },
+      select: { stockQuantity: true, averageCost: true },
+    })
+    const totalInventoryValue = allForValue.reduce(
+      (sum, p) => sum + p.stockQuantity * Number(p.averageCost || 0), 0
+    )
+
+    // --- Enrich top purchased with product info ---
+    const purchaseProductIds = purchaseGrouped.map(g => g.productId)
+    const purchaseProducts = purchaseProductIds.length > 0
+      ? await prisma.product.findMany({
+          where: { id: { in: purchaseProductIds } },
+          select: { id: true, sku: true, name: true, brand: true },
+        })
+      : []
+    const productMap = new Map(purchaseProducts.map(p => [p.id, p]))
+
+    const topPurchased = purchaseGrouped.map(g => {
+      const prod = productMap.get(g.productId)
+      return {
+        productId: g.productId,
+        sku: prod?.sku || '',
+        name: prod?.name || '',
+        brand: prod?.brand || null,
+        totalQtyPurchased: g._sum.quantity || 0,
+        totalValuePurchased: Number(g._sum.totalCost || 0),
+        purchaseCount: g._count.id,
+        lastPurchaseDate: g._max.date,
+      }
+    })
+
+    // --- No-movement products ---
     const noMovement = allProductsForNoMovement
       .filter(p => {
         const lastMove = p.stockMovements[0]?.date
@@ -158,31 +179,35 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => b.inventoryValue - a.inventoryValue)
       .slice(0, 20)
 
-    // Purchases by month (last 12 months)
-    const purchasesByMonth = await prisma.$queryRaw<Array<{
-      month: string; totalValue: number; totalQty: number; invoiceCount: number;
-    }>>`
-      SELECT
-        TO_CHAR(sm.date, 'YYYY-MM') as month,
-        SUM(sm."totalCost")::float as "totalValue",
-        SUM(sm.quantity)::int as "totalQty",
-        COUNT(DISTINCT sm."purchaseInvoiceId")::int as "invoiceCount"
-      FROM stock_movements sm
-      WHERE sm.type = 'COMPRA' AND sm.date >= ${twelveMonthsAgo}
-      GROUP BY TO_CHAR(sm.date, 'YYYY-MM')
-      ORDER BY month ASC
-    `
+    // --- Purchases by month (group in JS) ---
+    const monthMap = new Map<string, { totalValue: number; totalQty: number; invoiceIds: Set<string> }>()
+    for (const m of purchaseMovementsForMonthly) {
+      const key = `${m.date.getFullYear()}-${String(m.date.getMonth() + 1).padStart(2, '0')}`
+      const entry = monthMap.get(key) || { totalValue: 0, totalQty: 0, invoiceIds: new Set<string>() }
+      entry.totalValue += Number(m.totalCost || 0)
+      entry.totalQty += m.quantity
+      if (m.purchaseInvoiceId) entry.invoiceIds.add(m.purchaseInvoiceId)
+      monthMap.set(key, entry)
+    }
+    const purchasesByMonth = Array.from(monthMap.entries())
+      .map(([month, data]) => ({
+        month,
+        totalValue: data.totalValue,
+        totalQty: data.totalQty,
+        invoiceCount: data.invoiceIds.size,
+      }))
+      .sort((a, b) => a.month.localeCompare(b.month))
 
     return NextResponse.json({
       summary: {
         totalProducts,
         productsWithStock,
-        productsBelowMin: Number(productsBelowMinRaw[0]?.count || 0),
+        productsBelowMin,
         productsOutOfStock,
-        totalInventoryValue: Number(inventoryValue[0]?.total || 0),
+        totalInventoryValue,
       },
       belowMinimum,
-      topPurchased: purchaseMovements90d,
+      topPurchased,
       noMovement,
       recentMovements: recentMovements.map(m => ({
         id: m.id,

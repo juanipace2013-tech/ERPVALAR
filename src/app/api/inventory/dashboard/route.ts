@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
+import { Prisma } from '@prisma/client'
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,8 +12,6 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const supplierId = searchParams.get('supplierId')
-    const dateFrom = searchParams.get('dateFrom')
-    const dateTo = searchParams.get('dateTo')
 
     const now = new Date()
     const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
@@ -24,10 +23,18 @@ export async function GET(request: NextRequest) {
       ...(supplierId ? { supplierId } : {}),
     }
 
+    // Build conditional SQL fragments
+    const supplierFilter = supplierId
+      ? Prisma.sql`AND "supplierId" = ${supplierId}`
+      : Prisma.empty
+    const supplierFilterP = supplierId
+      ? Prisma.sql`AND p."supplierId" = ${supplierId}`
+      : Prisma.empty
+
     const [
       totalProducts,
       productsWithStock,
-      productsBelowMin,
+      productsBelowMinRaw,
       productsOutOfStock,
       inventoryValue,
       belowMinimum,
@@ -41,18 +48,13 @@ export async function GET(request: NextRequest) {
       // Products with stock > 0
       prisma.product.count({ where: { ...productWhere, stockQuantity: { gt: 0 } } }),
 
-      // Products below min stock
-      prisma.product.count({
-        where: { ...productWhere, minStock: { gt: 0 }, stockQuantity: { lt: prisma.product.fields?.minStock || 0 } },
-      }).catch(() =>
-        // Fallback: raw query for self-referencing comparison
-        prisma.$queryRaw<[{ count: bigint }]>`
-          SELECT COUNT(*)::bigint as count FROM products
-          WHERE "trackInventory" = true AND status = 'ACTIVE'
-          AND "minStock" > 0 AND "stockQuantity" < "minStock"
-          ${supplierId ? prisma.$queryRaw`AND "supplierId" = ${supplierId}` : prisma.$queryRaw``}
-        `.then(r => Number(r[0]?.count || 0))
-      ),
+      // Products below min stock (self-referencing comparison needs raw SQL)
+      prisma.$queryRaw<[{ count: bigint }]>`
+        SELECT COUNT(*)::bigint as count FROM products
+        WHERE "trackInventory" = true AND status = 'ACTIVE'
+        AND "minStock" > 0 AND "stockQuantity" < "minStock"
+        ${supplierFilter}
+      `,
 
       // Products out of stock with minStock set
       prisma.product.count({
@@ -63,7 +65,7 @@ export async function GET(request: NextRequest) {
       prisma.$queryRaw<[{ total: number }]>`
         SELECT COALESCE(SUM("stockQuantity" * COALESCE("averageCost", 0)), 0)::float as total
         FROM products WHERE "trackInventory" = true AND status = 'ACTIVE'
-        ${supplierId ? prisma.$queryRaw`AND "supplierId" = ${supplierId}` : prisma.$queryRaw``}
+        ${supplierFilter}
       `,
 
       // Below minimum - top 20
@@ -80,7 +82,7 @@ export async function GET(request: NextRequest) {
         FROM products p
         WHERE p."trackInventory" = true AND p.status = 'ACTIVE'
           AND p."minStock" > 0 AND p."stockQuantity" < p."minStock"
-          ${supplierId ? prisma.$queryRaw`AND p."supplierId" = ${supplierId}` : prisma.$queryRaw``}
+          ${supplierFilterP}
         ORDER BY (p."minStock" - p."stockQuantity") DESC
         LIMIT 20
       `,
@@ -109,7 +111,7 @@ export async function GET(request: NextRequest) {
         FROM stock_movements sm
         JOIN products p ON p.id = sm."productId"
         WHERE sm.type = 'COMPRA' AND sm.date >= ${ninetyDaysAgo}
-          ${supplierId ? prisma.$queryRaw`AND p."supplierId" = ${supplierId}` : prisma.$queryRaw``}
+          ${supplierFilterP}
         GROUP BY sm."productId", p.sku, p.name, p.brand
         ORDER BY SUM(sm."totalCost") DESC
         LIMIT 15
@@ -175,7 +177,7 @@ export async function GET(request: NextRequest) {
       summary: {
         totalProducts,
         productsWithStock,
-        productsBelowMin: typeof productsBelowMin === 'number' ? productsBelowMin : Number(productsBelowMin),
+        productsBelowMin: Number(productsBelowMinRaw[0]?.count || 0),
         productsOutOfStock,
         totalInventoryValue: Number(inventoryValue[0]?.total || 0),
       },

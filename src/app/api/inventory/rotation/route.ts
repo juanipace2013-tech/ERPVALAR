@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
+import { Prisma } from '@prisma/client'
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,6 +17,10 @@ export async function GET(request: NextRequest) {
     const now = new Date()
     const periodStart = new Date(now.getFullYear(), now.getMonth() - period, now.getDate())
     const periodDays = Math.floor((now.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24))
+
+    const supplierFilter = supplierId
+      ? Prisma.sql`AND p."supplierId" = ${supplierId}`
+      : Prisma.empty
 
     // Get all purchase movements in the period grouped by product
     const productPurchases = await prisma.$queryRaw<Array<{
@@ -39,7 +44,7 @@ export async function GET(request: NextRequest) {
       JOIN products p ON p.id = sm."productId"
       LEFT JOIN suppliers s ON s.id = p."supplierId"
       WHERE sm.type = 'COMPRA' AND sm.date >= ${periodStart}
-        ${supplierId ? prisma.$queryRaw`AND p."supplierId" = ${supplierId}` : prisma.$queryRaw``}
+        ${supplierFilter}
       GROUP BY p.id, p.sku, p.name, p.brand, s.name, p."stockQuantity", p."minStock"
       ORDER BY SUM(sm."totalCost") DESC
     `

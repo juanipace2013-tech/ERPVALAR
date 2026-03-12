@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
+import { Prisma } from '@prisma/client'
 
 export async function GET(request: NextRequest) {
   try {
@@ -19,6 +20,13 @@ export async function GET(request: NextRequest) {
     periodStart.setMonth(periodStart.getMonth() - period)
 
     if (groupBy === 'product') {
+      const supplierFilter = supplierId
+        ? Prisma.sql`AND p."supplierId" = ${supplierId}`
+        : Prisma.empty
+      const productFilter = productId
+        ? Prisma.sql`AND p.id = ${productId}`
+        : Prisma.empty
+
       const data = await prisma.$queryRaw<Array<{
         productId: string; sku: string; name: string; brand: string | null;
         supplierName: string | null; totalQty: number; totalValue: number;
@@ -40,8 +48,8 @@ export async function GET(request: NextRequest) {
         JOIN products p ON p.id = sm."productId"
         LEFT JOIN suppliers s ON s.id = p."supplierId"
         WHERE sm.type = 'COMPRA' AND sm.date >= ${periodStart}
-          ${supplierId ? prisma.$queryRaw`AND p."supplierId" = ${supplierId}` : prisma.$queryRaw``}
-          ${productId ? prisma.$queryRaw`AND p.id = ${productId}` : prisma.$queryRaw``}
+          ${supplierFilter}
+          ${productFilter}
         GROUP BY p.id, p.sku, p.name, p.brand, s.name
         ORDER BY SUM(sm."totalCost") DESC
       `
@@ -58,6 +66,10 @@ export async function GET(request: NextRequest) {
     }
 
     if (groupBy === 'supplier') {
+      const supplierFilter = supplierId
+        ? Prisma.sql`AND s.id = ${supplierId}`
+        : Prisma.empty
+
       const data = await prisma.$queryRaw<Array<{
         supplierId: string; supplierName: string;
         totalItems: number; totalValue: number; invoiceCount: number;
@@ -71,7 +83,7 @@ export async function GET(request: NextRequest) {
         JOIN products p ON p.id = sm."productId"
         JOIN suppliers s ON s.id = p."supplierId"
         WHERE sm.type = 'COMPRA' AND sm.date >= ${periodStart}
-          ${supplierId ? prisma.$queryRaw`AND s.id = ${supplierId}` : prisma.$queryRaw``}
+          ${supplierFilter}
         GROUP BY s.id, s.name
         ORDER BY SUM(sm."totalCost") DESC
       `

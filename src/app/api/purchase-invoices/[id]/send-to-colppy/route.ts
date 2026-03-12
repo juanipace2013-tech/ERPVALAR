@@ -179,11 +179,11 @@ export async function POST(
 
       // 4. Armar el payload de Colppy
 
-      // Formatear fechas a DD-MM-YYYY
+      // Formatear fechas a DD-MM-YYYY (usar UTC para evitar shift de timezone)
       const fmtDate = (d: Date) => {
-        const dd = String(d.getDate()).padStart(2, '0')
-        const mm = String(d.getMonth() + 1).padStart(2, '0')
-        const yyyy = d.getFullYear()
+        const dd = String(d.getUTCDate()).padStart(2, '0')
+        const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+        const yyyy = d.getUTCFullYear()
         return `${dd}-${mm}-${yyyy}`
       }
 
@@ -249,21 +249,27 @@ export async function POST(
         const unitPrice = Number(item.unitPrice) // Precio neto (ya con descuento aplicado)
         const taxRate = Number(item.taxRate)
         const colppyCode = (item.supplierProductCode || '').substring(3).trim()
-        const idItem = await getIdItem(item.supplierProductCode || '')
+        const rawIdItem = await getIdItem(item.supplierProductCode || '')
 
         // Redondear a 2 decimales
         const roundedUnitPrice = Math.round(unitPrice * 100) / 100
+        const importeTotal = Math.round(roundedUnitPrice * qty * 100) / 100
+        const importeIva = Math.round(importeTotal * taxRate / 100 * 100) / 100
 
         return {
-          idItem,
+          idItem: rawIdItem || '0', // Colppy necesita '0' si no hay item vinculado, no string vacío
+          tipoItem: 'P' as const, // P=Producto
           Descripcion: item.description,
           unidadMedida: item.unit || 'Un',
           Cantidad: String(qty),
           ImporteUnitario: roundedUnitPrice.toFixed(2),
+          importeTotal: importeTotal.toFixed(2),
+          importeIva: importeIva.toFixed(2),
           IVA: taxRate.toFixed(2),
           idPlanCuenta: 'Mercaderias',
           codigo: colppyCode,
           porcDesc: '0',
+          Comentario: `FC ${invoice.invoiceNumber}`,
         }
       }))
 
@@ -434,6 +440,7 @@ export async function POST(
         totalFactura: c2d(totalFacturaCents),
         idMoneda: invoice.currency === 'USD' ? '2' : '1',
         valorCambio: invoice.currency === 'USD' ? String(Number(invoice.exchangeRate)) : '1',
+        idRetGanancias: '78', // 78 = Enajenación de bienes muebles y bienes de cambio
         itemsFactura,
       }
 

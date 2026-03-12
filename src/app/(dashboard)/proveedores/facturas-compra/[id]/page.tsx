@@ -24,6 +24,9 @@ import {
   Package,
   Receipt,
   Send,
+  PackageCheck,
+  Undo2,
+  AlertTriangle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber } from '@/lib/utils'
@@ -82,6 +85,7 @@ interface PurchaseInvoice {
     taxRate: number
     taxAmount: number
     total: number
+    stockProcessed: boolean
     product: {
       id: string
       name: string
@@ -166,6 +170,12 @@ export default function PurchaseInvoiceDetailPage() {
   // Colppy state
   const [sendingToColppy, setSendingToColppy] = useState(false)
 
+  // Stock impact state
+  const [processingStock, setProcessingStock] = useState(false)
+  const [reversingStock, setReversingStock] = useState(false)
+  const [showStockConfirm, setShowStockConfirm] = useState(false)
+  const [showReverseConfirm, setShowReverseConfirm] = useState(false)
+
   // Credit note dialog state
   const [showCreditNoteDialog, setShowCreditNoteDialog] = useState(false)
   const [creatingCreditNote, setCreatingCreditNote] = useState(false)
@@ -196,6 +206,49 @@ export default function PurchaseInvoiceDetailPage() {
       toast.error('Error al cargar factura de compra')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleProcessStock = async () => {
+    if (!invoice) return
+    try {
+      setProcessingStock(true)
+      const response = await fetch(`/api/inventory/process-purchase-invoice/${invoice.id}`, {
+        method: 'POST',
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Error al impactar stock')
+      toast.success(
+        `Stock impactado: ${data.processedItems} items procesados` +
+        (data.skippedItems > 0 ? `, ${data.skippedItems} omitidos (sin producto vinculado)` : '')
+      )
+      setShowStockConfirm(false)
+      fetchInvoice()
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Error al impactar stock'
+      toast.error(message)
+    } finally {
+      setProcessingStock(false)
+    }
+  }
+
+  const handleReverseStock = async () => {
+    if (!invoice) return
+    try {
+      setReversingStock(true)
+      const response = await fetch(`/api/inventory/reverse-purchase-invoice/${invoice.id}`, {
+        method: 'POST',
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Error al reversar stock')
+      toast.success(`Stock reversado: ${data.reversedItems} items revertidos`)
+      setShowReverseConfirm(false)
+      fetchInvoice()
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Error al reversar stock'
+      toast.error(message)
+    } finally {
+      setReversingStock(false)
     }
   }
 
@@ -393,6 +446,93 @@ export default function PurchaseInvoiceDetailPage() {
             <Badge className="bg-purple-100 text-purple-800">
               ✓ En Colppy
             </Badge>
+          )}
+          {/* Stock Impact Buttons */}
+          {!invoice.stockImpact && (
+            <Dialog open={showStockConfirm} onOpenChange={setShowStockConfirm}>
+              <DialogTrigger asChild>
+                <Button className="bg-blue-600 hover:bg-blue-700">
+                  <PackageCheck className="h-4 w-4 mr-2" />
+                  Impactar Stock
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Confirmar impacto en stock</DialogTitle>
+                  <DialogDescription>
+                    Se van a ingresar{' '}
+                    <strong>{invoice.items.filter(i => i.product).length} items</strong> al inventario
+                    por un total de{' '}
+                    <strong>{formatCurrency(
+                      invoice.items
+                        .filter(i => i.product)
+                        .reduce((sum, i) => sum + Number(i.unitPrice) * Number(i.quantity), 0)
+                    )}</strong>
+                  </DialogDescription>
+                </DialogHeader>
+                {invoice.items.some(i => !i.product) && (
+                  <div className="flex items-start gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <AlertTriangle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-yellow-800">
+                        {invoice.items.filter(i => !i.product).length} item(s) sin producto vinculado
+                      </p>
+                      <p className="text-xs text-yellow-700 mt-1">
+                        Estos items serán omitidos. Puede vincularlos desde Inventario {'>'} Items sin vincular.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowStockConfirm(false)} disabled={processingStock}>
+                    Cancelar
+                  </Button>
+                  <Button onClick={handleProcessStock} disabled={processingStock} className="bg-blue-600 hover:bg-blue-700">
+                    {processingStock ? (
+                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Procesando...</>
+                    ) : (
+                      <><PackageCheck className="h-4 w-4 mr-2" />Confirmar</>
+                    )}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
+          {invoice.stockImpact && (
+            <>
+              <Badge className="bg-green-100 text-green-800">
+                <PackageCheck className="h-3 w-3 mr-1" />
+                Stock impactado {invoice.stockImpactedAt && formatDate(invoice.stockImpactedAt)}
+              </Badge>
+              <Dialog open={showReverseConfirm} onOpenChange={setShowReverseConfirm}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" className="border-gray-400 text-gray-600 hover:bg-gray-50">
+                    <Undo2 className="h-4 w-4 mr-2" />
+                    Reversar impacto
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Reversar impacto en stock</DialogTitle>
+                    <DialogDescription>
+                      Se revertirán todos los movimientos de stock generados por esta factura. Esta acción es irreversible.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setShowReverseConfirm(false)} disabled={reversingStock}>
+                      Cancelar
+                    </Button>
+                    <Button onClick={handleReverseStock} disabled={reversingStock} variant="destructive">
+                      {reversingStock ? (
+                        <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Reversando...</>
+                      ) : (
+                        <><Undo2 className="h-4 w-4 mr-2" />Confirmar reversa</>
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </>
           )}
           {(invoice.status === 'APPROVED' || invoice.status === 'PAID') && invoice.invoiceType === 'FA' && (
             <Dialog open={showCreditNoteDialog} onOpenChange={setShowCreditNoteDialog}>

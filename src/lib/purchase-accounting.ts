@@ -193,71 +193,27 @@ export async function generatePurchaseInvoiceJournalEntry(invoiceId: string) {
 }
 
 /**
- * Actualiza el inventario al aprobar una factura de compra
+ * Actualiza el inventario al aprobar una factura de compra.
+ * Delegamos al servicio completo de purchase-stock que maneja:
+ * - Promedio ponderado de costos
+ * - WarehouseStock
+ * - stockProcessed por item
+ * - purchaseInvoiceId en movimientos
  */
 export async function updateInventoryFromPurchase(invoiceId: string) {
+  const { processPurchaseInvoiceStock } = await import('@/lib/inventario/purchase-stock.service');
+
+  // Get the invoice to find the user
   const invoice = await prisma.purchaseInvoice.findUnique({
     where: { id: invoiceId },
-    include: {
-      supplier: true,
-      items: {
-        include: {
-          product: true,
-        },
-      },
-    },
+    select: { createdBy: true },
   });
 
   if (!invoice) {
     throw new Error('Factura no encontrada');
   }
 
-  if (invoice.stockImpact) {
-    throw new Error('Esta factura ya impactó en el inventario');
-  }
-
-  for (const item of invoice.items) {
-    if (item.productId) {
-      // Actualizar stock del producto
-      await prisma.product.update({
-        where: { id: item.productId },
-        data: {
-          stockQuantity: {
-            increment: Number(item.quantity),
-          },
-          // Actualizar último costo
-          lastCost: Number(item.unitPrice),
-        },
-      });
-
-      // Registrar movimiento de inventario
-      await prisma.stockMovement.create({
-        data: {
-          productId: item.productId,
-          type: 'COMPRA',
-          quantity: Number(item.quantity),
-          unitCost: Number(item.unitPrice),
-          totalCost: Number(item.subtotal),
-          currency: invoice.currency,
-          reference: invoice.invoiceNumber,
-          notes: `Compra ${invoice.invoiceNumber} - ${invoice.supplier.name}`,
-          date: invoice.invoiceDate,
-          userId: invoice.createdBy,
-          stockBefore: item.product.stockQuantity,
-          stockAfter: item.product.stockQuantity + Number(item.quantity),
-        },
-      });
-    }
-  }
-
-  // Marcar como impactado
-  await prisma.purchaseInvoice.update({
-    where: { id: invoiceId },
-    data: {
-      stockImpact: true,
-      stockImpactedAt: new Date(),
-    },
-  });
+  await processPurchaseInvoiceStock(invoiceId, invoice.createdBy);
 }
 
 /**

@@ -1,144 +1,36 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent } from '@/components/ui/card'
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { Badge } from '@/components/ui/badge'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  Plus,
-  Search,
-  FileSpreadsheet,
-  TrendingUp,
-  Settings,
-  Upload,
-  DollarSign,
-  Package,
+  Plus, Upload, Package, Settings, DollarSign,
+  ShoppingCart, RefreshCw, Link2, LayoutDashboard,
 } from 'lucide-react'
-import { toast } from 'sonner'
+import dynamic from 'next/dynamic'
 
-interface Product {
-  id: string
-  sku: string
-  name: string
-  type: string
-  unit: string
-  stockQuantity: number
-  averageCost: number | null
-  lastCost: number | null
-  status: string
-  prices: Array<{
-    amount: number
-    priceType: string
-    currency: string
-  }>
-}
-
-const productTypeLabels: Record<string, string> = {
-  PRODUCT: 'Producto',
-  SERVICE: 'Servicio',
-  COMBO: 'Combo',
-}
-
-const productTypeColors: Record<string, string> = {
-  PRODUCT: 'bg-blue-100 text-blue-800',
-  SERVICE: 'bg-purple-100 text-purple-800',
-  COMBO: 'bg-green-100 text-green-800',
-}
+// Lazy load heavy components
+const InventoryDashboard = dynamic(() => import('@/components/inventario/InventoryDashboard'), {
+  loading: () => <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>,
+})
+const InventoryItemsTab = dynamic(() => import('@/components/inventario/InventoryItemsTab'), {
+  loading: () => <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>,
+})
+const PurchaseAnalysisTab = dynamic(() => import('@/components/inventario/PurchaseAnalysisTab'), {
+  loading: () => <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>,
+})
+const RotationABCTab = dynamic(() => import('@/components/inventario/RotationABCTab'), {
+  loading: () => <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>,
+})
+const UnlinkedItemsTab = dynamic(() => import('@/components/inventario/UnlinkedItemsTab'), {
+  loading: () => <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>,
+})
 
 export default function ItemsInventarioPage() {
-  const router = useRouter()
-  const [products, setProducts] = useState<Product[]>([])
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [typeFilter, setTypeFilter] = useState<string>('ALL')
-  const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const limit = 20
-
-  useEffect(() => {
-    fetchProducts()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, typeFilter])
-
-  const fetchProducts = async () => {
-    try {
-      setLoading(true)
-      let url = `/api/productos?page=${page}&limit=${limit}`
-
-      if (typeFilter !== 'ALL') {
-        url += `&type=${typeFilter}`
-      }
-
-      if (search) {
-        url += `&search=${encodeURIComponent(search)}`
-      }
-
-      const response = await fetch(url)
-
-      if (!response.ok) {
-        throw new Error('Error al cargar productos')
-      }
-
-      const data = await response.json()
-      setProducts(data.products || [])
-      setTotalPages(data.pagination?.totalPages || 1)
-    } catch (error) {
-      console.error('Error:', error)
-      toast.error('Error al cargar items de inventario')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleSearch = () => {
-    setPage(1)
-    fetchProducts()
-  }
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleSearch()
-    }
-  }
-
-  const formatCurrency = (amount: number | null, currency: string = 'ARS') => {
-    if (amount === null) return '-'
-    return new Intl.NumberFormat('es-AR', {
-      style: 'currency',
-      currency,
-      currencyDisplay: 'code',
-      minimumFractionDigits: 2,
-    }).format(amount)
-  }
-
-  const getSalePrice = (product: Product) => {
-    const salePrice = product.prices.find(p => p.priceType === 'SALE')
-    return salePrice ? formatCurrency(Number(salePrice.amount), salePrice.currency) : '-'
-  }
-
-  const getCalculatedCost = (product: Product) => {
-    const cost = product.averageCost || product.lastCost
-    return formatCurrency(cost ? Number(cost) : null)
-  }
+  const [activeTab, setActiveTab] = useState('dashboard')
+  const [unlinkedCount, setUnlinkedCount] = useState<number | null>(null)
 
   return (
     <div className="space-y-6">
@@ -151,14 +43,6 @@ export default function ItemsInventarioPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => toast.info('Próximamente')}>
-            <TrendingUp className="mr-2 h-4 w-4" />
-            Actualizar precios
-          </Button>
-          <Button variant="outline" onClick={() => toast.info('Próximamente')}>
-            <FileSpreadsheet className="mr-2 h-4 w-4" />
-            Reportes
-          </Button>
           <Link href="/inventario/items/importar">
             <Button variant="outline">
               <Upload className="mr-2 h-4 w-4" />
@@ -181,163 +65,57 @@ export default function ItemsInventarioPage() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="items" className="w-full">
-        <TabsList className="bg-blue-50 border-blue-200">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="bg-blue-50 border-blue-200 flex flex-wrap h-auto gap-1 p-1">
+          <TabsTrigger value="dashboard" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+            <LayoutDashboard className="mr-2 h-4 w-4" />
+            Dashboard
+          </TabsTrigger>
           <TabsTrigger value="items" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
             <Package className="mr-2 h-4 w-4" />
             Items de inventario
           </TabsTrigger>
+          <TabsTrigger value="purchases" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+            <ShoppingCart className="mr-2 h-4 w-4" />
+            Análisis de Compras
+          </TabsTrigger>
+          <TabsTrigger value="rotation" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Rotación y ABC
+          </TabsTrigger>
           <TabsTrigger value="config" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
             <Settings className="mr-2 h-4 w-4" />
-            Configuración de inventario
+            Configuración
           </TabsTrigger>
           <TabsTrigger value="prices" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
             <DollarSign className="mr-2 h-4 w-4" />
             Listas de precios
           </TabsTrigger>
+          <TabsTrigger value="unlinked" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+            <Link2 className="mr-2 h-4 w-4" />
+            Items sin vincular
+            {unlinkedCount !== null && unlinkedCount > 0 && (
+              <span className="ml-1.5 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5 min-w-[20px] text-center">
+                {unlinkedCount}
+              </span>
+            )}
+          </TabsTrigger>
         </TabsList>
 
+        <TabsContent value="dashboard" className="mt-6">
+          <InventoryDashboard />
+        </TabsContent>
+
         <TabsContent value="items" className="mt-6">
-          <Card className="border-blue-200">
-            <CardContent className="p-6">
-              {/* Search and Filters */}
-              <div className="mb-6 flex gap-4">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Buscar por código o descripción..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    onKeyPress={handleKeyPress}
-                    className="pl-10"
-                  />
-                </div>
-                <Select value={typeFilter} onValueChange={setTypeFilter}>
-                  <SelectTrigger className="w-[200px]">
-                    <SelectValue placeholder="Todos los tipos" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">Todos los tipos</SelectItem>
-                    <SelectItem value="PRODUCT">Productos</SelectItem>
-                    <SelectItem value="SERVICE">Servicios</SelectItem>
-                    <SelectItem value="COMBO">Combos</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button onClick={handleSearch} className="bg-blue-600 hover:bg-blue-700">
-                  <Search className="mr-2 h-4 w-4" />
-                  Buscar
-                </Button>
-              </div>
+          <InventoryItemsTab />
+        </TabsContent>
 
-              {/* Table */}
-              {loading ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                </div>
-              ) : products.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <Package className="h-12 w-12 text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground text-lg">
-                    {search ? 'No se encontraron items' : 'No hay items registrados'}
-                  </p>
-                  {!search && (
-                    <Link href="/inventario/items/nuevo">
-                      <Button className="mt-4 bg-blue-600 hover:bg-blue-700">
-                        <Plus className="mr-2 h-4 w-4" />
-                        Agregar primer item
-                      </Button>
-                    </Link>
-                  )}
-                </div>
-              ) : (
-                <>
-                  <div className="rounded-lg border border-blue-100 overflow-hidden">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="bg-blue-50 hover:bg-blue-50">
-                          <TableHead className="font-semibold text-blue-900">Código</TableHead>
-                          <TableHead className="font-semibold text-blue-900">Descripción</TableHead>
-                          <TableHead className="font-semibold text-blue-900">Tipo</TableHead>
-                          <TableHead className="font-semibold text-blue-900">UM</TableHead>
-                          <TableHead className="text-right font-semibold text-blue-900">P. Venta</TableHead>
-                          <TableHead className="text-right font-semibold text-blue-900">Cto. Calculado</TableHead>
-                          <TableHead className="text-right font-semibold text-blue-900">Disponible</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {products.map((product) => (
-                          <TableRow
-                            key={product.id}
-                            className="cursor-pointer hover:bg-blue-50 transition-colors"
-                            onClick={() => router.push(`/inventario/items/${product.id}`)}
-                          >
-                            <TableCell className="font-mono text-sm font-medium text-blue-700">
-                              {product.sku}
-                            </TableCell>
-                            <TableCell>
-                              <div className="font-medium text-gray-900">{product.name}</div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge className={productTypeColors[product.type] || 'bg-gray-100 text-gray-800'}>
-                                {productTypeLabels[product.type] || product.type}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <span className="text-sm text-gray-600">{product.unit}</span>
-                            </TableCell>
-                            <TableCell className="text-right font-medium">
-                              {getSalePrice(product)}
-                            </TableCell>
-                            <TableCell className="text-right text-gray-600">
-                              {getCalculatedCost(product)}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Badge
-                                variant={product.stockQuantity > 0 ? 'default' : 'destructive'}
-                                className={product.stockQuantity > 0 ? 'bg-green-100 text-green-800' : ''}
-                              >
-                                {product.stockQuantity}
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+        <TabsContent value="purchases" className="mt-6">
+          <PurchaseAnalysisTab />
+        </TabsContent>
 
-                  {/* Pagination */}
-                  <div className="mt-4 flex items-center justify-between">
-                    <div className="text-sm text-muted-foreground">
-                      Mostrando {products.length} items
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setPage(p => Math.max(1, p - 1))}
-                        disabled={page === 1}
-                      >
-                        Anterior
-                      </Button>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-muted-foreground">
-                          Página {page} de {totalPages}
-                        </span>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                        disabled={page === totalPages}
-                      >
-                        Siguiente
-                      </Button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
+        <TabsContent value="rotation" className="mt-6">
+          <RotationABCTab />
         </TabsContent>
 
         <TabsContent value="config" className="mt-6">
@@ -366,6 +144,10 @@ export default function ItemsInventarioPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="unlinked" className="mt-6">
+          <UnlinkedItemsTab onCountUpdate={setUnlinkedCount} />
         </TabsContent>
       </Tabs>
     </div>

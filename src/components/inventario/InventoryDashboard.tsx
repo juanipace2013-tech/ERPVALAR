@@ -105,11 +105,24 @@ export default function InventoryDashboard() {
 
   if (!data) return null
 
-  const chartData = data.purchasesByMonth.map(m => ({
-    mes: m.month.substring(5),
-    valor: Math.round(m.totalValue),
-    facturas: m.invoiceCount,
-  }))
+  // Build 12 months of chart data (fill gaps with $0)
+  const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+  const chartData = (() => {
+    const byMonth = new Map(data.purchasesByMonth.map(m => [m.month, m]))
+    const months: Array<{ mes: string; valor: number; facturas: number }> = []
+    const now = new Date()
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      const entry = byMonth.get(key)
+      months.push({
+        mes: monthNames[d.getMonth()],
+        valor: entry ? Math.round(entry.totalValue) : 0,
+        facturas: entry?.invoiceCount || 0,
+      })
+    }
+    return months
+  })()
 
   return (
     <div className="space-y-6">
@@ -196,7 +209,7 @@ export default function InventoryDashboard() {
                   formatter={(value: number) => [formatCurrency(value), 'Valor']}
                   contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '6px' }}
                 />
-                <Bar dataKey="valor" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="valor" fill="#3B82F6" radius={[4, 4, 0, 0]} maxBarSize={60} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>

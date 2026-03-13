@@ -234,10 +234,10 @@ export default function InventoryItemsTab() {
                           <TableCell className="font-mono text-sm font-medium text-blue-700">
                             {product.sku}
                           </TableCell>
-                          <TableCell>
-                            <div className="font-medium text-gray-900">{product.name}</div>
+                          <TableCell className="max-w-lg">
+                            <div className="font-medium text-gray-900 truncate" title={product.name}>{product.name}</div>
                             {product.supplier && (
-                              <div className="text-xs text-gray-500">{product.supplier.name}</div>
+                              <div className="text-xs text-gray-500 truncate">{product.supplier.name}</div>
                             )}
                           </TableCell>
                           <TableCell className="text-right font-medium">

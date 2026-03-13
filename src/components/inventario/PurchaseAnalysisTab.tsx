@@ -96,9 +96,9 @@ export default function PurchaseAnalysisTab() {
                   <TableBody>
                     {data.data.map((item: any) => (
                       <TableRow key={item.productId}>
-                        <TableCell>
-                          <p className="font-medium">{item.name}</p>
-                          <p className="text-xs text-gray-500 font-mono">{item.sku}</p>
+                        <TableCell className="max-w-md">
+                          <p className="text-xs font-bold text-gray-500 font-mono">{item.sku}</p>
+                          <p className="font-medium truncate" title={item.name}>{item.name}</p>
                         </TableCell>
                         <TableCell className="text-sm text-gray-600">
                           {item.supplierName || '-'}
@@ -139,10 +139,10 @@ export default function PurchaseAnalysisTab() {
                         <TableCell className="text-right">{item.totalItems}</TableCell>
                         <TableCell className="text-right font-medium">{formatCurrency(item.totalValue)}</TableCell>
                         <TableCell className="text-right">{item.invoiceCount}</TableCell>
-                        <TableCell>
+                        <TableCell className="max-w-xs">
                           <div className="flex flex-wrap gap-1">
                             {item.topProducts?.slice(0, 3).map((p: any, i: number) => (
-                              <Badge key={i} variant="outline" className="text-xs">
+                              <Badge key={i} variant="outline" className="text-xs truncate max-w-[150px]" title={p.name}>
                                 {p.name.substring(0, 25)}
                               </Badge>
                             ))}

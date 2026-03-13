@@ -111,8 +111,8 @@ export default function InventoryDashboard() {
     const byMonth = new Map(data.purchasesByMonth.map(m => [m.month, m]))
     const months: Array<{ mes: string; valor: number; facturas: number }> = []
     const now = new Date()
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
       const entry = byMonth.get(key)
       months.push({
@@ -193,7 +193,7 @@ export default function InventoryDashboard() {
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
               <BarChart3 className="h-5 w-5" />
-              Compras por mes (últimos 12 meses)
+              Compras por mes (próximos 12 meses)
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -242,8 +242,8 @@ export default function InventoryDashboard() {
                   <TableBody>
                     {data.belowMinimum.slice(0, 10).map(p => (
                       <TableRow key={p.id}>
-                        <TableCell className="py-2">
-                          <p className="text-sm font-medium">{p.name}</p>
+                        <TableCell className="py-2 max-w-[200px]">
+                          <p className="text-sm font-medium truncate" title={p.name}>{p.name}</p>
                           <p className="text-xs text-gray-500">{p.sku}</p>
                         </TableCell>
                         <TableCell className="text-right">
@@ -287,8 +287,8 @@ export default function InventoryDashboard() {
                   <TableBody>
                     {data.noMovement.slice(0, 10).map(p => (
                       <TableRow key={p.id}>
-                        <TableCell className="py-2">
-                          <p className="text-sm font-medium">{p.name}</p>
+                        <TableCell className="py-2 max-w-[200px]">
+                          <p className="text-sm font-medium truncate" title={p.name}>{p.name}</p>
                           <p className="text-xs text-gray-500">{p.sku}</p>
                         </TableCell>
                         <TableCell className="text-right text-sm">{p.stockQuantity}</TableCell>
@@ -334,8 +334,8 @@ export default function InventoryDashboard() {
                         {movementTypeLabels[m.type] || m.type}
                       </Badge>
                     </TableCell>
-                    <TableCell>
-                      <p className="text-sm font-medium">{m.product.name}</p>
+                    <TableCell className="max-w-md">
+                      <p className="text-sm font-medium truncate" title={m.product.name}>{m.product.name}</p>
                       <p className="text-xs text-gray-500">{m.product.sku}</p>
                     </TableCell>
                     <TableCell className={`text-right text-sm font-semibold ${m.quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>

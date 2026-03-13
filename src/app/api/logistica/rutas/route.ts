@@ -93,6 +93,8 @@ export async function POST(request: NextRequest) {
               customerName: stop.customerName,
               transportType: stop.transportType || 'OWN',
               transportName: stop.transportName || null,
+              transportAddress: stop.transportAddress || null,
+              transportPhone: stop.transportPhone || null,
               address: stop.address || null,
               city: stop.city || null,
               zone: stop.zone || 'CABA',

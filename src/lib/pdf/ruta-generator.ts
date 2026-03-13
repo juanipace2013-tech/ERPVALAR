@@ -17,6 +17,8 @@ export interface RutaPDFData {
     zone: string
     transportType: string
     transportName?: string | null
+    transportAddress?: string | null
+    transportPhone?: string | null
     packages: number
     schedule?: string | null
     contactName?: string | null
@@ -157,10 +159,15 @@ export function generateRutaPDF(data: RutaPDFData): Blob {
 
     // Stop rows
     for (const stop of group.stops) {
-      const transport =
-        stop.transportType === 'OWN'
-          ? 'Propio'
-          : stop.transportName || 'Tercero'
+      const transportParts: string[] = []
+      if (stop.transportType === 'OWN') {
+        transportParts.push('Propio')
+      } else {
+        transportParts.push(stop.transportName || 'Tercero')
+        if (stop.transportAddress) transportParts.push(stop.transportAddress)
+        if (stop.transportPhone) transportParts.push(`Tel: ${stop.transportPhone}`)
+      }
+      const transport = transportParts.join('\n')
 
       const contact = [stop.contactName, stop.contactPhone]
         .filter(Boolean)
@@ -206,13 +213,13 @@ export function generateRutaPDF(data: RutaPDFData): Blob {
       0: { cellWidth: 10, halign: 'center' },   // N°
       1: { cellWidth: 28 },                       // Remito
       2: { cellWidth: 40 },                       // Cliente
-      3: { cellWidth: 50 },                       // Dirección
-      4: { cellWidth: 24 },                       // Transporte
-      5: { cellWidth: 14, halign: 'center' },     // Bultos
-      6: { cellWidth: 20 },                       // Horario
-      7: { cellWidth: 32 },                       // Contacto
-      8: { cellWidth: 32 },                       // Destino Final
-      9: { cellWidth: 27, halign: 'center' },     // Firma
+      3: { cellWidth: 45 },                       // Dirección
+      4: { cellWidth: 34 },                       // Transporte
+      5: { cellWidth: 12, halign: 'center' },     // Bultos
+      6: { cellWidth: 18 },                       // Horario
+      7: { cellWidth: 30 },                       // Contacto
+      8: { cellWidth: 30 },                       // Destino Final
+      9: { cellWidth: 24, halign: 'center' },     // Firma
     },
     margin: { left: ML, right: MR },
     didParseCell: (data) => {

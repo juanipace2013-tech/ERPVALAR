@@ -70,6 +70,8 @@ interface StopData {
   customerName: string
   transportType: 'OWN' | 'THIRD_PARTY'
   transportName: string
+  transportAddress: string
+  transportPhone: string
   address: string
   city: string
   zone: 'CABA' | 'NORTE' | 'SUR' | 'OESTE'
@@ -106,6 +108,8 @@ function createEmptyStop(): StopData {
     customerName: '',
     transportType: 'OWN',
     transportName: '',
+    transportAddress: '',
+    transportPhone: '',
     address: '',
     city: '',
     zone: 'CABA',
@@ -239,6 +243,8 @@ export default function NuevaRutaPage() {
             customerName: stop.customerName,
             transportType: stop.transportType,
             transportName: stop.transportName || null,
+            transportAddress: stop.transportAddress || null,
+            transportPhone: stop.transportPhone || null,
             address: stop.address || null,
             city: stop.city || null,
             zone: stop.zone,
@@ -509,13 +515,31 @@ export default function NuevaRutaPage() {
                         </div>
 
                         {stop.transportType === 'THIRD_PARTY' && (
-                          <div className="grid grid-cols-2 gap-3">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                             <div>
                               <Label className="text-xs">Nombre transporte</Label>
                               <Input
                                 value={stop.transportName}
                                 onChange={(e) => updateStop(stop.tempId, 'transportName', e.target.value)}
                                 placeholder="Ej: Cruz del Sur"
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Dirección transporte</Label>
+                              <Input
+                                value={stop.transportAddress}
+                                onChange={(e) => updateStop(stop.tempId, 'transportAddress', e.target.value)}
+                                placeholder="Av. Corrientes 1234"
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Tel. transporte</Label>
+                              <Input
+                                value={stop.transportPhone}
+                                onChange={(e) => updateStop(stop.tempId, 'transportPhone', e.target.value)}
+                                placeholder="011-4567-8900"
                                 className="h-8 text-sm"
                               />
                             </div>
@@ -762,15 +786,39 @@ export default function NuevaRutaPage() {
               </div>
             </div>
             {manualStop.transportType === 'THIRD_PARTY' && (
-              <div>
-                <Label>Nombre del transporte</Label>
-                <Input
-                  value={manualStop.transportName}
-                  onChange={(e) =>
-                    setManualStop((prev) => ({ ...prev, transportName: e.target.value }))
-                  }
-                  placeholder="Ej: Cruz del Sur, Via Cargo"
-                />
+              <div className="space-y-4">
+                <div>
+                  <Label>Nombre del transporte</Label>
+                  <Input
+                    value={manualStop.transportName}
+                    onChange={(e) =>
+                      setManualStop((prev) => ({ ...prev, transportName: e.target.value }))
+                    }
+                    placeholder="Ej: Cruz del Sur, Via Cargo"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Dirección del transporte</Label>
+                    <Input
+                      value={manualStop.transportAddress}
+                      onChange={(e) =>
+                        setManualStop((prev) => ({ ...prev, transportAddress: e.target.value }))
+                      }
+                      placeholder="Av. Corrientes 1234, CABA"
+                    />
+                  </div>
+                  <div>
+                    <Label>Teléfono del transporte</Label>
+                    <Input
+                      value={manualStop.transportPhone}
+                      onChange={(e) =>
+                        setManualStop((prev) => ({ ...prev, transportPhone: e.target.value }))
+                      }
+                      placeholder="011-4567-8900"
+                    />
+                  </div>
+                </div>
               </div>
             )}
             <div className="grid grid-cols-2 gap-4">

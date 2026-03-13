@@ -2363,6 +2363,8 @@ model DeliveryStop {
   customerName      String
   transportType     DeliveryStopTransport @default(OWN)
   transportName     String?             // Nombre transporte tercerizado
+  transportAddress  String?             // Dirección del transporte/expreso
+  transportPhone    String?             // Teléfono del transporte
 
   address           String?
   city              String?

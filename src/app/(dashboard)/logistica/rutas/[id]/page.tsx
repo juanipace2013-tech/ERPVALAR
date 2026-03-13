@@ -59,6 +59,8 @@ interface DeliveryStop {
   zone: string
   transportType: string
   transportName: string | null
+  transportAddress: string | null
+  transportPhone: string | null
   packages: number
   schedule: string | null
   contactName: string | null
@@ -241,6 +243,8 @@ export default function RutaDetailPage() {
           zone: s.zone,
           transportType: s.transportType,
           transportName: s.transportName,
+          transportAddress: s.transportAddress,
+          transportPhone: s.transportPhone,
           packages: s.packages,
           schedule: s.schedule,
           contactName: s.contactName,
@@ -508,6 +512,16 @@ export default function RutaDetailPage() {
                             : stop.transportName || 'Tercero'}
                         </span>
                       </div>
+                      {stop.transportAddress && (
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {stop.transportAddress}
+                        </p>
+                      )}
+                      {stop.transportPhone && (
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          Tel: {stop.transportPhone}
+                        </p>
+                      )}
                       {stop.trackingNumber && (
                         <p className="text-xs text-gray-500 mt-0.5">
                           Guia: {stop.trackingNumber}

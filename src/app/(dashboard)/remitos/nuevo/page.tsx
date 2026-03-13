@@ -45,6 +45,7 @@ import {
   ColppyCustomerSearch,
   type ColppyCustomer,
 } from '@/components/ColppyCustomerSearch'
+import DeliveryAddressSelector from '@/components/remitos/DeliveryAddressSelector'
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
 
@@ -227,6 +228,30 @@ export default function NuevoRemitoPage() {
   const [linkedQuoteId, setLinkedQuoteId] = useState<string | null>(null)
 
   const [submitting, setSubmitting] = useState(false)
+
+  // ── Delivery address override ──
+  const [localCustomerId, setLocalCustomerId] = useState<string | null>(null)
+  const [deliveryAddress, setDeliveryAddress] = useState('')
+  const [deliveryCity, setDeliveryCity] = useState('')
+  const [deliveryProvince, setDeliveryProvince] = useState('')
+  const [deliveryPostalCode, setDeliveryPostalCode] = useState('')
+
+  // Resolve local customer ID when customer is selected (direct mode)
+  useEffect(() => {
+    if (!customer?.cuit) {
+      setLocalCustomerId(null)
+      return
+    }
+    const normalizedCuit = customer.cuit.replace(/\D/g, '')
+    fetch(`/api/clientes/by-cuit/${normalizedCuit}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data?.found && data.customer?.id) {
+          setLocalCustomerId(data.customer.id)
+        }
+      })
+      .catch(() => {})
+  }, [customer?.cuit])
 
   // ── Load quote if from quote ──
   useEffect(() => {
@@ -457,6 +482,10 @@ export default function NuevoRemitoPage() {
           customerInvoiceNumber: customerInvoiceNumber || undefined,
           bultos: bultos ? parseInt(bultos) : undefined,
           notes: notes || undefined,
+          deliveryAddress: deliveryAddress || undefined,
+          deliveryCity: deliveryCity || undefined,
+          deliveryProvince: deliveryProvince || undefined,
+          deliveryPostalCode: deliveryPostalCode || undefined,
         }),
       })
 
@@ -516,6 +545,10 @@ export default function NuevoRemitoPage() {
           bultos: bultos || undefined,
           totalAmountARS: totalAmountARS || undefined,
           notes: notes || undefined,
+          deliveryAddress: deliveryAddress || undefined,
+          deliveryCity: deliveryCity || undefined,
+          deliveryProvince: deliveryProvince || undefined,
+          deliveryPostalCode: deliveryPostalCode || undefined,
           items: items.map((item) => ({
             productId: item.productId,
             sku: item.sku,
@@ -664,7 +697,27 @@ export default function NuevoRemitoPage() {
                 Datos del remito
               </CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-4">
+            <CardContent className="space-y-4">
+              {/* Selector de dirección de entrega */}
+              {quote.customer.id && (
+                <DeliveryAddressSelector
+                  customerId={quote.customer.id}
+                  fiscalAddress={{
+                    address: quote.customer.address,
+                    city: quote.customer.city,
+                    province: quote.customer.province,
+                    postalCode: null,
+                  }}
+                  onSelect={(addr) => {
+                    setDeliveryAddress(addr.deliveryAddress || '')
+                    setDeliveryCity(addr.deliveryCity || '')
+                    setDeliveryProvince(addr.deliveryProvince || '')
+                    setDeliveryPostalCode(addr.deliveryPostalCode || '')
+                  }}
+                />
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="purchaseOrder">OC del cliente</Label>
                 <Input
@@ -723,6 +776,7 @@ export default function NuevoRemitoPage() {
                   onChange={(e) => setNotes(e.target.value)}
                   rows={3}
                 />
+              </div>
               </div>
             </CardContent>
           </Card>
@@ -818,6 +872,25 @@ export default function NuevoRemitoPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Selector de dirección de entrega */}
+            {customer && (
+              <DeliveryAddressSelector
+                customerId={localCustomerId}
+                fiscalAddress={{
+                  address: customer.address || null,
+                  city: customer.city || null,
+                  province: customer.province || null,
+                  postalCode: customer.postalCode || null,
+                }}
+                onSelect={(addr) => {
+                  setDeliveryAddress(addr.deliveryAddress || '')
+                  setDeliveryCity(addr.deliveryCity || '')
+                  setDeliveryProvince(addr.deliveryProvince || '')
+                  setDeliveryPostalCode(addr.deliveryPostalCode || '')
+                }}
+              />
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="remitoDate">Fecha</Label>

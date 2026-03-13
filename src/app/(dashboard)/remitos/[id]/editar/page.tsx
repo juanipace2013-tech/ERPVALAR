@@ -26,6 +26,7 @@ import {
   Search,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import DeliveryAddressSelector from '@/components/remitos/DeliveryAddressSelector'
 
 // ── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -54,11 +55,16 @@ interface DeliveryNote {
   deliveryAddress: string | null
   deliveryCity: string | null
   deliveryProvince: string | null
+  deliveryPostalCode: string | null
   customer: {
     id: string
     name: string
     businessName: string | null
     cuit: string
+    address: string | null
+    city: string | null
+    province: string | null
+    postalCode: string | null
   }
   items: Array<{
     id: string
@@ -93,6 +99,7 @@ export default function EditarRemitoPage() {
   const [deliveryAddress, setDeliveryAddress] = useState('')
   const [deliveryCity, setDeliveryCity] = useState('')
   const [deliveryProvince, setDeliveryProvince] = useState('')
+  const [deliveryPostalCode, setDeliveryPostalCode] = useState('')
   const [items, setItems] = useState<DeliveryNoteItem[]>([])
 
   // Búsqueda de productos
@@ -134,6 +141,7 @@ export default function EditarRemitoPage() {
       setDeliveryAddress(data.deliveryAddress || '')
       setDeliveryCity(data.deliveryCity || '')
       setDeliveryProvince(data.deliveryProvince || '')
+      setDeliveryPostalCode(data.deliveryPostalCode || '')
       setItems(
         data.items.map((item) => ({
           id: item.id,
@@ -177,6 +185,7 @@ export default function EditarRemitoPage() {
           deliveryAddress: deliveryAddress || null,
           deliveryCity: deliveryCity || null,
           deliveryProvince: deliveryProvince || null,
+          deliveryPostalCode: deliveryPostalCode || null,
           items: items.map((item) => ({
             productId: item.productId,
             sku: item.sku,
@@ -369,7 +378,24 @@ export default function EditarRemitoPage() {
         <CardHeader>
           <CardTitle>Dirección de Entrega</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          {deliveryNote?.customer?.id && (
+            <DeliveryAddressSelector
+              customerId={deliveryNote.customer.id}
+              fiscalAddress={{
+                address: deliveryNote.customer.address || null,
+                city: deliveryNote.customer.city || null,
+                province: deliveryNote.customer.province || null,
+                postalCode: deliveryNote.customer.postalCode || null,
+              }}
+              onSelect={(addr) => {
+                setDeliveryAddress(addr.deliveryAddress || '')
+                setDeliveryCity(addr.deliveryCity || '')
+                setDeliveryProvince(addr.deliveryProvince || '')
+                setDeliveryPostalCode(addr.deliveryPostalCode || '')
+              }}
+            />
+          )}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="md:col-span-2">
               <Label>Dirección</Label>
@@ -393,6 +419,14 @@ export default function EditarRemitoPage() {
                 value={deliveryProvince}
                 onChange={(e) => setDeliveryProvince(e.target.value)}
                 placeholder="Provincia"
+              />
+            </div>
+            <div>
+              <Label>Código Postal</Label>
+              <Input
+                value={deliveryPostalCode}
+                onChange={(e) => setDeliveryPostalCode(e.target.value)}
+                placeholder="Código postal"
               />
             </div>
           </div>

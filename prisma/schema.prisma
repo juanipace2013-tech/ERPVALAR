@@ -197,6 +197,7 @@ model Customer {
   activities      Activity[]
   receipts        Receipt[]
   customerReceipts CustomerReceipt[] @relation("CustomerReceipts")
+  deliveryAddresses CustomerDeliveryAddress[]
 
   @@index([cuit])
   @@index([name])
@@ -204,6 +205,36 @@ model Customer {
   @@index([province])
   @@index([salesPersonId])
   @@map("customers")
+}
+
+model CustomerDeliveryAddress {
+  id           String   @id @default(cuid())
+  customerId   String
+  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  label        String   // "Planta Salta", "Fábrica Jujuy", "Depósito BA"
+  address      String
+  city         String?
+  province     String?
+  postalCode   String?
+  country      String   @default("Argentina")
+
+  contactName  String?
+  contactPhone String?
+  contactEmail String?
+
+  schedule     String?  // "Lunes a viernes 8 a 17hs"
+  notes        String?  @db.Text
+
+  isDefault    Boolean  @default(false)
+  isActive     Boolean  @default(true)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([customerId, isActive])
+  @@map("customer_delivery_addresses")
 }
 
 model Contact {

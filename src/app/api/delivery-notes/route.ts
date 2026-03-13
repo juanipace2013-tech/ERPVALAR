@@ -195,10 +195,10 @@ export async function POST(request: NextRequest) {
         notes: notes
           ? (invoiceRef ? `Factura: ${invoiceRef}\n${notes}` : notes)
           : (invoiceRef ? `Factura: ${invoiceRef}` : null),
-        deliveryAddress: customer.address || null,
-        deliveryCity: customer.city || null,
-        deliveryProvince: customer.province || null,
-        deliveryPostalCode: customer.postalCode || null,
+        deliveryAddress: body.deliveryAddress || customer.address || null,
+        deliveryCity: body.deliveryCity || customer.city || null,
+        deliveryProvince: body.deliveryProvince || customer.province || null,
+        deliveryPostalCode: body.deliveryPostalCode || customer.postalCode || null,
         status: 'PENDING',
         items: {
           create: items.map((item: any) => ({

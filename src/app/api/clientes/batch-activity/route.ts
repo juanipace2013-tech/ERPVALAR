@@ -79,9 +79,9 @@ export async function POST(request: NextRequest) {
 
       // Encontrar la fecha más reciente entre cotizaciones, remitos y facturas
       const dates: Date[] = []
-      if (c.quotes[0]?.date) dates.push(new Date(c.quotes[0].date))
-      if (c.deliveryNotes[0]?.date) dates.push(new Date(c.deliveryNotes[0].date))
-      if (c.invoices[0]?.issueDate) dates.push(new Date(c.invoices[0].issueDate))
+      if (c.quotes?.[0]?.date) dates.push(new Date(c.quotes[0].date))
+      if (c.deliveryNotes?.[0]?.date) dates.push(new Date(c.deliveryNotes[0].date))
+      if (c.invoices?.[0]?.issueDate) dates.push(new Date(c.invoices[0].issueDate))
 
       const lastActivity =
         dates.length > 0
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
 
       activity[cuitKey] = {
         lastActivity,
-        activeQuotes: c._count.quotes,
+        activeQuotes: c._count?.quotes || 0,
         localId: c.id,
         salesPerson: c.salesPerson || null,
       }

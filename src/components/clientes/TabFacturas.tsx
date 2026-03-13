@@ -94,8 +94,8 @@ export default function TabFacturas({ colppyId }: Props) {
 
   // Filtrar por estado
   const facturasFiltradas = useMemo(() => {
-    if (filtroEstado === 'todas') return facturas
-    return facturas.filter((f) => {
+    if (filtroEstado === 'todas') return facturas || []
+    return (facturas || []).filter((f) => {
       const badge = estadoBadge(f)
       if (filtroEstado === 'pendientes') return badge.label === 'Pendiente'
       if (filtroEstado === 'pagadas') return badge.label === 'Pagada'
@@ -106,12 +106,12 @@ export default function TabFacturas({ colppyId }: Props) {
 
   // Facturas vencidas destacadas
   const vencidas = useMemo(
-    () => facturas.filter((f) => estadoBadge(f).label.startsWith('Vencida')),
+    () => (facturas || []).filter((f) => estadoBadge(f).label.startsWith('Vencida')),
     [facturas]
   )
 
   const totalPendiente = useMemo(
-    () => facturas.reduce((sum, f) => sum + (f.saldo > 0 ? f.saldo : 0), 0),
+    () => (facturas || []).reduce((sum, f) => sum + (f.saldo > 0 ? f.saldo : 0), 0),
     [facturas]
   )
 
@@ -128,7 +128,7 @@ export default function TabFacturas({ colppyId }: Props) {
                   {vencidas.length} factura{vencidas.length > 1 ? 's' : ''} vencida{vencidas.length > 1 ? 's' : ''}
                 </p>
                 <p className="text-xs text-red-600">
-                  Total pendiente vencido: $ {formatNumber(vencidas.reduce((s, f) => s + f.saldo, 0))}
+                  Total pendiente vencido: $ {formatNumber((vencidas || []).reduce((s, f) => s + f.saldo, 0))}
                 </p>
               </div>
             </div>

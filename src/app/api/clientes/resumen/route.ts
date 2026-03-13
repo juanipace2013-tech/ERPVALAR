@@ -55,15 +55,15 @@ export async function GET(_request: NextRequest) {
     ).length
 
     // Saldos
-    const totalBalance = customers.reduce(
+    const totalBalance = (customers || []).reduce(
       (sum, c) => sum + parseFloat(c.balance.toString()),
       0
     )
     const averageBalance = totalCustomers > 0 ? totalBalance / totalCustomers : 0
 
     // Total de cotizaciones y facturas
-    const totalQuotes = customers.reduce((sum, c) => sum + c._count.quotes, 0)
-    const totalInvoices = customers.reduce((sum, c) => sum + c._count.invoices, 0)
+    const totalQuotes = (customers || []).reduce((sum, c) => sum + (c._count?.quotes || 0), 0)
+    const totalInvoices = (customers || []).reduce((sum, c) => sum + (c._count?.invoices || 0), 0)
 
     // Top clientes por saldo
     const topCustomers = customers

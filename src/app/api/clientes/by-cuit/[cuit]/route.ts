@@ -96,13 +96,14 @@ export async function GET(
     }
 
     // Calcular stats comerciales
-    const totalQuoted = customer.quotes.reduce((sum, q) => sum + Number(q.total), 0)
-    const acceptedQuotes = customer.quotes.filter(
+    const quotes = customer.quotes || []
+    const totalQuoted = quotes.reduce((sum, q) => sum + Number(q.total), 0)
+    const acceptedQuotes = quotes.filter(
       (q) => q.status === 'ACCEPTED' || q.status === 'CONVERTED'
     ).length
     const conversionRate =
-      customer.quotes.length > 0
-        ? Math.round((acceptedQuotes / customer.quotes.length) * 100)
+      quotes.length > 0
+        ? Math.round((acceptedQuotes / quotes.length) * 100)
         : 0
 
     return NextResponse.json({

@@ -70,7 +70,7 @@ export default function TabFacturasAdeudadas({ colppyId }: Props) {
 
   // Solo facturas con saldo pendiente, ordenadas por fecha asc para saldo acumulado
   const facturasAdeudadas = useMemo(() => {
-    const pendientes = facturas
+    const pendientes = (facturas || [])
       .filter((f) => f.saldo > 0.01) // Excluir pagadas (margen redondeo)
       .sort((a, b) => (a.fechaVto || a.fecha || '').localeCompare(b.fechaVto || b.fecha || ''))
 
@@ -85,14 +85,14 @@ export default function TabFacturasAdeudadas({ colppyId }: Props) {
   // Facturas vencidas
   const vencidas = useMemo(() => {
     const hoy = new Date()
-    return facturasAdeudadas.filter((f) => {
+    return (facturasAdeudadas || []).filter((f) => {
       if (!f.fechaVto) return false
       return new Date(f.fechaVto) < hoy
     })
   }, [facturasAdeudadas])
 
   const totalPendiente = useMemo(
-    () => facturasAdeudadas.reduce((sum, f) => sum + f.saldo, 0),
+    () => (facturasAdeudadas || []).reduce((sum, f) => sum + f.saldo, 0),
     [facturasAdeudadas]
   )
 
@@ -109,7 +109,7 @@ export default function TabFacturasAdeudadas({ colppyId }: Props) {
                   {vencidas.length} factura{vencidas.length > 1 ? 's' : ''} vencida{vencidas.length > 1 ? 's' : ''}
                 </p>
                 <p className="text-xs text-red-600">
-                  Total vencido: $ {formatNumber(vencidas.reduce((s, f) => s + f.saldo, 0))}
+                  Total vencido: $ {formatNumber((vencidas || []).reduce((s, f) => s + f.saldo, 0))}
                 </p>
               </div>
             </div>
@@ -226,10 +226,10 @@ export default function TabFacturasAdeudadas({ colppyId }: Props) {
                       TOTALES
                     </td>
                     <td className="px-4 py-2 text-right font-mono text-xs">
-                      $ {formatNumber(facturasAdeudadas.reduce((s, f) => s + f.total, 0))}
+                      $ {formatNumber((facturasAdeudadas || []).reduce((s, f) => s + f.total, 0))}
                     </td>
                     <td className="px-4 py-2 text-right font-mono text-xs text-green-600">
-                      $ {formatNumber(facturasAdeudadas.reduce((s, f) => s + f.cobrado, 0))}
+                      $ {formatNumber((facturasAdeudadas || []).reduce((s, f) => s + f.cobrado, 0))}
                     </td>
                     <td className="px-4 py-2 text-right font-mono text-xs text-red-600">
                       $ {formatNumber(totalPendiente)}

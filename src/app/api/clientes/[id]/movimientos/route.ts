@@ -90,27 +90,28 @@ export async function GET(
     })
 
     // Calcular balance actual (debería coincidir con customer.balance)
-    const currentBalance = movements
+    const currentBalance = (movements || [])
       .filter((m) => m.status !== 'PAID' && m.status !== 'DRAFT')
       .reduce((sum, m) => sum + m.debit - m.credit, 0)
 
     // Estadísticas
+    const safeInvoices = invoices || []
     const stats = {
-      totalInvoices: invoices.length,
-      pendingInvoices: invoices.filter(
+      totalInvoices: safeInvoices.length,
+      pendingInvoices: safeInvoices.filter(
         (i) => i.status === 'PENDING' || i.status === 'AUTHORIZED' || i.status === 'SENT'
       ).length,
-      paidInvoices: invoices.filter((i) => i.status === 'PAID').length,
-      overdueInvoices: invoices.filter(
+      paidInvoices: safeInvoices.filter((i) => i.status === 'PAID').length,
+      overdueInvoices: safeInvoices.filter(
         (i) =>
           (i.status === 'PENDING' || i.status === 'AUTHORIZED' || i.status === 'SENT') &&
           new Date(i.dueDate) < new Date()
       ).length,
       totalDebt: currentBalance,
-      totalInvoiced: invoices
+      totalInvoiced: safeInvoices
         .filter((i) => i.status !== 'DRAFT')
         .reduce((sum, i) => sum + Number(i.total), 0),
-      totalPaid: invoices
+      totalPaid: safeInvoices
         .filter((i) => i.status === 'PAID')
         .reduce((sum, i) => sum + Number(i.total), 0),
     }

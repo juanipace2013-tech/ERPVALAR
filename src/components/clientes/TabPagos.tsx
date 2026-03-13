@@ -53,7 +53,7 @@ export default function TabPagos({ colppyId }: Props) {
     fetchPagos()
   }, [fetchPagos])
 
-  const totalPagos = pagos.reduce((sum, p) => sum + p.monto, 0)
+  const totalPagos = (pagos || []).reduce((sum, p) => sum + p.monto, 0)
 
   return (
     <div className="space-y-4">

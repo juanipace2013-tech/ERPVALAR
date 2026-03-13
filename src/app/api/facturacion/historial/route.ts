@@ -4,7 +4,8 @@ import { prisma } from '@/lib/prisma'
 
 /**
  * GET /api/facturacion/historial
- * Devuelve el historial de facturas/remitos enviados a Colppy desde el tablero de facturación.
+ * Devuelve el historial de cotizaciones enviadas a Colppy (colppySyncedAt != null).
+ * Soporta paginación (20 por página) y filtros por vendedor, cliente, fechas.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -18,66 +19,56 @@ export async function GET(request: NextRequest) {
     const clienteId = searchParams.get('clienteId')
     const dateFrom = searchParams.get('dateFrom')
     const dateTo = searchParams.get('dateTo')
+    const page = parseInt(searchParams.get('page') || '0', 10)
+    const pageSize = 20
 
-    // Buscar Invoices creadas desde el flujo de facturación (enviadas a Colppy)
-    const invoices = await prisma.invoice.findMany({
-      where: {
-        transactionType: 'SALE',
-        invoiceNumber: { startsWith: 'BORRADOR-COLPPY-' },
-        ...(clienteId && { customerId: clienteId }),
-        ...(vendedorId && { quote: { salesPersonId: vendedorId } }),
-        ...((dateFrom || dateTo) && {
-          createdAt: {
-            ...(dateFrom && { gte: new Date(dateFrom) }),
-            ...(dateTo && { lte: new Date(dateTo + 'T23:59:59.999Z') }),
-          },
-        }),
-      },
-      include: {
-        customer: {
-          select: { id: true, name: true, cuit: true },
+    // Filtro base: cotizaciones enviadas a Colppy
+    const where: any = {
+      colppySyncedAt: { not: null },
+      ...(vendedorId && { salesPersonId: vendedorId }),
+      ...(clienteId && { customerId: clienteId }),
+      ...((dateFrom || dateTo) && {
+        colppySyncedAt: {
+          not: null,
+          ...(dateFrom && { gte: new Date(dateFrom) }),
+          ...(dateTo && { lte: new Date(dateTo + 'T23:59:59.999Z') }),
         },
-        quote: {
-          select: {
-            quoteNumber: true,
-            currency: true,
-            exchangeRate: true,
-            salesPerson: {
-              select: { id: true, name: true },
-            },
-          },
+      }),
+    }
+
+    // Contar total para paginación
+    const [total, quotes] = await Promise.all([
+      prisma.quote.count({ where }),
+      prisma.quote.findMany({
+        where,
+        include: {
+          customer: { select: { id: true, name: true, cuit: true } },
+          salesPerson: { select: { id: true, name: true } },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-    })
+        orderBy: { colppySyncedAt: 'desc' },
+        take: pageSize,
+        skip: page * pageSize,
+      }),
+    ])
 
     // Formatear para el frontend
-    const historial = invoices.map((inv) => {
-      const total = Number(inv.total)
-      const exchangeRate = inv.quote?.exchangeRate ? Number(inv.quote.exchangeRate) : null
-      const currency = inv.quote?.currency || inv.currency
-
-      // Extraer número de factura/remito del invoiceNumber
-      const colppyRef = inv.invoiceNumber.replace('BORRADOR-COLPPY-', '')
-
-      // Determinar si es factura o remito basado en las notes
-      const isFactura = inv.notes?.includes('Factura:') || false
-      const isRemito = inv.notes?.includes('Remito:') || false
+    const historial = quotes.map((q) => {
+      const total = Number(q.total)
+      const exchangeRate = q.exchangeRate ? Number(q.exchangeRate) : null
 
       return {
-        id: inv.id,
-        date: inv.createdAt.toISOString(),
-        colppyRef,
-        quoteNumber: inv.quote?.quoteNumber || '—',
-        customer: inv.customer,
-        salesPerson: inv.quote?.salesPerson || null,
-        currency,
-        totalUSD: currency === 'USD' ? total : (exchangeRate ? total / exchangeRate : null),
-        totalARS: currency === 'USD' ? (exchangeRate ? total * exchangeRate : null) : total,
-        isFactura,
-        isRemito,
-        status: inv.status,
+        id: q.id,
+        date: q.colppySyncedAt!.toISOString(),
+        colppyRef: q.colppyInvoiceId || '—',
+        quoteNumber: q.quoteNumber,
+        customer: q.customer,
+        salesPerson: q.salesPerson,
+        currency: q.currency,
+        totalUSD: q.currency === 'USD' ? total : (exchangeRate ? total / exchangeRate : null),
+        totalARS: q.currency === 'USD' ? (exchangeRate ? total * exchangeRate : null) : total,
+        isFactura: !!q.colppyInvoiceId,
+        isRemito: !!q.colppyDeliveryNoteId,
+        status: q.status,
       }
     })
 
@@ -90,9 +81,7 @@ export async function GET(request: NextRequest) {
       }),
       prisma.customer.findMany({
         where: {
-          invoices: {
-            some: { invoiceNumber: { startsWith: 'BORRADOR-COLPPY-' } },
-          },
+          quotes: { some: { colppySyncedAt: { not: null } } },
         },
         select: { id: true, name: true },
         orderBy: { name: 'asc' },
@@ -101,6 +90,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       historial,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
       filters: { vendedores, clientes },
     })
   } catch (error) {

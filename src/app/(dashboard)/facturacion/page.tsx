@@ -30,6 +30,8 @@ import {
   History,
   FileText,
   Truck,
+  Eye,
+  ChevronLeft,
 } from 'lucide-react'
 import {
   Table,
@@ -128,6 +130,10 @@ interface HistorialItem {
 
 interface HistorialData {
   historial: HistorialItem[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
   filters: {
     vendedores: Array<{ id: string; name: string }>
     clientes: Array<{ id: string; name: string }>
@@ -167,6 +173,7 @@ export default function FacturacionPage() {
   const [historialCliente, setHistorialCliente] = useState('')
   const [historialDateFrom, setHistorialDateFrom] = useState('')
   const [historialDateTo, setHistorialDateTo] = useState('')
+  const [historialPage, setHistorialPage] = useState(0)
 
   useEffect(() => {
     fetchBoard()
@@ -196,7 +203,7 @@ export default function FacturacionPage() {
     }
   }
 
-  const fetchHistorial = async () => {
+  const fetchHistorial = async (page = historialPage) => {
     try {
       setHistorialLoading(true)
       const params = new URLSearchParams()
@@ -204,6 +211,7 @@ export default function FacturacionPage() {
       if (historialCliente) params.append('clienteId', historialCliente)
       if (historialDateFrom) params.append('dateFrom', historialDateFrom)
       if (historialDateTo) params.append('dateTo', historialDateTo)
+      params.append('page', String(page))
 
       const response = await fetch(`/api/facturacion/historial?${params.toString()}`)
       if (!response.ok) throw new Error('Error al cargar historial')
@@ -639,16 +647,16 @@ export default function FacturacionPage() {
         />
       </div>
 
-      {/* ─── Historial de Facturación ─── */}
+      {/* ─── Últimas Facturas Enviadas a Colppy ─── */}
       <Card className="mt-8">
         <div className="p-6 pb-4">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <History className="h-5 w-5 text-blue-600" />
-              Historial de Facturación
+              Últimas Facturas Enviadas a Colppy
               {historialData && (
                 <span className="text-sm font-normal text-gray-500">
-                  {historialData.historial.length} registros
+                  {historialData.total} registros
                 </span>
               )}
             </h2>
@@ -702,7 +710,7 @@ export default function FacturacionPage() {
                 className="h-9 w-36"
               />
             </div>
-            <Button size="sm" onClick={fetchHistorial} className="h-9">
+            <Button size="sm" onClick={() => { setHistorialPage(0); fetchHistorial(0) }} className="h-9">
               Filtrar
             </Button>
             {(historialVendedor !== 'all' || historialCliente || historialDateFrom || historialDateTo) && (
@@ -715,7 +723,8 @@ export default function FacturacionPage() {
                   setHistorialCliente('')
                   setHistorialDateFrom('')
                   setHistorialDateTo('')
-                  setTimeout(fetchHistorial, 0)
+                  setHistorialPage(0)
+                  setTimeout(() => fetchHistorial(0), 0)
                 }}
               >
                 Limpiar
@@ -734,85 +743,135 @@ export default function FacturacionPage() {
               <p className="text-sm">No hay facturas enviadas a Colppy</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead>Nº Factura / Remito</TableHead>
-                    <TableHead>Cotización</TableHead>
-                    <TableHead>Cliente</TableHead>
-                    <TableHead>CUIT</TableHead>
-                    <TableHead>Vendedor</TableHead>
-                    <TableHead className="text-right">Total USD</TableHead>
-                    <TableHead className="text-right">Total ARS</TableHead>
-                    <TableHead className="text-center">Estado</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {historialData.historial.map((item) => (
-                    <TableRow key={item.id} className="hover:bg-blue-50/30">
-                      <TableCell className="whitespace-nowrap text-sm">
-                        {new Date(item.date).toLocaleDateString('es-AR', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </TableCell>
-                      <TableCell className="font-mono text-sm font-medium">
-                        {item.colppyRef}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        <Link
-                          href={`/cotizaciones/${item.id}`}
-                          className="text-blue-600 hover:underline"
-                        >
-                          {item.quoteNumber}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-sm font-medium">
-                        {item.customer.name}
-                      </TableCell>
-                      <TableCell className="font-mono text-sm">
-                        {formatCUIT(item.customer.cuit)}
-                      </TableCell>
-                      <TableCell className="text-sm text-gray-600">
-                        {item.salesPerson?.name || '—'}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        {item.totalUSD != null ? `USD ${formatNumber(item.totalUSD)}` : '—'}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        {item.totalARS != null ? `$ ${formatNumber(item.totalARS)}` : '—'}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          {item.isFactura && (
-                            <Badge className="bg-green-100 text-green-800 hover:bg-green-100 text-xs">
-                              <FileText className="h-3 w-3 mr-1" />
-                              Factura
-                            </Badge>
-                          )}
-                          {item.isRemito && (
-                            <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100 text-xs">
-                              <Truck className="h-3 w-3 mr-1" />
-                              Remito
-                            </Badge>
-                          )}
-                          {!item.isFactura && !item.isRemito && (
-                            <Badge className="bg-gray-100 text-gray-600 hover:bg-gray-100 text-xs">
-                              Enviado
-                            </Badge>
-                          )}
-                        </div>
-                      </TableCell>
+            <>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Fecha</TableHead>
+                      <TableHead>Nº Factura / Remito</TableHead>
+                      <TableHead>Cotización</TableHead>
+                      <TableHead>Cliente</TableHead>
+                      <TableHead>CUIT</TableHead>
+                      <TableHead>Vendedor</TableHead>
+                      <TableHead className="text-right">Total USD</TableHead>
+                      <TableHead className="text-right">Total ARS</TableHead>
+                      <TableHead className="text-center">Estado</TableHead>
+                      <TableHead className="text-right">Acciones</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {historialData.historial.map((item) => (
+                      <TableRow key={item.id} className="hover:bg-blue-50/30">
+                        <TableCell className="whitespace-nowrap text-sm">
+                          {new Date(item.date).toLocaleDateString('es-AR', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </TableCell>
+                        <TableCell className="font-mono text-sm font-medium">
+                          {item.colppyRef}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          <Link
+                            href={`/cotizaciones/${item.id}/ver`}
+                            className="text-blue-600 hover:underline"
+                          >
+                            {item.quoteNumber}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="text-sm font-medium max-w-[200px] truncate" title={item.customer.name}>
+                          {item.customer.name}
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">
+                          {formatCUIT(item.customer.cuit)}
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-600">
+                          {item.salesPerson?.name || '—'}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm">
+                          {item.totalUSD != null ? `USD ${formatNumber(item.totalUSD)}` : '—'}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm">
+                          {item.totalARS != null ? `$ ${formatNumber(item.totalARS)}` : '—'}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            {item.isFactura && (
+                              <Badge className="bg-green-100 text-green-800 hover:bg-green-100 text-xs">
+                                <FileText className="h-3 w-3 mr-1" />
+                                Factura
+                              </Badge>
+                            )}
+                            {item.isRemito && (
+                              <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100 text-xs">
+                                <Truck className="h-3 w-3 mr-1" />
+                                Remito
+                              </Badge>
+                            )}
+                            {!item.isFactura && !item.isRemito && (
+                              <Badge className="bg-green-100 text-green-800 hover:bg-green-100 text-xs">
+                                Facturado
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="outline" size="sm" asChild>
+                            <Link href={`/cotizaciones/${item.id}/ver`}>
+                              <Eye className="h-4 w-4 mr-1" /> Ver
+                            </Link>
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Paginación */}
+              {historialData.totalPages > 1 && (
+                <div className="flex items-center justify-between pt-4 border-t mt-4">
+                  <p className="text-sm text-gray-500">
+                    Mostrando {historialData.page * historialData.pageSize + 1}–{Math.min((historialData.page + 1) * historialData.pageSize, historialData.total)} de {historialData.total}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={historialData.page <= 0}
+                      onClick={() => {
+                        const newPage = historialPage - 1
+                        setHistorialPage(newPage)
+                        fetchHistorial(newPage)
+                      }}
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" />
+                      Anterior
+                    </Button>
+                    <span className="text-sm text-gray-600">
+                      Página {historialData.page + 1} de {historialData.totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={historialData.page >= historialData.totalPages - 1}
+                      onClick={() => {
+                        const newPage = historialPage + 1
+                        setHistorialPage(newPage)
+                        fetchHistorial(newPage)
+                      }}
+                    >
+                      Siguiente
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </Card>

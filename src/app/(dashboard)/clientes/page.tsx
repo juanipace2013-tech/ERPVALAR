@@ -214,21 +214,54 @@ export default function ClientesPage() {
     })
   }, [customers, filtroCotizaciones, activityMap])
 
-  // ─── Sync Colppy ──────────────────────────────────────────────────────────
+  // ─── Sync Colppy (background con polling) ──────────────────────────────────
 
   const handleSyncColppy = async () => {
     setSyncing(true)
     try {
       const res = await fetch('/api/clientes/sync-colppy', { method: 'POST' })
-      if (!res.ok) throw new Error('Error al sincronizar')
+      if (!res.ok) throw new Error('Error al iniciar sincronización')
       const data = await res.json()
-      toast.success(
-        `Sincronización completada: ${data.creados} creados, ${data.actualizados} actualizados de ${data.total} clientes Colppy`
-      )
-      await fetchCustomers()
+
+      if (data.status === 'already_running') {
+        toast.info('Ya hay una sincronización en progreso')
+        return
+      }
+
+      toast.info('Sincronización iniciada en background...')
+
+      // Polling cada 5 segundos
+      const pollInterval = setInterval(async () => {
+        try {
+          const statusRes = await fetch('/api/clientes/sync-colppy')
+          if (!statusRes.ok) return
+          const statusData = await statusRes.json()
+
+          if (statusData.status === 'completed') {
+            clearInterval(pollInterval)
+            setSyncing(false)
+            toast.success(
+              `Sincronización completada: ${statusData.creados} creados, ${statusData.actualizados} actualizados de ${statusData.total} clientes`
+            )
+            fetchCustomers()
+          } else if (statusData.status === 'error') {
+            clearInterval(pollInterval)
+            setSyncing(false)
+            toast.error(`Error en sincronización: ${statusData.error}`)
+          }
+          // Si status === 'running', seguir esperando
+        } catch {
+          // Ignorar errores de polling
+        }
+      }, 5000)
+
+      // Safety timeout: parar polling después de 5 minutos
+      setTimeout(() => {
+        clearInterval(pollInterval)
+        setSyncing(false)
+      }, 300000)
     } catch {
-      toast.error('Error al sincronizar clientes de Colppy')
-    } finally {
+      toast.error('Error al iniciar sincronización')
       setSyncing(false)
     }
   }

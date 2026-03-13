@@ -2,7 +2,7 @@ import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
-export const maxDuration = 120 // 2 minutos para sincronizar ~5600 clientes
+// Sync corre en background, el endpoint responde inmediatamente
 
 // Colppy config
 const COLPPY_ENDPOINT = 'https://login.colppy.com/lib/frontera2/service.php'
@@ -20,7 +20,7 @@ async function callColppyAPI(payload: any): Promise<any> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(120000), // 2 min timeout
+    signal: AbortSignal.timeout(30000), // 30s timeout
   })
   const text = await response.text()
   if (text.trim().startsWith('<')) {
@@ -77,6 +77,167 @@ const TAX_CONDITION_MAP: Record<string, string> = {
  * Upsert por CUIT normalizado: crea si no existe, actualiza si existe.
  * NO sobreescribe salesPersonId ni notes (datos locales).
  */
+// Estado del sync en memoria (para polling)
+let syncStatus: {
+  running: boolean
+  startedAt: number | null
+  result: {
+    total: number
+    creados: number
+    actualizados: number
+    omitidos: number
+    totalErrores: number
+    tiempoMs: number
+  } | null
+  error: string | null
+} = { running: false, startedAt: null, result: null, error: null }
+
+async function syncColppyClients() {
+  console.log('[Sync Colppy] Iniciando sincronización de clientes...')
+  const startTime = Date.now()
+
+  // 1. Obtener sesión de Colppy
+  const claveSesion = await getColppySession()
+
+  // 2. Traer TODOS los clientes de Colppy
+  const colppyCustomers = await fetchAllColppyCustomers(claveSesion)
+  console.log(`[Sync Colppy] ${colppyCustomers.length} clientes recibidos de Colppy`)
+
+  // 3. Cargar TODOS los CUITs existentes en la base local
+  const existingCustomers = await prisma.customer.findMany({
+    select: { id: true, cuit: true },
+  })
+  const existingByCuit = new Map<string, string>()
+  existingCustomers.forEach(c => {
+    if (c.cuit) {
+      existingByCuit.set(c.cuit.replace(/\D/g, ''), c.id)
+    }
+  })
+
+  // 4. Procesar en batches
+  let creados = 0
+  let actualizados = 0
+  let omitidos = 0
+  const errores: string[] = []
+  const BATCH_SIZE = 50
+
+  for (let i = 0; i < colppyCustomers.length; i += BATCH_SIZE) {
+    const batch = colppyCustomers.slice(i, i + BATCH_SIZE)
+    const operations = []
+
+    for (const c of batch) {
+      try {
+        const cuit = (c.CUIT || '').trim()
+        const normalizedCuit = cuit.replace(/\D/g, '')
+
+        if (normalizedCuit.length !== 11) {
+          omitidos++
+          continue
+        }
+
+        const formattedCuit = `${normalizedCuit.slice(0, 2)}-${normalizedCuit.slice(2, 10)}-${normalizedCuit.slice(10)}`
+
+        const name = (c.NombreFantasia || c.RazonSocial || '').trim()
+        const businessName = (c.RazonSocial || '').trim()
+        const taxCondition = TAX_CONDITION_MAP[String(c.idCondicionIva)] || 'RESPONSABLE_INSCRIPTO'
+        const colppyId = String(c.idCliente || '')
+        const email = (c.Email || '').trim() || null
+        const phone = (c.Telefono || '').trim() || null
+        const mobile = (c.Celular || '').trim() || null
+        const address = (c.DirPostal || '').trim() || null
+        const city = (c.DirPostalCiudad || '').trim() || null
+        const province = (c.DirPostalProvincia || '').trim() || null
+        const postalCode = (c.DirPostalCodigoPostal || '').trim() || null
+
+        const paymentTermsDays = parseInt(
+          String(c.idCondicionPago || c.IdCondicionPago || c.condicionPago || '0')
+        ) || null
+
+        const existingId = existingByCuit.get(normalizedCuit)
+
+        if (existingId) {
+          operations.push(
+            prisma.customer.update({
+              where: { id: existingId },
+              data: {
+                name: name || undefined,
+                businessName: businessName || undefined,
+                taxCondition: taxCondition as any,
+                colppyId,
+                email,
+                phone,
+                mobile,
+                address,
+                city,
+                province,
+                postalCode,
+                paymentTerms: paymentTermsDays,
+              },
+            }).then(() => { actualizados++ })
+          )
+        } else {
+          operations.push(
+            prisma.customer.create({
+              data: {
+                name: name || formattedCuit,
+                businessName: businessName || null,
+                cuit: formattedCuit,
+                taxCondition: taxCondition as any,
+                colppyId,
+                email,
+                phone,
+                mobile,
+                address,
+                city,
+                province,
+                postalCode,
+                paymentTerms: paymentTermsDays,
+              },
+            }).then(() => {
+              creados++
+              existingByCuit.set(normalizedCuit, 'new')
+            })
+          )
+        }
+      } catch (err: any) {
+        errores.push(`CUIT ${c.CUIT}: ${err.message}`)
+      }
+    }
+
+    const results = await Promise.allSettled(operations)
+    results.forEach((r) => {
+      if (r.status === 'rejected') {
+        const reason = r.reason?.message || 'Error desconocido'
+        if (!reason.includes('Unique constraint')) {
+          errores.push(reason)
+        } else {
+          omitidos++
+        }
+      }
+    })
+
+    if ((i + BATCH_SIZE) % 500 === 0 || i + BATCH_SIZE >= colppyCustomers.length) {
+      console.log(`[Sync Colppy] Progreso: ${Math.min(i + BATCH_SIZE, colppyCustomers.length)}/${colppyCustomers.length}`)
+    }
+  }
+
+  const elapsed = Date.now() - startTime
+  console.log(`[Sync Colppy] Completado en ${elapsed}ms: ${creados} creados, ${actualizados} actualizados, ${omitidos} omitidos, ${errores.length} errores`)
+
+  return {
+    total: colppyCustomers.length,
+    creados,
+    actualizados,
+    omitidos,
+    totalErrores: errores.length,
+    tiempoMs: elapsed,
+  }
+}
+
+/**
+ * POST /api/clientes/sync-colppy
+ * Inicia sincronización en background, responde inmediatamente.
+ */
 export async function POST() {
   try {
     const session = await auth()
@@ -84,154 +245,31 @@ export async function POST() {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
 
-    console.log('[Sync Colppy] Iniciando sincronización de clientes...')
-    const startTime = Date.now()
-
-    // 1. Obtener sesión de Colppy
-    const claveSesion = await getColppySession()
-
-    // 2. Traer TODOS los clientes de Colppy
-    const colppyCustomers = await fetchAllColppyCustomers(claveSesion)
-    console.log(`[Sync Colppy] ${colppyCustomers.length} clientes recibidos de Colppy`)
-
-    // 3. Cargar TODOS los CUITs existentes en la base local (para saber cuáles crear vs actualizar)
-    const existingCustomers = await prisma.customer.findMany({
-      select: { id: true, cuit: true },
-    })
-    const existingByCuit = new Map<string, string>() // CUIT normalizado → id
-    existingCustomers.forEach(c => {
-      if (c.cuit) {
-        existingByCuit.set(c.cuit.replace(/\D/g, ''), c.id)
-      }
-    })
-
-    // 4. Procesar en batches
-    let creados = 0
-    let actualizados = 0
-    let omitidos = 0
-    const errores: string[] = []
-    const BATCH_SIZE = 50
-
-    for (let i = 0; i < colppyCustomers.length; i += BATCH_SIZE) {
-      const batch = colppyCustomers.slice(i, i + BATCH_SIZE)
-      const operations = []
-
-      for (const c of batch) {
-        try {
-          const cuit = (c.CUIT || '').trim()
-          const normalizedCuit = cuit.replace(/\D/g, '')
-
-          // Saltar clientes sin CUIT válido
-          if (normalizedCuit.length !== 11) {
-            omitidos++
-            continue
-          }
-
-          // Formatear CUIT con guiones: XX-XXXXXXXX-X
-          const formattedCuit = `${normalizedCuit.slice(0, 2)}-${normalizedCuit.slice(2, 10)}-${normalizedCuit.slice(10)}`
-
-          const name = (c.NombreFantasia || c.RazonSocial || '').trim()
-          const businessName = (c.RazonSocial || '').trim()
-          const taxCondition = TAX_CONDITION_MAP[String(c.idCondicionIva)] || 'RESPONSABLE_INSCRIPTO'
-          const colppyId = String(c.idCliente || '')
-          const email = (c.Email || '').trim() || null
-          const phone = (c.Telefono || '').trim() || null
-          const mobile = (c.Celular || '').trim() || null
-          const address = (c.DirPostal || '').trim() || null
-          const city = (c.DirPostalCiudad || '').trim() || null
-          const province = (c.DirPostalProvincia || '').trim() || null
-          const postalCode = (c.DirPostalCodigoPostal || '').trim() || null
-
-          // Extraer días de pago
-          const paymentTermsDays = parseInt(
-            String(c.idCondicionPago || c.IdCondicionPago || c.condicionPago || '0')
-          ) || null
-
-          const existingId = existingByCuit.get(normalizedCuit)
-
-          if (existingId) {
-            // UPDATE: actualizar datos de Colppy, pero NO tocar salesPersonId ni notes
-            operations.push(
-              prisma.customer.update({
-                where: { id: existingId },
-                data: {
-                  name: name || undefined,
-                  businessName: businessName || undefined,
-                  taxCondition: taxCondition as any,
-                  colppyId,
-                  email,
-                  phone,
-                  mobile,
-                  address,
-                  city,
-                  province,
-                  postalCode,
-                  paymentTerms: paymentTermsDays,
-                },
-              }).then(() => { actualizados++ })
-            )
-          } else {
-            // CREATE: nuevo cliente
-            operations.push(
-              prisma.customer.create({
-                data: {
-                  name: name || formattedCuit,
-                  businessName: businessName || null,
-                  cuit: formattedCuit,
-                  taxCondition: taxCondition as any,
-                  colppyId,
-                  email,
-                  phone,
-                  mobile,
-                  address,
-                  city,
-                  province,
-                  postalCode,
-                  paymentTerms: paymentTermsDays,
-                },
-              }).then(() => {
-                creados++
-                // Agregar al mapa para evitar duplicados en el mismo batch
-                existingByCuit.set(normalizedCuit, 'new')
-              })
-            )
-          }
-        } catch (err: any) {
-          errores.push(`CUIT ${c.CUIT}: ${err.message}`)
-        }
-      }
-
-      // Ejecutar batch en paralelo (con manejo de errores individual)
-      const results = await Promise.allSettled(operations)
-      results.forEach((r, idx) => {
-        if (r.status === 'rejected') {
-          const reason = r.reason?.message || 'Error desconocido'
-          // No duplicar errores de unique constraint (CUIT repetido en Colppy)
-          if (!reason.includes('Unique constraint')) {
-            errores.push(reason)
-          } else {
-            omitidos++
-          }
-        }
+    // Si ya está corriendo, no iniciar otra
+    if (syncStatus.running) {
+      return NextResponse.json({
+        status: 'already_running',
+        message: 'Sincronización ya en progreso',
+        startedAt: syncStatus.startedAt,
       })
-
-      // Log progreso cada 500 clientes
-      if ((i + BATCH_SIZE) % 500 === 0 || i + BATCH_SIZE >= colppyCustomers.length) {
-        console.log(`[Sync Colppy] Progreso: ${Math.min(i + BATCH_SIZE, colppyCustomers.length)}/${colppyCustomers.length}`)
-      }
     }
 
-    const elapsed = Date.now() - startTime
-    console.log(`[Sync Colppy] Completado en ${elapsed}ms: ${creados} creados, ${actualizados} actualizados, ${omitidos} omitidos, ${errores.length} errores`)
+    // Marcar como corriendo
+    syncStatus = { running: true, startedAt: Date.now(), result: null, error: null }
+
+    // Disparar sync en background (sin await)
+    syncColppyClients()
+      .then((result) => {
+        syncStatus = { running: false, startedAt: null, result, error: null }
+      })
+      .catch((err) => {
+        console.error('[Sync Colppy] Error:', err)
+        syncStatus = { running: false, startedAt: null, result: null, error: err.message || 'Error desconocido' }
+      })
 
     return NextResponse.json({
-      total: colppyCustomers.length,
-      creados,
-      actualizados,
-      omitidos,
-      errores: errores.slice(0, 50), // Limitar a 50 errores en la respuesta
-      totalErrores: errores.length,
-      tiempoMs: elapsed,
+      status: 'syncing',
+      message: 'Sincronización iniciada en background',
     })
   } catch (error: any) {
     console.error('[Sync Colppy] Error:', error)
@@ -240,4 +278,39 @@ export async function POST() {
       { status: 500 }
     )
   }
+}
+
+/**
+ * GET /api/clientes/sync-colppy
+ * Devuelve el estado actual del sync (para polling).
+ */
+export async function GET() {
+  const session = await auth()
+  if (!session?.user) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+  }
+
+  if (syncStatus.running) {
+    return NextResponse.json({
+      status: 'running',
+      startedAt: syncStatus.startedAt,
+      elapsedMs: Date.now() - (syncStatus.startedAt || Date.now()),
+    })
+  }
+
+  if (syncStatus.error) {
+    return NextResponse.json({
+      status: 'error',
+      error: syncStatus.error,
+    })
+  }
+
+  if (syncStatus.result) {
+    return NextResponse.json({
+      status: 'completed',
+      ...syncStatus.result,
+    })
+  }
+
+  return NextResponse.json({ status: 'idle' })
 }

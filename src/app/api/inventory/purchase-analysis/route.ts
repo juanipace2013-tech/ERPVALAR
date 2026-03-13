@@ -46,14 +46,17 @@ export async function GET(request: NextRequest) {
         : []
       const productMap = new Map(products.map(p => [p.id, p]))
 
-      // Get first and last price per product
+      // Get first and last price per product + supplier from purchaseInvoice as fallback
       const priceData = await Promise.all(
         productIds.map(async (pid) => {
           const [lastMove, firstMove, invoiceCount] = await Promise.all([
             prisma.stockMovement.findFirst({
               where: { productId: pid, type: 'COMPRA' },
               orderBy: { date: 'desc' },
-              select: { unitCost: true },
+              select: {
+                unitCost: true,
+                purchaseInvoice: { select: { supplier: { select: { name: true } } } },
+              },
             }),
             prisma.stockMovement.findFirst({
               where: { productId: pid, type: 'COMPRA' },
@@ -70,6 +73,7 @@ export async function GET(request: NextRequest) {
             lastPrice: Number(lastMove?.unitCost || 0),
             firstPrice: Number(firstMove?.unitCost || 0),
             invoiceCount: invoiceCount.length,
+            invoiceSupplierName: lastMove?.purchaseInvoice?.supplier?.name || null,
           }
         })
       )
@@ -85,7 +89,7 @@ export async function GET(request: NextRequest) {
           sku: prod?.sku || '',
           name: prod?.name || '',
           brand: prod?.brand || null,
-          supplierName: prod?.supplier?.name || null,
+          supplierName: prod?.supplier?.name || prices?.invoiceSupplierName || null,
           totalQty: g._sum.quantity || 0,
           totalValue: Number(g._sum.totalCost || 0),
           invoiceCount: prices?.invoiceCount || 0,
@@ -101,20 +105,25 @@ export async function GET(request: NextRequest) {
     }
 
     if (groupBy === 'supplier') {
-      // Get all purchase movements with product+supplier info
+      // Get all purchase movements with supplier from purchaseInvoice (primary) and product (fallback)
       const movements = await prisma.stockMovement.findMany({
         where: {
           type: 'COMPRA',
           date: { gte: periodStart },
-          product: {
-            supplierId: { not: null },
-            ...(supplierId ? { supplierId } : {}),
-          },
+          ...(supplierId ? {
+            OR: [
+              { purchaseInvoice: { supplierId } },
+              { product: { supplierId } },
+            ],
+          } : {}),
         },
         select: {
           quantity: true,
           totalCost: true,
           purchaseInvoiceId: true,
+          purchaseInvoice: {
+            select: { supplier: { select: { id: true, name: true } } },
+          },
           product: {
             select: {
               name: true,
@@ -124,7 +133,7 @@ export async function GET(request: NextRequest) {
         },
       })
 
-      // Group by supplier in JS
+      // Group by supplier in JS — use purchaseInvoice.supplier first, fallback to product.supplier
       const supplierMap = new Map<string, {
         name: string;
         totalItems: number;
@@ -134,8 +143,8 @@ export async function GET(request: NextRequest) {
       }>()
 
       for (const m of movements) {
-        const sid = m.product.supplier?.id
-        const sname = m.product.supplier?.name
+        const sid = m.purchaseInvoice?.supplier?.id || m.product.supplier?.id
+        const sname = m.purchaseInvoice?.supplier?.name || m.product.supplier?.name
         if (!sid || !sname) continue
 
         const entry = supplierMap.get(sid) || {
@@ -189,6 +198,9 @@ export async function GET(request: NextRequest) {
           quantity: true,
           totalCost: true,
           purchaseInvoiceId: true,
+          purchaseInvoice: {
+            select: { supplier: { select: { name: true } } },
+          },
           product: {
             select: {
               supplier: { select: { name: true } },
@@ -217,7 +229,7 @@ export async function GET(request: NextRequest) {
         entry.totalQty += m.quantity
         if (m.purchaseInvoiceId) entry.invoiceIds.add(m.purchaseInvoiceId)
 
-        const sname = m.product.supplier?.name
+        const sname = m.purchaseInvoice?.supplier?.name || m.product.supplier?.name
         if (sname) {
           entry.supplierTotals.set(sname, (entry.supplierTotals.get(sname) || 0) + Number(m.totalCost || 0))
         }

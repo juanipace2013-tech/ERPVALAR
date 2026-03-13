@@ -58,39 +58,63 @@ export async function GET(request: NextRequest) {
       where.customer = { cuit: customerCuit }
     }
 
-    const quotes = await prisma.quote.findMany({
-      where,
-      include: {
-        customer: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-        salesPerson: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-        ...(customerCuit ? {
-          items: {
-            where: { isAlternative: false },
-            include: {
-              product: {
-                select: { id: true, sku: true, name: true, unit: true },
-              },
-            },
-            orderBy: { itemNumber: 'asc' as const },
-          },
-        } : {}),
-      },
-      orderBy: {
-        date: 'desc',
-      },
-    })
+    // Paginación
+    const page = parseInt(searchParams.get('page') || '0')
+    const pageSize = parseInt(searchParams.get('pageSize') || '50')
 
-    return NextResponse.json({ quotes })
+    const [quotes, totalCount] = await Promise.all([
+      prisma.quote.findMany({
+        where,
+        select: {
+          id: true,
+          quoteNumber: true,
+          date: true,
+          status: true,
+          total: true,
+          currency: true,
+          exchangeRate: true,
+          validUntil: true,
+          tenderNumber: true,
+          colppySyncedAt: true,
+          customer: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          salesPerson: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          ...(customerCuit ? {
+            items: {
+              where: { isAlternative: false },
+              select: {
+                id: true,
+                itemNumber: true,
+                quantity: true,
+                unitPrice: true,
+                totalPrice: true,
+                product: {
+                  select: { id: true, sku: true, name: true, unit: true },
+                },
+              },
+              orderBy: { itemNumber: 'asc' as const },
+            },
+          } : {}),
+        },
+        orderBy: {
+          date: 'desc',
+        },
+        take: pageSize,
+        skip: page * pageSize,
+      }),
+      prisma.quote.count({ where }),
+    ])
+
+    return NextResponse.json({ quotes, totalCount, page, pageSize })
   } catch (error) {
     console.error('Error fetching quotes:', error)
     return NextResponse.json(

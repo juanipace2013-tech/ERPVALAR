@@ -120,7 +120,7 @@ export default function RemitosPage() {
       }
 
       const data = await response.json()
-      setDeliveryNotes(data)
+      setDeliveryNotes(data.deliveryNotes || data)
     } catch (error) {
       console.error('Error:', error)
       toast.error('Error al cargar remitos')

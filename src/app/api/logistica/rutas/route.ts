@@ -26,6 +26,9 @@ export async function GET(request: NextRequest) {
       if (dateTo) where.date.lte = new Date(`${dateTo}T23:59:59`)
     }
 
+    const page = parseInt(searchParams.get('page') || '0')
+    const pageSize = parseInt(searchParams.get('pageSize') || '50')
+
     const routes = await prisma.deliveryRoute.findMany({
       where,
       include: {
@@ -45,6 +48,8 @@ export async function GET(request: NextRequest) {
         },
       },
       orderBy: { date: 'desc' },
+      take: pageSize,
+      skip: page * pageSize,
     })
 
     return NextResponse.json(routes)

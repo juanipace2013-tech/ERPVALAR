@@ -207,33 +207,40 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Auto-vincular items por código de proveedor → SKU del catálogo
+    // Auto-vincular items por código de proveedor → SKU del catálogo (batch)
     let autoLinkedCount = 0
-    for (const item of purchaseInvoice.items) {
-      if (item.productId) continue // ya vinculado
-      if (!item.supplierProductCode) continue
-
-      // Intentar con el código tal cual y sin prefijo "001" (GENEBRE)
-      const codeVariants = [item.supplierProductCode.trim()]
-      if (item.supplierProductCode.startsWith('001') && item.supplierProductCode.length > 3) {
-        codeVariants.push(item.supplierProductCode.substring(3).trim())
-      }
-
-      let matched = false
-      for (const code of codeVariants) {
-        if (matched) break
-        const product = await prisma.product.findFirst({
-          where: { sku: code, status: 'ACTIVE' },
-        })
-        if (product) {
-          await prisma.purchaseInvoiceItem.update({
-            where: { id: item.id },
-            data: { productId: product.id },
-          })
-          autoLinkedCount++
-          matched = true
+    const unlinkItems = purchaseInvoice.items.filter(i => !i.productId && i.supplierProductCode)
+    if (unlinkItems.length > 0) {
+      // Collect all possible SKU codes to search in a single query
+      const allCodes: string[] = []
+      for (const item of unlinkItems) {
+        const code = item.supplierProductCode!.trim()
+        allCodes.push(code)
+        if (code.startsWith('001') && code.length > 3) {
+          allCodes.push(code.substring(3).trim())
         }
       }
+      const matchedProducts = await prisma.product.findMany({
+        where: { sku: { in: [...new Set(allCodes)] }, status: 'ACTIVE' },
+        select: { id: true, sku: true },
+      })
+      const skuMap = new Map(matchedProducts.map(p => [p.sku, p.id]))
+
+      // Batch update matched items
+      const updates: Promise<any>[] = []
+      for (const item of unlinkItems) {
+        const code = item.supplierProductCode!.trim()
+        const altCode = code.startsWith('001') && code.length > 3 ? code.substring(3).trim() : null
+        const productId = skuMap.get(code) || (altCode ? skuMap.get(altCode) : null)
+        if (productId) {
+          updates.push(prisma.purchaseInvoiceItem.update({
+            where: { id: item.id },
+            data: { productId },
+          }))
+          autoLinkedCount++
+        }
+      }
+      if (updates.length > 0) await Promise.all(updates)
     }
 
     if (autoLinkedCount > 0) {

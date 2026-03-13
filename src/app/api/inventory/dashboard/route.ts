@@ -120,12 +120,8 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => b.deficit - a.deficit)
       .slice(0, 20)
 
-    // --- Inventory value (all tracked products with stock) ---
-    const allForValue = await prisma.product.findMany({
-      where: { ...productWhere, stockQuantity: { gt: 0 } },
-      select: { stockQuantity: true, averageCost: true },
-    })
-    const totalInventoryValue = allForValue.reduce(
+    // --- Inventory value (computed from allProductsForNoMovement which already has stock > 0) ---
+    const totalInventoryValue = allProductsForNoMovement.reduce(
       (sum, p) => sum + p.stockQuantity * Number(p.averageCost || 0), 0
     )
 

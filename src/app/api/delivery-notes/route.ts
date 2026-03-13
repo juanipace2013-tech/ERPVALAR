@@ -32,41 +32,55 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    const deliveryNotes = await prisma.deliveryNote.findMany({
-      where,
-      include: {
-        customer: {
-          select: {
-            id: true,
-            name: true,
-            cuit: true,
-          },
-        },
-        quote: {
-          select: {
-            id: true,
-            quoteNumber: true,
-          },
-        },
-        items: {
-          select: {
-            id: true,
-            quantity: true,
-          },
-        },
-        invoices: {
-          select: {
-            id: true,
-            invoiceNumber: true,
-          },
-        },
-      },
-      orderBy: {
-        date: 'desc',
-      },
-    });
+    const page = parseInt(searchParams.get('page') || '0');
+    const pageSize = parseInt(searchParams.get('pageSize') || '50');
 
-    return NextResponse.json(deliveryNotes);
+    const [deliveryNotes, totalCount] = await Promise.all([
+      prisma.deliveryNote.findMany({
+        where,
+        select: {
+          id: true,
+          deliveryNumber: true,
+          date: true,
+          status: true,
+          deliveryAddress: true,
+          deliveryCity: true,
+          deliveryProvince: true,
+          bultos: true,
+          carrier: true,
+          customer: {
+            select: {
+              id: true,
+              name: true,
+              cuit: true,
+            },
+          },
+          quote: {
+            select: {
+              id: true,
+              quoteNumber: true,
+            },
+          },
+          _count: {
+            select: { items: true },
+          },
+          invoices: {
+            select: {
+              id: true,
+              invoiceNumber: true,
+            },
+          },
+        },
+        orderBy: {
+          date: 'desc',
+        },
+        take: pageSize,
+        skip: page * pageSize,
+      }),
+      prisma.deliveryNote.count({ where }),
+    ]);
+
+    return NextResponse.json({ deliveryNotes, totalCount, page, pageSize });
   } catch (error) {
     console.error('Error fetching delivery notes:', error);
     return NextResponse.json(

@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
     const orderField = validOrderFields.includes(orderBy) ? orderBy : 'sku'
     const orderDirection = order === 'desc' ? 'desc' : 'asc'
 
-    // Obtener productos con paginación
+    // Obtener productos con paginación - select mínimo para rendimiento
     const [products, total] = await Promise.all([
       prisma.product.findMany({
         where,
@@ -76,24 +76,19 @@ export async function GET(request: NextRequest) {
         orderBy: {
           [orderField]: orderDirection,
         },
-        include: {
-          category: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-          prices: {
-            where: {
-              OR: [
-                { validUntil: null },
-                { validUntil: { gte: new Date() } },
-              ],
-            },
-            orderBy: {
-              validFrom: 'desc',
-            },
-          },
+        select: {
+          id: true,
+          sku: true,
+          name: true,
+          brand: true,
+          type: true,
+          status: true,
+          unit: true,
+          stockQuantity: true,
+          minStock: true,
+          listPriceUSD: true,
+          lastCost: true,
+          colppyItemId: true,
         },
       }),
       prisma.product.count({ where }),

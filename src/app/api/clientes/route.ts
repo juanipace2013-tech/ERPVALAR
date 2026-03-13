@@ -19,6 +19,9 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search') || ''
     const status = searchParams.get('status') || ''
     const province = searchParams.get('province') || ''
+    const taxCondition = searchParams.get('taxCondition') || ''
+    const salesPersonId = searchParams.get('salesPersonId') || ''
+    const balanceFilter = searchParams.get('balanceFilter') || '' // 'deudores' | 'aldia'
     const sortBy = searchParams.get('sortBy') || 'balance'
     const sortOrder = searchParams.get('sortOrder') || 'desc'
 
@@ -44,9 +47,25 @@ export async function GET(request: NextRequest) {
       where.province = province
     }
 
+    if (taxCondition) {
+      where.taxCondition = taxCondition
+    }
+
+    if (salesPersonId === 'sin_asignar') {
+      where.salesPersonId = null
+    } else if (salesPersonId) {
+      where.salesPersonId = salesPersonId
+    }
+
+    if (balanceFilter === 'deudores') {
+      where.balance = { gt: 0 }
+    } else if (balanceFilter === 'aldia') {
+      where.balance = { lte: 0 }
+    }
+
     // Construir ordenamiento dinámico
     // Validar campos permitidos para ordenamiento
-    const allowedSortFields = ['name', 'businessName', 'balance', 'createdAt', 'cuit']
+    const allowedSortFields = ['name', 'businessName', 'balance', 'createdAt', 'cuit', 'taxCondition']
     const validSortBy = allowedSortFields.includes(sortBy) ? sortBy : 'balance'
     const validSortOrder = sortOrder === 'asc' || sortOrder === 'desc' ? sortOrder : 'desc'
 
@@ -57,23 +76,30 @@ export async function GET(request: NextRequest) {
         skip,
         take: limit,
         orderBy: { [validSortBy]: validSortOrder },
-        include: {
+        select: {
+          id: true,
+          name: true,
+          businessName: true,
+          cuit: true,
+          taxCondition: true,
+          email: true,
+          phone: true,
+          mobile: true,
+          address: true,
+          city: true,
+          province: true,
+          status: true,
+          type: true,
+          balance: true,
+          creditLimit: true,
+          creditCurrency: true,
+          priceMultiplier: true,
+          createdAt: true,
           salesPerson: {
             select: {
               id: true,
               name: true,
               email: true,
-            },
-          },
-          contacts: {
-            where: { isPrimary: true },
-            take: 1,
-          },
-          _count: {
-            select: {
-              opportunities: true,
-              quotes: true,
-              invoices: true,
             },
           },
         },

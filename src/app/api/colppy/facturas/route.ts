@@ -18,11 +18,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { execSync } from 'child_process';
 import * as crypto from 'crypto';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 
 const COLPPY_ENDPOINT = 'https://login.colppy.com/lib/frontera2/service.php';
 const COLPPY_USER = process.env.COLPPY_USER || '';
@@ -70,33 +66,27 @@ const SESSION_TTL = 20 * 60 * 1000;
 // FUNCIONES COLPPY
 // ============================================================================
 
-function callColppy(payload: any): any {
-  let tempFile: string | null = null;
-  try {
-    tempFile = path.join(os.tmpdir(), `colppy-fact-${Date.now()}.json`);
-    fs.writeFileSync(tempFile, JSON.stringify(payload), 'utf-8');
-    const cmd = `curl -s -X POST "${COLPPY_ENDPOINT}" -H "Content-Type: application/json" -d @"${tempFile}" --max-time 60 -L`;
-    const result = execSync(cmd, {
-      encoding: 'utf-8',
-      timeout: 65000,
-      maxBuffer: 20 * 1024 * 1024,
-    });
-    return JSON.parse(result);
-  } catch (error: any) {
-    throw new Error(`Error llamando a Colppy: ${error.message}`);
-  } finally {
-    if (tempFile && fs.existsSync(tempFile)) {
-      try { fs.unlinkSync(tempFile); } catch { /* ignore */ }
-    }
+async function callColppy(payload: any): Promise<any> {
+  const response = await fetch(COLPPY_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(30000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Colppy HTTP ${response.status}: ${response.statusText}`);
   }
+
+  return response.json();
 }
 
-function getSession(): string {
+async function getSession(): Promise<string> {
   if (cachedSession && Date.now() - cachedSession.timestamp < SESSION_TTL) {
     return cachedSession.claveSesion;
   }
   const passwordMD5 = md5(COLPPY_PASSWORD);
-  const response = callColppy({
+  const response = await callColppy({
     auth: { usuario: COLPPY_USER, password: passwordMD5 },
     service: { provision: 'Usuario', operacion: 'iniciar_sesion' },
     parameters: { usuario: COLPPY_USER, password: passwordMD5 },
@@ -204,7 +194,7 @@ function mapFacturas(data: any[]): ColppyFactura[] {
 // ENDPOINT
 // ============================================================================
 
-function fetchFacturasFromColppy(claveSesion: string, passwordMD5: string, idCliente: string): any {
+async function fetchFacturasFromColppy(claveSesion: string, passwordMD5: string, idCliente: string): Promise<any> {
   return callColppy({
     auth: { usuario: COLPPY_USER, password: passwordMD5 },
     service: { provision: 'FacturaVenta', operacion: 'listar_facturasventa' },
@@ -244,16 +234,16 @@ export async function GET(request: NextRequest) {
     }
 
     console.log(`[Colppy] Cargando facturas para cliente ${idCliente}...`);
-    const claveSesion = getSession();
+    const claveSesion = await getSession();
     const passwordMD5 = md5(COLPPY_PASSWORD);
 
-    let response = fetchFacturasFromColppy(claveSesion, passwordMD5, idCliente);
+    let response = await fetchFacturasFromColppy(claveSesion, passwordMD5, idCliente);
 
     if (response.result?.estado !== 0 || !response.response?.success) {
       // Reintentar con nueva sesión
       cachedSession = null;
-      const newSession = getSession();
-      response = fetchFacturasFromColppy(newSession, md5(COLPPY_PASSWORD), idCliente);
+      const newSession = await getSession();
+      response = await fetchFacturasFromColppy(newSession, md5(COLPPY_PASSWORD), idCliente);
 
       if (response.result?.estado !== 0) {
         throw new Error(response.result?.mensaje || 'Error cargando facturas');

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -40,19 +40,30 @@ import {
 import { toast } from 'sonner'
 import { formatNumber, formatCUIT, formatDateAR } from '@/lib/utils'
 import ImportarAsignacionesModal from '@/components/clientes/ImportarAsignacionesModal'
+import { CONDICIONES_IVA } from '@/lib/constants'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
-interface ColppyCustomer {
+interface Customer {
   id: string
-  colppyId: string
   name: string
-  businessName: string
+  businessName: string | null
   cuit: string
   taxCondition: string
-  taxConditionDisplay: string
-  saldo: number
-  searchText: string
+  email: string | null
+  phone: string | null
+  mobile: string | null
+  address: string | null
+  city: string | null
+  province: string | null
+  status: string
+  type: string
+  balance: number
+  creditLimit: number | null
+  creditCurrency: string | null
+  priceMultiplier: number
+  createdAt: string
+  salesPerson: { id: string; name: string; email: string } | null
 }
 
 interface ActivityData {
@@ -62,10 +73,14 @@ interface ActivityData {
   salesPerson: { id: string; name: string; email: string } | null
 }
 
-type SortField = 'businessName' | 'cuit' | 'taxConditionDisplay' | 'saldo' | 'lastActivity' | 'vendedor'
+type SortField = 'businessName' | 'cuit' | 'taxCondition' | 'balance'
 type SortDir = 'asc' | 'desc'
 
 const PAGE_SIZE = 50
+
+const TAX_LABEL: Record<string, string> = Object.fromEntries(
+  CONDICIONES_IVA.map((c) => [c.value, c.label])
+)
 
 // ─── Página ──────────────────────────────────────────────────────────────────
 
@@ -73,11 +88,11 @@ export default function ClientesPage() {
   const router = useRouter()
 
   // Data
-  const [allCustomers, setAllCustomers] = useState<ColppyCustomer[]>([])
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [total, setTotal] = useState(0)
   const [activityMap, setActivityMap] = useState<Record<string, ActivityData>>({})
   const [loading, setLoading] = useState(true)
   const [loadingActivity, setLoadingActivity] = useState(false)
-  const [error, setError] = useState('')
 
   // Users for vendedor filter
   const [users, setUsers] = useState<{ id: string; name: string }[]>([])
@@ -86,6 +101,7 @@ export default function ClientesPage() {
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [filtroIva, setFiltroIva] = useState('todas')
   const [filtroSaldo, setFiltroSaldo] = useState('todos')
   const [filtroCotizaciones, setFiltroCotizaciones] = useState(false)
@@ -98,32 +114,58 @@ export default function ClientesPage() {
   // Pagination
   const [page, setPage] = useState(1)
 
-  // ─── Fetch customers ────────────────────────────────────────────────────────
+  // Debounce search
+  const searchTimer = useRef<ReturnType<typeof setTimeout>>()
+  useEffect(() => {
+    searchTimer.current = setTimeout(() => setDebouncedSearch(searchQuery), 300)
+    return () => clearTimeout(searchTimer.current)
+  }, [searchQuery])
+
+  // Reset page on filter change
+  useEffect(() => {
+    setPage(1)
+  }, [debouncedSearch, filtroIva, filtroSaldo, filtroVendedor])
+
+  // ─── Fetch customers from local DB ────────────────────────────────────────
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true)
-    setError('')
     try {
-      const res = await fetch('/api/colppy/clientes?all=true')
-      if (!res.ok) throw new Error('Error al cargar clientes de Colppy')
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(PAGE_SIZE),
+        sortBy: sortField,
+        sortOrder: sortDir,
+      })
+
+      if (debouncedSearch) params.set('search', debouncedSearch)
+      if (filtroIva !== 'todas') params.set('taxCondition', filtroIva)
+      if (filtroSaldo !== 'todos') params.set('balanceFilter', filtroSaldo)
+      if (filtroVendedor !== 'todos') params.set('salesPersonId', filtroVendedor)
+
+      const res = await fetch(`/api/clientes?${params}`)
+      if (!res.ok) throw new Error('Error al cargar clientes')
       const data = await res.json()
-      setAllCustomers(data.customers || [])
+      setCustomers(data.customers || [])
+      setTotal(data.pagination?.total || 0)
     } catch (e: any) {
-      setError(e.message || 'Error al cargar clientes')
-      toast.error('Error al cargar clientes de Colppy')
+      toast.error(e.message || 'Error al cargar clientes')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [page, PAGE_SIZE, sortField, sortDir, debouncedSearch, filtroIva, filtroSaldo, filtroVendedor])
 
-  // ─── Fetch activity data ────────────────────────────────────────────────────
+  useEffect(() => {
+    fetchCustomers()
+  }, [fetchCustomers])
 
-  const fetchActivity = useCallback(async (customers: ColppyCustomer[]) => {
-    if (customers.length === 0) return
+  // ─── Fetch activity data for current page ─────────────────────────────────
+
+  const fetchActivity = useCallback(async (custs: Customer[]) => {
+    if (custs.length === 0) return
     setLoadingActivity(true)
     try {
-      // Enviar todos los CUITs válidos
-      const cuits = customers
+      const cuits = custs
         .map((c) => c.cuit?.replace(/\D/g, ''))
         .filter((c) => c && c.length === 11)
 
@@ -138,42 +180,41 @@ export default function ClientesPage() {
       const data = await res.json()
       setActivityMap(data.activity || {})
     } catch {
-      // No es crítico, silenciar
+      // No es crítico
     } finally {
       setLoadingActivity(false)
     }
   }, [])
 
   useEffect(() => {
-    fetchCustomers()
-    // Cargar usuarios para filtro vendedor
+    if (customers.length > 0) {
+      fetchActivity(customers)
+    }
+  }, [customers, fetchActivity])
+
+  // ─── Load users on mount ──────────────────────────────────────────────────
+
+  useEffect(() => {
     fetch('/api/users')
-      .then((r) => r.ok ? r.json() : null)
+      .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.users) setUsers(data.users)
       })
       .catch(() => {})
-  }, [fetchCustomers])
+  }, [])
 
-  useEffect(() => {
-    if (allCustomers.length > 0) {
-      fetchActivity(allCustomers)
-    }
-  }, [allCustomers, fetchActivity])
+  // ─── Client-side filter: cotizaciones activas (needs activity data) ───────
 
-  // ─── Refresh ────────────────────────────────────────────────────────────────
+  const displayCustomers = useMemo(() => {
+    if (!filtroCotizaciones) return customers
+    return customers.filter((c) => {
+      const cleanCuit = c.cuit?.replace(/\D/g, '')
+      const activity = activityMap[cleanCuit]
+      return activity && activity.activeQuotes > 0
+    })
+  }, [customers, filtroCotizaciones, activityMap])
 
-  const handleRefresh = async () => {
-    setLoading(true)
-    try {
-      // Invalidar cache de Colppy
-      await fetch('/api/colppy/clientes', { method: 'POST' })
-      await fetchCustomers()
-      toast.success('Cache de clientes actualizado')
-    } catch {
-      toast.error('Error al refrescar')
-    }
-  }
+  // ─── Sync Colppy ──────────────────────────────────────────────────────────
 
   const handleSyncColppy = async () => {
     setSyncing(true)
@@ -184,8 +225,7 @@ export default function ClientesPage() {
       toast.success(
         `Sincronización completada: ${data.creados} creados, ${data.actualizados} actualizados de ${data.total} clientes Colppy`
       )
-      // Refrescar lista después de sincronizar
-      await handleRefresh()
+      await fetchCustomers()
     } catch {
       toast.error('Error al sincronizar clientes de Colppy')
     } finally {
@@ -193,116 +233,14 @@ export default function ClientesPage() {
     }
   }
 
-  // ─── Condiciones IVA únicas ─────────────────────────────────────────────────
-
-  const ivaOptions = useMemo(() => {
-    const set = new Set(allCustomers.map((c) => c.taxConditionDisplay).filter(Boolean))
-    return [...set].sort()
-  }, [allCustomers])
-
-  // ─── Filtrar + Ordenar ──────────────────────────────────────────────────────
-
-  const filteredCustomers = useMemo(() => {
-    let result = [...allCustomers]
-
-    // Búsqueda
-    if (searchQuery.trim()) {
-      const terms = searchQuery.toLowerCase().trim().split(/\s+/)
-      result = result.filter((c) =>
-        terms.every((t) => c.searchText.includes(t))
-      )
-    }
-
-    // Filtro IVA
-    if (filtroIva !== 'todas') {
-      result = result.filter((c) => c.taxConditionDisplay === filtroIva)
-    }
-
-    // Filtro saldo
-    if (filtroSaldo === 'deudores') {
-      result = result.filter((c) => c.saldo > 0)
-    } else if (filtroSaldo === 'aldia') {
-      result = result.filter((c) => c.saldo <= 0)
-    }
-
-    // Filtro cotizaciones activas
-    if (filtroCotizaciones) {
-      result = result.filter((c) => {
-        const cleanCuit = c.cuit?.replace(/\D/g, '')
-        const activity = activityMap[cleanCuit]
-        return activity && activity.activeQuotes > 0
-      })
-    }
-
-    // Filtro vendedor
-    if (filtroVendedor !== 'todos') {
-      result = result.filter((c) => {
-        const cleanCuit = c.cuit?.replace(/\D/g, '')
-        const activity = activityMap[cleanCuit]
-        if (filtroVendedor === 'sin_asignar') {
-          return !activity?.salesPerson
-        }
-        return activity?.salesPerson?.id === filtroVendedor
-      })
-    }
-
-    // Ordenar
-    result.sort((a, b) => {
-      let cmp = 0
-      switch (sortField) {
-        case 'businessName':
-          cmp = (a.businessName || a.name).localeCompare(b.businessName || b.name)
-          break
-        case 'cuit':
-          cmp = (a.cuit || '').localeCompare(b.cuit || '')
-          break
-        case 'taxConditionDisplay':
-          cmp = (a.taxConditionDisplay || '').localeCompare(b.taxConditionDisplay || '')
-          break
-        case 'saldo':
-          cmp = a.saldo - b.saldo
-          break
-        case 'lastActivity': {
-          const aAct = activityMap[a.cuit?.replace(/\D/g, '')]?.lastActivity || ''
-          const bAct = activityMap[b.cuit?.replace(/\D/g, '')]?.lastActivity || ''
-          cmp = aAct.localeCompare(bAct)
-          break
-        }
-        case 'vendedor': {
-          const aName = activityMap[a.cuit?.replace(/\D/g, '')]?.salesPerson?.name || ''
-          const bName = activityMap[b.cuit?.replace(/\D/g, '')]?.salesPerson?.name || ''
-          cmp = aName.localeCompare(bName)
-          break
-        }
-      }
-      return sortDir === 'asc' ? cmp : -cmp
-    })
-
-    return result
-  }, [allCustomers, searchQuery, filtroIva, filtroSaldo, filtroCotizaciones, filtroVendedor, activityMap, sortField, sortDir])
-
-  // ─── Paginación ─────────────────────────────────────────────────────────────
-
-  const totalPages = Math.ceil(filteredCustomers.length / PAGE_SIZE)
-  const currentPage = Math.min(page, totalPages || 1)
-  const pagedCustomers = filteredCustomers.slice(
-    (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE
-  )
-
-  // Reset page on filter change
-  useEffect(() => {
-    setPage(1)
-  }, [searchQuery, filtroIva, filtroSaldo, filtroCotizaciones, filtroVendedor])
-
-  // ─── Sort handler ───────────────────────────────────────────────────────────
+  // ─── Sort handler ─────────────────────────────────────────────────────────
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
     } else {
       setSortField(field)
-      setSortDir(field === 'saldo' ? 'desc' : 'asc')
+      setSortDir(field === 'balance' ? 'desc' : 'asc')
     }
   }
 
@@ -313,29 +251,17 @@ export default function ClientesPage() {
       : <ArrowDown className="h-3 w-3 ml-1 text-blue-600 inline" />
   }
 
-  // ─── Click handler ──────────────────────────────────────────────────────────
+  // ─── Helpers ──────────────────────────────────────────────────────────────
 
-  const handleCustomerClick = (customer: ColppyCustomer) => {
-    // Usar colppyId como identificador principal (más confiable que CUIT)
-    const colppyId = customer.colppyId || customer.id
-    if (colppyId) {
-      router.push(`/clientes/${colppyId}`)
-    } else {
-      // Fallback: usar CUIT sin guiones
-      const cleanCuit = customer.cuit?.replace(/\D/g, '')
-      router.push(`/clientes/${cleanCuit}`)
-    }
-  }
+  const totalPages = Math.ceil(total / PAGE_SIZE)
 
-  // ─── Saldo indicator ───────────────────────────────────────────────────────
-
-  const saldoIndicator = (saldo: number) => {
-    if (saldo <= 0) return 'text-green-600'
-    if (saldo > 100000) return 'text-red-600'
+  const saldoIndicator = (balance: number) => {
+    if (balance <= 0) return 'text-green-600'
+    if (balance > 100000) return 'text-red-600'
     return 'text-yellow-600'
   }
 
-  // ─── Render ─────────────────────────────────────────────────────────────────
+  // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6">
@@ -346,7 +272,7 @@ export default function ClientesPage() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-blue-900">Clientes</h1>
             <p className="text-gray-500 text-sm">
-              {allCustomers.length > 0 ? `${allCustomers.length} clientes en Colppy` : 'Cargando...'}
+              {total > 0 ? `${total} clientes en base de datos` : 'Cargando...'}
             </p>
           </div>
         </div>
@@ -363,7 +289,7 @@ export default function ClientesPage() {
             <Upload className="h-4 w-4 mr-2" />
             Importar Asignaciones
           </Button>
-          <Button variant="outline" onClick={handleRefresh} disabled={loading}>
+          <Button variant="outline" onClick={fetchCustomers} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refrescar
           </Button>
@@ -396,8 +322,8 @@ export default function ClientesPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todas">Todas</SelectItem>
-                  {ivaOptions.map((iva) => (
-                    <SelectItem key={iva} value={iva}>{iva}</SelectItem>
+                  {CONDICIONES_IVA.map((iva) => (
+                    <SelectItem key={iva.value} value={iva.value}>{iva.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -449,7 +375,7 @@ export default function ClientesPage() {
 
             {/* Contador */}
             <span className="text-xs text-gray-500 pb-1 ml-auto whitespace-nowrap">
-              {filteredCustomers.length} de {allCustomers.length}
+              {filtroCotizaciones ? `${displayCustomers.length} de ` : ''}{total} clientes
             </span>
           </div>
         </CardContent>
@@ -461,14 +387,9 @@ export default function ClientesPage() {
           {loading ? (
             <div className="flex flex-col items-center justify-center py-16">
               <Loader2 className="h-10 w-10 animate-spin text-blue-600 mb-3" />
-              <p className="text-gray-500">Cargando clientes de Colppy...</p>
+              <p className="text-gray-500">Cargando clientes...</p>
             </div>
-          ) : error ? (
-            <div className="text-center py-16">
-              <p className="text-red-600 mb-3">{error}</p>
-              <Button variant="outline" onClick={fetchCustomers}>Reintentar</Button>
-            </div>
-          ) : pagedCustomers.length === 0 ? (
+          ) : displayCustomers.length === 0 ? (
             <div className="text-center py-16 text-gray-500">
               <Users className="h-10 w-10 text-gray-300 mx-auto mb-3" />
               <p>No se encontraron clientes con los filtros aplicados</p>
@@ -497,47 +418,38 @@ export default function ClientesPage() {
                       </TableHead>
                       <TableHead
                         className="cursor-pointer hover:bg-blue-50 select-none"
-                        onClick={() => handleSort('taxConditionDisplay')}
+                        onClick={() => handleSort('taxCondition')}
                       >
                         <span className="flex items-center font-semibold text-blue-900">
-                          Condición IVA <SortIcon field="taxConditionDisplay" />
+                          Condición IVA <SortIcon field="taxCondition" />
                         </span>
                       </TableHead>
                       <TableHead
                         className="text-right cursor-pointer hover:bg-blue-50 select-none"
-                        onClick={() => handleSort('saldo')}
+                        onClick={() => handleSort('balance')}
                       >
                         <span className="flex items-center justify-end font-semibold text-blue-900">
-                          Saldo CC <SortIcon field="saldo" />
+                          Saldo CC <SortIcon field="balance" />
                         </span>
                       </TableHead>
-                      <TableHead
-                        className="cursor-pointer hover:bg-blue-50 select-none"
-                        onClick={() => handleSort('vendedor')}
-                      >
-                        <span className="flex items-center font-semibold text-blue-900">
-                          Vendedor <SortIcon field="vendedor" />
-                        </span>
+                      <TableHead>
+                        <span className="font-semibold text-blue-900">Vendedor</span>
                       </TableHead>
-                      <TableHead
-                        className="cursor-pointer hover:bg-blue-50 select-none"
-                        onClick={() => handleSort('lastActivity')}
-                      >
-                        <span className="flex items-center font-semibold text-blue-900">
-                          Última Actividad <SortIcon field="lastActivity" />
-                        </span>
+                      <TableHead>
+                        <span className="font-semibold text-blue-900">Última Actividad</span>
                       </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {pagedCustomers.map((customer) => {
+                    {displayCustomers.map((customer) => {
                       const cleanCuit = customer.cuit?.replace(/\D/g, '')
                       const activity = activityMap[cleanCuit]
+                      const balance = Number(customer.balance) || 0
                       return (
                         <TableRow
                           key={customer.id}
                           className="cursor-pointer hover:bg-blue-50/50 transition-colors"
-                          onClick={() => handleCustomerClick(customer)}
+                          onClick={() => router.push(`/clientes/${customer.id}`)}
                         >
                           <TableCell>
                             <p className="font-medium text-gray-900">{customer.businessName || customer.name}</p>
@@ -550,17 +462,15 @@ export default function ClientesPage() {
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline" className="text-xs font-normal">
-                              {customer.taxConditionDisplay || '—'}
+                              {TAX_LABEL[customer.taxCondition] || customer.taxCondition || '—'}
                             </Badge>
                           </TableCell>
-                          <TableCell className={`text-right font-mono text-sm font-semibold ${saldoIndicator(customer.saldo)}`}>
-                            $ {formatNumber(customer.saldo)}
+                          <TableCell className={`text-right font-mono text-sm font-semibold ${saldoIndicator(balance)}`}>
+                            $ {formatNumber(balance)}
                           </TableCell>
                           <TableCell className="text-sm">
-                            {loadingActivity ? (
-                              <span className="text-gray-300">...</span>
-                            ) : activity?.salesPerson ? (
-                              <span className="text-gray-700">{activity.salesPerson.name}</span>
+                            {customer.salesPerson ? (
+                              <span className="text-gray-700">{customer.salesPerson.name}</span>
                             ) : (
                               <span className="text-gray-300">—</span>
                             )}
@@ -592,25 +502,25 @@ export default function ClientesPage() {
               {totalPages > 1 && (
                 <div className="flex items-center justify-between px-4 py-3 border-t">
                   <div className="flex items-center gap-1">
-                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(1)} disabled={currentPage === 1}>
+                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(1)} disabled={page === 1}>
                       <ChevronsLeft className="h-4 w-4" />
                     </Button>
-                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(currentPage - 1)} disabled={currentPage === 1}>
+                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(page - 1)} disabled={page === 1}>
                       <ChevronLeft className="h-4 w-4" />
                     </Button>
                     <span className="text-sm text-gray-500 px-3">
-                      Página <span className="font-semibold">{currentPage}</span> de{' '}
+                      Página <span className="font-semibold">{page}</span> de{' '}
                       <span className="font-semibold">{totalPages}</span>
                     </span>
-                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(currentPage + 1)} disabled={currentPage === totalPages}>
+                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(page + 1)} disabled={page === totalPages}>
                       <ChevronRight className="h-4 w-4" />
                     </Button>
-                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(totalPages)} disabled={currentPage === totalPages}>
+                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(totalPages)} disabled={page === totalPages}>
                       <ChevronsRight className="h-4 w-4" />
                     </Button>
                   </div>
                   <span className="text-xs text-gray-400">
-                    {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredCustomers.length)} de {filteredCustomers.length}
+                    {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} de {total}
                   </span>
                 </div>
               )}
@@ -625,7 +535,7 @@ export default function ClientesPage() {
         onOpenChange={setShowImportModal}
         onSuccess={() => {
           setShowImportModal(false)
-          fetchActivity(allCustomers)
+          fetchActivity(customers)
         }}
       />
     </div>

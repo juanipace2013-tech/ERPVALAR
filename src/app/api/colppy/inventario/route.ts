@@ -7,11 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { execSync } from 'child_process';
 import * as crypto from 'crypto';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 import { prisma } from '@/lib/prisma';
 
 // ============================================================================
@@ -51,48 +47,28 @@ const SESSION_TTL = 20 * 60 * 1000; // 20 minutos
 // FUNCIONES COLPPY
 // ============================================================================
 
-function callColppy(payload: any): any {
-  let tempFile: string | null = null;
+async function callColppy(payload: any): Promise<any> {
+  const response = await fetch(COLPPY_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(30000),
+  });
 
-  try {
-    // Crear archivo temporal para el payload
-    tempFile = path.join(os.tmpdir(), `colppy-${Date.now()}.json`);
-    const payloadStr = JSON.stringify(payload);
-    fs.writeFileSync(tempFile, payloadStr, 'utf-8');
-
-    // Ejecutar curl usando el archivo temporal
-    const cmd = `curl -s -X POST "${COLPPY_ENDPOINT}" -H "Content-Type: application/json" -d @"${tempFile}" --max-time 120 -L`;
-
-    const result = execSync(cmd, {
-      encoding: 'utf-8',
-      timeout: 125000,
-      maxBuffer: 50 * 1024 * 1024, // 50MB
-    });
-
-    return JSON.parse(result);
-  } catch (error: any) {
-    throw new Error(`Error llamando a Colppy: ${error.message}`);
-  } finally {
-    // Limpiar archivo temporal
-    if (tempFile && fs.existsSync(tempFile)) {
-      try {
-        fs.unlinkSync(tempFile);
-      } catch {
-        // Ignorar error al limpiar
-      }
-    }
+  if (!response.ok) {
+    throw new Error(`Colppy HTTP ${response.status}: ${response.statusText}`);
   }
+
+  return response.json();
 }
 
-function getSession(): string {
-  // Reutilizar sesión si es válida
+async function getSession(): Promise<string> {
   if (cachedSession && Date.now() - cachedSession.timestamp < SESSION_TTL) {
     return cachedSession.claveSesion;
   }
 
-  // Crear nueva sesión
   const passwordMD5 = md5(COLPPY_PASSWORD);
-  const response = callColppy({
+  const response = await callColppy({
     auth: { usuario: COLPPY_USER, password: passwordMD5 },
     service: { provision: 'Usuario', operacion: 'iniciar_sesion' },
     parameters: { usuario: COLPPY_USER, password: passwordMD5 },
@@ -114,7 +90,7 @@ function getSession(): string {
 // CARGAR INVENTARIO COMPLETO (en bloques de 500)
 // ============================================================================
 
-function loadAllInventory(): Map<string, InventoryItem> {
+async function loadAllInventory(): Promise<Map<string, InventoryItem>> {
   // Si cache es reciente, devolver
   if (inventoryCache.size > 0 && (Date.now() - cacheTimestamp) < CACHE_TTL) {
     return inventoryCache;
@@ -123,7 +99,7 @@ function loadAllInventory(): Map<string, InventoryItem> {
   console.log('[Colppy Inventario] Cargando todos los items...');
   const startTime = Date.now();
 
-  const claveSesion = getSession();
+  const claveSesion = await getSession();
   const passwordMD5 = md5(COLPPY_PASSWORD);
 
   let allItems: any[] = [];
@@ -132,7 +108,7 @@ function loadAllInventory(): Map<string, InventoryItem> {
 
   // Traer en bloques de 500
   while (true) {
-    const response = callColppy({
+    const response = await callColppy({
       auth: { usuario: COLPPY_USER, password: passwordMD5 },
       service: { provision: 'Inventario', operacion: 'listar_itemsinventario' },
       parameters: {
@@ -149,9 +125,9 @@ function loadAllInventory(): Map<string, InventoryItem> {
       // Si sesión expiró, reintentar
       if (start === 0) {
         cachedSession = null;
-        const newSession = getSession();
+        const newSession = await getSession();
 
-        const retry = callColppy({
+        const retry = await callColppy({
           auth: { usuario: COLPPY_USER, password: md5(COLPPY_PASSWORD) },
           service: { provision: 'Inventario', operacion: 'listar_itemsinventario' },
           parameters: {
@@ -228,7 +204,7 @@ export async function GET(request: NextRequest) {
     const skusParam = searchParams.get('skus');
 
     // Cargar cache si es necesario
-    const inventory = loadAllInventory();
+    const inventory = await loadAllInventory();
 
     // Búsqueda por SKU único
     if (sku) {
@@ -316,7 +292,7 @@ export async function POST() {
     inventoryCache = new Map();
 
     // Recargar desde Colppy
-    const inventory = loadAllInventory();
+    const inventory = await loadAllInventory();
 
     // ====================================================================
     // PERSISTIR stockQuantity EN LA TABLA products

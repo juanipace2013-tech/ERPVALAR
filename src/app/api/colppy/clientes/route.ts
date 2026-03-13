@@ -7,11 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { execSync } from 'child_process';
 import * as crypto from 'crypto';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 import { getMultiplierForClient } from '@/lib/client-multipliers';
 
 // ============================================================================
@@ -64,40 +60,22 @@ const SESSION_TTL = 20 * 60 * 1000; // 20 minutos
 // FUNCIONES COLPPY
 // ============================================================================
 
-function callColppy(payload: any): any {
-  let tempFile: string | null = null;
+async function callColppy(payload: any): Promise<any> {
+  const response = await fetch(COLPPY_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(30000), // 30 segundos max
+  });
 
-  try {
-    // Crear archivo temporal para el payload
-    tempFile = path.join(os.tmpdir(), `colppy-${Date.now()}.json`);
-    const payloadStr = JSON.stringify(payload);
-    fs.writeFileSync(tempFile, payloadStr, 'utf-8');
-
-    // Ejecutar curl usando el archivo temporal (timeout más largo para cargar todos los clientes)
-    const cmd = `curl -s -X POST "${COLPPY_ENDPOINT}" -H "Content-Type: application/json" -d @"${tempFile}" --max-time 120 -L`;
-
-    const result = execSync(cmd, {
-      encoding: 'utf-8',
-      timeout: 125000, // 125 segundos
-      maxBuffer: 50 * 1024 * 1024, // 50MB para manejar muchos clientes
-    });
-
-    return JSON.parse(result);
-  } catch (error: any) {
-    throw new Error(`Error llamando a Colppy: ${error.message}`);
-  } finally {
-    // Limpiar archivo temporal
-    if (tempFile && fs.existsSync(tempFile)) {
-      try {
-        fs.unlinkSync(tempFile);
-      } catch {
-        // Ignorar error al limpiar
-      }
-    }
+  if (!response.ok) {
+    throw new Error(`Colppy HTTP ${response.status}: ${response.statusText}`);
   }
+
+  return response.json();
 }
 
-function getSession(): string {
+async function getSession(): Promise<string> {
   // Reutilizar sesión si es válida
   if (cachedSession && Date.now() - cachedSession.timestamp < SESSION_TTL) {
     return cachedSession.claveSesion;
@@ -105,7 +83,7 @@ function getSession(): string {
 
   // Crear nueva sesión
   const passwordMD5 = md5(COLPPY_PASSWORD);
-  const response = callColppy({
+  const response = await callColppy({
     auth: { usuario: COLPPY_USER, password: passwordMD5 },
     service: { provision: 'Usuario', operacion: 'iniciar_sesion' },
     parameters: { usuario: COLPPY_USER, password: passwordMD5 },
@@ -127,7 +105,7 @@ function getSession(): string {
 // CARGAR TODOS LOS CLIENTES
 // ============================================================================
 
-function loadAllCustomers(): CachedCustomer[] {
+async function loadAllCustomers(): Promise<CachedCustomer[]> {
   // Si el cache es reciente, usar lo que hay
   if (customerCache.length > 0 && Date.now() - cacheTimestamp < CACHE_TTL) {
     return customerCache;
@@ -136,10 +114,10 @@ function loadAllCustomers(): CachedCustomer[] {
   console.log('[Colppy] Cargando todos los clientes...');
   const startTime = Date.now();
 
-  const claveSesion = getSession();
+  const claveSesion = await getSession();
   const passwordMD5 = md5(COLPPY_PASSWORD);
 
-  const response = callColppy({
+  const response = await callColppy({
     auth: { usuario: COLPPY_USER, password: passwordMD5 },
     service: { provision: 'Cliente', operacion: 'listar_cliente' },
     parameters: {
@@ -155,9 +133,9 @@ function loadAllCustomers(): CachedCustomer[] {
   if (response.result?.estado !== 0 || !response.response?.success) {
     // Si sesión expiró, reintentar
     cachedSession = null;
-    const newSession = getSession();
+    const newSession = await getSession();
 
-    const retry = callColppy({
+    const retry = await callColppy({
       auth: { usuario: COLPPY_USER, password: md5(COLPPY_PASSWORD) },
       service: { provision: 'Cliente', operacion: 'listar_cliente' },
       parameters: {
@@ -282,7 +260,7 @@ export async function GET(request: NextRequest) {
     const id = searchParams.get('id') || '';
 
     // Cargar cache si es necesario (puede tardar ~2 seg la primera vez)
-    const allCustomers = loadAllCustomers();
+    const allCustomers = await loadAllCustomers();
 
     // Modo: buscar por Colppy ID
     if (id) {
@@ -352,7 +330,7 @@ export async function POST() {
     customerCache = [];
 
     // Recargar
-    const customers = loadAllCustomers();
+    const customers = await loadAllCustomers();
 
     return NextResponse.json({
       success: true,

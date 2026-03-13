@@ -137,7 +137,7 @@ function buildRemitoSheet(
   // ----- Fila 2: Razón social del cliente -----
   ws.mergeCells('C2:K2')
   setCell(ws, 'C2', data.customer.businessName, FONT_DEFAULT, {
-    vertical: 'middle',
+    vertical: 'bottom',
     wrapText: true,
   })
 
@@ -193,7 +193,7 @@ function buildRemitoSheet(
     'C18',
     data.bultos != null ? data.bultos : '',
     FONT_BOLD_12,
-    { vertical: 'middle' },
+    { horizontal: 'left', vertical: 'middle' },
   )
 
   // ----- Fila 19: Valor declarado -----

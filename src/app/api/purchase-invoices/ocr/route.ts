@@ -63,6 +63,7 @@ IMPORTANTE:
 - Los precios unitarios e importes pueden tener puntos como separador de miles y comas para decimales (formato argentino). Convertí a números (ej: 1.234.567,89 => 1234567.89)
 - Extraé TODOS los items, no resumas ni agrupes
 - El descuento general se aplica al subtotal, NO al precio unitario
+- IMPORTANTE: Si hay un descuento general (DESC GRAL, BONIF, etc.), NO pongas ese mismo porcentaje en el campo "descuento" de cada item. El descuento va SOLO en factura.descuentoGeneral. Los items deben tener descuento=0 si el descuento es general
 - Las percepciones de IIBB pueden ser varias (AGIP, Buenos Aires, Jujuy, Salta, etc). Extraelas TODAS como array
 - Si hay tipo de cambio (TC BASE), extraelo
 - Si hay monto en USD, extraelo en totalUsd
@@ -219,6 +220,24 @@ export async function POST(request: NextRequest) {
           if (item.codigo !== undefined) item.codigo = cleanCode
           if (item.code !== undefined) item.code = cleanCode
           if (item.supplierProductCode !== undefined) item.supplierProductCode = cleanCode
+        }
+      }
+    }
+
+    // ── FIX: Evitar doble descuento ──────────────────────────────────────────
+    // Si hay descuento general (factura.descuentoGeneral > 0), los items NO deben
+    // tener descuento individual porque es el mismo descuento reportado dos veces.
+    // Ponemos el descuento SOLO a nivel general y los items en 0.
+    const generalDesc = Number(extractedData.factura?.descuentoGeneral) || 0
+    if (generalDesc > 0 && extractedData.items && Array.isArray(extractedData.items)) {
+      const allItemsSameDiscount = extractedData.items.every((item: any) => {
+        const itemDisc = Number(item.descuento) || Number(item.bonificacion) || 0
+        return itemDisc === 0 || Math.abs(itemDisc - generalDesc) < 0.01
+      })
+      if (allItemsSameDiscount) {
+        for (const item of extractedData.items) {
+          item.descuento = 0
+          item.bonificacion = 0
         }
       }
     }

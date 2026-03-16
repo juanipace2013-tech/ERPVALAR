@@ -758,13 +758,25 @@ export default function DeliveryNoteDetailPage() {
           </Card>
 
           {/* Notas */}
-          {deliveryNote.notes && (
+          {(deliveryNote.notes || deliveryNote.internalNotes) && (
             <Card>
               <CardHeader>
                 <CardTitle>Notas</CardTitle>
               </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-700">{deliveryNote.notes}</p>
+              <CardContent className="space-y-0">
+                {deliveryNote.notes && (
+                  <p className="text-sm text-gray-700 whitespace-pre-line">{deliveryNote.notes}</p>
+                )}
+                {deliveryNote.internalNotes && (
+                  <>
+                    {deliveryNote.notes && <hr className="my-3 border-gray-200" />}
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <span className="text-sm">🔒</span>
+                      <span className="text-sm font-semibold text-gray-500">Notas Internas</span>
+                    </div>
+                    <p className="text-sm text-gray-500 whitespace-pre-line">{deliveryNote.internalNotes}</p>
+                  </>
+                )}
               </CardContent>
             </Card>
           )}

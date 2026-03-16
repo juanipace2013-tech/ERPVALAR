@@ -47,6 +47,7 @@ import {
   ChevronsUpDown,
   History,
   Eye,
+  RefreshCw,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -306,7 +307,7 @@ export default function AnalisisCrediticioPage() {
   }
 
   const buscar = useCallback(
-    async (cuit: string) => {
+    async (cuit: string, forceRefresh = false) => {
       const clean = cuit.replace(/\D/g, '')
       if (clean.length !== 11) {
         setError('Ingrese un CUIT válido de 11 dígitos (ej: 30-71187675-4)')
@@ -317,7 +318,8 @@ export default function AnalisisCrediticioPage() {
       setResult(null)
       resetFiltros()
       try {
-        const res = await fetch(`/api/bcra/${clean}`)
+        const url = `/api/bcra/${clean}${forceRefresh ? '?refresh=true' : ''}`
+        const res = await fetch(url)
         if (!res.ok) {
           const err = await res.json()
           throw new Error(err.error || 'Error al consultar BCRA')
@@ -333,6 +335,7 @@ export default function AnalisisCrediticioPage() {
         )
         // Refrescar historial
         fetchHistory()
+        if (forceRefresh) toast.success('Datos actualizados desde BCRA')
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Error al consultar BCRA')
         toast.error('Error al consultar BCRA')
@@ -548,7 +551,7 @@ export default function AnalisisCrediticioPage() {
           </div>
           {error && <p className="text-red-600 text-sm mt-2">{error}</p>}
           <p className="text-xs text-gray-400 mt-2">
-            Los resultados se almacenan en caché por 24 horas
+            Los resultados se almacenan en caché por 1 hora. Usá &quot;Actualizar datos&quot; para forzar reconsulta.
           </p>
         </CardContent>
       </Card>
@@ -757,11 +760,23 @@ export default function AnalisisCrediticioPage() {
                 </div>
               </div>
 
-              {result.deudas?.results?.periodoInformacion && (
-                <p className="text-xs text-gray-400 mt-3">
-                  Período de información: {formatPeriodo(result.deudas.results.periodoInformacion)}
-                </p>
-              )}
+              <div className="flex items-center justify-between mt-3">
+                {result.deudas?.results?.periodoInformacion ? (
+                  <p className="text-xs text-gray-400">
+                    Período de información: {formatPeriodo(result.deudas.results.periodoInformacion)}
+                  </p>
+                ) : <span />}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-blue-600 hover:text-blue-800 h-7 px-2"
+                  onClick={() => buscar(result.cuit, true)}
+                  disabled={loading}
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 mr-1 ${loading ? 'animate-spin' : ''}`} />
+                  Actualizar datos
+                </Button>
+              </div>
             </CardContent>
           </Card>
 

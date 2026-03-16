@@ -396,7 +396,7 @@ export default function TabAnalisisBCRA({ cuit }: Props) {
       </Card>
 
       <p className="text-xs text-gray-400 text-right">
-        Datos del BCRA - Central de Deudores. Cache de 24 horas.
+        Datos del BCRA - Central de Deudores. Cache de 1 hora.
       </p>
     </div>
   )

@@ -74,12 +74,12 @@ export async function GET(
   // ?refresh=true fuerza reconsulta (ignora caché)
   const forceRefresh = request.nextUrl.searchParams.get('refresh') === 'true'
 
-  // Check 24h cache (unless forced refresh)
+  // Check 1h cache (unless forced refresh)
   if (!forceRefresh) {
     const cache = await prisma.bcraCache.findUnique({ where: { cuit } })
     if (cache) {
       const age = Date.now() - new Date(cache.consultedAt).getTime()
-      if (age < 24 * 60 * 60 * 1000) {
+      if (age < 1 * 60 * 60 * 1000) {
         // Validate cached data has actual content (not a stale error)
         const cached = cache.data as any
         if (cached?.resumen && cached?.deudas) {

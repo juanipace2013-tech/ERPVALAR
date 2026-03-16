@@ -1005,6 +1005,7 @@ model QuoteItem {
   listPrice             Decimal                @db.Decimal(12, 2)  // Precio lista del producto principal
   brandDiscount         Decimal                @default(0) @db.Decimal(5, 3)  // Descuento por marca (0-1, ej: 0.15 = 15%)
   customerMultiplier    Decimal                @default(1) @db.Decimal(5, 3)  // Multiplicador del cliente (ej: 1.2)
+  multiplierOverride    Decimal?               @db.Decimal(5, 3)  // Override del multiplicador por item (null = usa el de la cotización)
 
   // Precios calculados
   unitPrice             Decimal                @db.Decimal(12, 2)  // Precio unitario calculado

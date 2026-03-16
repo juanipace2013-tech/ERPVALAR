@@ -45,12 +45,17 @@ export async function PATCH(
 
     let updatedItem
 
+    // Resolver multiplierOverride: si viene en body, usarlo; si no, mantener el existente
+    const multiplierOverride = body.multiplierOverride !== undefined
+      ? (body.multiplierOverride === null || body.multiplierOverride === '' ? null : Number(body.multiplierOverride))
+      : (existingItem.multiplierOverride !== null ? Number(existingItem.multiplierOverride) : null)
+
     if (isManualItem) {
       // ── ITEM MANUAL: aplicar multiplicador del cliente ──
       const manualPrice = body.manualUnitPrice !== undefined
         ? Number(body.manualUnitPrice)
         : Number(existingItem.listPrice)
-      const customerMultiplier = Number(existingItem.quote.multiplier) || 1
+      const customerMultiplier = multiplierOverride ?? (Number(existingItem.quote.multiplier) || 1)
       const unitPrice = manualPrice * customerMultiplier
       const quantity = body.quantity !== undefined ? body.quantity : existingItem.quantity
 
@@ -65,6 +70,7 @@ export async function PATCH(
           listPrice: manualPrice,
           brandDiscount: 0,
           customerMultiplier,
+          multiplierOverride,
           unitPrice,
           totalPrice: unitPrice * quantity,
           deliveryTime: body.deliveryTime !== undefined ? body.deliveryTime : existingItem.deliveryTime,
@@ -122,7 +128,7 @@ export async function PATCH(
 
       const subtotalWithAdditionals = listPrice + additionalsPrices
       const afterDiscount = subtotalWithAdditionals * (1 - brandDiscount)
-      const customerMultiplier = Number(existingItem.quote.multiplier)
+      const customerMultiplier = multiplierOverride ?? Number(existingItem.quote.multiplier)
       const unitPrice = afterDiscount * customerMultiplier
       const quantity = body.quantity !== undefined ? body.quantity : existingItem.quantity
       const totalPrice = unitPrice * quantity
@@ -136,6 +142,7 @@ export async function PATCH(
           listPrice,
           brandDiscount,
           customerMultiplier,
+          multiplierOverride,
           unitPrice,
           totalPrice,
           deliveryTime: body.deliveryTime !== undefined ? body.deliveryTime : existingItem.deliveryTime,

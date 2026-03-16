@@ -66,7 +66,10 @@ export async function POST(
       }
       const manualPrice = Number(body.manualUnitPrice) || 0
       const quantity = body.quantity || 1
-      const customerMultiplier = Number(quote.multiplier) || 1
+      const multiplierOverride = body.multiplierOverride !== undefined && body.multiplierOverride !== null && body.multiplierOverride !== ''
+        ? Number(body.multiplierOverride)
+        : null
+      const customerMultiplier = multiplierOverride ?? (Number(quote.multiplier) || 1)
       const manualUnitPrice = manualPrice * customerMultiplier
 
       const manualData: any = {
@@ -79,6 +82,7 @@ export async function POST(
         listPrice: manualPrice,
         brandDiscount: 0,
         customerMultiplier,
+        multiplierOverride,
         unitPrice: manualUnitPrice,
         totalPrice: manualUnitPrice * quantity,
         deliveryTime: body.deliveryTime || 'A confirmar',
@@ -162,7 +166,10 @@ export async function POST(
 
     const subtotalWithAdditionals = listPrice + additionalsPrices
     const afterDiscount = subtotalWithAdditionals * (1 - brandDiscount)
-    const customerMultiplier = Number(quote.multiplier)
+    const catMultiplierOverride = body.multiplierOverride !== undefined && body.multiplierOverride !== null && body.multiplierOverride !== ''
+      ? Number(body.multiplierOverride)
+      : null
+    const customerMultiplier = catMultiplierOverride ?? Number(quote.multiplier)
     const unitPrice = afterDiscount * customerMultiplier
     const quantity = body.quantity || 1
     const totalPrice = unitPrice * quantity
@@ -177,6 +184,7 @@ export async function POST(
         listPrice,
         brandDiscount,
         customerMultiplier,
+        multiplierOverride: catMultiplierOverride,
         unitPrice,
         totalPrice,
         deliveryTime: body.deliveryTime || 'Inmediato',

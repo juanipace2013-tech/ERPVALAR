@@ -200,6 +200,10 @@ export async function PUT(
       const newMultiplier = Number(quote.multiplier)
 
       for (const item of quote.items) {
+        // Items con multiplierOverride mantienen su multiplicador personalizado
+        const hasOverride = item.multiplierOverride !== null
+        const effectiveMultiplier = hasOverride ? Number(item.multiplierOverride) : newMultiplier
+
         const listPrice = Number(item.listPrice)
         let additionalsPrices = 0
         for (const add of item.additionals) {
@@ -209,13 +213,13 @@ export async function PUT(
         const subtotalWithAdditionals = listPrice + additionalsPrices
         const brandDiscount = Number(item.brandDiscount)
         const afterDiscount = subtotalWithAdditionals * (1 - brandDiscount)
-        const unitPrice = afterDiscount * newMultiplier
+        const unitPrice = afterDiscount * effectiveMultiplier
         const totalPrice = unitPrice * item.quantity
 
         await prisma.quoteItem.update({
           where: { id: item.id },
           data: {
-            customerMultiplier: newMultiplier,
+            customerMultiplier: effectiveMultiplier,
             unitPrice,
             totalPrice,
           },

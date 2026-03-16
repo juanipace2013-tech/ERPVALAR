@@ -68,6 +68,7 @@ interface QuoteItem {
   listPrice: number
   brandDiscount: number
   customerMultiplier: number
+  multiplierOverride: number | null
   unitPrice: number
   totalPrice: number
   deliveryTime: string | null
@@ -129,6 +130,8 @@ interface ItemFormData {
   manualUnitPrice: string
   // Brand discount override (percentage, e.g. "40" = 40%)
   brandDiscountOverride: string
+  // Multiplier override per item (e.g. "1.25")
+  multiplierOverride: string
 }
 
 export default function QuoteDetailPage() {
@@ -157,6 +160,7 @@ export default function QuoteDetailPage() {
     manualBrand: '',
     manualUnitPrice: '',
     brandDiscountOverride: '',
+    multiplierOverride: '',
   })
   const [itemFormLoading, setItemFormLoading] = useState(false)
 
@@ -249,7 +253,7 @@ export default function QuoteDetailPage() {
   useEffect(() => {
     calculatePricePreview()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itemFormData.productId, itemFormData.quantity, itemFormData.additionals, itemFormData.brandDiscountOverride, quote?.multiplier])
+  }, [itemFormData.productId, itemFormData.quantity, itemFormData.additionals, itemFormData.brandDiscountOverride, itemFormData.multiplierOverride, quote?.multiplier])
 
   // Búsqueda de productos con debounce (300ms)
   useEffect(() => {
@@ -599,7 +603,8 @@ export default function QuoteDetailPage() {
 
     // Aplicar fórmula VAL ARG
     const afterDiscount = subtotalWithAdditionals * (1 - brandDiscountPercent)
-    const customerMultiplier = Number(quote.multiplier)
+    const multOverride = parseFloat(itemFormData.multiplierOverride)
+    const customerMultiplier = (!isNaN(multOverride) && multOverride > 0) ? multOverride : Number(quote.multiplier)
     const unitPrice = afterDiscount * customerMultiplier
     const totalPrice = unitPrice * itemFormData.quantity
 
@@ -618,6 +623,9 @@ export default function QuoteDetailPage() {
     try {
       setItemFormLoading(true)
 
+      const multOverrideVal = parseFloat(itemFormData.multiplierOverride)
+      const multiplierOverride = (!isNaN(multOverrideVal) && multOverrideVal > 0) ? multOverrideVal : null
+
       const payload = itemFormData.isManual
         ? {
             productId: null,
@@ -629,6 +637,7 @@ export default function QuoteDetailPage() {
             deliveryTime: itemFormData.deliveryTime || 'A confirmar',
             isAlternative: itemFormData.isAlternative,
             alternativeToItemId: itemFormData.alternativeToItemId,
+            multiplierOverride,
           }
         : {
             productId: itemFormData.productId,
@@ -640,6 +649,7 @@ export default function QuoteDetailPage() {
             brandDiscount: itemFormData.brandDiscountOverride
               ? parseFloat(itemFormData.brandDiscountOverride) / 100
               : undefined,
+            multiplierOverride,
             additionals: itemFormData.additionals.map((add) => ({
               productId: add.productId || null,
               listPrice: add.listPrice,
@@ -712,9 +722,12 @@ export default function QuoteDetailPage() {
       isManual,
       manualSku: item.manualSku || '',
       manualBrand: item.manualBrand || '',
-      manualUnitPrice: isManual ? String(Number(item.unitPrice).toFixed(2)) : '',
+      manualUnitPrice: isManual ? String(Number(item.listPrice).toFixed(2)) : '',
       brandDiscountOverride: item.productId
         ? String(Number(item.brandDiscount) * 100)
+        : '',
+      multiplierOverride: item.multiplierOverride !== null && item.multiplierOverride !== undefined
+        ? String(Number(item.multiplierOverride))
         : '',
     })
     setShowItemDialog(true)
@@ -748,6 +761,9 @@ export default function QuoteDetailPage() {
     try {
       setItemFormLoading(true)
 
+      const editMultOverrideVal = parseFloat(itemFormData.multiplierOverride)
+      const editMultiplierOverride = (!isNaN(editMultOverrideVal) && editMultOverrideVal > 0) ? editMultOverrideVal : null
+
       const payload = itemFormData.isManual
         ? {
             isManual: true,
@@ -757,6 +773,7 @@ export default function QuoteDetailPage() {
             manualUnitPrice: parseFloat(itemFormData.manualUnitPrice),
             quantity: itemFormData.quantity,
             deliveryTime: itemFormData.deliveryTime,
+            multiplierOverride: editMultiplierOverride,
           }
         : {
             productId: itemFormData.productId,
@@ -766,6 +783,7 @@ export default function QuoteDetailPage() {
             brandDiscount: itemFormData.brandDiscountOverride
               ? parseFloat(itemFormData.brandDiscountOverride) / 100
               : undefined,
+            multiplierOverride: editMultiplierOverride,
             additionals: itemFormData.additionals.map((add) => ({
               productId: add.productId || null,
               listPrice: add.listPrice,
@@ -896,6 +914,7 @@ export default function QuoteDetailPage() {
       manualBrand: '',
       manualUnitPrice: '',
       brandDiscountOverride: '',
+      multiplierOverride: '',
     })
     setProductSearch('')
     setAddlSearchTerm('')
@@ -1355,7 +1374,7 @@ export default function QuoteDetailPage() {
                   </DialogTitle>
                   <DialogDescription>
                     {itemFormData.isManual
-                      ? 'Item sin producto en catálogo. El precio ingresado es el precio final (sin multiplicador).'
+                      ? 'Item sin producto en catálogo. El precio ingresado es el precio lista (se aplica multiplicador).'
                       : editingItemId
                         ? 'Modifique los datos del item. El precio se recalculará automáticamente.'
                         : 'Complete los datos del item. El precio se calcula automáticamente.'}
@@ -1456,10 +1475,28 @@ export default function QuoteDetailPage() {
                             placeholder="Ej: A confirmar, 30 días..."
                           />
                         </div>
+                        <div className="space-y-1">
+                          <Label className="flex items-center gap-1">
+                            Multiplicador
+                            {itemFormData.multiplierOverride && (
+                              <span className="text-xs text-amber-600 font-normal">(personalizado)</span>
+                            )}
+                          </Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={itemFormData.multiplierOverride}
+                            onChange={(e) => setItemFormData({ ...itemFormData, multiplierOverride: e.target.value })}
+                            placeholder={`${formatNumber(quote.multiplier)} (cotización)`}
+                            className={`font-mono ${itemFormData.multiplierOverride ? 'border-amber-400 bg-amber-50' : ''}`}
+                          />
+                        </div>
                       </div>
                       {itemFormData.manualUnitPrice && parseFloat(itemFormData.manualUnitPrice) > 0 && (() => {
                         const listP = parseFloat(itemFormData.manualUnitPrice)
-                        const mult = Number(quote.multiplier) || 1
+                        const manualMultOverride = parseFloat(itemFormData.multiplierOverride)
+                        const mult = (!isNaN(manualMultOverride) && manualMultOverride > 0) ? manualMultOverride : (Number(quote.multiplier) || 1)
                         const unitP = listP * mult
                         const totalP = unitP * itemFormData.quantity
                         return (
@@ -1603,8 +1640,8 @@ export default function QuoteDetailPage() {
                         </div>
                       )}
 
-                      {/* Cantidad + Desc. Marca + Descripción */}
-                      <div className="grid gap-4 grid-cols-3">
+                      {/* Cantidad + Desc. Marca + Multiplicador + Descripción */}
+                      <div className="grid gap-4 grid-cols-4">
                         <div className="space-y-2">
                           <Label>Cantidad</Label>
                           <Input
@@ -1635,6 +1672,28 @@ export default function QuoteDetailPage() {
                             }
                             placeholder="0"
                             className="font-mono"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="flex items-center gap-1">
+                            Multiplicador
+                            {itemFormData.multiplierOverride && (
+                              <span className="text-[10px] text-amber-600 font-normal">(custom)</span>
+                            )}
+                          </Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={itemFormData.multiplierOverride}
+                            onChange={(e) =>
+                              setItemFormData({
+                                ...itemFormData,
+                                multiplierOverride: e.target.value,
+                              })
+                            }
+                            placeholder={`${formatNumber(quote.multiplier)}`}
+                            className={`font-mono ${itemFormData.multiplierOverride ? 'border-amber-400 bg-amber-50' : ''}`}
                           />
                         </div>
                         <div className="space-y-2">
@@ -1878,8 +1937,13 @@ export default function QuoteDetailPage() {
                               <span className="font-mono">-USD {formatNumber(pricePreview.subtotalWithAdditionals - pricePreview.afterDiscount)}</span>
                             </div>
                           )}
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">x Multiplicador ({formatNumber(quote.multiplier)}x):</span>
+                          <div className={`flex justify-between text-sm ${itemFormData.multiplierOverride ? 'text-amber-700 font-medium' : ''}`}>
+                            <span className={itemFormData.multiplierOverride ? '' : 'text-muted-foreground'}>
+                              x Multiplicador ({(() => {
+                                const mo = parseFloat(itemFormData.multiplierOverride)
+                                return (!isNaN(mo) && mo > 0) ? formatNumber(mo) : formatNumber(quote.multiplier)
+                              })()}x){itemFormData.multiplierOverride && ' ✏️'}:
+                            </span>
                             <span className="font-mono">USD {formatNumber(pricePreview.unitPrice)}</span>
                           </div>
                           <div className="border-t-2 border-blue-300 pt-2 mt-1">
@@ -2065,8 +2129,9 @@ export default function QuoteDetailPage() {
                                 <span className="text-muted-foreground">
                                   Multiplicador:
                                 </span>
-                                <span className="ml-2 font-medium">
+                                <span className={`ml-2 font-medium ${mainItem.multiplierOverride !== null ? 'text-amber-600' : ''}`}>
                                   {formatNumber(mainItem.customerMultiplier)}x
+                                  {mainItem.multiplierOverride !== null && ' ✏️'}
                                 </span>
                               </div>
                               <div>

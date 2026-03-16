@@ -28,21 +28,27 @@ async function fetchBCRA(endpoint: string) {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
   try {
     const url = `${BCRA_BASE}/${endpoint}`
+    console.log(`[BCRA] Fetching: ${url}`)
 
     const response = await fetch(url, {
       headers: { Accept: 'application/json' },
       cache: 'no-store',
     })
 
+    console.log(`[BCRA] HTTP ${response.status} for ${endpoint}`)
+
     const text = await response.text()
 
     if (!text) {
+      console.warn(`[BCRA] Empty response for ${endpoint}`)
       return { status: 404, errorMessages: ['Respuesta vacía del BCRA'] }
     }
 
-    return JSON.parse(text)
+    const parsed = JSON.parse(text)
+    console.log(`[BCRA] Parsed ${endpoint}: status=${parsed?.status}, hasResults=${!!parsed?.results}`)
+    return parsed
   } catch (error) {
-    console.error('BCRA fetch error:', error)
+    console.error(`[BCRA] Fetch error for ${endpoint}:`, error)
     return { status: 500, errorMessages: [`Error al consultar BCRA: ${error}`] }
   } finally {
     // Restaurar TLS para el resto de la aplicación
@@ -55,7 +61,7 @@ async function fetchBCRA(endpoint: string) {
 }
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ cuit: string }> }
 ) {
   const { cuit: rawCuit } = await params
@@ -65,13 +71,26 @@ export async function GET(
     return NextResponse.json({ error: 'CUIT inválido' }, { status: 400 })
   }
 
-  // Check 24h cache
-  const cache = await prisma.bcraCache.findUnique({ where: { cuit } })
-  if (cache) {
-    const age = Date.now() - new Date(cache.consultedAt).getTime()
-    if (age < 24 * 60 * 60 * 1000) {
-      return NextResponse.json(cache.data)
+  // ?refresh=true fuerza reconsulta (ignora caché)
+  const forceRefresh = request.nextUrl.searchParams.get('refresh') === 'true'
+
+  // Check 24h cache (unless forced refresh)
+  if (!forceRefresh) {
+    const cache = await prisma.bcraCache.findUnique({ where: { cuit } })
+    if (cache) {
+      const age = Date.now() - new Date(cache.consultedAt).getTime()
+      if (age < 24 * 60 * 60 * 1000) {
+        // Validate cached data has actual content (not a stale error)
+        const cached = cache.data as any
+        if (cached?.resumen && cached?.deudas) {
+          return NextResponse.json(cached)
+        }
+        // Cache exists but is invalid/incomplete → refetch
+        console.warn(`[BCRA] Cache for ${cuit} is invalid, refetching...`)
+      }
     }
+  } else {
+    console.log(`[BCRA] Force refresh for ${cuit}`)
   }
 
   // Fetch 3 endpoints in parallel
@@ -86,11 +105,15 @@ export async function GET(
   const periodos: any[] =
     deudas?.status === 200 ? (deudas?.results?.periodos ?? []) : []
 
+  console.log(`[BCRA] Deudas status=${deudas?.status}, periodos=${periodos.length}`)
+
   const periodosOrdenados = [...periodos].sort((a, b) =>
     a.periodo.localeCompare(b.periodo)
   )
   const periodoActual = periodosOrdenados[periodosOrdenados.length - 1]
   const entidadesRaw: any[] = periodoActual?.entidades ?? []
+
+  console.log(`[BCRA] Periodo actual=${periodoActual?.periodo}, entidades=${entidadesRaw.length}`)
 
   // El BCRA devuelve "entidad" como string (nombre del banco)
   const entidadesMapped = entidadesRaw.map((e: any) => ({
@@ -110,11 +133,14 @@ export async function GET(
       ? Math.max(...entidadesMapped.map((e: any) => Number(e.situacion) || 1))
       : 0
 
-  // Los montos del BCRA están en miles de pesos → multiplicar × 1000
+  // Los montos de la API del BCRA ya vienen en pesos (NO en miles)
+  // Ejemplo: monto=165659 → $165.659
   const montoTotalDeuda = entidadesMapped.reduce(
-    (sum: number, e: any) => sum + (Number(e.monto) || 0) * 1000,
+    (sum: number, e: any) => sum + (Number(e.monto) || 0),
     0
   )
+
+  console.log(`[BCRA] Situación peor=${situacionPeor}, deuda total=$${montoTotalDeuda}, entidades=${entidadesMapped.length}`)
 
   // ── Cheques rechazados ────────────────────────────────────────────────────────
   // Estructura real: causales[].entidades[].detalle[] (no causales[].entidades directamente)

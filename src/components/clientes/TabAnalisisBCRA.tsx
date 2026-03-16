@@ -154,7 +154,7 @@ export default function TabAnalisisBCRA({ cuit }: Props) {
   const [error, setError] = useState('')
   const [result, setResult] = useState<BcraResult | null>(null)
 
-  const fetchBCRA = useCallback(async () => {
+  const fetchBCRA = useCallback(async (refresh = false) => {
     if (!cuit) return
     const cleanCuit = cuit.replace(/\D/g, '')
     if (cleanCuit.length !== 11) {
@@ -164,7 +164,8 @@ export default function TabAnalisisBCRA({ cuit }: Props) {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch(`/api/bcra/${cleanCuit}`)
+      const url = `/api/bcra/${cleanCuit}${refresh ? '?refresh=true' : ''}`
+      const res = await fetch(url)
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error || 'Error al consultar BCRA')
@@ -179,7 +180,7 @@ export default function TabAnalisisBCRA({ cuit }: Props) {
   }, [cuit])
 
   useEffect(() => {
-    fetchBCRA()
+    fetchBCRA(false)
   }, [fetchBCRA])
 
   const entidades: Entidad[] = result?.deudas?.results?.entidades ?? []
@@ -209,7 +210,7 @@ export default function TabAnalisisBCRA({ cuit }: Props) {
       <div className="text-center py-8">
         <AlertCircle className="h-8 w-8 text-red-400 mx-auto mb-2" />
         <p className="text-red-600 text-sm">{error}</p>
-        <Button variant="outline" size="sm" className="mt-3" onClick={fetchBCRA}>
+        <Button variant="outline" size="sm" className="mt-3" onClick={() => fetchBCRA(true)}>
           Reintentar
         </Button>
       </div>
@@ -260,7 +261,7 @@ export default function TabAnalisisBCRA({ cuit }: Props) {
                   {result.resumen.cantidadChequesRechazados}
                 </p>
               </div>
-              <Button variant="outline" size="sm" onClick={fetchBCRA} disabled={loading}>
+              <Button variant="outline" size="sm" onClick={() => fetchBCRA(true)} disabled={loading}>
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </div>
@@ -285,7 +286,7 @@ export default function TabAnalisisBCRA({ cuit }: Props) {
                 <TableRow>
                   <TableHead>Entidad</TableHead>
                   <TableHead>Situación</TableHead>
-                  <TableHead className="text-right">Monto (miles $)</TableHead>
+                  <TableHead className="text-right">Monto ($)</TableHead>
                   <TableHead className="text-right">Días atraso</TableHead>
                   <TableHead>Observaciones</TableHead>
                 </TableRow>

@@ -777,7 +777,7 @@ export default function AnalisisCrediticioPage() {
                     <TableRow>
                       <TableHead>Entidad</TableHead>
                       <TableHead>Situación</TableHead>
-                      <TableHead className="text-right">Monto (miles $)</TableHead>
+                      <TableHead className="text-right">Monto ($)</TableHead>
                       <TableHead className="text-right">Días atraso</TableHead>
                       <TableHead>Observaciones</TableHead>
                     </TableRow>

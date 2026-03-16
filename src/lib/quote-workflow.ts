@@ -128,19 +128,23 @@ export async function updateQuoteStatus(
 /**
  * Genera un número de remito secuencial
  */
+// Mínimo secuencial para continuar la numeración pre-ERP
+const DELIVERY_NUMBER_MIN = 11414;
+
 export async function generateDeliveryNumber(): Promise<string> {
   const lastDeliveryNote = await prisma.deliveryNote.findFirst({
     orderBy: { createdAt: 'desc' },
     select: { deliveryNumber: true }
   });
 
-  if (!lastDeliveryNote) {
-    return 'RE 0002-00000001';
+  let lastNumber = 0;
+  if (lastDeliveryNote) {
+    // Formato: RE 0002-XXXXXXXX
+    const match = lastDeliveryNote.deliveryNumber.match(/(\d+)$/);
+    lastNumber = match ? parseInt(match[1]) : 0;
   }
 
-  // Formato: RE 0002-XXXXXXXX
-  const match = lastDeliveryNote.deliveryNumber.match(/(\d+)$/);
-  const number = match ? parseInt(match[1]) + 1 : 1;
+  const number = Math.max(lastNumber, DELIVERY_NUMBER_MIN) + 1;
 
   return `RE 0002-${String(number).padStart(8, '0')}`;
 }

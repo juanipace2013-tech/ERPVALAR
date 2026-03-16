@@ -25,6 +25,19 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
+import {
   ArrowLeft,
   Loader2,
   Plus,
@@ -38,6 +51,8 @@ import {
   AlertCircle,
   CheckCircle2,
   Send,
+  ChevronsUpDown,
+  Check,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -326,6 +341,10 @@ export default function NewPurchaseInvoicePage() {
 
   // Data
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [supplierSearch, setSupplierSearch] = useState('')
+  const [supplierSearchResults, setSupplierSearchResults] = useState<Supplier[]>([])
+  const [supplierComboOpen, setSupplierComboOpen] = useState(false)
+  const [searchingSuppliers, setSearchingSuppliers] = useState(false)
   const [linkedProducts, setLinkedProducts] = useState<Record<string, { sku: string; name: string }>>({})
 
   // Invoice form fields
@@ -384,7 +403,7 @@ export default function NewPurchaseInvoicePage() {
 
   const fetchSuppliers = useCallback(async () => {
     try {
-      const response = await fetch('/api/proveedores?limit=1000')
+      const response = await fetch('/api/proveedores?limit=50&sortBy=name&sortOrder=asc')
       if (response.ok) {
         const data = await response.json()
         setSuppliers(data.suppliers || [])
@@ -397,6 +416,33 @@ export default function NewPurchaseInvoicePage() {
   useEffect(() => {
     fetchSuppliers()
   }, [fetchSuppliers])
+
+  // Debounced supplier search
+  const supplierSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!supplierSearch || supplierSearch.length < 2) {
+      setSupplierSearchResults([])
+      return
+    }
+    if (supplierSearchTimerRef.current) clearTimeout(supplierSearchTimerRef.current)
+    supplierSearchTimerRef.current = setTimeout(async () => {
+      setSearchingSuppliers(true)
+      try {
+        const res = await fetch(`/api/proveedores?search=${encodeURIComponent(supplierSearch)}&limit=30&sortBy=name&sortOrder=asc`)
+        if (res.ok) {
+          const data = await res.json()
+          setSupplierSearchResults(data.suppliers || [])
+        }
+      } catch (err) {
+        console.error('Error searching suppliers:', err)
+      } finally {
+        setSearchingSuppliers(false)
+      }
+    }, 300)
+    return () => {
+      if (supplierSearchTimerRef.current) clearTimeout(supplierSearchTimerRef.current)
+    }
+  }, [supplierSearch])
 
   useEffect(() => {
     if (currency === 'USD') {
@@ -541,7 +587,7 @@ export default function NewPurchaseInvoicePage() {
         if (result.debug?.truncated) {
           toast.warning('⚠️ La respuesta de IA fue truncada. Algunos items pueden faltar.')
         }
-        applyOcrData(result.data)
+        await applyOcrData(result.data)
         setOcrUsed(true)
         setStep('form')
         toast.success('Factura procesada con IA. Revisá los datos antes de guardar.')
@@ -556,14 +602,38 @@ export default function NewPurchaseInvoicePage() {
     }
   }
 
-  const applyOcrData = (data: OcrData) => {
-    // Try to match supplier by CUIT
+  const applyOcrData = async (data: OcrData) => {
+    // Try to match supplier by CUIT - first local, then DB
     if (data.proveedor?.cuit) {
       const normalizedCuit = data.proveedor.cuit.replace(/[-\s]/g, '')
-      const matchedSupplier = suppliers.find((s) => {
+      let matchedSupplier = suppliers.find((s) => {
         const sTaxId = (s.taxId || '').replace(/[-\s]/g, '')
         return sTaxId === normalizedCuit
       })
+
+      // If not found locally, search in DB by CUIT
+      if (!matchedSupplier) {
+        try {
+          const res = await fetch(`/api/proveedores?search=${encodeURIComponent(data.proveedor.cuit)}&limit=10`)
+          if (res.ok) {
+            const result = await res.json()
+            const dbMatch = (result.suppliers || []).find((s: { taxId?: string }) => {
+              const sTaxId = (s.taxId || '').replace(/[-\s]/g, '')
+              return sTaxId === normalizedCuit
+            })
+            if (dbMatch) {
+              matchedSupplier = dbMatch
+              // Add to local suppliers so it shows in the selector
+              setSuppliers((prev) =>
+                prev.some((s) => s.id === dbMatch.id) ? prev : [...prev, dbMatch]
+              )
+            }
+          }
+        } catch (err) {
+          console.error('Error searching supplier by CUIT:', err)
+        }
+      }
+
       if (matchedSupplier) {
         setSupplierId(matchedSupplier.id)
       }
@@ -1225,18 +1295,60 @@ export default function NewPurchaseInvoicePage() {
               <div className="grid grid-cols-1 gap-4">
                 <div>
                   <Label htmlFor="supplier">Proveedor *</Label>
-                  <Select value={supplierId} onValueChange={setSupplierId}>
-                    <SelectTrigger id="supplier">
-                      <SelectValue placeholder="Seleccionar proveedor" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {suppliers.map((supplier) => (
-                        <SelectItem key={supplier.id} value={supplier.id}>
-                          {supplier.name} {supplier.taxId && `- ${supplier.taxId}`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={supplierComboOpen} onOpenChange={setSupplierComboOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={supplierComboOpen}
+                        className="w-full justify-between font-normal"
+                      >
+                        {supplierId
+                          ? (() => {
+                              const s = [...suppliers, ...supplierSearchResults].find((s) => s.id === supplierId)
+                              return s ? `${s.name}${s.taxId ? ` - ${s.taxId}` : ''}` : 'Seleccionar proveedor'
+                            })()
+                          : 'Seleccionar proveedor'}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                      <Command shouldFilter={false}>
+                        <CommandInput
+                          placeholder="Buscar por nombre o CUIT..."
+                          value={supplierSearch}
+                          onValueChange={setSupplierSearch}
+                        />
+                        <CommandList>
+                          <CommandEmpty>
+                            {searchingSuppliers ? 'Buscando...' : 'No se encontraron proveedores'}
+                          </CommandEmpty>
+                          <CommandGroup>
+                            {(supplierSearch.length >= 2 ? supplierSearchResults : suppliers).map((supplier) => (
+                              <CommandItem
+                                key={supplier.id}
+                                value={supplier.id}
+                                onSelect={(val) => {
+                                  setSupplierId(val === supplierId ? '' : val)
+                                  setSupplierComboOpen(false)
+                                  setSupplierSearch('')
+                                  // Ensure selected supplier is in the local list
+                                  setSuppliers((prev) =>
+                                    prev.some((s) => s.id === supplier.id) ? prev : [...prev, supplier]
+                                  )
+                                }}
+                              >
+                                <Check
+                                  className={`mr-2 h-4 w-4 ${supplierId === supplier.id ? 'opacity-100' : 'opacity-0'}`}
+                                />
+                                {supplier.name} {supplier.taxId && `- ${supplier.taxId}`}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
                 {supplierInfo.cuit && (
                   <div className="grid grid-cols-2 gap-4 text-sm text-gray-500">

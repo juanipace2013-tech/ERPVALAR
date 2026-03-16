@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import https from 'https'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/auth'
 
@@ -22,42 +23,54 @@ function calcularSemaforo(
   return 'verde'
 }
 
-async function fetchBCRA(endpoint: string) {
-  // Deshabilitar TLS solo durante el fetch al BCRA (su certificado suele fallar)
-  const originalTLS = process.env.NODE_TLS_REJECT_UNAUTHORIZED
-  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
-  try {
-    const url = `${BCRA_BASE}/${endpoint}`
-    console.log(`[BCRA] Fetching: ${url}`)
+/**
+ * Fetch al BCRA usando https.request directo con rejectUnauthorized: false.
+ * El certificado TLS del BCRA suele fallar con el fetch nativo de Next.js,
+ * por lo que usamos https.request que permite desactivar la validación TLS
+ * solo para esta conexión sin afectar al resto del servidor.
+ */
+async function fetchBCRA(endpoint: string): Promise<any> {
+  const url = `${BCRA_BASE}/${endpoint}`
+  console.log(`[BCRA] Fetching: ${url}`)
 
-    const response = await fetch(url, {
-      headers: { Accept: 'application/json' },
-      cache: 'no-store',
+  return new Promise((resolve) => {
+    const req = https.get(
+      url,
+      {
+        rejectUnauthorized: false,
+        headers: { Accept: 'application/json' },
+      },
+      (res) => {
+        let data = ''
+        res.on('data', (chunk) => (data += chunk))
+        res.on('end', () => {
+          console.log(`[BCRA] HTTP ${res.statusCode} for ${endpoint}`)
+          if (!data) {
+            console.warn(`[BCRA] Empty response for ${endpoint}`)
+            resolve({ status: 404, errorMessages: ['Respuesta vacía del BCRA'] })
+            return
+          }
+          try {
+            const parsed = JSON.parse(data)
+            console.log(`[BCRA] Parsed ${endpoint}: status=${parsed?.status}, hasResults=${!!parsed?.results}`)
+            resolve(parsed)
+          } catch (e) {
+            console.error(`[BCRA] JSON parse error for ${endpoint}:`, e)
+            resolve({ status: 500, errorMessages: [`Error al parsear respuesta BCRA`] })
+          }
+        })
+      }
+    )
+    req.on('error', (error) => {
+      console.error(`[BCRA] Request error for ${endpoint}:`, error)
+      resolve({ status: 500, errorMessages: [`Error al consultar BCRA: ${error.message}`] })
     })
-
-    console.log(`[BCRA] HTTP ${response.status} for ${endpoint}`)
-
-    const text = await response.text()
-
-    if (!text) {
-      console.warn(`[BCRA] Empty response for ${endpoint}`)
-      return { status: 404, errorMessages: ['Respuesta vacía del BCRA'] }
-    }
-
-    const parsed = JSON.parse(text)
-    console.log(`[BCRA] Parsed ${endpoint}: status=${parsed?.status}, hasResults=${!!parsed?.results}`)
-    return parsed
-  } catch (error) {
-    console.error(`[BCRA] Fetch error for ${endpoint}:`, error)
-    return { status: 500, errorMessages: [`Error al consultar BCRA: ${error}`] }
-  } finally {
-    // Restaurar TLS para el resto de la aplicación
-    if (originalTLS !== undefined) {
-      process.env.NODE_TLS_REJECT_UNAUTHORIZED = originalTLS
-    } else {
-      delete process.env.NODE_TLS_REJECT_UNAUTHORIZED
-    }
-  }
+    req.setTimeout(15000, () => {
+      req.destroy()
+      console.error(`[BCRA] Timeout for ${endpoint}`)
+      resolve({ status: 500, errorMessages: ['Timeout al consultar BCRA'] })
+    })
+  })
 }
 
 export async function GET(

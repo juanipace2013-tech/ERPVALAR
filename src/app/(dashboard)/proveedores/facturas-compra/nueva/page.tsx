@@ -69,9 +69,8 @@ function normalizePaymentTerm(raw: string): string {
   if (!raw) return ''
   const lower = raw.toLowerCase()
 
-  if (lower.includes('contado') || lower.includes('efectivo')) return 'Contado'
-
-  // Buscar número de días
+  // Buscar número de días PRIMERO (prioridad sobre "contado"/"efectivo")
+  // porque textos como "30 DIAS FF ... EFECTIVO PAGO" deben ser "a 30 Dias"
   const match = lower.match(/(\d+)\s*d[ií]as?/)
   if (match) {
     const dias = parseInt(match[1])
@@ -92,6 +91,9 @@ function normalizePaymentTerm(raw: string): string {
       return `a ${closest} Dias`
     }
   }
+
+  // Contado / efectivo (solo si no se detectaron días arriba)
+  if (lower.includes('contado') || lower.includes('efectivo')) return 'Contado'
 
   // Si dice "cuenta corriente" sin número, asumir 30 días
   if (lower.includes('cuenta corriente') || lower.includes('cta cte')) return 'a 30 Dias'

@@ -33,10 +33,8 @@ function normalizePaymentTermForColppy(raw: string): string {
 
   const lower = raw.toLowerCase()
 
-  // Contado
-  if (lower.includes('contado') || lower.includes('efectivo')) return 'Contado'
-
-  // Buscar número de días en el texto
+  // Buscar número de días PRIMERO (prioridad sobre "contado"/"efectivo")
+  // porque textos como "30 DIAS FF ... EFECTIVO PAGO" deben ser "a 30 Dias"
   const match = lower.match(/(\d+)\s*d[ií]as?/)
   if (match) {
     const dias = parseInt(match[1])
@@ -58,6 +56,9 @@ function normalizePaymentTermForColppy(raw: string): string {
       return `a ${closest} Dias`
     }
   }
+
+  // Contado / efectivo (solo si no se detectaron días arriba)
+  if (lower.includes('contado') || lower.includes('efectivo')) return 'Contado'
 
   return 'a 30 Dias' // Default razonable para cuenta corriente
 }

@@ -459,13 +459,13 @@ export default function RemitosPage() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {dn.invoices.length > 0 ? (
+                        {(dn.invoices || []).length > 0 ? (
                           <Link
-                            href={`/facturas/${dn.invoices[0].id}`}
+                            href={`/facturas/${(dn.invoices || [])[0].id}`}
                             onClick={(e) => e.stopPropagation()}
                             className="text-blue-600 hover:underline"
                           >
-                            {dn.invoices[0].invoiceNumber}
+                            {(dn.invoices || [])[0].invoiceNumber}
                           </Link>
                         ) : (
                           <span className="text-gray-400">Pendiente</span>
@@ -505,7 +505,7 @@ export default function RemitosPage() {
                                 Editar
                               </DropdownMenuItem>
                             )}
-                            {dn.invoices.length === 0 &&
+                            {(dn.invoices || []).length === 0 &&
                               (dn.status === 'READY' ||
                                 dn.status === 'DISPATCHED' ||
                                 dn.status === 'DELIVERED') && (
@@ -520,7 +520,7 @@ export default function RemitosPage() {
                                 </DropdownMenuItem>
                               )}
                             {['PENDING', 'PREPARING', 'READY'].includes(dn.status) &&
-                              dn.invoices.length === 0 && (
+                              (dn.invoices || []).length === 0 && (
                                 <>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem

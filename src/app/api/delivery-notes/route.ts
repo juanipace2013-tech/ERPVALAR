@@ -61,8 +61,11 @@ export async function GET(request: NextRequest) {
               quoteNumber: true,
             },
           },
-          _count: {
-            select: { items: true },
+          items: {
+            select: {
+              id: true,
+              quantity: true,
+            },
           },
           invoices: {
             select: {

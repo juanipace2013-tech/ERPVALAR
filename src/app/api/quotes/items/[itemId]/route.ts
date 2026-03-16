@@ -62,7 +62,7 @@ export async function PATCH(
       updatedItem = await prisma.quoteItem.update({
         where: { id: itemId },
         data: {
-          productId: null,
+          ...(existingItem.productId ? { product: { disconnect: true } } : {}),
           manualSku: body.manualSku !== undefined ? body.manualSku : existingItem.manualSku,
           manualBrand: body.manualBrand !== undefined ? body.manualBrand : existingItem.manualBrand,
           description: body.description !== undefined ? body.description : existingItem.description,
@@ -133,10 +133,11 @@ export async function PATCH(
       const quantity = body.quantity !== undefined ? body.quantity : existingItem.quantity
       const totalPrice = unitPrice * quantity
 
+      const resolvedProductId = body.productId || existingItem.productId
       updatedItem = await prisma.quoteItem.update({
         where: { id: itemId },
         data: {
-          productId: body.productId || existingItem.productId,
+          ...(resolvedProductId ? { product: { connect: { id: resolvedProductId } } } : {}),
           description: body.description !== undefined ? body.description : existingItem.description,
           quantity,
           listPrice,

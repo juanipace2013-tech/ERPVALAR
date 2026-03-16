@@ -247,13 +247,21 @@ export async function POST(
       const itemsFactura = await Promise.all(invoice.items.map(async (item) => {
         const qty = Number(item.quantity)
         const unitPrice = Number(item.unitPrice) // Precio neto (ya con descuento aplicado)
+        const listPrice = Number(item.listPrice) // Precio de lista (bruto, antes de descuento)
+        const discountPercent = Number(item.discountPercent) // % de descuento
         const taxRate = Number(item.taxRate)
         const colppyCode = (item.supplierProductCode || '').substring(3).trim()
         const rawIdItem = await getIdItem(item.supplierProductCode || '')
 
-        // Redondear a 2 decimales
-        const roundedUnitPrice = Math.round(unitPrice * 100) / 100
-        const importeTotal = Math.round(roundedUnitPrice * qty * 100) / 100
+        // Si hay descuento y precio lista, enviar precio lista + descuento
+        // Colppy calcula internamente: neto = ImporteUnitario * qty * (1 - porcDesc/100)
+        const hasDiscount = discountPercent > 0 && listPrice > 0 && listPrice !== unitPrice
+        const importeUnitario = hasDiscount ? Math.round(listPrice * 100) / 100 : Math.round(unitPrice * 100) / 100
+        const porcDesc = hasDiscount ? discountPercent : 0
+
+        // El neto es siempre sobre el precio ya con descuento aplicado
+        const roundedNetPrice = Math.round(unitPrice * 100) / 100
+        const importeTotal = Math.round(roundedNetPrice * qty * 100) / 100
         const importeIva = Math.round(importeTotal * taxRate / 100 * 100) / 100
 
         return {
@@ -262,16 +270,21 @@ export async function POST(
           Descripcion: item.description,
           unidadMedida: item.unit || 'Un',
           Cantidad: String(qty),
-          ImporteUnitario: roundedUnitPrice.toFixed(2),
+          ImporteUnitario: importeUnitario.toFixed(2),
           importeTotal: importeTotal.toFixed(2),
           importeIva: importeIva.toFixed(2),
           IVA: taxRate.toFixed(2),
           idPlanCuenta: 'Mercaderias',
           codigo: colppyCode,
-          porcDesc: '0',
+          porcDesc: porcDesc.toFixed(2),
           Comentario: `FC ${invoice.invoiceNumber}`,
         }
       }))
+
+      console.log('[Colppy FC] === ITEMS PAYLOAD ===', JSON.stringify(itemsFactura.map(i => ({
+        codigo: i.codigo, Desc: i.Descripcion?.substring(0, 30), Qty: i.Cantidad,
+        PUnit: i.ImporteUnitario, porcDesc: i.porcDesc, Total: i.importeTotal,
+      })), null, 2))
 
       // ===================================================================
       // ARITMÉTICA EN CENTAVOS (enteros) para eliminar errores de punto

@@ -226,10 +226,16 @@ export async function POST(
       // Los items se envían con precio neto y porcDesc=0.
       // ===================================================================
 
+      // Limpiar código proveedor: solo strip prefijo "001" de GENEBRE
+      const cleanSupplierCode = (code: string) => {
+        const trimmed = (code || '').trim()
+        return trimmed.startsWith('001') ? trimmed.substring(3).trim() : trimmed
+      }
+
       // Buscar idItem en inventario de Colppy por código (con caché)
       const idItemCache: Record<string, string> = {}
       const getIdItem = async (supplierCode: string): Promise<string> => {
-        const colppyCode = (supplierCode || '').substring(3).trim()
+        const colppyCode = cleanSupplierCode(supplierCode)
         if (!colppyCode) return ''
         if (idItemCache[colppyCode] !== undefined) return idItemCache[colppyCode]
         try {
@@ -250,7 +256,7 @@ export async function POST(
         const listPrice = Number(item.listPrice) // Precio de lista (bruto, antes de descuento)
         const discountPercent = Number(item.discountPercent) // % de descuento
         const taxRate = Number(item.taxRate)
-        const colppyCode = (item.supplierProductCode || '').substring(3).trim()
+        const colppyCode = cleanSupplierCode(item.supplierProductCode || '')
         const rawIdItem = await getIdItem(item.supplierProductCode || '')
 
         // Si hay descuento y precio lista, enviar precio lista + descuento

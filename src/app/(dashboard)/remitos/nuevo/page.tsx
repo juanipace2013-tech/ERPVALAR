@@ -49,6 +49,14 @@ import DeliveryAddressSelector from '@/components/remitos/DeliveryAddressSelecto
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
 
+interface QuoteItemAdditional {
+  id: string
+  productId: string | null
+  description: string | null
+  position: number
+  product: { name: string; sku: string; unit: string } | null
+}
+
 interface QuoteItem {
   id: string
   description: string | null
@@ -56,6 +64,7 @@ interface QuoteItem {
   isAlternative: boolean
   product: { name: string; sku: string; unit: string } | null
   manualSku?: string | null
+  additionals?: QuoteItemAdditional[]
 }
 
 interface Quote {
@@ -658,7 +667,7 @@ export default function NuevoRemitoPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">
-                Items a remitir ({mainItems.length})
+                Items a remitir ({mainItems.length + mainItems.reduce((sum, i) => sum + (i.additionals?.length || 0), 0)})
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -671,19 +680,35 @@ export default function NuevoRemitoPage() {
                 </TableHeader>
                 <TableBody>
                   {mainItems.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell>
-                        <p className="font-medium">
-                          {item.product?.sku || item.manualSku
-                            ? `${item.product?.sku || item.manualSku} - `
-                            : ''}
-                          {item.description || item.product?.name}
-                        </p>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {item.quantity} {item.product?.unit || 'UN'}
-                      </TableCell>
-                    </TableRow>
+                    <>
+                      <TableRow key={item.id}>
+                        <TableCell>
+                          <p className="font-medium">
+                            {item.product?.sku || item.manualSku
+                              ? `${item.product?.sku || item.manualSku} - `
+                              : ''}
+                            {item.description || item.product?.name}
+                          </p>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {item.quantity} {item.product?.unit || 'UN'}
+                        </TableCell>
+                      </TableRow>
+                      {item.additionals && item.additionals.length > 0 && item.additionals.map((add) => (
+                        <TableRow key={`${item.id}-add-${add.id}`} className="bg-blue-50/50">
+                          <TableCell className="pl-8">
+                            <p className="text-sm text-gray-600">
+                              <span className="text-blue-600 font-medium">+ </span>
+                              {add.product?.sku ? `${add.product.sku} - ` : ''}
+                              {add.description || add.product?.name}
+                            </p>
+                          </TableCell>
+                          <TableCell className="text-right text-sm text-gray-600">
+                            {item.quantity} {add.product?.unit || 'UN'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </>
                   ))}
                 </TableBody>
               </Table>

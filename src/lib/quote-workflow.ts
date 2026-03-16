@@ -172,7 +172,13 @@ export async function generateDeliveryNoteFromQuote(
     include: {
       items: {
         include: {
-          product: true
+          product: true,
+          additionals: {
+            include: {
+              product: true
+            },
+            orderBy: { position: 'asc' }
+          }
         }
       },
       customer: true
@@ -199,6 +205,41 @@ export async function generateDeliveryNoteFromQuote(
       ? quoteSubtotal * quoteExchangeRate
       : quoteSubtotal;
 
+    // Armar items del remito: principales + adicionales de cada item
+    const deliveryItems: Array<{
+      productId: string | null;
+      sku: string | null;
+      description: string;
+      quantity: number;
+      unit: string;
+    }> = [];
+
+    for (const item of quote.items) {
+      if (item.isAlternative) continue; // Solo items principales
+
+      // Item principal
+      deliveryItems.push({
+        productId: item.productId || null,
+        sku: item.product?.sku || item.manualSku || null,
+        description: item.description || item.product?.name || 'Item',
+        quantity: item.quantity,
+        unit: item.product?.unit || 'UN',
+      });
+
+      // Adicionales del item
+      if (item.additionals && item.additionals.length > 0) {
+        for (const add of item.additionals) {
+          deliveryItems.push({
+            productId: add.productId || null,
+            sku: add.product?.sku || null,
+            description: add.description || add.product?.name || 'Adicional',
+            quantity: item.quantity, // misma cantidad que el item principal
+            unit: add.product?.unit || 'UN',
+          });
+        }
+      }
+    }
+
     const newDeliveryNote = await tx.deliveryNote.create({
       data: {
         deliveryNumber,
@@ -219,15 +260,7 @@ export async function generateDeliveryNoteFromQuote(
         notes: data?.notes || null,
         status: 'PENDING',
         items: {
-          create: quote.items
-            .filter(item => !item.isAlternative) // Solo items principales
-            .map(item => ({
-              productId: item.productId || null,
-              sku: item.product?.sku || item.manualSku || null,
-              description: item.description || item.product?.name || 'Item',
-              quantity: item.quantity,
-              unit: item.product?.unit || 'UN',
-            }))
+          create: deliveryItems
         }
       },
       include: {

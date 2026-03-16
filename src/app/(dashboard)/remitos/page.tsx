@@ -60,10 +60,13 @@ interface DeliveryNote {
     id: string
     quoteNumber: string
   } | null
-  items: Array<{
+  items?: Array<{
     id: string
     quantity: number
   }>
+  _count?: {
+    items: number
+  }
   invoices: Array<{
     id: string
     invoiceNumber: string
@@ -148,8 +151,11 @@ export default function RemitosPage() {
     })
   }
 
-  const getTotalItems = (items: Array<{ quantity: number }>) => {
-    return items.reduce((sum, item) => sum + Number(item.quantity), 0)
+  const getTotalItems = (dn: DeliveryNote) => {
+    if (dn.items && dn.items.length > 0) {
+      return dn.items.reduce((sum, item) => sum + Number(item.quantity), 0)
+    }
+    return dn._count?.items ?? 0
   }
 
   const filteredDeliveryNotes = deliveryNotes.filter((dn) => {
@@ -186,7 +192,7 @@ export default function RemitosPage() {
           cmp = (a.quote?.quoteNumber || '').localeCompare(b.quote?.quoteNumber || '')
           break
         case 'items':
-          cmp = getTotalItems(a.items) - getTotalItems(b.items)
+          cmp = getTotalItems(a) - getTotalItems(b)
           break
         case 'status':
           cmp = (statusLabels[a.status] || '').localeCompare(statusLabels[b.status] || '')
@@ -438,7 +444,7 @@ export default function RemitosPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        {getTotalItems(dn.items)} unidades
+                        {getTotalItems(dn)} unidades
                       </TableCell>
                       <TableCell>
                         <Badge className={statusColors[dn.status]}>

@@ -750,7 +750,7 @@ export default function DeliveryNoteDetailPage() {
                 <div className="flex justify-between items-center">
                   <span className="font-semibold">Total de Items:</span>
                   <span className="text-lg font-bold">
-                    {deliveryNote.items.reduce((sum, item) => sum + Number(item.quantity), 0)} unidades
+                    {(deliveryNote.items || []).reduce((sum: number, item: { quantity: number }) => sum + Number(item.quantity), 0)} unidades
                   </span>
                 </div>
               </div>

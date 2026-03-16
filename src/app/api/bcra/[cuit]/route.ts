@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import https from 'https'
+import { execSync } from 'child_process'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/auth'
 
@@ -24,53 +24,33 @@ function calcularSemaforo(
 }
 
 /**
- * Fetch al BCRA usando https.request directo con rejectUnauthorized: false.
- * El certificado TLS del BCRA suele fallar con el fetch nativo de Next.js,
- * por lo que usamos https.request que permite desactivar la validación TLS
- * solo para esta conexión sin afectar al resto del servidor.
+ * Fetch al BCRA usando curl via execSync.
+ * El certificado TLS del BCRA falla intermitentemente con Node.js (tanto
+ * fetch nativo como https.request dan ECONNRESET), pero curl -sk funciona
+ * siempre. Cada consulta tarda <2s y se hace 1 vez por usuario.
  */
-async function fetchBCRA(endpoint: string): Promise<any> {
+function fetchBCRA(endpoint: string): any {
   const url = `${BCRA_BASE}/${endpoint}`
-  console.log(`[BCRA] Fetching: ${url}`)
+  console.log(`[BCRA] Fetching via curl: ${url}`)
 
-  return new Promise((resolve) => {
-    const req = https.get(
-      url,
-      {
-        rejectUnauthorized: false,
-        headers: { Accept: 'application/json' },
-      },
-      (res) => {
-        let data = ''
-        res.on('data', (chunk) => (data += chunk))
-        res.on('end', () => {
-          console.log(`[BCRA] HTTP ${res.statusCode} for ${endpoint}`)
-          if (!data) {
-            console.warn(`[BCRA] Empty response for ${endpoint}`)
-            resolve({ status: 404, errorMessages: ['Respuesta vacía del BCRA'] })
-            return
-          }
-          try {
-            const parsed = JSON.parse(data)
-            console.log(`[BCRA] Parsed ${endpoint}: status=${parsed?.status}, hasResults=${!!parsed?.results}`)
-            resolve(parsed)
-          } catch (e) {
-            console.error(`[BCRA] JSON parse error for ${endpoint}:`, e)
-            resolve({ status: 500, errorMessages: [`Error al parsear respuesta BCRA`] })
-          }
-        })
-      }
+  try {
+    const result = execSync(
+      `curl -sk "${url}" -H "Accept: application/json" --max-time 15 --retry 2 --retry-delay 1`,
+      { encoding: 'utf-8', timeout: 20000 }
     )
-    req.on('error', (error) => {
-      console.error(`[BCRA] Request error for ${endpoint}:`, error)
-      resolve({ status: 500, errorMessages: [`Error al consultar BCRA: ${error.message}`] })
-    })
-    req.setTimeout(15000, () => {
-      req.destroy()
-      console.error(`[BCRA] Timeout for ${endpoint}`)
-      resolve({ status: 500, errorMessages: ['Timeout al consultar BCRA'] })
-    })
-  })
+
+    if (!result || !result.trim()) {
+      console.warn(`[BCRA] Empty response for ${endpoint}`)
+      return { status: 404, errorMessages: ['Respuesta vacía del BCRA'] }
+    }
+
+    const parsed = JSON.parse(result.trim())
+    console.log(`[BCRA] Parsed ${endpoint}: status=${parsed?.status}, hasResults=${!!parsed?.results}`)
+    return parsed
+  } catch (error) {
+    console.error(`[BCRA] Curl error for ${endpoint}:`, error instanceof Error ? error.message : error)
+    return { status: 500, errorMessages: ['Error al consultar BCRA'] }
+  }
 }
 
 export async function GET(
@@ -107,11 +87,10 @@ export async function GET(
   }
 
   // Fetch 3 endpoints in parallel
-  const [deudas, historicas, cheques] = await Promise.all([
-    fetchBCRA(`Deudas/${cuit}`),
-    fetchBCRA(`Deudas/Historicas/${cuit}`),
-    fetchBCRA(`Deudas/ChequesRechazados/${cuit}`),
-  ])
+  // Fetch secuencial (curl es sincrónico, cada llamada ~1-2s)
+  const deudas = fetchBCRA(`Deudas/${cuit}`)
+  const historicas = fetchBCRA(`Deudas/Historicas/${cuit}`)
+  const cheques = fetchBCRA(`Deudas/ChequesRechazados/${cuit}`)
 
   // ── Extraer entidades del período más reciente ───────────────────────────────
   // La API devuelve results.periodos[].entidades (no results.entidades directamente)

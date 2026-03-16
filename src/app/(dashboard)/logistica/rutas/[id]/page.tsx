@@ -45,6 +45,7 @@ import {
   Edit,
   AlertCircle,
   XCircle,
+  Ban,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { generateRutaPDF, type RutaPDFData } from '@/lib/pdf/ruta-generator'
@@ -93,12 +94,14 @@ const routeStatusLabels: Record<string, string> = {
   PLANNING: 'Planificacion',
   IN_PROGRESS: 'En Curso',
   COMPLETED: 'Completada',
+  CANCELLED: 'Anulada',
 }
 
 const routeStatusColors: Record<string, string> = {
   PLANNING: 'bg-yellow-100 text-yellow-800',
   IN_PROGRESS: 'bg-blue-100 text-blue-800',
   COMPLETED: 'bg-green-100 text-green-800',
+  CANCELLED: 'bg-red-100 text-red-800',
 }
 
 const stopStatusLabels: Record<string, string> = {
@@ -148,6 +151,10 @@ export default function RutaDetailPage() {
   const [showStopDialog, setShowStopDialog] = useState(false)
   const [selectedStop, setSelectedStop] = useState<DeliveryStop | null>(null)
   const [newStopStatus, setNewStopStatus] = useState('')
+  const [stopObservations, setStopObservations] = useState('')
+
+  // Cancel route dialog
+  const [showCancelDialog, setShowCancelDialog] = useState(false)
 
   useEffect(() => {
     fetchRoute()
@@ -183,7 +190,12 @@ export default function RutaDetailPage() {
         throw new Error(error.error || 'Error al cambiar estado')
       }
 
-      toast.success(`Ruta ${status === 'IN_PROGRESS' ? 'iniciada' : 'completada'}`)
+      const statusMsg: Record<string, string> = {
+        IN_PROGRESS: 'iniciada',
+        COMPLETED: 'completada',
+        CANCELLED: 'anulada',
+      }
+      toast.success(`Ruta ${statusMsg[status] || 'actualizada'}`)
       fetchRoute()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Error al cambiar estado')
@@ -195,6 +207,7 @@ export default function RutaDetailPage() {
   const openStopStatusDialog = (stop: DeliveryStop, status: string) => {
     setSelectedStop(stop)
     setNewStopStatus(status)
+    setStopObservations('')
     setShowStopDialog(true)
   }
 
@@ -207,7 +220,10 @@ export default function RutaDetailPage() {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: newStopStatus }),
+          body: JSON.stringify({
+            status: newStopStatus,
+            ...(stopObservations ? { observations: stopObservations } : {}),
+          }),
         }
       )
 
@@ -393,6 +409,18 @@ export default function RutaDetailPage() {
               <Download className="h-4 w-4 mr-2" />
               Descargar PDF
             </Button>
+
+            {(route.status === 'PLANNING' || route.status === 'IN_PROGRESS') && (
+              <Button
+                variant="outline"
+                className="text-red-600 border-red-300 hover:bg-red-50"
+                onClick={() => setShowCancelDialog(true)}
+                disabled={actionLoading}
+              >
+                <Ban className="h-4 w-4 mr-2" />
+                Anular Ruta
+              </Button>
+            )}
 
             {actionLoading && <Loader2 className="h-5 w-5 animate-spin text-blue-600" />}
           </div>
@@ -602,6 +630,9 @@ export default function RutaDetailPage() {
                           )}
                         </div>
                       )}
+                      {stop.status === 'NOT_DELIVERED' && stop.observations && (
+                        <p className="text-xs text-red-600 mt-1">{stop.observations}</p>
+                      )}
                       {TERMINAL_STATUSES.includes(stop.status) && stop.completedAt && (
                         <span className="text-xs text-gray-500">
                           {new Date(stop.completedAt).toLocaleTimeString('es-AR', {
@@ -649,15 +680,28 @@ export default function RutaDetailPage() {
               )}
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
+          <div className="py-4 space-y-3">
             <p className="text-sm text-gray-600">
               {newStopStatus === 'DELIVERED' &&
                 'Se marcara esta parada como entregada. Si tiene un remito vinculado, el remito tambien se actualizara.'}
               {newStopStatus === 'NOT_DELIVERED' &&
-                'Se marcara esta parada como no entregada.'}
+                'Se marcara esta parada como no entregada. El remito vinculado volvera a pendiente de entrega.'}
               {newStopStatus === 'PICKED_UP' &&
                 'Se marcara este retiro como completado.'}
             </p>
+            {newStopStatus === 'NOT_DELIVERED' && (
+              <div className="space-y-1">
+                <Label htmlFor="stopObservations">Motivo (opcional)</Label>
+                <input
+                  id="stopObservations"
+                  type="text"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                  placeholder="Ej: Cliente cerrado, dirección incorrecta..."
+                  value={stopObservations}
+                  onChange={(e) => setStopObservations(e.target.value)}
+                />
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button
@@ -678,6 +722,58 @@ export default function RutaDetailPage() {
             >
               {actionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Confirmar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancel Route Dialog */}
+      <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-red-700">Anular Hoja de Ruta</DialogTitle>
+            <DialogDescription>
+              Esta accion no se puede deshacer.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-2">
+            <p className="text-sm text-gray-600">
+              Se anulara esta hoja de ruta. Las paradas no entregadas volveran a estado pendiente
+              y sus remitos quedaran disponibles para asignar a otra hoja.
+            </p>
+            {route && (() => {
+              const delivered = route.stops.filter(s =>
+                s.status === 'DELIVERED' || s.status === 'PICKED_UP'
+              ).length
+              const pending = route.stops.length - delivered
+              return (
+                <div className="text-sm bg-red-50 border border-red-200 rounded-lg p-3 space-y-1">
+                  <p><span className="font-medium">{pending}</span> parada{pending !== 1 ? 's' : ''} se marcara{pending !== 1 ? 'n' : ''} como no entregada{pending !== 1 ? 's' : ''}</p>
+                  {delivered > 0 && (
+                    <p className="text-green-700"><span className="font-medium">{delivered}</span> parada{delivered !== 1 ? 's' : ''} ya entregada{delivered !== 1 ? 's' : ''} no se modificara{delivered !== 1 ? 'n' : ''}</p>
+                  )}
+                </div>
+              )
+            })()}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowCancelDialog(false)}
+              disabled={actionLoading}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={async () => {
+                await handleChangeRouteStatus('CANCELLED')
+                setShowCancelDialog(false)
+              }}
+              disabled={actionLoading}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {actionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Anular Ruta
             </Button>
           </DialogFooter>
         </DialogContent>

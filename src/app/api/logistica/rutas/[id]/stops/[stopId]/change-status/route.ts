@@ -16,7 +16,7 @@ export async function POST(
     }
 
     const { id, stopId } = await params
-    const { status } = await request.json()
+    const { status, observations } = await request.json()
 
     if (!VALID_STATUSES.includes(status)) {
       return NextResponse.json({ error: 'Estado no válido' }, { status: 400 })
@@ -41,6 +41,7 @@ export async function POST(
         data: {
           status: status as any,
           completedAt: isTerminal ? new Date() : null,
+          ...(observations !== undefined ? { observations } : {}),
         },
       })
 
@@ -49,6 +50,19 @@ export async function POST(
         await tx.deliveryNote.update({
           where: { id: stop.deliveryNoteId },
           data: { status: 'DELIVERED', deliveryDate: new Date() },
+        })
+      }
+
+      // If NOT_DELIVERED and has linked delivery note, revert to READY and disconnect
+      if (status === 'NOT_DELIVERED' && stop.deliveryNoteId) {
+        await tx.deliveryNote.update({
+          where: { id: stop.deliveryNoteId },
+          data: { status: 'READY', deliveryDate: null },
+        })
+        // Disconnect so the remito appears available in pending list
+        await tx.deliveryStop.update({
+          where: { id: stopId },
+          data: { deliveryNoteId: null },
         })
       }
 

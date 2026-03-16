@@ -2302,6 +2302,7 @@ enum DeliveryRouteStatus {
   PLANNING
   IN_PROGRESS
   COMPLETED
+  CANCELLED
 }
 
 enum DeliveryStopType {

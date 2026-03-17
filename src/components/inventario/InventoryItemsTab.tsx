@@ -222,7 +222,7 @@ export default function InventoryItemsTab() {
                   </TableHeader>
                   <TableBody>
                     {products.map((product) => {
-                      const salePrice = product.prices.find(p => p.priceType === 'SALE')
+                      const salePrice = product.prices?.find(p => p.priceType === 'SALE')
                       const stockValue = product.stockQuantity * Number(product.averageCost || 0)
 
                       return (

@@ -86,9 +86,17 @@ export async function GET(request: NextRequest) {
           unit: true,
           stockQuantity: true,
           minStock: true,
+          maxStock: true,
           listPriceUSD: true,
           lastCost: true,
+          averageCost: true,
           colppyItemId: true,
+          prices: {
+            select: { id: true, priceType: true, amount: true, currency: true },
+          },
+          supplier: {
+            select: { id: true, name: true },
+          },
         },
       }),
       prisma.product.count({ where }),

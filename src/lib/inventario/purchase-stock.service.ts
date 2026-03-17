@@ -209,6 +209,9 @@ export async function processPurchaseInvoiceStock(
       details,
       skippedDetails,
     }
+  }, {
+    maxWait: 10000,
+    timeout: 30000,
   })
 }
 
@@ -321,5 +324,8 @@ export async function reversePurchaseInvoiceStock(
     })
 
     return { reversedItems, totalQuantity, totalValue }
+  }, {
+    maxWait: 10000,
+    timeout: 30000,
   })
 }

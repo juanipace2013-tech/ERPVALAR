@@ -36,6 +36,7 @@ import {
   Loader2,
   Upload,
   Database,
+  Clock,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber, formatCUIT, formatDateAR } from '@/lib/utils'
@@ -98,6 +99,7 @@ export default function ClientesPage() {
   const [users, setUsers] = useState<{ id: string; name: string }[]>([])
   const [showImportModal, setShowImportModal] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const [lastBalanceSync, setLastBalanceSync] = useState<string | null>(null)
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('')
@@ -203,6 +205,23 @@ export default function ClientesPage() {
       .catch(() => {})
   }, [])
 
+  // ─── Fetch last balance sync time ──────────────────────────────────────────
+
+  const fetchLastSync = useCallback(() => {
+    fetch('/api/cron/sync-balances')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.lastSync?.completedAt) {
+          setLastBalanceSync(data.lastSync.completedAt)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    fetchLastSync()
+  }, [fetchLastSync])
+
   // ─── Client-side filter: cotizaciones activas (needs activity data) ───────
 
   const displayCustomers = useMemo(() => {
@@ -244,6 +263,7 @@ export default function ClientesPage() {
               `Sincronización completada: ${statusData.creados} creados, ${statusData.actualizados} actualizados de ${statusData.total} clientes`
             )
             fetchCustomers()
+            setLastBalanceSync(new Date().toISOString())
           } else if (statusData.status === 'error') {
             clearInterval(pollInterval)
             setSyncing(false)
@@ -288,6 +308,17 @@ export default function ClientesPage() {
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
+  const formatTimeAgo = (isoDate: string) => {
+    const diff = Date.now() - new Date(isoDate).getTime()
+    const mins = Math.floor(diff / 60000)
+    if (mins < 1) return 'hace instantes'
+    if (mins < 60) return `hace ${mins} min`
+    const hours = Math.floor(mins / 60)
+    if (hours < 24) return `hace ${hours}h`
+    const days = Math.floor(hours / 24)
+    return `hace ${days}d`
+  }
+
   const saldoIndicator = (balance: number) => {
     if (balance <= 0) return 'text-green-600'
     if (balance > 100000) return 'text-red-600'
@@ -306,6 +337,12 @@ export default function ClientesPage() {
             <h1 className="text-3xl font-bold tracking-tight text-blue-900">Clientes</h1>
             <p className="text-gray-500 text-sm">
               {total > 0 ? `${total} clientes en base de datos` : 'Cargando...'}
+              {lastBalanceSync && (
+                <span className="ml-3 inline-flex items-center gap-1 text-xs text-gray-400">
+                  <Clock className="h-3 w-3" />
+                  Saldos sincronizados {formatTimeAgo(lastBalanceSync)}
+                </span>
+              )}
             </p>
           </div>
         </div>

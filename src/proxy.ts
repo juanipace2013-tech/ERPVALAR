@@ -6,7 +6,7 @@ export default auth((req) => {
   const isLoggedIn = !!req.auth
 
   // Rutas públicas
-  const isPublicRoute = pathname === '/login' || pathname.startsWith('/api/auth')
+  const isPublicRoute = pathname === '/login' || pathname.startsWith('/api/auth') || pathname.startsWith('/api/cron')
 
   // Si está en login y ya está autenticado, redirigir al dashboard
   if (pathname === '/login' && isLoggedIn) {

@@ -153,6 +153,7 @@ async function syncColppyClients() {
           String(c.idCondicionPago || c.IdCondicionPago || c.condicionPago || '0')
         ) || null
 
+        const balance = parseFloat(c.Saldo || '0')
         const existingId = existingByCuit.get(normalizedCuit)
 
         if (existingId) {
@@ -172,6 +173,7 @@ async function syncColppyClients() {
                 province,
                 postalCode,
                 paymentTerms: paymentTermsDays,
+                balance,
               },
             }).then(() => { actualizados++ })
           )
@@ -192,6 +194,7 @@ async function syncColppyClients() {
                 province,
                 postalCode,
                 paymentTerms: paymentTermsDays,
+                balance,
               },
             }).then(() => {
               creados++

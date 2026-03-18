@@ -1174,7 +1174,7 @@ model DeliveryNote {
   exchangeRate      Decimal?           @db.Decimal(12,6)  // Tipo de cambio usado
 
   // Bultos
-  bultos            Int?
+  bultos            String?
 
   // Responsables
   preparedBy        String?            // Quién preparó el pedido

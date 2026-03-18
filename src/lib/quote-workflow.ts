@@ -163,7 +163,7 @@ export async function generateDeliveryNoteFromQuote(
     transportAddress?: string;
     purchaseOrder?: string;
     customerInvoiceNumber?: string;
-    bultos?: number;
+    bultos?: string;
     notes?: string;
   }
 ) {

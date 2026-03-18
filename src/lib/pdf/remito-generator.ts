@@ -25,7 +25,7 @@ export interface RemitoPDFData {
   transportAddress?: string | null
   purchaseOrder?: string | null
   customerInvoiceNumber?: string | null
-  bultos?: number | null
+  bultos?: string | null
   totalAmountARS?: number | null
   notes?: string | null
 }

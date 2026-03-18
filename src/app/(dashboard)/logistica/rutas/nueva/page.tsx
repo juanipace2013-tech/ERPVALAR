@@ -45,7 +45,7 @@ interface PendingRemito {
   deliveryAddress: string | null
   deliveryCity: string | null
   deliveryProvince: string | null
-  bultos: number | null
+  bultos: string | null
   carrier: string | null
   trackingNumber: string | null
   customer: {
@@ -178,7 +178,7 @@ export default function NuevaRutaPage() {
       schedule: '',
       contactName: '',
       contactPhone: remito.customer.phone || '',
-      packages: remito.bultos || 0,
+      packages: parseInt(remito.bultos || '0') || 0,
       finalDestination: '',
       trackingNumber: remito.trackingNumber || '',
       deliveryDeadline: '',
@@ -363,7 +363,7 @@ export default function NuevaRutaPage() {
                           {remito.deliveryAddress || remito.customer.address || 'Sin direccion'}
                         </p>
                         {remito.bultos && (
-                          <p className="text-xs text-gray-500">{remito.bultos} bultos</p>
+                          <p className="text-xs text-gray-500">{remito.bultos} bulto(s)</p>
                         )}
                       </div>
                       <Button

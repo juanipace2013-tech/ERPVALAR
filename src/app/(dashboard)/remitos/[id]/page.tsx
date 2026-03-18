@@ -66,7 +66,7 @@ interface DeliveryNote {
   purchaseOrder: string | null
   customerInvoiceNumber: string | null
   totalAmountARS: string | number | null
-  bultos: number | null
+  bultos: string | null
   preparedBy: string | null
   deliveredBy: string | null
   receivedBy: string | null

@@ -20,7 +20,7 @@ export interface RemitoExcelData {
     description: string
     quantity: number
   }>
-  bultos: number | null
+  bultos: string | null
   totalAmountARS: number | null
 }
 

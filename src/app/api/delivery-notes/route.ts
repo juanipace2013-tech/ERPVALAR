@@ -207,7 +207,7 @@ export async function POST(request: NextRequest) {
         transportAddress: transportAddress || null,
         purchaseOrder: purchaseOrder || null,
         customerInvoiceNumber: customerInvoiceNumber || null,
-        bultos: bultos ? parseInt(bultos) : null,
+        bultos: bultos || null,
         totalAmountARS: totalAmountARS ? parseFloat(totalAmountARS) : null,
         notes: notes
           ? (invoiceRef ? `Factura: ${invoiceRef}\n${notes}` : notes)

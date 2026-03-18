@@ -489,7 +489,7 @@ export default function NuevoRemitoPage() {
           transportAddress: transportAddress || undefined,
           purchaseOrder: purchaseOrder || undefined,
           customerInvoiceNumber: customerInvoiceNumber || undefined,
-          bultos: bultos ? parseInt(bultos) : undefined,
+          bultos: bultos || undefined,
           notes: notes || undefined,
           deliveryAddress: deliveryAddress || undefined,
           deliveryCity: deliveryCity || undefined,
@@ -765,9 +765,8 @@ export default function NuevoRemitoPage() {
                 <Label htmlFor="bultos">Cantidad de bultos</Label>
                 <Input
                   id="bultos"
-                  type="number"
-                  min="1"
-                  placeholder="Ej: 3"
+                  type="text"
+                  placeholder="Ej: 1 pallet, 3 cajas"
                   value={bultos}
                   onChange={(e) => setBultos(e.target.value)}
                 />
@@ -989,9 +988,8 @@ export default function NuevoRemitoPage() {
                 </Label>
                 <Input
                   id="d-bultos"
-                  type="number"
-                  min="1"
-                  placeholder="Ej: 3"
+                  type="text"
+                  placeholder="Ej: 1 pallet, 3 cajas"
                   value={bultos}
                   onChange={(e) => setBultos(e.target.value)}
                 />

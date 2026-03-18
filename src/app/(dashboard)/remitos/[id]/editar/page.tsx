@@ -49,7 +49,7 @@ interface DeliveryNote {
   purchaseOrder: string | null
   customerInvoiceNumber: string | null
   totalAmountARS: string | number | null
-  bultos: number | null
+  bultos: string | null
   notes: string | null
   internalNotes: string | null
   deliveryAddress: string | null
@@ -178,7 +178,7 @@ export default function EditarRemitoPage() {
           transportAddress: transportAddress || null,
           purchaseOrder: purchaseOrder || null,
           customerInvoiceNumber: customerInvoiceNumber || null,
-          bultos: bultos ? Number(bultos) : null,
+          bultos: bultos || null,
           totalAmountARS: totalAmountARS ? Number(totalAmountARS) : null,
           notes: notes || null,
           internalNotes: internalNotes || null,
@@ -353,10 +353,10 @@ export default function EditarRemitoPage() {
             <div>
               <Label>Bultos</Label>
               <Input
-                type="number"
+                type="text"
                 value={bultos}
                 onChange={(e) => setBultos(e.target.value)}
-                placeholder="Cantidad de bultos"
+                placeholder="Ej: 1 pallet, 3 cajas"
               />
             </div>
             <div>

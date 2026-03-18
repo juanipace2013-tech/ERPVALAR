@@ -120,7 +120,7 @@ export async function PUT(
           transportAddress: body.transportAddress ?? undefined,
           purchaseOrder: body.purchaseOrder ?? undefined,
           customerInvoiceNumber: body.customerInvoiceNumber ?? undefined,
-          bultos: body.bultos !== undefined ? (body.bultos ? Number(body.bultos) : null) : undefined,
+          bultos: body.bultos !== undefined ? (body.bultos || null) : undefined,
           totalAmountARS: body.totalAmountARS !== undefined
             ? (body.totalAmountARS ? Number(body.totalAmountARS) : null)
             : undefined,

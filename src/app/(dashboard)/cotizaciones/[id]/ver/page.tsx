@@ -185,6 +185,7 @@ export default function QuoteViewPage() {
   const [ocUploadLoading, setOcUploadLoading] = useState(false)
   const [ocNumber, setOcNumber] = useState('')
   const [ocDate, setOcDate] = useState('')
+  const [ocSaving, setOcSaving] = useState(false)
 
   // Revert dialog
   const [showRevertDialog, setShowRevertDialog] = useState(false)
@@ -219,6 +220,12 @@ export default function QuoteViewPage() {
 
       const data = await response.json()
       setQuote(data)
+      // Inicializar campos de OC con datos existentes
+      if (data.purchaseOrderNumber) setOcNumber(data.purchaseOrderNumber)
+      if (data.purchaseOrderDate) {
+        const d = new Date(data.purchaseOrderDate)
+        setOcDate(d.toISOString().split('T')[0])
+      }
       // Fetch BCRA indicator from session cache or API (background, no await)
       if (!bcraFetched.current && data?.customer?.cuit) {
         bcraFetched.current = true
@@ -529,6 +536,34 @@ export default function QuoteViewPage() {
       toast.error('Error al eliminar la orden de compra')
     } finally {
       setOcUploadLoading(false)
+    }
+  }
+
+  const handleUpdateOCFields = async (field: 'purchaseOrderNumber' | 'purchaseOrderDate', value: string) => {
+    try {
+      setOcSaving(true)
+      const response = await fetch(`/api/quotes/${id}/upload-oc`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: value }),
+      })
+
+      if (!response.ok) throw new Error()
+
+      const updated = await response.json()
+      setQuote((prev) =>
+        prev
+          ? {
+              ...prev,
+              purchaseOrderNumber: updated.purchaseOrderNumber,
+              purchaseOrderDate: updated.purchaseOrderDate,
+            }
+          : prev
+      )
+    } catch {
+      toast.error('Error al actualizar datos de OC')
+    } finally {
+      setOcSaving(false)
     }
   }
 
@@ -912,17 +947,33 @@ export default function QuoteViewPage() {
             {quote.purchaseOrderUrl ? (
               /* ── Ya tiene OC adjunta ── */
               <div className="space-y-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  {quote.purchaseOrderNumber && (
-                    <span className="text-sm font-medium text-gray-700">
-                      Nº OC: <span className="font-semibold">{quote.purchaseOrderNumber}</span>
-                    </span>
-                  )}
-                  {quote.purchaseOrderDate && (
-                    <span className="text-sm text-gray-500">
-                      Fecha: {formatDate(quote.purchaseOrderDate)}
-                    </span>
-                  )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="ocNumberEdit" className="text-sm text-gray-600">
+                      Nº de Orden de Compra
+                    </Label>
+                    <Input
+                      id="ocNumberEdit"
+                      placeholder="Ej: OC-2026-0451"
+                      value={ocNumber}
+                      onChange={(e) => setOcNumber(e.target.value)}
+                      onBlur={() => handleUpdateOCFields('purchaseOrderNumber', ocNumber)}
+                      disabled={ocSaving}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="ocDateEdit" className="text-sm text-gray-600">
+                      Fecha de la OC
+                    </Label>
+                    <Input
+                      id="ocDateEdit"
+                      type="date"
+                      value={ocDate}
+                      onChange={(e) => setOcDate(e.target.value)}
+                      onBlur={() => handleUpdateOCFields('purchaseOrderDate', ocDate)}
+                      disabled={ocSaving}
+                    />
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button

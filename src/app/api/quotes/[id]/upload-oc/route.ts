@@ -114,6 +114,71 @@ export async function POST(
 }
 
 /**
+ * PATCH /api/quotes/[id]/upload-oc
+ * Actualizar número y/o fecha de OC sin resubir archivo
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth()
+    if (!session?.user) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    }
+
+    const { id } = await params
+    const body = await request.json()
+
+    const quote = await prisma.quote.findUnique({
+      where: { id },
+      select: { id: true, status: true },
+    })
+
+    if (!quote) {
+      return NextResponse.json({ error: 'Cotización no encontrada' }, { status: 404 })
+    }
+
+    if (quote.status !== 'ACCEPTED' && quote.status !== 'CONVERTED') {
+      return NextResponse.json(
+        { error: 'Solo se puede editar OC de cotizaciones aceptadas' },
+        { status: 400 }
+      )
+    }
+
+    const updateData: Record<string, unknown> = {}
+
+    if ('purchaseOrderNumber' in body) {
+      updateData.purchaseOrderNumber = body.purchaseOrderNumber || null
+    }
+
+    if ('purchaseOrderDate' in body) {
+      updateData.purchaseOrderDate = body.purchaseOrderDate
+        ? new Date(body.purchaseOrderDate)
+        : null
+    }
+
+    const updated = await prisma.quote.update({
+      where: { id },
+      data: updateData,
+      select: {
+        purchaseOrderUrl: true,
+        purchaseOrderNumber: true,
+        purchaseOrderDate: true,
+      },
+    })
+
+    return NextResponse.json(updated)
+  } catch (error) {
+    console.error('Error updating purchase order:', error)
+    return NextResponse.json(
+      { error: 'Error al actualizar la orden de compra' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
  * DELETE /api/quotes/[id]/upload-oc
  * Eliminar archivo de Orden de Compra
  */

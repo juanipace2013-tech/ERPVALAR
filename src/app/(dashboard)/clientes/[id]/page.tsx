@@ -35,8 +35,9 @@ interface ColppyCustomer {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function isCUIT(value: string): boolean {
-  const clean = value.replace(/\D/g, '')
-  return /^\d{11}$/.test(clean)
+  // CUIT: 11 dígitos puros (30516888241) o formateado (30-51688824-1)
+  // NO hacer replace de letras — un CUID puede tener 11 dígitos por coincidencia
+  return /^\d{11}$/.test(value) || /^\d{2}-\d{8}-\d{1}$/.test(value)
 }
 
 function isColppyId(value: string): boolean {

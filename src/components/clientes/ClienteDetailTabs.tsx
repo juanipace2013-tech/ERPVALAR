@@ -8,6 +8,7 @@ import {
   FileText,
   BarChart3,
   ShieldCheck,
+  AlertCircle,
 } from 'lucide-react'
 import TabDatosGenerales from './TabDatosGenerales'
 import TabCuentaCorriente from './TabCuentaCorriente'
@@ -51,7 +52,8 @@ export default function ClienteDetailTabs({ colppyCustomer, cuit }: Props) {
     setActivatedTabs((prev) => new Set([...prev, value]))
   }
 
-  const colppyId = colppyCustomer.colppyId || colppyCustomer.id
+  const colppyId = colppyCustomer.colppyId || ''
+  const hasColppy = !!colppyId
 
   return (
     <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
@@ -88,13 +90,29 @@ export default function ClienteDetailTabs({ colppyCustomer, cuit }: Props) {
 
         <TabsContent value="facturas" className="mt-0">
           {activatedTabs.has('facturas') && (
-            <TabFacturasAdeudadas colppyId={colppyId} />
+            hasColppy ? (
+              <TabFacturasAdeudadas colppyId={colppyId} />
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+                <AlertCircle className="h-8 w-8 mb-2 text-gray-400" />
+                <p className="font-medium">Cliente no vinculado a Colppy</p>
+                <p className="text-sm mt-1">Las facturas adeudadas se cargan desde Colppy. Este cliente aún no fue sincronizado.</p>
+              </div>
+            )
           )}
         </TabsContent>
 
         <TabsContent value="cc" className="mt-0">
           {activatedTabs.has('cc') && (
-            <TabCuentaCorriente colppyId={colppyId} saldoInicial={colppyCustomer.saldo} />
+            hasColppy ? (
+              <TabCuentaCorriente colppyId={colppyId} saldoInicial={colppyCustomer.saldo} />
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+                <AlertCircle className="h-8 w-8 mb-2 text-gray-400" />
+                <p className="font-medium">Cliente no vinculado a Colppy</p>
+                <p className="text-sm mt-1">La cuenta corriente se carga desde Colppy. Este cliente aún no fue sincronizado.</p>
+              </div>
+            )
           )}
         </TabsContent>
 

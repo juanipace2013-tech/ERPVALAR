@@ -56,6 +56,56 @@ export default function ClienteDetailPage() {
   const [customer, setCustomer] = useState<ColppyCustomer | null>(null)
   const [cuit, setCuit] = useState('')
 
+  // ─── Helper: armar customer desde datos locales ─────────────────────────
+  function buildLocalCustomer(localData: any): ColppyCustomer {
+    return {
+      id: localData.id,
+      colppyId: '',
+      name: localData.name || '',
+      businessName: localData.businessName || localData.name || '',
+      cuit: localData.cuit || '',
+      taxCondition: localData.taxCondition || '',
+      taxConditionDisplay: localData.taxCondition || '',
+      address: localData.address || '',
+      city: localData.city || '',
+      province: localData.province || '',
+      postalCode: localData.postalCode || '',
+      phone: localData.phone || '',
+      mobile: localData.mobile || '',
+      email: localData.email || '',
+      saldo: parseFloat(localData.balance) || 0,
+      priceMultiplier: localData.priceMultiplier || 1,
+      paymentTerms: localData.paymentTerms ? `${localData.paymentTerms} días` : 'Sin dato',
+      paymentTermsDays: localData.paymentTerms || 0,
+    }
+  }
+
+  // ─── Helper: intentar enriquecer con Colppy por CUIT ──────────────────
+  async function tryColppyByCuit(cleanCuit: string): Promise<ColppyCustomer | null> {
+    try {
+      const colppyRes = await fetch(`/api/colppy/clientes?search=${cleanCuit}&limit=5`)
+      if (!colppyRes.ok) return null
+      const colppyData = await colppyRes.json()
+      return (colppyData.customers || []).find(
+        (c: ColppyCustomer) => c.cuit?.replace(/\D/g, '') === cleanCuit
+      ) || null
+    } catch {
+      return null
+    }
+  }
+
+  // ─── Helper: buscar cliente local por CUIT ─────────────────────────────
+  async function fetchLocalByCuit(cleanCuit: string): Promise<any | null> {
+    try {
+      const res = await fetch(`/api/clientes?search=${cleanCuit}&limit=1`)
+      if (!res.ok) return null
+      const data = await res.json()
+      return data.customers?.[0] || null
+    } catch {
+      return null
+    }
+  }
+
   const loadCustomer = useCallback(async () => {
     setLoading(true)
     setError('')
@@ -63,41 +113,45 @@ export default function ClienteDetailPage() {
     try {
       if (isColppyId(rawId)) {
         // ─── Búsqueda por Colppy ID (numérico, no 11 dígitos) ──────────
-        const colppyRes = await fetch(`/api/colppy/clientes?id=${rawId}`)
-        if (!colppyRes.ok) throw new Error('Error buscando en Colppy')
-        const colppyData = await colppyRes.json()
+        let match: ColppyCustomer | null = null
+        try {
+          const colppyRes = await fetch(`/api/colppy/clientes?id=${rawId}`)
+          if (colppyRes.ok) {
+            const colppyData = await colppyRes.json()
+            match = (colppyData.customers || [])[0] || null
+          }
+        } catch {
+          console.warn('No se pudo conectar con Colppy')
+        }
 
-        const match = (colppyData.customers || [])[0]
         if (match) {
           setCustomer(match)
-          const matchCuit = match.cuit?.replace(/\D/g, '') || ''
-          setCuit(matchCuit)
+          setCuit(match.cuit?.replace(/\D/g, '') || '')
         } else {
-          throw new Error('Cliente no encontrado en Colppy')
+          // Fallback: buscar en DB local por colppyId (search busca por nombre/cuit/email)
+          // No hay filtro directo por colppyId en el endpoint, así que solo informar
+          throw new Error('Cliente no encontrado')
         }
       } else if (isCUIT(rawId)) {
         // ─── Búsqueda por CUIT ────────────────────────────────────────────
         const cleanCuit = rawId.replace(/\D/g, '')
         setCuit(cleanCuit)
 
-        // Buscar en cache de Colppy por CUIT (usar searchText que incluye CUIT sin guiones)
-        const colppyRes = await fetch(`/api/colppy/clientes?search=${cleanCuit}&limit=5`)
-        if (!colppyRes.ok) throw new Error('Error buscando en Colppy')
-        const colppyData = await colppyRes.json()
-
-        // Buscar match exacto por CUIT (comparar sin guiones)
-        const match = (colppyData.customers || []).find(
-          (c: ColppyCustomer) => c.cuit?.replace(/\D/g, '') === cleanCuit
-        )
-
-        if (match) {
-          setCustomer(match)
+        // Intentar Colppy primero
+        const colppyMatch = await tryColppyByCuit(cleanCuit)
+        if (colppyMatch) {
+          setCustomer(colppyMatch)
         } else {
-          throw new Error('Cliente no encontrado en Colppy')
+          // Fallback: buscar en DB local por CUIT
+          const localCustomer = await fetchLocalByCuit(cleanCuit)
+          if (localCustomer) {
+            setCustomer(buildLocalCustomer(localCustomer))
+          } else {
+            throw new Error('Cliente no encontrado')
+          }
         }
       } else {
-        // ─── Búsqueda por ID local (backward compat) ─────────────────────
-        // Obtener datos del cliente local para extraer CUIT
+        // ─── Búsqueda por ID local ──────────────────────────────────────
         const localRes = await fetch(`/api/clientes/${rawId}`)
         if (!localRes.ok) throw new Error('Cliente no encontrado')
         const localData = await localRes.json()
@@ -105,42 +159,17 @@ export default function ClienteDetailPage() {
         const localCuit = localData.cuit?.replace(/\D/g, '') || ''
         setCuit(localCuit)
 
+        // Intentar enriquecer con Colppy (sin bloquear)
         if (localCuit && localCuit.length === 11) {
-          // Buscar en Colppy por CUIT
-          const colppyRes = await fetch(`/api/colppy/clientes?search=${localCuit}&limit=5`)
-          if (colppyRes.ok) {
-            const colppyData = await colppyRes.json()
-            const match = (colppyData.customers || []).find(
-              (c: ColppyCustomer) => c.cuit?.replace(/\D/g, '') === localCuit
-            )
-            if (match) {
-              setCustomer(match)
-              return
-            }
+          const colppyMatch = await tryColppyByCuit(localCuit)
+          if (colppyMatch) {
+            setCustomer(colppyMatch)
+            return
           }
         }
 
-        // Si no encontramos en Colppy, armar un customer parcial desde los datos locales
-        setCustomer({
-          id: localData.id,
-          colppyId: '',
-          name: localData.name || '',
-          businessName: localData.businessName || localData.name || '',
-          cuit: localData.cuit || '',
-          taxCondition: localData.taxCondition || '',
-          taxConditionDisplay: localData.taxCondition || '',
-          address: localData.address || '',
-          city: localData.city || '',
-          province: localData.province || '',
-          postalCode: localData.postalCode || '',
-          phone: localData.phone || '',
-          mobile: localData.mobile || '',
-          email: localData.email || '',
-          saldo: parseFloat(localData.balance) || 0,
-          priceMultiplier: localData.priceMultiplier || 1,
-          paymentTerms: localData.paymentTerms ? `${localData.paymentTerms} días` : 'Sin dato',
-          paymentTermsDays: localData.paymentTerms || 0,
-        })
+        // Usar datos locales
+        setCustomer(buildLocalCustomer(localData))
       }
     } catch (e: any) {
       setError(e.message || 'Error al cargar cliente')

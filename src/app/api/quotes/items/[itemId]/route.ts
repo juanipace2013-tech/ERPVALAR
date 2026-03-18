@@ -215,6 +215,9 @@ export async function DELETE(
       where: { id: itemId },
     })
 
+    // Renumerar items restantes secuencialmente (10, 20, 30...)
+    await renumberQuoteItems(quoteId)
+
     // Recalcular totales
     await recalculateQuoteTotals(quoteId)
 
@@ -225,6 +228,49 @@ export async function DELETE(
       { error: 'Error al eliminar item' },
       { status: 500 }
     )
+  }
+}
+
+/**
+ * Renumera los items de la cotización secuencialmente (10, 20, 30...)
+ * Los items alternativos toman el mismo número que su item principal.
+ */
+async function renumberQuoteItems(quoteId: string) {
+  // Obtener items principales ordenados por itemNumber actual
+  const mainItems = await prisma.quoteItem.findMany({
+    where: { quoteId, isAlternative: false },
+    orderBy: { itemNumber: 'asc' },
+    select: { id: true, itemNumber: true },
+  })
+
+  // Renumerar items principales: 10, 20, 30...
+  const updates: Promise<unknown>[] = []
+  for (let i = 0; i < mainItems.length; i++) {
+    const newNumber = (i + 1) * 10
+    if (mainItems[i].itemNumber !== newNumber) {
+      // Actualizar el item principal
+      updates.push(
+        prisma.quoteItem.update({
+          where: { id: mainItems[i].id },
+          data: { itemNumber: newNumber },
+        })
+      )
+      // Actualizar sus alternativas al mismo número
+      updates.push(
+        prisma.quoteItem.updateMany({
+          where: {
+            quoteId,
+            isAlternative: true,
+            alternativeToItemId: mainItems[i].id,
+          },
+          data: { itemNumber: newNumber },
+        })
+      )
+    }
+  }
+
+  if (updates.length > 0) {
+    await Promise.all(updates)
   }
 }
 

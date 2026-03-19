@@ -266,7 +266,13 @@ function drawRemitoCopy(doc: jsPDF, data: RemitoPDFData, copyLabel: string) {
     doc.setFontSize(7)
     doc.text('Dir. Transp.:', rx2, ry)
     doc.setFont('helvetica', 'normal')
-    doc.text(data.transportAddress.substring(0, 30), rx2 + 22, ry)
+    // Reducir font si el texto es largo para evitar truncamiento
+    const transportAddr = data.transportAddress
+    const maxW = ML + USABLE_W - (rx2 + 22) - 2
+    if (doc.getTextWidth(transportAddr) > maxW) {
+      doc.setFontSize(6)
+    }
+    doc.text(transportAddr.substring(0, 55), rx2 + 22, ry)
   }
 
   y += clientBoxH + 3

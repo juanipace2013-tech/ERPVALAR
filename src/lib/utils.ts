@@ -86,8 +86,10 @@ export function formatCurrency(
 /**
  * Formatea una fecha en formato argentino DD/MM/YYYY
  */
-export function formatDateAR(date: Date | string): string {
+export function formatDateAR(date: Date | string | null | undefined): string {
+  if (!date) return '—'
   const d = typeof date === 'string' ? new Date(date) : date
+  if (isNaN(d.getTime())) return '—'
   return d.toLocaleDateString('es-AR', {
     day: '2-digit',
     month: '2-digit',
@@ -98,8 +100,10 @@ export function formatDateAR(date: Date | string): string {
 /**
  * Formatea una fecha y hora en formato argentino
  */
-export function formatDateTimeAR(date: Date | string): string {
+export function formatDateTimeAR(date: Date | string | null | undefined): string {
+  if (!date) return '—'
   const d = typeof date === 'string' ? new Date(date) : date
+  if (isNaN(d.getTime())) return '—'
   return d.toLocaleString('es-AR', {
     day: '2-digit',
     month: '2-digit',

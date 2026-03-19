@@ -49,11 +49,12 @@ export default function TabFacturasAdeudadas({ colppyId }: Props) {
   const [error, setError] = useState('')
   const [facturas, setFacturas] = useState<ColppyFactura[]>([])
 
-  const fetchFacturas = useCallback(async () => {
+  const fetchFacturas = useCallback(async (force = false) => {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch(`/api/colppy/facturas?idCliente=${colppyId}`)
+      const url = `/api/colppy/facturas?idCliente=${colppyId}${force ? '&force=true' : ''}`
+      const res = await fetch(url)
       if (!res.ok) throw new Error('Error al cargar facturas')
       const data = await res.json()
       setFacturas(data.facturas || [])
@@ -145,7 +146,7 @@ export default function TabFacturasAdeudadas({ colppyId }: Props) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-3">
           <CardTitle className="text-lg">Facturas adeudadas por el cliente</CardTitle>
-          <Button variant="outline" size="sm" onClick={fetchFacturas} disabled={loading}>
+          <Button variant="outline" size="sm" onClick={() => fetchFacturas(true)} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
             Actualizar
           </Button>

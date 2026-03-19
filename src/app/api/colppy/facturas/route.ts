@@ -57,7 +57,7 @@ interface ColppyFactura {
 }
 
 const facturaCache: Map<string, { data: ColppyFactura[]; timestamp: number }> = new Map();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+const CACHE_TTL = 2 * 60 * 1000; // 2 minutos
 
 let cachedSession: { claveSesion: string; timestamp: number } | null = null;
 const SESSION_TTL = 20 * 60 * 1000;
@@ -221,6 +221,12 @@ export async function GET(request: NextRequest) {
         { error: 'Se requiere idCliente', facturas: [] },
         { status: 400 }
       );
+    }
+
+    // Force refresh: borrar caché para este cliente
+    const force = searchParams.get('force') === 'true';
+    if (force) {
+      facturaCache.delete(idCliente);
     }
 
     // Verificar cache

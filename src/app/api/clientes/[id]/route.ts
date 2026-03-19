@@ -169,6 +169,8 @@ export async function PUT(
         priceMultiplier: validatedData.priceMultiplier,
         salesPersonId: validatedData.salesPersonId,
         notes: validatedData.notes,
+        defaultTransportName: validatedData.defaultTransportName,
+        defaultTransportAddress: validatedData.defaultTransportAddress,
       },
       include: {
         salesPerson: {
@@ -211,6 +213,75 @@ export async function PUT(
     }
 
     console.error('Error updating customer:', error)
+    return NextResponse.json(
+      { error: 'Error al actualizar cliente' },
+      { status: 500 }
+    )
+  }
+}
+
+// PATCH /api/clientes/[id] - Actualización parcial de cliente
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth()
+    if (!session) {
+      return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
+    }
+
+    const { id } = await params
+    const body = await request.json()
+
+    // Verificar que el cliente existe
+    const existingCustomer = await prisma.customer.findUnique({
+      where: { id },
+    })
+
+    if (!existingCustomer) {
+      return NextResponse.json(
+        { error: 'Cliente no encontrado' },
+        { status: 404 }
+      )
+    }
+
+    // Campos permitidos para actualización parcial
+    const allowedFields = [
+      'name', 'address', 'city', 'province', 'postalCode',
+      'phone', 'mobile', 'email',
+      'paymentTerms', 'salesPersonId', 'priceMultiplier',
+      'defaultTransportName', 'defaultTransportAddress',
+      'notes',
+    ] as const
+
+    const updateData: Record<string, any> = {}
+    for (const field of allowedFields) {
+      if (field in body) {
+        updateData[field] = body[field] ?? null
+      }
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json(
+        { error: 'No se enviaron campos para actualizar' },
+        { status: 400 }
+      )
+    }
+
+    const customer = await prisma.customer.update({
+      where: { id },
+      data: updateData,
+      include: {
+        salesPerson: {
+          select: { id: true, name: true, email: true },
+        },
+      },
+    })
+
+    return NextResponse.json(customer)
+  } catch (error) {
+    console.error('Error patching customer:', error)
     return NextResponse.json(
       { error: 'Error al actualizar cliente' },
       { status: 500 }

@@ -30,6 +30,8 @@ interface ColppyCustomer {
   priceMultiplier: number
   paymentTerms: string
   paymentTermsDays: number
+  defaultTransportName: string
+  defaultTransportAddress: string
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -78,6 +80,8 @@ export default function ClienteDetailPage() {
       priceMultiplier: localData.priceMultiplier || 1,
       paymentTerms: localData.paymentTerms ? `${localData.paymentTerms} días` : 'Sin dato',
       paymentTermsDays: localData.paymentTerms || 0,
+      defaultTransportName: localData.defaultTransportName || '',
+      defaultTransportAddress: localData.defaultTransportAddress || '',
     }
   }
 
@@ -164,7 +168,12 @@ export default function ClienteDetailPage() {
         if (localCuit && localCuit.length === 11) {
           const colppyMatch = await tryColppyByCuit(localCuit)
           if (colppyMatch) {
-            setCustomer(colppyMatch)
+            // Merge: Colppy data + local transport defaults
+            setCustomer({
+              ...colppyMatch,
+              defaultTransportName: colppyMatch.defaultTransportName || localData.defaultTransportName || '',
+              defaultTransportAddress: colppyMatch.defaultTransportAddress || localData.defaultTransportAddress || '',
+            })
             return
           }
         }
@@ -288,6 +297,7 @@ export default function ClienteDetailPage() {
       <ClienteDetailTabs
         colppyCustomer={customer}
         cuit={cuit || customer.cuit?.replace(/\D/g, '') || ''}
+        onCustomerUpdate={(updated) => setCustomer((prev) => prev ? { ...prev, ...updated } : prev)}
       />
     </div>
   )

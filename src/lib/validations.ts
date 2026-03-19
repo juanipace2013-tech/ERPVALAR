@@ -65,6 +65,10 @@ export const customerSchema = z.object({
   priceMultiplier: z.number().positive('El multiplicador debe ser positivo').default(1.0),
   salesPersonId: z.string().optional(),
 
+  // Transporte habitual
+  defaultTransportName: z.string().optional(),
+  defaultTransportAddress: z.string().optional(),
+
   // Notas
   notes: z.string().optional(),
 })

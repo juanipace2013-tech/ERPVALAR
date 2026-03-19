@@ -183,6 +183,10 @@ model Customer {
   salesPersonId   String?
   salesPerson     User?          @relation("CustomerSalesPerson", fields: [salesPersonId], references: [id])
 
+  // Transporte habitual
+  defaultTransportName     String?   // Ej: "LOGINTER", "ANDREANI"
+  defaultTransportAddress  String?   // Ej: "Sucursal Retiro"
+
   // Metadatos
   notes           String?        @db.Text
   createdAt       DateTime       @default(now())

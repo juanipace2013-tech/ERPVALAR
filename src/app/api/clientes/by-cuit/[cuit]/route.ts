@@ -113,6 +113,8 @@ export async function GET(
         name: customer.name,
         businessName: customer.businessName,
         cuit: customer.cuit,
+        defaultTransportName: customer.defaultTransportName,
+        defaultTransportAddress: customer.defaultTransportAddress,
         salesPerson: customer.salesPerson,
         quotes: customer.quotes,
         deliveryNotes: customer.deliveryNotes,

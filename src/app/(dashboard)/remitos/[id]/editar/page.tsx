@@ -24,6 +24,7 @@ import {
   Plus,
   Trash2,
   Search,
+  Truck,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import DeliveryAddressSelector from '@/components/remitos/DeliveryAddressSelector'
@@ -65,6 +66,8 @@ interface DeliveryNote {
     city: string | null
     province: string | null
     postalCode: string | null
+    defaultTransportName: string | null
+    defaultTransportAddress: string | null
   }
   items: Array<{
     id: string
@@ -325,6 +328,19 @@ export default function EditarRemitoPage() {
                 onChange={(e) => setCarrier(e.target.value)}
                 placeholder="Nombre del transporte"
               />
+              {!carrier && deliveryNote?.customer?.defaultTransportName && (
+                <button
+                  type="button"
+                  className="flex items-center gap-1 mt-1 text-xs text-blue-600 hover:text-blue-800"
+                  onClick={() => {
+                    setCarrier(deliveryNote.customer.defaultTransportName || '')
+                    setTransportAddress(deliveryNote.customer.defaultTransportAddress || '')
+                  }}
+                >
+                  <Truck className="h-3 w-3" />
+                  Usar transporte habitual: {deliveryNote.customer.defaultTransportName}
+                </button>
+              )}
             </div>
             <div>
               <Label>Dirección del Transporte</Label>

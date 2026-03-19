@@ -37,6 +37,9 @@ import {
   Pencil,
   Trash2,
   Factory,
+  Truck,
+  Save,
+  X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -89,11 +92,14 @@ interface ColppyCustomer {
   priceMultiplier: number
   paymentTerms: string
   paymentTermsDays: number
+  defaultTransportName: string
+  defaultTransportAddress: string
 }
 
 interface Props {
   customer: ColppyCustomer
   cuit: string
+  onCustomerUpdate?: (updated: Partial<ColppyCustomer>) => void
 }
 
 function InfoRow({ icon: Icon, label, value }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string }) {
@@ -108,11 +114,63 @@ function InfoRow({ icon: Icon, label, value }: { icon: React.ComponentType<{ cla
   )
 }
 
-export default function TabDatosGenerales({ customer, cuit }: Props) {
+function EditableRow({
+  icon: Icon,
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = 'text',
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  value: string
+  onChange: (v: string) => void
+  placeholder?: string
+  type?: string
+}) {
+  return (
+    <div className="flex items-start gap-3 py-2">
+      <Icon className="h-4 w-4 text-gray-400 mt-2.5 shrink-0" />
+      <div className="flex-1">
+        <p className="text-xs text-gray-500 mb-1">{label}</p>
+        <Input
+          type={type}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="h-8 text-sm"
+        />
+      </div>
+    </div>
+  )
+}
+
+export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: Props) {
   const [salesPersonId, setSalesPersonId] = useState<string | null>(null)
   const [users, setUsers] = useState<{ id: string; name: string; email: string }[]>([])
   const [loadingSalesPerson, setLoadingSalesPerson] = useState(true)
   const [saving, setSaving] = useState(false)
+
+  // Inline edit state
+  const [isEditing, setIsEditing] = useState(false)
+  const [editForm, setEditForm] = useState({
+    name: '',
+    address: '',
+    phone: '',
+    mobile: '',
+    email: '',
+    priceMultiplier: 1,
+  })
+  const [savingEdit, setSavingEdit] = useState(false)
+
+  // Transport edit state
+  const [isEditingTransport, setIsEditingTransport] = useState(false)
+  const [transportForm, setTransportForm] = useState({
+    defaultTransportName: '',
+    defaultTransportAddress: '',
+  })
+  const [savingTransport, setSavingTransport] = useState(false)
 
   // Delivery addresses state
   const [localCustomerId, setLocalCustomerId] = useState<string | null>(null)
@@ -172,6 +230,105 @@ export default function TabDatosGenerales({ customer, cuit }: Props) {
       setLoadingSalesPerson(false)
     })
   }, [cuit])
+
+  // ─── Inline edit handlers ──────────────────────────────────────────────────
+
+  const startEditing = () => {
+    setEditForm({
+      name: customer.name || '',
+      address: customer.address || '',
+      phone: customer.phone || '',
+      mobile: customer.mobile || '',
+      email: customer.email || '',
+      priceMultiplier: customer.priceMultiplier || 1,
+    })
+    setIsEditing(true)
+  }
+
+  const cancelEditing = () => {
+    setIsEditing(false)
+  }
+
+  const handleSaveEdit = async () => {
+    if (!localCustomerId) {
+      toast.error('Cliente no encontrado en la base de datos local')
+      return
+    }
+    setSavingEdit(true)
+    try {
+      const res = await fetch(`/api/clientes/${localCustomerId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: editForm.name,
+          address: editForm.address,
+          phone: editForm.phone,
+          mobile: editForm.mobile,
+          email: editForm.email || null,
+          priceMultiplier: Number(editForm.priceMultiplier) || 1,
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Error al guardar')
+      }
+      toast.success('Datos del cliente actualizados')
+      setIsEditing(false)
+      onCustomerUpdate?.({
+        name: editForm.name,
+        address: editForm.address,
+        phone: editForm.phone,
+        mobile: editForm.mobile,
+        email: editForm.email,
+        priceMultiplier: Number(editForm.priceMultiplier) || 1,
+      })
+    } catch (e: any) {
+      toast.error(e.message || 'Error al guardar cambios')
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  // ─── Transport edit handlers ───────────────────────────────────────────────
+
+  const startEditingTransport = () => {
+    setTransportForm({
+      defaultTransportName: customer.defaultTransportName || '',
+      defaultTransportAddress: customer.defaultTransportAddress || '',
+    })
+    setIsEditingTransport(true)
+  }
+
+  const handleSaveTransport = async () => {
+    if (!localCustomerId) {
+      toast.error('Cliente no encontrado en la base de datos local')
+      return
+    }
+    setSavingTransport(true)
+    try {
+      const res = await fetch(`/api/clientes/${localCustomerId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          defaultTransportName: transportForm.defaultTransportName || null,
+          defaultTransportAddress: transportForm.defaultTransportAddress || null,
+        }),
+      })
+      if (!res.ok) throw new Error()
+      toast.success('Transporte habitual actualizado')
+      setIsEditingTransport(false)
+      onCustomerUpdate?.({
+        defaultTransportName: transportForm.defaultTransportName,
+        defaultTransportAddress: transportForm.defaultTransportAddress,
+      })
+    } catch {
+      toast.error('Error al guardar transporte')
+    } finally {
+      setSavingTransport(false)
+    }
+  }
+
+  // ─── Delivery address handlers ─────────────────────────────────────────────
 
   const openAddressModal = (addr?: DeliveryAddress) => {
     if (addr) {
@@ -272,16 +429,109 @@ export default function TabDatosGenerales({ customer, cuit }: Props) {
 
   return (
     <div className="space-y-4">
+      {/* Datos Generales */}
       <Card>
         <CardContent className="pt-6">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs text-gray-400 uppercase tracking-wider">Datos del Cliente</p>
+            {localCustomerId && !isEditing && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={startEditing}
+                className="h-7 text-xs"
+              >
+                <Pencil className="h-3.5 w-3.5 mr-1" />
+                Editar
+              </Button>
+            )}
+            {isEditing && (
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={cancelEditing}
+                  disabled={savingEdit}
+                  className="h-7 text-xs"
+                >
+                  <X className="h-3.5 w-3.5 mr-1" />
+                  Cancelar
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleSaveEdit}
+                  disabled={savingEdit}
+                  className="h-7 text-xs bg-blue-600 hover:bg-blue-700"
+                >
+                  {savingEdit ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+                  Guardar
+                </Button>
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1">
+            {/* Campos NO editables (Colppy/AFIP) */}
             <InfoRow icon={Building2} label="Razón Social" value={customer.businessName} />
-            <InfoRow icon={Building2} label="Nombre Fantasía" value={customer.name} />
+
+            {/* Nombre Fantasía — editable */}
+            {isEditing ? (
+              <EditableRow
+                icon={Building2}
+                label="Nombre Fantasía"
+                value={editForm.name}
+                onChange={(v) => setEditForm({ ...editForm, name: v })}
+                placeholder="Nombre fantasía"
+              />
+            ) : (
+              <InfoRow icon={Building2} label="Nombre Fantasía" value={customer.name} />
+            )}
+
+            {/* CUIT y Condición IVA — NO editables */}
             <InfoRow icon={Hash} label="CUIT" value={customer.cuit ? formatCUIT(customer.cuit) : '—'} />
             <InfoRow icon={CreditCard} label="Condición IVA" value={customer.taxConditionDisplay} />
-            <InfoRow icon={MapPin} label="Dirección" value={fullAddress} />
-            <InfoRow icon={Phone} label="Teléfono" value={phones} />
-            <InfoRow icon={Mail} label="Email" value={customer.email} />
+
+            {/* Dirección — editable */}
+            {isEditing ? (
+              <EditableRow
+                icon={MapPin}
+                label="Dirección"
+                value={editForm.address}
+                onChange={(v) => setEditForm({ ...editForm, address: v })}
+                placeholder="Dirección completa"
+              />
+            ) : (
+              <InfoRow icon={MapPin} label="Dirección" value={fullAddress} />
+            )}
+
+            {/* Teléfono — editable */}
+            {isEditing ? (
+              <EditableRow
+                icon={Phone}
+                label="Teléfono"
+                value={editForm.phone}
+                onChange={(v) => setEditForm({ ...editForm, phone: v })}
+                placeholder="Teléfono"
+              />
+            ) : (
+              <InfoRow icon={Phone} label="Teléfono" value={phones} />
+            )}
+
+            {/* Email — editable */}
+            {isEditing ? (
+              <EditableRow
+                icon={Mail}
+                label="Email"
+                value={editForm.email}
+                onChange={(v) => setEditForm({ ...editForm, email: v })}
+                placeholder="Email"
+                type="email"
+              />
+            ) : (
+              <InfoRow icon={Mail} label="Email" value={customer.email} />
+            )}
+
+            {/* Condición de pago — read only (viene de Colppy) */}
             <InfoRow icon={Clock} label="Condición de Pago" value={customer.paymentTerms} />
 
             {/* Vendedor Asignado */}
@@ -321,6 +571,101 @@ export default function TabDatosGenerales({ customer, cuit }: Props) {
         </CardContent>
       </Card>
 
+      {/* Transporte Habitual */}
+      {localCustomerId && (
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Truck className="h-4 w-4 text-blue-600" />
+                <p className="text-xs text-gray-400 uppercase tracking-wider">Transporte Habitual</p>
+              </div>
+              {!isEditingTransport && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={startEditingTransport}
+                  className="h-7 text-xs"
+                >
+                  <Pencil className="h-3.5 w-3.5 mr-1" />
+                  {customer.defaultTransportName ? 'Editar' : 'Agregar'}
+                </Button>
+              )}
+              {isEditingTransport && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setIsEditingTransport(false)}
+                    disabled={savingTransport}
+                    className="h-7 text-xs"
+                  >
+                    <X className="h-3.5 w-3.5 mr-1" />
+                    Cancelar
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleSaveTransport}
+                    disabled={savingTransport}
+                    className="h-7 text-xs bg-blue-600 hover:bg-blue-700"
+                  >
+                    {savingTransport ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+                    Guardar
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {isEditingTransport ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs text-gray-500">Transporte</Label>
+                  <Input
+                    value={transportForm.defaultTransportName}
+                    onChange={(e) => setTransportForm({ ...transportForm, defaultTransportName: e.target.value })}
+                    placeholder="Ej: LOGINTER, ANDREANI, OCA"
+                    className="h-8 text-sm mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-gray-500">Dirección / Sucursal</Label>
+                  <Input
+                    value={transportForm.defaultTransportAddress}
+                    onChange={(e) => setTransportForm({ ...transportForm, defaultTransportAddress: e.target.value })}
+                    placeholder="Ej: Sucursal Retiro, Terminal de cargas"
+                    className="h-8 text-sm mt-1"
+                  />
+                </div>
+              </div>
+            ) : customer.defaultTransportName ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-gray-500">Transporte</p>
+                  <p className="text-sm font-medium text-gray-900">{customer.defaultTransportName}</p>
+                </div>
+                {customer.defaultTransportAddress && (
+                  <div>
+                    <p className="text-xs text-gray-500">Dirección / Sucursal</p>
+                    <p className="text-sm font-medium text-gray-900">{customer.defaultTransportAddress}</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 text-center py-2">
+                Sin transporte asignado — Se usará como valor por defecto en remitos
+              </p>
+            )}
+
+            {customer.defaultTransportName && !isEditingTransport && (
+              <p className="text-xs text-gray-400 mt-3">
+                Se usará como valor por defecto en remitos de este cliente
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Datos Internos Colppy */}
       <Card>
         <CardContent className="pt-6">
           <p className="text-xs text-gray-400 uppercase tracking-wider mb-3">Datos Internos Colppy</p>
@@ -331,7 +676,18 @@ export default function TabDatosGenerales({ customer, cuit }: Props) {
             </div>
             <div>
               <p className="text-xs text-gray-500">Multiplicador Precio</p>
-              <p className="text-sm font-mono text-gray-700">{customer.priceMultiplier}x</p>
+              {isEditing ? (
+                <Input
+                  type="number"
+                  step="0.001"
+                  min="0.001"
+                  value={editForm.priceMultiplier}
+                  onChange={(e) => setEditForm({ ...editForm, priceMultiplier: parseFloat(e.target.value) || 1 })}
+                  className="h-8 text-sm font-mono mt-1 w-24"
+                />
+              ) : (
+                <p className="text-sm font-mono text-gray-700">{customer.priceMultiplier}x</p>
+              )}
             </div>
             <div>
               <p className="text-xs text-gray-500">Condición IVA (código)</p>

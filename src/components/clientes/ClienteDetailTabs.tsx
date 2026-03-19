@@ -35,14 +35,17 @@ interface ColppyCustomer {
   priceMultiplier: number
   paymentTerms: string
   paymentTermsDays: number
+  defaultTransportName: string
+  defaultTransportAddress: string
 }
 
 interface Props {
   colppyCustomer: ColppyCustomer
   cuit: string
+  onCustomerUpdate?: (updated: Partial<ColppyCustomer>) => void
 }
 
-export default function ClienteDetailTabs({ colppyCustomer, cuit }: Props) {
+export default function ClienteDetailTabs({ colppyCustomer, cuit, onCustomerUpdate }: Props) {
   const [activeTab, setActiveTab] = useState('general')
   // Track which tabs have been activated (lazy loading)
   const [activatedTabs, setActivatedTabs] = useState<Set<string>>(new Set(['general']))
@@ -85,7 +88,7 @@ export default function ClienteDetailTabs({ colppyCustomer, cuit }: Props) {
 
       <div className="mt-4">
         <TabsContent value="general" className="mt-0">
-          <TabDatosGenerales customer={colppyCustomer} cuit={cuit} />
+          <TabDatosGenerales customer={colppyCustomer} cuit={cuit} onCustomerUpdate={onCustomerUpdate} />
         </TabsContent>
 
         <TabsContent value="facturas" className="mt-0">

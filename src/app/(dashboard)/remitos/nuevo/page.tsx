@@ -246,6 +246,7 @@ export default function NuevoRemitoPage() {
   const [deliveryPostalCode, setDeliveryPostalCode] = useState('')
 
   // Resolve local customer ID when customer is selected (direct mode)
+  // Also pre-fill transport defaults from customer
   useEffect(() => {
     if (!customer?.cuit) {
       setLocalCustomerId(null)
@@ -257,6 +258,13 @@ export default function NuevoRemitoPage() {
       .then((data) => {
         if (data?.found && data.customer?.id) {
           setLocalCustomerId(data.customer.id)
+          // Pre-fill transport defaults if carrier is empty
+          if (!carrier && data.customer.defaultTransportName) {
+            setCarrier(data.customer.defaultTransportName)
+          }
+          if (!transportAddress && data.customer.defaultTransportAddress) {
+            setTransportAddress(data.customer.defaultTransportAddress)
+          }
         }
       })
       .catch(() => {})

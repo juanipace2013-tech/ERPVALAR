@@ -337,6 +337,15 @@ export default function RutaDetailPage() {
   const completedStops = route.stops.filter((s) => TERMINAL_STATUSES.includes(s.status)).length
   const allResolved = route.stops.length > 0 && completedStops === route.stops.length
 
+  // Common transport: if all DELIVERY stops with THIRD_PARTY use the same transportName
+  const thirdPartyDeliveries = route.stops.filter(
+    (s) => s.type === 'DELIVERY' && s.transportType !== 'OWN' && s.transportName
+  )
+  const commonTransport = thirdPartyDeliveries.length > 0 &&
+    thirdPartyDeliveries.every((s) => s.transportName === thirdPartyDeliveries[0].transportName)
+    ? thirdPartyDeliveries[0].transportName
+    : null
+
   return (
     <div className="container mx-auto px-6 py-8 space-y-6">
       {/* Header */}
@@ -356,9 +365,17 @@ export default function RutaDetailPage() {
             </p>
           </div>
         </div>
-        <Badge className={`text-sm px-3 py-1 ${routeStatusColors[route.status]}`}>
-          {routeStatusLabels[route.status]}
-        </Badge>
+        <div className="flex items-center gap-2">
+          {commonTransport && (
+            <Badge variant="outline" className="text-sm px-3 py-1 border-blue-300 text-blue-700">
+              <Truck className="h-3.5 w-3.5 mr-1" />
+              {commonTransport}
+            </Badge>
+          )}
+          <Badge className={`text-sm px-3 py-1 ${routeStatusColors[route.status]}`}>
+            {routeStatusLabels[route.status]}
+          </Badge>
+        </div>
       </div>
 
       {/* Actions */}

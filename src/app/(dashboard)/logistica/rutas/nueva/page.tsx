@@ -55,6 +55,12 @@ interface PendingRemito {
     city: string | null
     province: string | null
     phone: string | null
+    deliveryAddresses: Array<{
+      address: string
+      contactName: string | null
+      contactPhone: string | null
+      schedule: string | null
+    }>
   }
   items: Array<{
     description: string
@@ -164,6 +170,12 @@ export default function NuevaRutaPage() {
       return
     }
 
+    // Buscar dirección de entrega que coincida para obtener contacto y horario
+    const deliveryAddr = remito.deliveryAddress || remito.customer.address || ''
+    const matchedAddr = remito.customer.deliveryAddresses?.find(
+      (da) => deliveryAddr.includes(da.address) || da.address.includes(deliveryAddr)
+    )
+
     const newStop: StopData = {
       tempId: crypto.randomUUID(),
       deliveryNoteId: remito.id,
@@ -172,12 +184,14 @@ export default function NuevaRutaPage() {
       customerName: remito.customer.name,
       transportType: remito.carrier ? 'THIRD_PARTY' : 'OWN',
       transportName: remito.carrier || '',
-      address: remito.deliveryAddress || remito.customer.address || '',
+      transportAddress: '',
+      transportPhone: '',
+      address: deliveryAddr,
       city: remito.deliveryCity || remito.customer.city || '',
       zone: 'CABA',
-      schedule: '',
-      contactName: '',
-      contactPhone: remito.customer.phone || '',
+      schedule: matchedAddr?.schedule || '',
+      contactName: matchedAddr?.contactName || '',
+      contactPhone: matchedAddr?.contactPhone || remito.customer.phone || '',
       packages: parseInt(remito.bultos || '0') || 0,
       finalDestination: '',
       trackingNumber: remito.trackingNumber || '',

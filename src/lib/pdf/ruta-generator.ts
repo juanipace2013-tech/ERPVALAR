@@ -97,8 +97,8 @@ export function generateRutaPDF(data: RutaPDFData): Blob {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7)
   doc.setTextColor(...GRAY)
-  doc.text('Av. Belgrano 1674, Piso 4 Of. 43 - C.A.B.A.', ML + 34, y + 10)
-  doc.text('Tel: (011) 4383-2823 / ventas@val-ar.com.ar', ML + 34, y + 14)
+  doc.text('14 de Julio 175, C.P: 1427 - C.A.B.A.', ML + 34, y + 10)
+  doc.text('Tel: +54 11 4551-3343 / 4552-2874', ML + 34, y + 14)
 
   // Title block
   const titleX = PAGE_W / 2

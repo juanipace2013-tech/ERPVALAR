@@ -33,6 +33,15 @@ export async function GET() {
             city: true,
             province: true,
             phone: true,
+            deliveryAddresses: {
+              where: { isActive: true },
+              select: {
+                address: true,
+                contactName: true,
+                contactPhone: true,
+                schedule: true,
+              },
+            },
           },
         },
         items: {

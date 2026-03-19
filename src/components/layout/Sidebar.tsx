@@ -133,7 +133,7 @@ const navItems: NavItem[] = [
     ],
   },
   {
-    title: 'Inventario (En proceso)',
+    title: 'Inventario',
     href: '/inventario/items',
     icon: ShoppingCart,
     roles: ['ADMIN', 'GERENTE'],

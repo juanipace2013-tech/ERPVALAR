@@ -293,9 +293,9 @@ export default function DeliveryNoteDetailPage() {
           name: deliveryNote.customer.name,
           businessName: deliveryNote.customer.businessName,
           cuit: deliveryNote.customer.cuit,
-          address: deliveryNote.customer.address,
-          city: deliveryNote.customer.city,
-          province: deliveryNote.customer.province,
+          address: deliveryNote.deliveryAddress || deliveryNote.customer.address,
+          city: deliveryNote.deliveryCity || deliveryNote.customer.city,
+          province: deliveryNote.deliveryProvince || deliveryNote.customer.province,
           taxCondition: deliveryNote.customer.taxCondition,
         },
         items: deliveryNote.items.map((item) => ({

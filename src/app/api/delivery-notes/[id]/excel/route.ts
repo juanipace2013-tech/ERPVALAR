@@ -61,8 +61,11 @@ export async function GET(
       date: deliveryNote.date,
       customer: {
         businessName: deliveryNote.customer.businessName || deliveryNote.customer.name,
-        address: deliveryNote.customer.address || '',
-        city: [deliveryNote.customer.city, deliveryNote.customer.province]
+        address: deliveryNote.deliveryAddress || deliveryNote.customer.address || '',
+        city: [
+          deliveryNote.deliveryCity || deliveryNote.customer.city,
+          deliveryNote.deliveryProvince || deliveryNote.customer.province,
+        ]
           .filter(Boolean)
           .join(', '),
         cuit: deliveryNote.customer.cuit || '',

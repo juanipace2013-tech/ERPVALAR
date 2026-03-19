@@ -141,22 +141,35 @@ const tipoComprobanteLabel: Record<string, string> = {
   '10': 'FAV', '11': 'NDV', '12': 'NCV', '13': 'NCV',
 };
 
+// Tipos de comprobante que son Notas de Crédito
+const TIPOS_NC = new Set(['6', '8', '12', '13']);
+
 function mapFacturas(data: any[]): ColppyFactura[] {
   return (data || []).map((f: any) => {
     const total = parseFloat(f.totalFactura || '0');
     const aplicado = parseFloat(f.totalaplicado || '0');
-    const saldo = Math.max(0, total - aplicado);
-
-    // Determinar estado basado en datos reales
-    // idEstadoFactura: "3"=pendiente, "5"=pagada/cobrada
-    let estado = 'Pendiente';
-    if (f.idEstadoFactura === '5' || saldo <= 0) {
-      estado = 'Pagada';
-    }
 
     const tipoLetra = tipoFacturaMap[f.idTipoFactura] || 'A';
     const tipoComp = f.idTipoComprobante || '4';
     const compLabel = tipoComprobanteLabel[tipoComp] || 'FAV';
+    const esNC = TIPOS_NC.has(tipoComp);
+
+    // Para NC: si fue aplicada (totalaplicado >= totalFactura), saldo = 0
+    // Para NC no aplicadas: saldo negativo (reduce la deuda del cliente)
+    // Para FAV/NDV: saldo = total - aplicado (positivo)
+    let saldo: number;
+    if (esNC) {
+      saldo = aplicado >= total ? 0 : -(total - aplicado);
+    } else {
+      saldo = Math.max(0, total - aplicado);
+    }
+
+    // Determinar estado basado en datos reales
+    // idEstadoFactura: "3"=pendiente, "5"=pagada/cobrada
+    let estado = 'Pendiente';
+    if (f.idEstadoFactura === '5' || saldo === 0) {
+      estado = esNC ? 'Aplicada' : 'Pagada';
+    }
     const monedaCode = monedaMap[f.idMoneda] || 'ARS';
     const tipoCambio = parseFloat(f.rate || f.valorCambio || '1');
 

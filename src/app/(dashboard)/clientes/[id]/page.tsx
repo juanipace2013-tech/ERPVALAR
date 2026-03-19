@@ -32,6 +32,7 @@ interface ColppyCustomer {
   paymentTermsDays: number
   defaultTransportName: string
   defaultTransportAddress: string
+  defaultTransportSchedule: string
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -82,6 +83,7 @@ export default function ClienteDetailPage() {
       paymentTermsDays: localData.paymentTerms || 0,
       defaultTransportName: localData.defaultTransportName || '',
       defaultTransportAddress: localData.defaultTransportAddress || '',
+      defaultTransportSchedule: localData.defaultTransportSchedule || '',
     }
   }
 
@@ -173,6 +175,7 @@ export default function ClienteDetailPage() {
               ...colppyMatch,
               defaultTransportName: colppyMatch.defaultTransportName || localData.defaultTransportName || '',
               defaultTransportAddress: colppyMatch.defaultTransportAddress || localData.defaultTransportAddress || '',
+              defaultTransportSchedule: colppyMatch.defaultTransportSchedule || localData.defaultTransportSchedule || '',
             })
             return
           }

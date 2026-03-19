@@ -115,6 +115,7 @@ export async function GET(
         cuit: customer.cuit,
         defaultTransportName: customer.defaultTransportName,
         defaultTransportAddress: customer.defaultTransportAddress,
+        defaultTransportSchedule: customer.defaultTransportSchedule,
         salesPerson: customer.salesPerson,
         quotes: customer.quotes,
         deliveryNotes: customer.deliveryNotes,

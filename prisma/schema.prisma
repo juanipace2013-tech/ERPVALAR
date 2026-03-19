@@ -186,6 +186,7 @@ model Customer {
   // Transporte habitual
   defaultTransportName     String?   // Ej: "LOGINTER", "ANDREANI"
   defaultTransportAddress  String?   // Ej: "Sucursal Retiro"
+  defaultTransportSchedule String?   // Ej: "L a V 8:00 a 17:00"
 
   // Metadatos
   notes           String?        @db.Text

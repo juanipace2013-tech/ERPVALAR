@@ -205,6 +205,7 @@ export default function NuevoRemitoPage() {
   // ── Shared form fields ──
   const [carrier, setCarrier] = useState('')
   const [transportAddress, setTransportAddress] = useState('')
+  const [customerTransportSchedule, setCustomerTransportSchedule] = useState('')
   const [purchaseOrder, setPurchaseOrder] = useState('')
   const [customerInvoiceNumber, setCustomerInvoiceNumber] = useState('')
   const [invoiceRef, setInvoiceRef] = useState('')
@@ -264,6 +265,9 @@ export default function NuevoRemitoPage() {
           }
           if (!transportAddress && data.customer.defaultTransportAddress) {
             setTransportAddress(data.customer.defaultTransportAddress)
+          }
+          if (data.customer.defaultTransportSchedule) {
+            setCustomerTransportSchedule(data.customer.defaultTransportSchedule)
           }
         }
       })
@@ -798,6 +802,11 @@ export default function NuevoRemitoPage() {
                   value={transportAddress}
                   onChange={(e) => setTransportAddress(e.target.value)}
                 />
+                {customerTransportSchedule && carrier && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Horario: {customerTransportSchedule}
+                  </p>
+                )}
               </div>
               <div className="space-y-2 col-span-2">
                 <Label htmlFor="notes">Observaciones</Label>
@@ -952,6 +961,11 @@ export default function NuevoRemitoPage() {
                   value={transportAddress}
                   onChange={(e) => setTransportAddress(e.target.value)}
                 />
+                {customerTransportSchedule && carrier && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Horario: {customerTransportSchedule}
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="d-purchaseOrder">

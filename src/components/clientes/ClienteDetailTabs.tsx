@@ -37,6 +37,7 @@ interface ColppyCustomer {
   paymentTermsDays: number
   defaultTransportName: string
   defaultTransportAddress: string
+  defaultTransportSchedule: string
 }
 
 interface Props {

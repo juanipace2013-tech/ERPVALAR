@@ -68,6 +68,7 @@ interface DeliveryNote {
     postalCode: string | null
     defaultTransportName: string | null
     defaultTransportAddress: string | null
+    defaultTransportSchedule: string | null
   }
   items: Array<{
     id: string
@@ -349,6 +350,11 @@ export default function EditarRemitoPage() {
                 onChange={(e) => setTransportAddress(e.target.value)}
                 placeholder="Dirección del transporte"
               />
+              {deliveryNote?.customer?.defaultTransportSchedule && carrier && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Horario: {deliveryNote.customer.defaultTransportSchedule}
+                </p>
+              )}
             </div>
             <div>
               <Label>OC del Cliente</Label>

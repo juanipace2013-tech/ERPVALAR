@@ -68,6 +68,7 @@ export const customerSchema = z.object({
   // Transporte habitual
   defaultTransportName: z.string().optional(),
   defaultTransportAddress: z.string().optional(),
+  defaultTransportSchedule: z.string().optional(),
 
   // Notas
   notes: z.string().optional(),

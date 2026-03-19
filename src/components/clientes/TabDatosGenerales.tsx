@@ -94,6 +94,7 @@ interface ColppyCustomer {
   paymentTermsDays: number
   defaultTransportName: string
   defaultTransportAddress: string
+  defaultTransportSchedule: string
 }
 
 interface Props {
@@ -169,6 +170,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
   const [transportForm, setTransportForm] = useState({
     defaultTransportName: '',
     defaultTransportAddress: '',
+    defaultTransportSchedule: '',
   })
   const [savingTransport, setSavingTransport] = useState(false)
 
@@ -295,6 +297,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
     setTransportForm({
       defaultTransportName: customer.defaultTransportName || '',
       defaultTransportAddress: customer.defaultTransportAddress || '',
+      defaultTransportSchedule: customer.defaultTransportSchedule || '',
     })
     setIsEditingTransport(true)
   }
@@ -312,6 +315,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
         body: JSON.stringify({
           defaultTransportName: transportForm.defaultTransportName || null,
           defaultTransportAddress: transportForm.defaultTransportAddress || null,
+          defaultTransportSchedule: transportForm.defaultTransportSchedule || null,
         }),
       })
       if (!res.ok) throw new Error()
@@ -320,6 +324,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
       onCustomerUpdate?.({
         defaultTransportName: transportForm.defaultTransportName,
         defaultTransportAddress: transportForm.defaultTransportAddress,
+        defaultTransportSchedule: transportForm.defaultTransportSchedule,
       })
     } catch {
       toast.error('Error al guardar transporte')
@@ -617,7 +622,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
             </div>
 
             {isEditingTransport ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <Label className="text-xs text-gray-500">Transporte</Label>
                   <Input
@@ -636,9 +641,18 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
                     className="h-8 text-sm mt-1"
                   />
                 </div>
+                <div>
+                  <Label className="text-xs text-gray-500">Horario</Label>
+                  <Input
+                    value={transportForm.defaultTransportSchedule}
+                    onChange={(e) => setTransportForm({ ...transportForm, defaultTransportSchedule: e.target.value })}
+                    placeholder="Ej: L a V 8:00 a 17:00"
+                    className="h-8 text-sm mt-1"
+                  />
+                </div>
               </div>
             ) : customer.defaultTransportName ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <p className="text-xs text-gray-500">Transporte</p>
                   <p className="text-sm font-medium text-gray-900">{customer.defaultTransportName}</p>
@@ -647,6 +661,12 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
                   <div>
                     <p className="text-xs text-gray-500">Dirección / Sucursal</p>
                     <p className="text-sm font-medium text-gray-900">{customer.defaultTransportAddress}</p>
+                  </div>
+                )}
+                {customer.defaultTransportSchedule && (
+                  <div>
+                    <p className="text-xs text-gray-500">Horario</p>
+                    <p className="text-sm font-medium text-gray-900">{customer.defaultTransportSchedule}</p>
                   </div>
                 )}
               </div>

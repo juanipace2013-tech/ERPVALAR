@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     periodStart.setMonth(periodStart.getMonth() - period)
 
     if (groupBy === 'product') {
-      // Group by productId using Prisma groupBy
+      // 1. Group by productId
       const grouped = await prisma.stockMovement.groupBy({
         by: ['productId'],
         where: {
@@ -31,53 +31,81 @@ export async function GET(request: NextRequest) {
         _sum: { quantity: true, totalCost: true },
         _count: { id: true },
         orderBy: { _sum: { totalCost: 'desc' } },
+        take: 200, // Limitar para no explotar
       })
 
-      // Get distinct purchaseInvoiceId count per product and first/last unitCost
       const productIds = grouped.map(g => g.productId)
-      const products = productIds.length > 0
-        ? await prisma.product.findMany({
-            where: { id: { in: productIds } },
-            select: {
-              id: true, sku: true, name: true, brand: true,
-              supplier: { select: { name: true } },
-            },
-          })
-        : []
+      if (productIds.length === 0) {
+        return NextResponse.json({ groupBy: 'product', data: [] })
+      }
+
+      // 2. Batch: productos con supplier (1 query)
+      const products = await prisma.product.findMany({
+        where: { id: { in: productIds } },
+        select: {
+          id: true, sku: true, name: true, brand: true,
+          supplier: { select: { name: true } },
+        },
+      })
       const productMap = new Map(products.map(p => [p.id, p]))
 
-      // Get first and last price per product + supplier from purchaseInvoice as fallback
-      const priceData = await Promise.all(
-        productIds.map(async (pid) => {
-          const [lastMove, firstMove, invoiceCount] = await Promise.all([
-            prisma.stockMovement.findFirst({
-              where: { productId: pid, type: 'COMPRA' },
-              orderBy: { date: 'desc' },
-              select: {
-                unitCost: true,
-                purchaseInvoice: { select: { supplier: { select: { name: true } } } },
-              },
-            }),
-            prisma.stockMovement.findFirst({
-              where: { productId: pid, type: 'COMPRA' },
-              orderBy: { date: 'asc' },
-              select: { unitCost: true },
-            }),
-            prisma.stockMovement.groupBy({
-              by: ['purchaseInvoiceId'],
-              where: { productId: pid, type: 'COMPRA', date: { gte: periodStart }, purchaseInvoiceId: { not: null } },
-            }),
-          ])
-          return {
-            productId: pid,
-            lastPrice: Number(lastMove?.unitCost || 0),
-            firstPrice: Number(firstMove?.unitCost || 0),
-            invoiceCount: invoiceCount.length,
-            invoiceSupplierName: lastMove?.purchaseInvoice?.supplier?.name || null,
-          }
-        })
-      )
-      const priceMap = new Map(priceData.map(p => [p.productId, p]))
+      // 3. Batch: todos los movimientos COMPRA de estos productos para calcular
+      //    first/last price e invoiceCount — UNA sola query en vez de N×3
+      const allMovements = await prisma.stockMovement.findMany({
+        where: {
+          productId: { in: productIds },
+          type: 'COMPRA',
+        },
+        select: {
+          productId: true,
+          unitCost: true,
+          date: true,
+          purchaseInvoiceId: true,
+          purchaseInvoice: { select: { supplier: { select: { name: true } } } },
+        },
+        orderBy: { date: 'asc' },
+      })
+
+      // Procesar en JS: first/last price, invoice count por producto
+      const priceMap = new Map<string, {
+        lastPrice: number
+        firstPrice: number
+        invoiceCount: number
+        invoiceSupplierName: string | null
+      }>()
+
+      for (const m of allMovements) {
+        const existing = priceMap.get(m.productId)
+        const cost = Number(m.unitCost || 0)
+
+        if (!existing) {
+          // Primer movimiento de este producto (ordenado por date asc)
+          priceMap.set(m.productId, {
+            firstPrice: cost,
+            lastPrice: cost,
+            invoiceCount: 0,
+            invoiceSupplierName: m.purchaseInvoice?.supplier?.name || null,
+          })
+        } else {
+          // Actualizar último precio (como está ordenado asc, el último que vemos es el más reciente)
+          existing.lastPrice = cost
+          existing.invoiceSupplierName = m.purchaseInvoice?.supplier?.name || existing.invoiceSupplierName
+        }
+      }
+
+      // Contar facturas distintas por producto (solo en el período)
+      const invoiceCountMap = new Map<string, Set<string>>()
+      for (const m of allMovements) {
+        if (m.purchaseInvoiceId && m.date >= periodStart) {
+          const set = invoiceCountMap.get(m.productId) || new Set()
+          set.add(m.purchaseInvoiceId)
+          invoiceCountMap.set(m.productId, set)
+        }
+      }
+      for (const [pid, set] of invoiceCountMap) {
+        const existing = priceMap.get(pid)
+        if (existing) existing.invoiceCount = set.size
+      }
 
       const data = grouped.map(g => {
         const prod = productMap.get(g.productId)
@@ -105,7 +133,6 @@ export async function GET(request: NextRequest) {
     }
 
     if (groupBy === 'supplier') {
-      // Get all purchase movements with supplier from purchaseInvoice (primary) and product (fallback)
       const movements = await prisma.stockMovement.findMany({
         where: {
           type: 'COMPRA',
@@ -133,7 +160,6 @@ export async function GET(request: NextRequest) {
         },
       })
 
-      // Group by supplier in JS — use purchaseInvoice.supplier first, fallback to product.supplier
       const supplierMap = new Map<string, {
         name: string;
         totalItems: number;
@@ -166,7 +192,6 @@ export async function GET(request: NextRequest) {
 
       const data = Array.from(supplierMap.entries())
         .map(([sid, s]) => {
-          // Top 5 products
           const topProducts = Array.from(s.productTotals.entries())
             .sort((a, b) => b[1] - a[1])
             .slice(0, 5)
@@ -187,7 +212,6 @@ export async function GET(request: NextRequest) {
     }
 
     if (groupBy === 'month') {
-      // Get all purchase movements
       const movements = await prisma.stockMovement.findMany({
         where: {
           type: 'COMPRA',
@@ -209,7 +233,6 @@ export async function GET(request: NextRequest) {
         },
       })
 
-      // Group by month in JS
       const monthMap = new Map<string, {
         totalValue: number;
         totalQty: number;
@@ -239,7 +262,6 @@ export async function GET(request: NextRequest) {
 
       const data = Array.from(monthMap.entries())
         .map(([month, d]) => {
-          // Find top supplier for this month
           let topSupplier: string | null = null
           let maxVal = 0
           for (const [name, val] of d.supplierTotals) {

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Plus, Package,
-  ShoppingCart, RefreshCw, Link2, LayoutDashboard,
+  ShoppingCart, RefreshCw, Link2, LayoutDashboard, AlertTriangle,
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
 
@@ -24,6 +24,9 @@ const RotationABCTab = dynamic(() => import('@/components/inventario/RotationABC
   loading: () => <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>,
 })
 const UnlinkedItemsTab = dynamic(() => import('@/components/inventario/UnlinkedItemsTab'), {
+  loading: () => <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>,
+})
+const ReplenishmentTab = dynamic(() => import('@/components/inventario/ReplenishmentTab'), {
   loading: () => <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>,
 })
 
@@ -70,6 +73,10 @@ export default function ItemsInventarioPage() {
             <RefreshCw className="mr-2 h-4 w-4" />
             Rotación y ABC
           </TabsTrigger>
+          <TabsTrigger value="replenishment" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+            <AlertTriangle className="mr-2 h-4 w-4" />
+            Reposición
+          </TabsTrigger>
           <TabsTrigger value="unlinked" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
             <Link2 className="mr-2 h-4 w-4" />
             Items sin vincular
@@ -95,6 +102,10 @@ export default function ItemsInventarioPage() {
 
         <TabsContent value="rotation" className="mt-6">
           <RotationABCTab />
+        </TabsContent>
+
+        <TabsContent value="replenishment" className="mt-6">
+          <ReplenishmentTab />
         </TabsContent>
 
         <TabsContent value="unlinked" className="mt-6">

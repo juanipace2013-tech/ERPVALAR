@@ -51,8 +51,8 @@ interface SearchResult {
 const formatCurrency = (amount: number) =>
   `$${amount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
-const formatDate = (date: string) =>
-  new Date(date).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+const formatDate = (date: string | null | undefined) =>
+  date ? new Date(date).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'
 
 // ---- Product Search Combobox ----
 function ProductSearchCombobox({

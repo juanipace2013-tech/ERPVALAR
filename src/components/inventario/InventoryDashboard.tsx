@@ -70,8 +70,8 @@ const movementTypeColors: Record<string, string> = {
 const formatCurrency = (amount: number) =>
   `$${amount.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
 
-const formatDate = (date: string) =>
-  new Date(date).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+const formatDate = (date: string | null | undefined) =>
+  date ? new Date(date).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'
 
 export default function InventoryDashboard() {
   const [data, setData] = useState<DashboardData | null>(null)

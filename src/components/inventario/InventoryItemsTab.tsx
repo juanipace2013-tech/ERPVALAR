@@ -410,7 +410,7 @@ export default function InventoryItemsTab() {
                               {movementTypeLabels[m.type] || m.type}
                             </Badge>
                             <p className="text-xs text-gray-500 mt-1">
-                              {new Date(m.date).toLocaleDateString('es-AR')} - {m.userName}
+                              {m.date ? new Date(m.date).toLocaleDateString('es-AR') : '—'} - {m.userName}
                             </p>
                             {m.reference && (
                               <p className="text-xs text-gray-400">{m.reference}</p>

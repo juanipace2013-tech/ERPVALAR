@@ -153,7 +153,8 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
     }
   }
 
-  const formatDate = (date: string) => {
+  const formatDate = (date: string | null | undefined) => {
+    if (!date) return '—'
     return new Date(date).toLocaleDateString('es-AR', {
       year: 'numeric',
       month: '2-digit',

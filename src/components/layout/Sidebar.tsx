@@ -174,7 +174,7 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="w-64 border-r border-blue-200 bg-white/80 backdrop-blur-sm shadow-sm">
+    <aside className="w-64 shrink-0 border-r border-blue-200 bg-white/80 backdrop-blur-sm shadow-sm overflow-y-auto">
       <nav className="space-y-1 p-4">
         {visibleItems.map((item) => {
           const Icon = item.icon

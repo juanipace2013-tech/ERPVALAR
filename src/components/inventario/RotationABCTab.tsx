@@ -198,11 +198,11 @@ export default function RotationABCTab() {
                     <TableCell>
                       <Badge className={abcColors[p.abcCategory]}>{p.abcCategory}</Badge>
                     </TableCell>
-                    <TableCell>
-                      <p className="font-medium text-sm">{p.name}</p>
+                    <TableCell className="max-w-[300px]">
+                      <p className="font-medium text-sm truncate" title={p.name}>{p.name}</p>
                       <p className="text-xs text-gray-500 font-mono">{p.sku}</p>
                     </TableCell>
-                    <TableCell className="text-sm text-gray-600">{p.supplierName || '-'}</TableCell>
+                    <TableCell className="text-sm text-gray-600 max-w-[160px] truncate" title={p.supplierName || ''}>{p.supplierName || '-'}</TableCell>
                     <TableCell className="text-right">{p.currentStock}</TableCell>
                     <TableCell className="text-right">{p.purchaseCount}</TableCell>
                     <TableCell className="text-right">{p.totalQtyPurchased}</TableCell>

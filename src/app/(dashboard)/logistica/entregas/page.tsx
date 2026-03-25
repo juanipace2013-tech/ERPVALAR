@@ -32,6 +32,7 @@ import {
   ArrowRight,
   RotateCcw,
   FileText,
+  Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
@@ -108,6 +109,11 @@ export default function EntregasKanbanPage() {
   const [selectedStop, setSelectedStop] = useState<EntregaStop | null>(null)
   const [newStatus, setNewStatus] = useState<string>('')
   const [actionLoading, setActionLoading] = useState(false)
+
+  // Dialog eliminar
+  const [showDelete, setShowDelete] = useState(false)
+  const [deleteStop, setDeleteStop] = useState<EntregaStop | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
 
   // ─── Fetch data ──────────────────────────────────────────────────────────────
 
@@ -199,6 +205,36 @@ export default function EntregasKanbanPage() {
     setZoneFilter('ALL')
     setTransportFilter('ALL')
     setVendedorFilter('ALL')
+  }
+
+  // ─── Delete stop ───────────────────────────────────────────────────────────
+
+  const requestDelete = (stop: EntregaStop) => {
+    setDeleteStop(stop)
+    setShowDelete(true)
+  }
+
+  const executeDelete = async () => {
+    if (!deleteStop) return
+    try {
+      setDeleteLoading(true)
+      const res = await fetch(
+        `/api/logistica/rutas/${deleteStop.routeId}/stops/${deleteStop.id}`,
+        { method: 'DELETE' }
+      )
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Error al eliminar')
+      }
+      toast.success('Entrega eliminada')
+      setShowDelete(false)
+      setDeleteStop(null)
+      fetchStops()
+    } catch (e: any) {
+      toast.error(e.message || 'Error al eliminar')
+    } finally {
+      setDeleteLoading(false)
+    }
   }
 
   // ─── Render ───────────────────────────────────────────────────────────────────
@@ -336,6 +372,7 @@ export default function EntregasKanbanPage() {
                       key={stop.id}
                       stop={stop}
                       onStatusChange={requestStatusChange}
+                      onDelete={requestDelete}
                     />
                   ))
                 )}
@@ -396,6 +433,49 @@ export default function EntregasKanbanPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog eliminar */}
+      <Dialog open={showDelete} onOpenChange={setShowDelete}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Eliminar entrega</DialogTitle>
+            <DialogDescription>
+              {deleteStop && (
+                <>
+                  <span className="font-semibold text-gray-800">{deleteStop.customerName}</span>
+                  {deleteStop.deliveryNote && (
+                    <> — Remito {deleteStop.deliveryNote.deliveryNumber}</>
+                  )}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-2">
+            <div className="flex items-center gap-2 text-red-700 bg-red-50 p-3 rounded-lg">
+              <Trash2 className="h-5 w-5" />
+              <p className="text-sm">
+                Se eliminará esta parada de la hoja de ruta.
+                {deleteStop?.deliveryNote && ' El remito vinculado volverá a estar disponible para asignar.'}
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDelete(false)} disabled={deleteLoading}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={executeDelete}
+              disabled={deleteLoading}
+            >
+              {deleteLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Eliminar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -405,9 +485,11 @@ export default function EntregasKanbanPage() {
 function DeliveryCard({
   stop,
   onStatusChange,
+  onDelete,
 }: {
   stop: EntregaStop
   onStatusChange: (stop: EntregaStop, status: string) => void
+  onDelete: (stop: EntregaStop) => void
 }) {
   const routeDate = new Date(stop.route.date).toLocaleDateString('es-AR', {
     day: '2-digit',
@@ -497,6 +579,14 @@ function DeliveryCard({
               >
                 En Ruta <ArrowRight className="h-3 w-3 ml-0.5" />
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 text-[10px] px-2 text-red-500 hover:text-red-700 hover:bg-red-50 ml-auto"
+                onClick={() => onDelete(stop)}
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
             </>
           )}
           {stop.status === 'PREPARING' && (
@@ -536,6 +626,26 @@ function DeliveryCard({
                 onClick={() => onStatusChange(stop, 'NOT_DELIVERED')}
               >
                 <XCircle className="h-3 w-3 mr-0.5" /> No Ent.
+              </Button>
+            </>
+          )}
+          {stop.status === 'NOT_DELIVERED' && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 text-[10px] px-2 text-orange-700 border-orange-300 hover:bg-orange-50"
+                onClick={() => onStatusChange(stop, 'PENDING')}
+              >
+                <RotateCcw className="h-3 w-3 mr-0.5" /> Reintentar
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 text-[10px] px-2 text-red-500 hover:text-red-700 hover:bg-red-50 ml-auto"
+                onClick={() => onDelete(stop)}
+              >
+                <Trash2 className="h-3 w-3" />
               </Button>
             </>
           )}

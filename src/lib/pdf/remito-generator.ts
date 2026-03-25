@@ -3,6 +3,11 @@ import autoTable from 'jspdf-autotable'
 import { LOGO_BASE64 } from '@/lib/logo-base64'
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
+export interface CaiPDFData {
+  caiNumber: string
+  caiExpirationDate: string // formatted date string
+}
+
 export interface RemitoPDFData {
   deliveryNumber: string
   date: Date
@@ -28,6 +33,7 @@ export interface RemitoPDFData {
   bultos?: string | null
   totalAmountARS?: number | null
   notes?: string | null
+  cai?: CaiPDFData | null
 }
 
 // ── Constantes de página ──────────────────────────────────────────────────────
@@ -426,14 +432,32 @@ function drawRemitoCopy(doc: jsPDF, data: RemitoPDFData, copyLabel: string) {
   doc.setFontSize(7)
   doc.setTextColor(...DARK)
   doc.text('CAI N°:', ML + 4, caiY + 6)
-  // Línea para completar
-  doc.setDrawColor(...LIGHT_GRAY)
-  doc.line(ML + 18, caiY + 7, ML + 70, caiY + 7)
 
-  doc.setFont('helvetica', 'bold')
-  doc.text('Fecha Vto. CAI:', ML + 80, caiY + 6)
-  doc.setDrawColor(...LIGHT_GRAY)
-  doc.line(ML + 108, caiY + 7, ML + 155, caiY + 7)
+  if (data.cai) {
+    // Imprimir datos reales del CAI
+    doc.setFont('courier', 'bold')
+    doc.setFontSize(8)
+    doc.setTextColor(...BLACK)
+    doc.text(data.cai.caiNumber, ML + 18, caiY + 6)
+
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(7)
+    doc.setTextColor(...DARK)
+    doc.text('Fecha Vto. CAI:', ML + 80, caiY + 6)
+    doc.setFont('courier', 'bold')
+    doc.setFontSize(8)
+    doc.setTextColor(...BLACK)
+    doc.text(data.cai.caiExpirationDate, ML + 108, caiY + 6)
+  } else {
+    // Líneas vacías para completar a mano (pre-impreso / contingencia)
+    doc.setDrawColor(...LIGHT_GRAY)
+    doc.line(ML + 18, caiY + 7, ML + 70, caiY + 7)
+
+    doc.setFont('helvetica', 'bold')
+    doc.text('Fecha Vto. CAI:', ML + 80, caiY + 6)
+    doc.setDrawColor(...LIGHT_GRAY)
+    doc.line(ML + 108, caiY + 7, ML + 155, caiY + 7)
+  }
 
   // ══════════════════════════════════════════════════════════════════════════
   // PIE DE PÁGINA

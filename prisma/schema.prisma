@@ -1190,6 +1190,9 @@ model DeliveryNote {
   notes             String?            @db.Text
   internalNotes     String?            @db.Text
 
+  // CAI asignado (autoimpresión ARCA)
+  caiNumber         String?            // Número de CAI con que se emitió
+
   // Remito firmado escaneado
   signedDocUrl      String?
   signedDocName     String?
@@ -2408,4 +2411,23 @@ model DeliveryStop {
   @@index([supplierId])
   @@index([type])
   @@map("delivery_stops")
+}
+
+// ========================================
+// CONFIGURACIÓN CAI (ARCA - Autoimpresión)
+// ========================================
+
+model CaiConfig {
+  id                String   @id @default(cuid())
+  pointOfSale       Int      // Punto de venta (ej: 6)
+  caiNumber         String   // Número de CAI otorgado por ARCA
+  caiExpirationDate DateTime // Fecha de vencimiento del CAI
+  startNumber       Int      // Inicio del rango autorizado
+  endNumber         Int      // Fin del rango autorizado
+  lastUsedNumber    Int      @default(0) // Último número de comprobante usado
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("cai_configs")
 }

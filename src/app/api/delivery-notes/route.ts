@@ -193,13 +193,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generar número de remito
-    const deliveryNumber = await generateDeliveryNumber();
+    // Generar número de remito (usa CAI si hay activo, sino PV 0002)
+    const { deliveryNumber, caiNumber } = await generateDeliveryNumber();
 
     // Crear remito con items
     const deliveryNote = await prisma.deliveryNote.create({
       data: {
         deliveryNumber,
+        caiNumber,
         customerId,
         quoteId: quoteId || null,
         date: date ? new Date(date) : new Date(),

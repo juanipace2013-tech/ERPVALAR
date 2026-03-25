@@ -126,27 +126,68 @@ export async function updateQuoteStatus(
 }
 
 /**
- * Genera un número de remito secuencial
+ * Genera un número de remito secuencial.
+ *
+ * Si hay un CaiConfig activo (no vencido, con rango disponible):
+ *   → Usa el PV del CAI (ej: 0006) y asigna el siguiente número del rango.
+ *   → Incrementa lastUsedNumber atómicamente.
+ *   → Devuelve { deliveryNumber, caiNumber }.
+ *
+ * Si NO hay CaiConfig activo (contingencia / legacy):
+ *   → Usa PV 0002 con la numeración secuencial histórica.
+ *   → Devuelve { deliveryNumber, caiNumber: null }.
  */
-// Mínimo secuencial para continuar la numeración pre-ERP
+// Mínimo secuencial para continuar la numeración pre-ERP (PV 0002)
 const DELIVERY_NUMBER_MIN = 11414;
 
-export async function generateDeliveryNumber(): Promise<string> {
-  const lastDeliveryNote = await prisma.deliveryNote.findFirst({
+export async function generateDeliveryNumber(): Promise<{ deliveryNumber: string; caiNumber: string | null }> {
+  // Intentar usar CAI activo
+  const caiConfig = await prisma.caiConfig.findFirst({
+    where: { active: true },
     orderBy: { createdAt: 'desc' },
-    select: { deliveryNumber: true }
+  });
+
+  if (caiConfig) {
+    const now = new Date();
+    const notExpired = now <= caiConfig.caiExpirationDate;
+    const nextNumber = caiConfig.lastUsedNumber + 1;
+    const hasRange = nextNumber <= caiConfig.endNumber;
+
+    if (notExpired && hasRange) {
+      // Incrementar atómicamente
+      await prisma.caiConfig.update({
+        where: { id: caiConfig.id },
+        data: { lastUsedNumber: nextNumber },
+      });
+
+      const pv = String(caiConfig.pointOfSale).padStart(4, '0');
+      const num = String(nextNumber).padStart(8, '0');
+      return {
+        deliveryNumber: `RE ${pv}-${num}`,
+        caiNumber: caiConfig.caiNumber,
+      };
+    }
+  }
+
+  // Fallback: PV 0002 (legacy / contingencia)
+  const lastDeliveryNote = await prisma.deliveryNote.findFirst({
+    where: { deliveryNumber: { startsWith: 'RE 0002' } },
+    orderBy: { createdAt: 'desc' },
+    select: { deliveryNumber: true },
   });
 
   let lastNumber = 0;
   if (lastDeliveryNote) {
-    // Formato: RE 0002-XXXXXXXX
     const match = lastDeliveryNote.deliveryNumber.match(/(\d+)$/);
     lastNumber = match ? parseInt(match[1]) : 0;
   }
 
   const number = Math.max(lastNumber, DELIVERY_NUMBER_MIN) + 1;
 
-  return `RE 0002-${String(number).padStart(8, '0')}`;
+  return {
+    deliveryNumber: `RE 0002-${String(number).padStart(8, '0')}`,
+    caiNumber: null,
+  };
 }
 
 /**
@@ -193,8 +234,8 @@ export async function generateDeliveryNoteFromQuote(
     throw new Error('Solo se pueden generar remitos de cotizaciones aceptadas o convertidas');
   }
 
-  // Generar número de remito
-  const deliveryNumber = await generateDeliveryNumber();
+  // Generar número de remito (usa CAI si hay activo, sino PV 0002)
+  const { deliveryNumber, caiNumber } = await generateDeliveryNumber();
 
   // Crear remito en transacción
   const deliveryNote = await prisma.$transaction(async (tx) => {
@@ -243,6 +284,7 @@ export async function generateDeliveryNoteFromQuote(
     const newDeliveryNote = await tx.deliveryNote.create({
       data: {
         deliveryNumber,
+        caiNumber,
         quoteId: quote.id,
         customerId: quote.customerId,
         date: new Date(),

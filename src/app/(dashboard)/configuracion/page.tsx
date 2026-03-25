@@ -3,12 +3,13 @@
 import { useState, useEffect } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Building2, FileText, Users, BookOpen, Globe, Wallet, Plug, Target } from 'lucide-react'
+import { Building2, FileText, Users, BookOpen, Globe, Wallet, Plug, Target, Stamp } from 'lucide-react'
 import { DatosGeneralesTab } from '@/components/configuracion/DatosGeneralesTab'
 import { DatosImpositivosTab } from '@/components/configuracion/DatosImpositivosTab'
 import { ClientesProveedoresTab } from '@/components/configuracion/ClientesProveedoresTab'
 import { TalonariosTab } from '@/components/configuracion/TalonariosTab'
 import { TesoreriaTab } from '@/components/configuracion/TesoreriaTab'
+import { CaiConfigTab } from '@/components/configuracion/CaiConfigTab'
 
 interface CompanySettings {
   id: string
@@ -138,7 +139,7 @@ export default function ConfiguracionPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid grid-cols-4 lg:grid-cols-8 gap-2 h-auto bg-transparent">
+        <TabsList className="grid grid-cols-4 lg:grid-cols-9 gap-2 h-auto bg-transparent">
           <TabsTrigger
             value="datos-generales"
             className="flex flex-col items-center gap-1 p-3 data-[state=active]:bg-white data-[state=active]:shadow-sm"
@@ -169,6 +170,14 @@ export default function ConfiguracionPage() {
           >
             <BookOpen className="h-4 w-4" />
             <span className="text-xs">Talonarios</span>
+          </TabsTrigger>
+
+          <TabsTrigger
+            value="cai"
+            className="flex flex-col items-center gap-1 p-3 data-[state=active]:bg-white data-[state=active]:shadow-sm"
+          >
+            <Stamp className="h-4 w-4" />
+            <span className="text-xs">CAI / ARCA</span>
           </TabsTrigger>
 
           <TabsTrigger
@@ -222,6 +231,10 @@ export default function ConfiguracionPage() {
 
           <TabsContent value="talonarios" className="mt-0">
             <TalonariosTab />
+          </TabsContent>
+
+          <TabsContent value="cai" className="mt-0">
+            <CaiConfigTab />
           </TabsContent>
 
           <TabsContent value="portal-clientes" className="mt-0">

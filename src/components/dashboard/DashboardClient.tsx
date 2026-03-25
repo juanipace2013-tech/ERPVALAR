@@ -30,6 +30,7 @@ import {
   Line
 } from 'recharts'
 import { formatNumber } from '@/lib/utils'
+import { CaiAlertBanner } from './CaiAlertBanner'
 
 interface DashboardClientProps {
   userName: string
@@ -89,6 +90,9 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
 
   return (
     <div className="space-y-6 p-6">
+      {/* CAI Alert Banner */}
+      <CaiAlertBanner />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

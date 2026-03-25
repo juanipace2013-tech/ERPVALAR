@@ -48,7 +48,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { generateRemitoPDF, type RemitoPDFData } from '@/lib/pdf/remito-generator'
+import { generateRemitoPDF, type RemitoPDFData, type CaiPDFData } from '@/lib/pdf/remito-generator'
 
 interface DeliveryNote {
   id: string
@@ -283,11 +283,37 @@ export default function DeliveryNoteDetailPage() {
     })}`
   }
 
-  const handleDownloadPDF = () => {
+  const handleDownloadPDF = async () => {
     if (!deliveryNote) return
     try {
+      let caiData: CaiPDFData | null = null
+      let deliveryNumber = deliveryNote.deliveryNumber
+
+      // Si el remito ya tiene CAI o podemos asignarle uno, obtener datos
+      const caiRes = await fetch(`/api/delivery-notes/${id}/allocate-cai`, {
+        method: 'POST',
+      })
+
+      if (caiRes.ok) {
+        const caiResult = await caiRes.json()
+        deliveryNumber = caiResult.deliveryNumber
+        caiData = {
+          caiNumber: caiResult.caiNumber,
+          caiExpirationDate: new Intl.DateTimeFormat('es-AR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+          }).format(new Date(caiResult.caiExpirationDate)),
+        }
+        // Refresh si se asignó un nuevo número
+        if (!caiResult.alreadyAllocated) {
+          fetchDeliveryNote()
+        }
+      }
+      // Si falla (no hay CAI activo), genera PDF sin CAI (PV 0002 legacy)
+
       const pdfData: RemitoPDFData = {
-        deliveryNumber: deliveryNote.deliveryNumber,
+        deliveryNumber,
         date: new Date(deliveryNote.date),
         customer: {
           name: deliveryNote.customer.name,
@@ -313,12 +339,13 @@ export default function DeliveryNoteDetailPage() {
           ? Number(deliveryNote.totalAmountARS)
           : null,
         notes: deliveryNote.notes,
+        cai: caiData,
       }
       const blob = generateRemitoPDF(pdfData)
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `Remito-${deliveryNote.deliveryNumber.replace(/\s/g, '-')}.pdf`
+      a.download = `Remito-${deliveryNumber.replace(/\s/g, '-')}.pdf`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)

@@ -200,7 +200,7 @@ export async function POST(request: NextRequest) {
     const deliveryNote = await prisma.deliveryNote.create({
       data: {
         deliveryNumber,
-        caiNumber,
+        ...(caiNumber ? { caiNumber } : {}),
         customerId,
         quoteId: quoteId || null,
         date: date ? new Date(date) : new Date(),

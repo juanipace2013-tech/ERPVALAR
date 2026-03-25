@@ -141,32 +141,40 @@ export async function updateQuoteStatus(
 const DELIVERY_NUMBER_MIN = 11414;
 
 export async function generateDeliveryNumber(): Promise<{ deliveryNumber: string; caiNumber: string | null }> {
-  // Intentar usar CAI activo
-  const caiConfig = await prisma.caiConfig.findFirst({
-    where: { active: true },
-    orderBy: { createdAt: 'desc' },
-  });
-
-  if (caiConfig) {
-    const now = new Date();
-    const notExpired = now <= caiConfig.caiExpirationDate;
-    const nextNumber = caiConfig.lastUsedNumber + 1;
-    const hasRange = nextNumber <= caiConfig.endNumber;
-
-    if (notExpired && hasRange) {
-      // Incrementar atómicamente
-      await prisma.caiConfig.update({
-        where: { id: caiConfig.id },
-        data: { lastUsedNumber: nextNumber },
+  // Intentar usar CAI activo (si la tabla existe y hay config)
+  try {
+    if (prisma.caiConfig) {
+      const caiConfig = await prisma.caiConfig.findFirst({
+        where: { active: true },
+        orderBy: { createdAt: 'desc' },
       });
 
-      const pv = String(caiConfig.pointOfSale).padStart(4, '0');
-      const num = String(nextNumber).padStart(8, '0');
-      return {
-        deliveryNumber: `RE ${pv}-${num}`,
-        caiNumber: caiConfig.caiNumber,
-      };
+      if (caiConfig) {
+        const now = new Date();
+        const notExpired = now <= caiConfig.caiExpirationDate;
+        const nextNumber = caiConfig.lastUsedNumber + 1;
+        const hasRange = nextNumber <= caiConfig.endNumber;
+
+        if (notExpired && hasRange) {
+          // Incrementar atómicamente
+          await prisma.caiConfig.update({
+            where: { id: caiConfig.id },
+            data: { lastUsedNumber: nextNumber },
+          });
+
+          const pv = String(caiConfig.pointOfSale).padStart(4, '0');
+          const num = String(nextNumber).padStart(8, '0');
+          return {
+            deliveryNumber: `RE ${pv}-${num}`,
+            caiNumber: caiConfig.caiNumber,
+          };
+        }
+      }
     }
+  } catch (error) {
+    // Si caiConfig no existe en el Prisma client o la tabla no existe,
+    // continuar con fallback PV 0002 sin romper
+    console.warn('CAI config not available, falling back to PV 0002:', error instanceof Error ? error.message : error);
   }
 
   // Fallback: PV 0002 (legacy / contingencia)
@@ -284,7 +292,7 @@ export async function generateDeliveryNoteFromQuote(
     const newDeliveryNote = await tx.deliveryNote.create({
       data: {
         deliveryNumber,
-        caiNumber,
+        ...(caiNumber ? { caiNumber } : {}),
         quoteId: quote.id,
         customerId: quote.customerId,
         date: new Date(),

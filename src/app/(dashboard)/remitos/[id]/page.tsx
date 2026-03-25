@@ -690,6 +690,12 @@ export default function DeliveryNoteDetailPage() {
                     <p className="font-semibold">{deliveryNote.carrier}</p>
                   </div>
                 )}
+                {deliveryNote.transportAddress && (
+                  <div>
+                    <p className="text-sm text-gray-600">Dir. Transporte</p>
+                    <p className="font-semibold">{deliveryNote.transportAddress}</p>
+                  </div>
+                )}
                 {deliveryNote.trackingNumber && (
                   <div>
                     <p className="text-sm text-gray-600">Nº de Seguimiento</p>

@@ -359,23 +359,52 @@ export async function POST(
       console.log(`[Colppy FC] IVA FINAL: 21%=${iva21Cents} 10.5%=${iva105Cents} 27%=${iva27Cents} total=${totalIvaCents} (dbTaxAmount=${dbTaxAmountCents})`)
 
       // Percepciones
-      // Mapeo jurisdicción DB → nombre exacto Colppy
-      const jurisdictionToColppy: Record<string, string> = {
-        'CABA': 'CABA', 'AGIP': 'CABA', 'CAPITAL FEDERAL': 'CABA',
-        'ARBA': 'Buenos Aires', 'BS.AS.': 'Buenos Aires', 'BUENOS AIRES': 'Buenos Aires', 'PBA': 'Buenos Aires',
-        'JUJUY': 'Jujuy', 'SALTA': 'Salta',
-        'CORDOBA': 'Córdoba', 'CÓRDOBA': 'Córdoba',
-        'MENDOZA': 'Mendoza', 'SANTA FE': 'Santa Fe',
-        'TUCUMAN': 'Tucumán', 'TUCUMÁN': 'Tucumán',
-        'ENTRE RIOS': 'Entre Ríos', 'MISIONES': 'Misiones',
-        'CHACO': 'Chaco', 'CORRIENTES': 'Corrientes',
-        'FORMOSA': 'Formosa', 'CATAMARCA': 'Catamarca',
-        'LA RIOJA': 'La Rioja', 'SAN JUAN': 'San Juan',
-        'SAN LUIS': 'San Luis', 'SANTIAGO DEL ESTERO': 'Santiago del Estero',
-        'NEUQUEN': 'Neuquén', 'NEUQUÉN': 'Neuquén',
-        'RIO NEGRO': 'Río Negro', 'CHUBUT': 'Chubut',
-        'SANTA CRUZ': 'Santa Cruz', 'TIERRA DEL FUEGO': 'Tierra del Fuego',
-        'LA PAMPA': 'La Pampa',
+      // Mapeo completo: aliases comunes → nombre EXACTO de Colppy (tildes y mayúsculas importan)
+      const JURISDICCION_MAP: Record<string, string> = {
+        // CABA aliases
+        'AGIP': 'CABA', 'Capital Federal': 'CABA', 'C.A.B.A.': 'CABA',
+        'Ciudad de Buenos Aires': 'CABA', 'Ciudad Autónoma de Buenos Aires': 'CABA',
+        'CABA': 'CABA',
+        // Buenos Aires aliases
+        'ARBA': 'Buenos Aires', 'Bs. As.': 'Buenos Aires', 'Bs As': 'Buenos Aires',
+        'PBA': 'Buenos Aires', 'Pcia. Buenos Aires': 'Buenos Aires',
+        'Provincia de Buenos Aires': 'Buenos Aires', 'Buenos Aires': 'Buenos Aires',
+        // Santa Fé (OJO: tilde en é)
+        'Santa Fé': 'Santa Fé', 'Santa Fe': 'Santa Fé', 'Sta Fe': 'Santa Fé', 'Sta. Fe': 'Santa Fé',
+        // Santiago del Estero aliases
+        'Santiago del Estero': 'Santiago del Estero', 'Sgo del Estero': 'Santiago del Estero',
+        'Sgo. del Estero': 'Santiago del Estero',
+        // Tierra del Fuego aliases
+        'Tierra del Fuego': 'Tierra del Fuego', 'T. del Fuego': 'Tierra del Fuego',
+        // Con/sin tildes
+        'Catamarca': 'Catamarca', 'Chaco': 'Chaco', 'Chubut': 'Chubut',
+        'Córdoba': 'Córdoba', 'Cordoba': 'Córdoba',
+        'Corrientes': 'Corrientes',
+        'Entre Ríos': 'Entre Ríos', 'Entre Rios': 'Entre Ríos',
+        'Formosa': 'Formosa', 'Jujuy': 'Jujuy',
+        'La Pampa': 'La Pampa', 'La Rioja': 'La Rioja',
+        'Mendoza': 'Mendoza', 'Misiones': 'Misiones',
+        'Neuquén': 'Neuquén', 'Neuquen': 'Neuquén',
+        'Río Negro': 'Río Negro', 'Rio Negro': 'Río Negro',
+        'Salta': 'Salta', 'San Juan': 'San Juan', 'San Luis': 'San Luis',
+        'Santa Cruz': 'Santa Cruz',
+        'Tucumán': 'Tucumán', 'Tucuman': 'Tucumán',
+      }
+
+      /** Busca el nombre exacto de Colppy (case-insensitive) */
+      function mapJurisdiccion(input: string): string {
+        const trimmed = (input || '').trim()
+        if (!trimmed) return 'CABA'
+        // Match exacto
+        if (JURISDICCION_MAP[trimmed]) return JURISDICCION_MAP[trimmed]
+        // Match case-insensitive
+        const key = Object.keys(JURISDICCION_MAP).find(
+          (k) => k.toLowerCase() === trimmed.toLowerCase()
+        )
+        if (key) return JURISDICCION_MAP[key]
+        // No encontrado
+        console.warn(`[Colppy FC] ⚠️ Jurisdicción IIBB no mapeada: "${trimmed}" — se envía tal cual`)
+        return trimmed
       }
 
       let percIvaCents = 0
@@ -388,7 +417,7 @@ export async function POST(
           percIvaCents += amountCents
         } else {
           percIibbCents += amountCents
-          const colppyName = jurisdictionToColppy[(perc.jurisdiction || '').toUpperCase()] || perc.jurisdiction || 'CABA'
+          const colppyName = mapJurisdiccion(perc.jurisdiction || '')
           iibbByJurisdiction[colppyName] = (iibbByJurisdiction[colppyName] || 0) + amountCents
         }
       }

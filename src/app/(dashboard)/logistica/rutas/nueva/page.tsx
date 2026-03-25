@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -132,10 +132,15 @@ function createEmptyStop(): StopData {
 
 export default function NuevaRutaPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const editId = searchParams.get('edit')
+  const isEditMode = Boolean(editId)
+
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [notes, setNotes] = useState('')
   const [stops, setStops] = useState<StopData[]>([])
   const [saving, setSaving] = useState(false)
+  const [loadingRoute, setLoadingRoute] = useState(false)
 
   // Pending remitos
   const [pendingRemitos, setPendingRemitos] = useState<PendingRemito[]>([])
@@ -147,7 +152,62 @@ export default function NuevaRutaPage() {
 
   useEffect(() => {
     fetchPendingRemitos()
-  }, [])
+    if (editId) {
+      fetchExistingRoute(editId)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editId])
+
+  const fetchExistingRoute = async (routeId: string) => {
+    try {
+      setLoadingRoute(true)
+      const response = await fetch(`/api/logistica/rutas/${routeId}`)
+      if (!response.ok) throw new Error('No se pudo cargar la hoja de ruta')
+      const route = await response.json()
+
+      if (route.status !== 'PLANNING') {
+        toast.error('Solo se pueden editar rutas en estado Planificación')
+        router.push(`/logistica/rutas/${routeId}`)
+        return
+      }
+
+      // Populate form with existing data
+      setDate(route.date ? new Date(route.date).toISOString().split('T')[0] : '')
+      setNotes(route.notes || '')
+      setStops(
+        route.stops.map((stop: any) => ({
+          tempId: crypto.randomUUID(),
+          deliveryNoteId: stop.deliveryNoteId || null,
+          deliveryNumber: stop.deliveryNote?.deliveryNumber || null,
+          type: stop.type || 'DELIVERY',
+          customerName: stop.customerName || stop.deliveryNote?.customer?.name || '',
+          transportType: stop.transportType || 'OWN',
+          transportName: stop.transportName || '',
+          transportAddress: stop.transportAddress || '',
+          transportPhone: stop.transportPhone || '',
+          address: stop.address || '',
+          city: stop.city || '',
+          zone: stop.zone || 'CABA',
+          schedule: stop.schedule || '',
+          contactName: stop.contactName || '',
+          contactPhone: stop.contactPhone || '',
+          packages: stop.packages || 0,
+          finalDestination: stop.finalDestination || '',
+          trackingNumber: stop.trackingNumber || '',
+          deliveryDeadline: stop.deliveryDeadline
+            ? new Date(stop.deliveryDeadline).toISOString().split('T')[0]
+            : '',
+          observations: stop.observations || '',
+        }))
+      )
+    } catch (error) {
+      console.error('Error loading route:', error)
+      toast.error('Error al cargar la hoja de ruta')
+      router.push('/logistica/rutas')
+    } finally {
+      setLoadingRoute(false)
+    }
+  }
 
   const fetchPendingRemitos = async () => {
     try {
@@ -244,8 +304,13 @@ export default function NuevaRutaPage() {
 
     try {
       setSaving(true)
-      const response = await fetch('/api/logistica/rutas', {
-        method: 'POST',
+      const url = isEditMode
+        ? `/api/logistica/rutas/${editId}`
+        : '/api/logistica/rutas'
+      const method = isEditMode ? 'PUT' : 'POST'
+
+      const response = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           date,
@@ -276,24 +341,32 @@ export default function NuevaRutaPage() {
 
       if (!response.ok) {
         const error = await response.json()
-        throw new Error(error.error || 'Error al crear hoja de ruta')
+        throw new Error(error.error || `Error al ${isEditMode ? 'actualizar' : 'crear'} hoja de ruta`)
       }
 
       const route = await response.json()
-      toast.success('Hoja de ruta creada exitosamente')
+      toast.success(isEditMode ? 'Hoja de ruta actualizada' : 'Hoja de ruta creada exitosamente')
       router.push(`/logistica/rutas/${route.id}`)
     } catch (error) {
       console.error('Error:', error)
-      toast.error(error instanceof Error ? error.message : 'Error al crear hoja de ruta')
+      toast.error(error instanceof Error ? error.message : `Error al ${isEditMode ? 'actualizar' : 'crear'} hoja de ruta`)
     } finally {
       setSaving(false)
     }
   }
 
-  // Filter out already-added remitos
+  // Filter out already-added remitos (but in edit mode, show those assigned to this route as pending too)
   const availableRemitos = pendingRemitos.filter(
     (r) => !stops.some((s) => s.deliveryNoteId === r.id)
   )
+
+  if (loadingRoute) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    )
+  }
 
   // Group stops by zone for display
   const stopsByZone = ['CABA', 'NORTE', 'SUR', 'OESTE'].map((zone) => ({
@@ -315,8 +388,12 @@ export default function NuevaRutaPage() {
           </Link>
         </Button>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-blue-900">Nueva Hoja de Ruta</h1>
-          <p className="text-muted-foreground">Arma la hoja de ruta del dia</p>
+          <h1 className="text-3xl font-bold tracking-tight text-blue-900">
+            {isEditMode ? 'Editar Hoja de Ruta' : 'Nueva Hoja de Ruta'}
+          </h1>
+          <p className="text-muted-foreground">
+            {isEditMode ? 'Modifica las paradas y datos de la hoja de ruta' : 'Arma la hoja de ruta del dia'}
+          </p>
         </div>
       </div>
 
@@ -686,7 +763,7 @@ export default function NuevaRutaPage() {
               className="bg-blue-600 hover:bg-blue-700"
             >
               {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Crear Hoja de Ruta
+              {isEditMode ? 'Guardar Cambios' : 'Crear Hoja de Ruta'}
             </Button>
           </div>
         </div>

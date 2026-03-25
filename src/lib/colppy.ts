@@ -808,11 +808,12 @@ export interface ColppyPurchaseInvoiceParams {
   IVA105: string;
   IVA27: string;
   percepcionIVA: string;
-  percepcionIIBB: string;
-  IIBBLocal?: string; // Jurisdicción IIBB 1 (ej: "CABA", "Buenos Aires")
-  percepcionIIBB1?: string; // Monto percepción IIBB jurisdicción 1
-  IIBBOtro?: string; // Jurisdicción IIBB 2 (o agrupado de varias)
-  percepcionIIBB2?: string; // Monto percepción IIBB jurisdicción 2+
+  percepcionIIBB: number; // Suma total IIBB como NÚMERO (no string)
+  percsufridas?: Array<{
+    jurisdiccion: string; // Nombre exacto Colppy: "Buenos Aires", "CABA", etc.
+    nroCertificado: string;
+    importePerc: number; // Monto como NÚMERO
+  }>;
   totalFactura: string;
   idMoneda?: string; // "1" = Peso argentino
   valorCambio?: string; // Tipo de cambio
@@ -905,11 +906,10 @@ export async function colppyCreatePurchaseInvoice(
       IVA105: invoice.IVA105,
       IVA27: invoice.IVA27,
       percepcionIVA: invoice.percepcionIVA,
-      percepcionIIBB: invoice.percepcionIIBB,
-      IIBBLocal: invoice.IIBBLocal || '',
-      percepcionIIBB1: invoice.percepcionIIBB1 || '0.00',
-      IIBBOtro: invoice.IIBBOtro || '',
-      percepcionIIBB2: invoice.percepcionIIBB2 || '0.00',
+      percepcionIIBB: invoice.percepcionIIBB, // Número: suma total IIBB
+      ...(invoice.percsufridas && invoice.percsufridas.length > 0
+        ? { percsufridas: invoice.percsufridas }
+        : {}),
       totalFactura: invoice.totalFactura,
       idRetGanancias: invoice.idRetGanancias || '',
       itemsFactura: invoice.itemsFactura,

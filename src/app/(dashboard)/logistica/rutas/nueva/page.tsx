@@ -150,71 +150,78 @@ function createEmptyStop(): StopData {
   }
 }
 
+/** Normaliza dirección para comparación (lowercase, sin espacios extra) */
+function normalizeAddr(addr: string | null | undefined): string {
+  return (addr || '').trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
 /** Arma las opciones de dirección disponibles para un remito */
 function buildAddressOptions(remito: PendingRemito): AddressOption[] {
   const options: AddressOption[] = []
+  const seen = new Set<string>() // direcciones normalizadas ya agregadas
 
-  // 1. Dirección del remito (si difiere de la fiscal)
-  if (remito.deliveryAddress) {
+  // 1. Dirección fiscal del cliente (siempre presente como base)
+  if (remito.customer.address) {
+    const norm = normalizeAddr(remito.customer.address)
+    seen.add(norm)
     options.push({
-      key: 'remito',
-      label: 'Dirección del remito',
-      address: remito.deliveryAddress,
-      city: remito.deliveryCity || '',
-      province: remito.deliveryProvince || '',
+      key: 'fiscal',
+      label: 'Fiscal',
+      address: remito.customer.address,
+      city: remito.customer.city || '',
+      province: remito.customer.province || '',
       contactName: '',
-      contactPhone: '',
+      contactPhone: remito.customer.phone || '',
       schedule: '',
     })
   }
 
-  // 2. Dirección fiscal del cliente
-  if (remito.customer.address) {
-    // Evitar duplicar si es la misma que la del remito
-    const isSameAsRemito = remito.deliveryAddress &&
-      remito.customer.address.trim().toLowerCase() === remito.deliveryAddress.trim().toLowerCase()
-    if (!isSameAsRemito) {
-      options.push({
-        key: 'fiscal',
-        label: 'Fiscal',
-        address: remito.customer.address,
-        city: remito.customer.city || '',
-        province: remito.customer.province || '',
-        contactName: '',
-        contactPhone: remito.customer.phone || '',
-        schedule: '',
-      })
+  // 2. Direcciones de entrega del cliente (CustomerDeliveryAddress)
+  for (const da of remito.customer.deliveryAddresses || []) {
+    const norm = normalizeAddr(da.address)
+    if (seen.has(norm)) {
+      // Enriquecer la opción existente con datos del CustomerDeliveryAddress
+      const existing = options.find((o) => normalizeAddr(o.address) === norm)
+      if (existing) {
+        if (da.contactName) existing.contactName = da.contactName
+        if (da.contactPhone) existing.contactPhone = da.contactPhone
+        if (da.schedule) existing.schedule = da.schedule
+        // Usar el label de la CustomerDeliveryAddress si la existente es genérica
+        if (existing.label === 'Fiscal' || existing.label === 'Dirección del remito') {
+          existing.label = da.label
+        }
+      }
+      continue
     }
+    seen.add(norm)
+    options.push({
+      key: `da-${da.id}`,
+      label: da.label,
+      address: da.address,
+      city: da.city || '',
+      province: da.province || '',
+      contactName: da.contactName || '',
+      contactPhone: da.contactPhone || '',
+      schedule: da.schedule || '',
+    })
   }
 
-  // 3. Direcciones de entrega del cliente
-  for (const da of remito.customer.deliveryAddresses || []) {
-    // Evitar duplicar si ya está como dirección del remito
-    const isDuplicate = options.some(
-      (o) => o.address.trim().toLowerCase() === da.address.trim().toLowerCase()
-    )
-    if (!isDuplicate) {
-      options.push({
-        key: `da-${da.id}`,
-        label: da.label,
-        address: da.address,
-        city: da.city || '',
-        province: da.province || '',
-        contactName: da.contactName || '',
-        contactPhone: da.contactPhone || '',
-        schedule: da.schedule || '',
+  // 3. Dirección del remito (solo si difiere de todas las ya agregadas)
+  if (remito.deliveryAddress) {
+    const norm = normalizeAddr(remito.deliveryAddress)
+    if (!seen.has(norm)) {
+      seen.add(norm)
+      // Insertar al inicio como opción por defecto
+      options.unshift({
+        key: 'remito',
+        label: 'Dirección del remito',
+        address: remito.deliveryAddress,
+        city: remito.deliveryCity || '',
+        province: remito.deliveryProvince || '',
+        contactName: '',
+        contactPhone: '',
+        schedule: '',
       })
-    } else {
-      // Si la dirección ya existe pero la del CustomerDeliveryAddress tiene más datos, enriquecer
-      const existing = options.find(
-        (o) => o.address.trim().toLowerCase() === da.address.trim().toLowerCase()
-      )
-      if (existing) {
-        if (!existing.contactName && da.contactName) existing.contactName = da.contactName
-        if (!existing.contactPhone && da.contactPhone) existing.contactPhone = da.contactPhone
-        if (!existing.schedule && da.schedule) existing.schedule = da.schedule
-        if (existing.label === 'Dirección del remito') existing.label = da.label
-      }
     }
   }
 
@@ -323,9 +330,11 @@ export default function NuevaRutaPage() {
       return
     }
 
-    // Armar opciones de dirección y seleccionar la primera (dirección del remito o fiscal)
+    // Armar opciones de dirección y seleccionar la que coincide con la dir del remito
     const addressOptions = buildAddressOptions(remito)
-    const selected = addressOptions[0] // La del remito es la primera si existe
+    const remitoAddr = normalizeAddr(remito.deliveryAddress || remito.customer.address)
+    const selected = addressOptions.find((o) => normalizeAddr(o.address) === remitoAddr)
+      || addressOptions[0]
 
     const newStop: StopData = {
       tempId: crypto.randomUUID(),

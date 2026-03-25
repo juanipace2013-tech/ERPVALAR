@@ -24,6 +24,7 @@ export async function GET() {
         deliveryProvince: true,
         bultos: true,
         carrier: true,
+        transportAddress: true,
         trackingNumber: true,
         customer: {
           select: {

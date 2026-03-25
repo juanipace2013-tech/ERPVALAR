@@ -47,6 +47,7 @@ interface PendingRemito {
   deliveryProvince: string | null
   bultos: string | null
   carrier: string | null
+  transportAddress: string | null
   trackingNumber: string | null
   customer: {
     id: string
@@ -400,24 +401,33 @@ export default function NuevaRutaPage() {
     const selected = addressOptions.find((o) => normalizeAddr(o.address) === remitoAddr)
       || addressOptions[0]
 
+    // Dirección del cliente (destino real de la mercadería)
+    const customerAddress = selected?.address || remito.deliveryAddress || remito.customer.address || ''
+    const customerCity = selected?.city || remito.deliveryCity || remito.customer.city || ''
+
+    // Si transporte externo → Dirección = transporte, Destino Final = cliente
+    // Si transporte propio → Dirección = cliente, Destino Final = vacío
+    const isThirdParty = Boolean(remito.carrier)
+    const transportAddr = remito.transportAddress || ''
+
     const newStop: StopData = {
       tempId: crypto.randomUUID(),
       deliveryNoteId: remito.id,
       deliveryNumber: remito.deliveryNumber,
       type: 'DELIVERY',
       customerName: remito.customer.name,
-      transportType: remito.carrier ? 'THIRD_PARTY' : 'OWN',
+      transportType: isThirdParty ? 'THIRD_PARTY' : 'OWN',
       transportName: remito.carrier || '',
-      transportAddress: '',
+      transportAddress: transportAddr,
       transportPhone: '',
-      address: selected?.address || remito.deliveryAddress || remito.customer.address || '',
-      city: selected?.city || remito.deliveryCity || remito.customer.city || '',
-      zone: getZoneFromCity(selected?.city || remito.deliveryCity || remito.customer.city),
+      address: isThirdParty && transportAddr ? transportAddr : customerAddress,
+      city: isThirdParty && transportAddr ? '' : customerCity,
+      zone: getZoneFromCity(isThirdParty && transportAddr ? '' : customerCity),
       schedule: selected?.schedule || '',
       contactName: selected?.contactName || '',
       contactPhone: selected?.contactPhone || remito.customer.phone || '',
       packages: parseInt(remito.bultos || '0') || 0,
-      finalDestination: '',
+      finalDestination: isThirdParty ? [customerAddress, customerCity].filter(Boolean).join(', ') : '',
       trackingNumber: remito.trackingNumber || '',
       deliveryDeadline: '',
       observations: '',
@@ -436,12 +446,17 @@ export default function NuevaRutaPage() {
         if (s.tempId !== tempId) return s
         const option = s.addressOptions.find((o) => o.key === addressKey)
         if (!option) return s
+        const isThirdParty = s.transportType === 'THIRD_PARTY'
+        const customerAddr = [option.address, option.city].filter(Boolean).join(', ')
         return {
           ...s,
           selectedAddressKey: addressKey,
-          address: option.address,
-          city: option.city,
-          zone: getZoneFromCity(option.city),
+          // Si transporte externo, la dirección de la parada es la del transporte
+          // y el destino final es la del cliente. Si propio, dirección = cliente.
+          address: isThirdParty && s.transportAddress ? s.transportAddress : option.address,
+          city: isThirdParty && s.transportAddress ? '' : option.city,
+          zone: getZoneFromCity(isThirdParty && s.transportAddress ? '' : option.city),
+          finalDestination: isThirdParty ? customerAddr : s.finalDestination,
           schedule: option.schedule || s.schedule,
           contactName: option.contactName || s.contactName,
           contactPhone: option.contactPhone || s.contactPhone,

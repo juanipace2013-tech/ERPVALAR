@@ -361,7 +361,7 @@ export async function POST(
       // Percepciones
       // Mapeo jurisdicción DB → nombre exacto Colppy
       const jurisdictionToColppy: Record<string, string> = {
-        'CABA': 'Capital Federal', 'AGIP': 'Capital Federal', 'CAPITAL FEDERAL': 'Capital Federal',
+        'CABA': 'CABA', 'AGIP': 'CABA', 'CAPITAL FEDERAL': 'CABA',
         'ARBA': 'Buenos Aires', 'BS.AS.': 'Buenos Aires', 'BUENOS AIRES': 'Buenos Aires', 'PBA': 'Buenos Aires',
         'JUJUY': 'Jujuy', 'SALTA': 'Salta',
         'CORDOBA': 'Córdoba', 'CÓRDOBA': 'Córdoba',

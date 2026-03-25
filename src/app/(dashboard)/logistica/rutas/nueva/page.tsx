@@ -56,7 +56,11 @@ interface PendingRemito {
     province: string | null
     phone: string | null
     deliveryAddresses: Array<{
+      id: string
+      label: string
       address: string
+      city: string | null
+      province: string | null
       contactName: string | null
       contactPhone: string | null
       schedule: string | null
@@ -66,6 +70,17 @@ interface PendingRemito {
     description: string
     quantity: number
   }>
+}
+
+interface AddressOption {
+  key: string       // unique key for the select
+  label: string     // display label like "Planta Lanús" or "Fiscal"
+  address: string
+  city: string
+  province: string
+  contactName: string
+  contactPhone: string
+  schedule: string
 }
 
 interface StopData {
@@ -89,6 +104,9 @@ interface StopData {
   trackingNumber: string
   deliveryDeadline: string
   observations: string
+  // Opciones de dirección disponibles para el desplegable
+  addressOptions: AddressOption[]
+  selectedAddressKey: string // key de la opción seleccionada
 }
 
 const zoneLabels: Record<string, string> = {
@@ -127,7 +145,80 @@ function createEmptyStop(): StopData {
     trackingNumber: '',
     deliveryDeadline: '',
     observations: '',
+    addressOptions: [],
+    selectedAddressKey: '',
   }
+}
+
+/** Arma las opciones de dirección disponibles para un remito */
+function buildAddressOptions(remito: PendingRemito): AddressOption[] {
+  const options: AddressOption[] = []
+
+  // 1. Dirección del remito (si difiere de la fiscal)
+  if (remito.deliveryAddress) {
+    options.push({
+      key: 'remito',
+      label: 'Dirección del remito',
+      address: remito.deliveryAddress,
+      city: remito.deliveryCity || '',
+      province: remito.deliveryProvince || '',
+      contactName: '',
+      contactPhone: '',
+      schedule: '',
+    })
+  }
+
+  // 2. Dirección fiscal del cliente
+  if (remito.customer.address) {
+    // Evitar duplicar si es la misma que la del remito
+    const isSameAsRemito = remito.deliveryAddress &&
+      remito.customer.address.trim().toLowerCase() === remito.deliveryAddress.trim().toLowerCase()
+    if (!isSameAsRemito) {
+      options.push({
+        key: 'fiscal',
+        label: 'Fiscal',
+        address: remito.customer.address,
+        city: remito.customer.city || '',
+        province: remito.customer.province || '',
+        contactName: '',
+        contactPhone: remito.customer.phone || '',
+        schedule: '',
+      })
+    }
+  }
+
+  // 3. Direcciones de entrega del cliente
+  for (const da of remito.customer.deliveryAddresses || []) {
+    // Evitar duplicar si ya está como dirección del remito
+    const isDuplicate = options.some(
+      (o) => o.address.trim().toLowerCase() === da.address.trim().toLowerCase()
+    )
+    if (!isDuplicate) {
+      options.push({
+        key: `da-${da.id}`,
+        label: da.label,
+        address: da.address,
+        city: da.city || '',
+        province: da.province || '',
+        contactName: da.contactName || '',
+        contactPhone: da.contactPhone || '',
+        schedule: da.schedule || '',
+      })
+    } else {
+      // Si la dirección ya existe pero la del CustomerDeliveryAddress tiene más datos, enriquecer
+      const existing = options.find(
+        (o) => o.address.trim().toLowerCase() === da.address.trim().toLowerCase()
+      )
+      if (existing) {
+        if (!existing.contactName && da.contactName) existing.contactName = da.contactName
+        if (!existing.contactPhone && da.contactPhone) existing.contactPhone = da.contactPhone
+        if (!existing.schedule && da.schedule) existing.schedule = da.schedule
+        if (existing.label === 'Dirección del remito') existing.label = da.label
+      }
+    }
+  }
+
+  return options
 }
 
 export default function NuevaRutaPage() {
@@ -198,6 +289,8 @@ export default function NuevaRutaPage() {
             ? new Date(stop.deliveryDeadline).toISOString().split('T')[0]
             : '',
           observations: stop.observations || '',
+          addressOptions: [],
+          selectedAddressKey: '',
         }))
       )
     } catch (error) {
@@ -230,11 +323,9 @@ export default function NuevaRutaPage() {
       return
     }
 
-    // Buscar dirección de entrega que coincida para obtener contacto y horario
-    const deliveryAddr = remito.deliveryAddress || remito.customer.address || ''
-    const matchedAddr = remito.customer.deliveryAddresses?.find(
-      (da) => deliveryAddr.includes(da.address) || da.address.includes(deliveryAddr)
-    )
+    // Armar opciones de dirección y seleccionar la primera (dirección del remito o fiscal)
+    const addressOptions = buildAddressOptions(remito)
+    const selected = addressOptions[0] // La del remito es la primera si existe
 
     const newStop: StopData = {
       tempId: crypto.randomUUID(),
@@ -246,21 +337,43 @@ export default function NuevaRutaPage() {
       transportName: remito.carrier || '',
       transportAddress: '',
       transportPhone: '',
-      address: deliveryAddr,
-      city: remito.deliveryCity || remito.customer.city || '',
+      address: selected?.address || remito.deliveryAddress || remito.customer.address || '',
+      city: selected?.city || remito.deliveryCity || remito.customer.city || '',
       zone: 'CABA',
-      schedule: matchedAddr?.schedule || '',
-      contactName: matchedAddr?.contactName || '',
-      contactPhone: matchedAddr?.contactPhone || remito.customer.phone || '',
+      schedule: selected?.schedule || '',
+      contactName: selected?.contactName || '',
+      contactPhone: selected?.contactPhone || remito.customer.phone || '',
       packages: parseInt(remito.bultos || '0') || 0,
       finalDestination: '',
       trackingNumber: remito.trackingNumber || '',
       deliveryDeadline: '',
       observations: '',
+      addressOptions,
+      selectedAddressKey: selected?.key || '',
     }
 
     setStops((prev) => [...prev, newStop])
     toast.success(`Remito ${remito.deliveryNumber} agregado`)
+  }
+
+  /** Cambia la dirección seleccionada de una parada y auto-completa campos relacionados */
+  const handleAddressChange = (tempId: string, addressKey: string) => {
+    setStops((prev) =>
+      prev.map((s) => {
+        if (s.tempId !== tempId) return s
+        const option = s.addressOptions.find((o) => o.key === addressKey)
+        if (!option) return s
+        return {
+          ...s,
+          selectedAddressKey: addressKey,
+          address: option.address,
+          city: option.city,
+          schedule: option.schedule || s.schedule,
+          contactName: option.contactName || s.contactName,
+          contactPhone: option.contactPhone || s.contactPhone,
+        }
+      })
+    )
   }
 
   const removeStop = (tempId: string) => {
@@ -553,14 +666,33 @@ export default function NuevaRutaPage() {
 
                         {/* Editable fields */}
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                          <div>
-                            <Label className="text-xs">Direccion</Label>
-                            <Input
-                              value={stop.address}
-                              onChange={(e) => updateStop(stop.tempId, 'address', e.target.value)}
-                              placeholder="Direccion"
-                              className="h-8 text-sm"
-                            />
+                          <div className="md:col-span-2">
+                            <Label className="text-xs">Dirección</Label>
+                            {stop.addressOptions.length > 1 ? (
+                              <Select
+                                value={stop.selectedAddressKey}
+                                onValueChange={(v) => handleAddressChange(stop.tempId, v)}
+                              >
+                                <SelectTrigger className="h-8 text-sm">
+                                  <SelectValue placeholder="Seleccionar dirección" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {stop.addressOptions.map((opt) => (
+                                    <SelectItem key={opt.key} value={opt.key}>
+                                      <span className="font-medium">{opt.label}</span>
+                                      <span className="text-muted-foreground"> — {opt.address}{opt.city ? `, ${opt.city}` : ''}</span>
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Input
+                                value={stop.address}
+                                onChange={(e) => updateStop(stop.tempId, 'address', e.target.value)}
+                                placeholder="Dirección"
+                                className="h-8 text-sm"
+                              />
+                            )}
                           </div>
                           <div>
                             <Label className="text-xs">Ciudad</Label>

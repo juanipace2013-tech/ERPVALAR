@@ -36,11 +36,16 @@ export async function GET() {
             deliveryAddresses: {
               where: { isActive: true },
               select: {
+                id: true,
+                label: true,
                 address: true,
+                city: true,
+                province: true,
                 contactName: true,
                 contactPhone: true,
                 schedule: true,
               },
+              orderBy: [{ isDefault: 'desc' }, { label: 'asc' }],
             },
           },
         },

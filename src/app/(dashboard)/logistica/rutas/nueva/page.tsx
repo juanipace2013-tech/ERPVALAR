@@ -116,6 +116,70 @@ const zoneLabels: Record<string, string> = {
   OESTE: 'Zona Oeste',
 }
 
+// ─── Auto-detección de zona por ciudad ─────────────────────────────────────
+
+const ZONE_CITIES: Record<string, string[]> = {
+  CABA: [
+    'caba', 'capital federal', 'buenos aires ciudad', 'c.a.b.a', 'ciudad autonoma',
+  ],
+  SUR: [
+    'lanus', 'avellaneda', 'quilmes', 'berazategui', 'lomas de zamora',
+    'banfield', 'temperley', 'adrogue', 'burzaco', 'monte grande',
+    'esteban echeverria', 'ezeiza', 'presidente peron', 'almirante brown',
+    'florencio varela', 'san vicente', 'canuelas', 'las flores', 'azul',
+    'tandil', 'olavarria', 'bahia blanca', 'glew', 'longchamps',
+    'claypole', 'rafael calzada', 'solano', 'domselaar', 'guernica',
+    'wilde', 'sarandi', 'dock sud', 'remedios de escalada', 'gerli',
+    'bernal', 'ezpeleta', 'hudson', 'ranelagh', 'sourigues',
+    'mar del plata', 'necochea', 'tres arroyos', 'coronel suarez',
+    'pigue', 'villa gesell', 'miramar', 'pinamar',
+  ],
+  NORTE: [
+    'san isidro', 'vicente lopez', 'olivos', 'martinez', 'san fernando',
+    'tigre', 'don torcuato', 'pilar', 'escobar', 'campana', 'zarate',
+    'rosario', 'santa fe', 'parana', 'pergamino', 'san nicolas',
+    'acassuso', 'beccar', 'boulogne', 'munro', 'florida', 'carapachay',
+    'villa adelina', 'general pacheco', 'nordelta', 'benavidez',
+    'garin', 'maschwitz', 'del viso', 'los cardales', 'exaltacion de la cruz',
+    'pacheco', 'la lucila', 'la horqueta', 'victoria',
+    'resistencia', 'corrientes', 'posadas', 'formosa', 'tucuman',
+    'salta', 'jujuy', 'santiago del estero',
+  ],
+  OESTE: [
+    'moron', 'caseros', 'haedo', 'ramos mejia', 'san justo', 'la matanza',
+    'ituzaingo', 'merlo', 'moreno', 'lujan', 'san miguel', 'jose c. paz',
+    'malvinas argentinas', 'hurlingham', 'tres de febrero', 'castelar',
+    'ciudadela', 'villa luzuriaga', 'isidro casanova', 'laferrere',
+    'gonzalez catan', 'virrey del pino', 'rafael castillo', 'paso del rey',
+    'villa tesei', 'el palomar', 'pablo podesta', 'saenz pena',
+    'villa sarmiento', 'ciudad evita', 'aldo bonzi', 'tapiales',
+    'tablada', 'villa madero', 'san antonio de padua', 'villa udaondo',
+    'grand bourg', 'los polvorines', 'william morris', 'loma hermosa',
+    'martin coronado', 'santos lugares', 'villa bosch', 'el libertador',
+    'mercedes', 'chivilcoy', 'junin', 'mendoza', 'san luis', 'san rafael',
+    'la plata', 'city bell', 'gonnet', 'tolosa', 'ensenada', 'berisso',
+  ],
+}
+
+/** Detecta la zona a partir del nombre de ciudad (match parcial, case insensitive) */
+function getZoneFromCity(city: string | null | undefined): 'CABA' | 'NORTE' | 'SUR' | 'OESTE' {
+  if (!city) return 'CABA'
+  const norm = city.trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quitar acentos
+  if (!norm) return 'CABA'
+
+  for (const [zone, cities] of Object.entries(ZONE_CITIES)) {
+    for (const c of cities) {
+      // Match parcial en ambas direcciones: "lanus este" includes "lanus", "caba" includes "caba"
+      if (norm.includes(c) || c.includes(norm)) {
+        return zone as 'CABA' | 'NORTE' | 'SUR' | 'OESTE'
+      }
+    }
+  }
+
+  return 'CABA' // default si no matchea
+}
+
 const zoneColors: Record<string, string> = {
   CABA: 'border-l-blue-500',
   NORTE: 'border-l-green-500',
@@ -348,7 +412,7 @@ export default function NuevaRutaPage() {
       transportPhone: '',
       address: selected?.address || remito.deliveryAddress || remito.customer.address || '',
       city: selected?.city || remito.deliveryCity || remito.customer.city || '',
-      zone: 'CABA',
+      zone: getZoneFromCity(selected?.city || remito.deliveryCity || remito.customer.city),
       schedule: selected?.schedule || '',
       contactName: selected?.contactName || '',
       contactPhone: selected?.contactPhone || remito.customer.phone || '',
@@ -377,6 +441,7 @@ export default function NuevaRutaPage() {
           selectedAddressKey: addressKey,
           address: option.address,
           city: option.city,
+          zone: getZoneFromCity(option.city),
           schedule: option.schedule || s.schedule,
           contactName: option.contactName || s.contactName,
           contactPhone: option.contactPhone || s.contactPhone,
@@ -707,7 +772,15 @@ export default function NuevaRutaPage() {
                             <Label className="text-xs">Ciudad</Label>
                             <Input
                               value={stop.city}
-                              onChange={(e) => updateStop(stop.tempId, 'city', e.target.value)}
+                              onChange={(e) => {
+                                const newCity = e.target.value
+                                updateStop(stop.tempId, 'city', newCity)
+                                updateStop(stop.tempId, 'zone', getZoneFromCity(newCity))
+                              }}
+                              onBlur={(e) => {
+                                // Re-evaluar zona al salir del campo (valor final)
+                                updateStop(stop.tempId, 'zone', getZoneFromCity(e.target.value))
+                              }}
                               placeholder="Ciudad"
                               className="h-8 text-sm"
                             />
@@ -980,9 +1053,14 @@ export default function NuevaRutaPage() {
                 <Label>Ciudad</Label>
                 <Input
                   value={manualStop.city}
-                  onChange={(e) =>
-                    setManualStop((prev) => ({ ...prev, city: e.target.value }))
-                  }
+                  onChange={(e) => {
+                    const newCity = e.target.value
+                    setManualStop((prev) => ({
+                      ...prev,
+                      city: newCity,
+                      zone: getZoneFromCity(newCity),
+                    }))
+                  }}
                   placeholder="Ciudad"
                 />
               </div>

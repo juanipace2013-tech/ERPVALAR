@@ -23,52 +23,50 @@ function calcularSemaforo(
   return 'verde'
 }
 
-// ── Flujo BCRA (web + Cloudflare Turnstile) ─────────────────────────────────
-// La vieja API REST (api.bcra.gob.ar/CentralDeDeudores) está muerta.
-// El nuevo flujo usa el sitio web del BCRA:
-//   1. Headless Chrome con stealth resuelve Turnstile en /situacion-crediticia/
-//   2. Submit del form redirige a /deudores/?cuit=XXX&ts=YYY&token=ZZZ
-//   3. GET /api-deudores.php?cuit=XXX&ts=YYY&token=ZZZ → JSON
+// ── Flujo BCRA via web + Cloudflare Turnstile ───────────────────────────────
+// Usa puppeteer-core con anti-detección manual para resolver el captcha.
+// Flujo:
+//   1. Headless Chrome navega a /situacion-crediticia/, resuelve Turnstile
+//   2. Submit redirige a /deudores/?cuit=XXX&ts=YYY&token=ZZZ
+//   3. Llama a /api-deudores.php con esos tokens → JSON
+//   4. Si Turnstile falla, fallback: scrapea el DOM de /deudores/ directamente
 //
-// Usa puppeteer-extra + stealth plugin para evadir detección de bot.
-// En el VPS se necesita chromium: apt install chromium-browser (o snap)
+// Requiere chromium en el VPS: apt install chromium-browser (o snap)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Detecta la ruta del ejecutable de Chromium/Chrome en el sistema.
- */
 function findChromePath(): string {
   const paths = [
-    // Linux
+    '/snap/bin/chromium',
     '/usr/bin/chromium-browser',
     '/usr/bin/chromium',
     '/usr/bin/google-chrome',
     '/usr/bin/google-chrome-stable',
-    '/snap/bin/chromium',
-    // macOS
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    // Windows
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
   ]
 
   for (const p of paths) {
     try {
-      // Check if file exists (cross-platform)
-      execSync(`${process.platform === 'win32' ? 'where' : 'which'} "${p}" 2>/dev/null || test -f "${p}"`, {
-        timeout: 2000,
-        stdio: 'pipe',
-      })
+      execSync(
+        process.platform === 'win32'
+          ? `if exist "${p}" (echo found) else (exit 1)`
+          : `test -f "${p}"`,
+        { timeout: 2000, stdio: 'pipe' }
+      )
       return p
     } catch {
-      // not found, try next
+      // not found
     }
   }
 
-  // Fallback: try 'which' commands
-  for (const cmd of ['chromium-browser', 'chromium', 'google-chrome', 'google-chrome-stable']) {
+  // Fallback: which
+  for (const cmd of ['chromium', 'chromium-browser', 'google-chrome', 'google-chrome-stable']) {
     try {
-      const result = execSync(`which ${cmd} 2>/dev/null`, { encoding: 'utf-8', timeout: 2000 }).trim()
+      const result = execSync(`which ${cmd} 2>/dev/null`, {
+        encoding: 'utf-8',
+        timeout: 2000,
+      }).trim()
       if (result) return result
     } catch {
       // not found
@@ -81,53 +79,81 @@ function findChromePath(): string {
 }
 
 /**
- * Obtiene ts + token del BCRA usando puppeteer-extra + stealth plugin.
- * El stealth plugin evita que Cloudflare Turnstile detecte headless Chrome.
+ * Lanza un browser puppeteer-core con anti-detección manual.
  */
-async function getBcraTokens(cuit: string): Promise<{ ts: string; token: string }> {
-  // Dynamic imports para que no falle si los paquetes no están instalados
-  const puppeteerExtra = await import('puppeteer-extra')
-  const StealthPlugin = await import('puppeteer-extra-plugin-stealth')
-
-  const puppeteer = puppeteerExtra.default
-  puppeteer.use(StealthPlugin.default())
-
+async function launchBrowser() {
+  const puppeteer = await import('puppeteer-core')
   const chromePath = findChromePath()
-  console.log(`[BCRA] Launching Chrome (stealth): ${chromePath}`)
+  console.log(`[BCRA] Launching Chrome: ${chromePath}`)
 
-  const browser = await puppeteer.launch({
+  const browser = await puppeteer.default.launch({
     executablePath: chromePath,
     headless: 'new',
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
+      '--disable-blink-features=AutomationControlled',
       '--disable-dev-shm-usage',
       '--disable-gpu',
-      '--no-first-run',
-      '--disable-blink-features=AutomationControlled',
+      '--window-size=1366,768',
       '--disable-features=IsolateOrigins,site-per-process',
-      '--disable-web-security',
     ],
     timeout: 30000,
   })
 
+  return browser
+}
+
+/**
+ * Configura una página con anti-detección manual (sin stealth plugin).
+ */
+async function setupStealthPage(browser: any) {
+  const page = await browser.newPage()
+
+  // Eliminar señales de automatización
+  await page.evaluateOnNewDocument(() => {
+    // Ocultar webdriver
+    Object.defineProperty(navigator, 'webdriver', { get: () => false })
+    // Simular chrome runtime
+    // @ts-ignore
+    window.chrome = { runtime: {} }
+    // Ocultar plugins vacíos
+    Object.defineProperty(navigator, 'plugins', {
+      get: () => [1, 2, 3, 4, 5],
+    })
+    // Ocultar languages
+    Object.defineProperty(navigator, 'languages', {
+      get: () => ['es-AR', 'es', 'en-US', 'en'],
+    })
+  })
+
+  await page.setUserAgent(
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  )
+  await page.setViewport({ width: 1366, height: 768 })
+
+  return page
+}
+
+// ── Estrategia 1: Capturar tokens via Turnstile → llamar API ────────────────
+
+async function getBcraViaApi(cuit: string): Promise<any> {
+  const browser = await launchBrowser()
+
   try {
-    const page = await browser.newPage()
+    const page = await setupStealthPage(browser)
 
-    // Viewport realista
-    await page.setViewport({ width: 1366, height: 768 })
-
-    console.log(`[BCRA] Navigating to situacion-crediticia...`)
+    console.log(`[BCRA] [API] Navigating to situacion-crediticia...`)
     await page.goto('https://www.bcra.gob.ar/situacion-crediticia/', {
       waitUntil: 'networkidle2',
       timeout: 25000,
     })
 
-    // Escribir el CUIT con delay humano
+    // Escribir CUIT con delay humano
     await page.type('#user_cuit', cuit, { delay: 80 })
 
-    // Esperar a que Turnstile se resuelva (el hidden input cf-turnstile-response se llena)
-    console.log(`[BCRA] Waiting for Turnstile to solve...`)
+    // Esperar Turnstile
+    console.log(`[BCRA] [API] Waiting for Turnstile...`)
     await page.waitForFunction(
       () => {
         const input = document.querySelector(
@@ -137,64 +163,204 @@ async function getBcraTokens(cuit: string): Promise<{ ts: string; token: string 
       },
       { timeout: 30000 }
     )
-    console.log(`[BCRA] Turnstile solved!`)
+    console.log(`[BCRA] [API] Turnstile solved!`)
 
-    // Submit el formulario y esperar el redirect a /deudores/
+    // Submit y capturar redirect
     await Promise.all([
       page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }),
       page.click('#consulta-cuit'),
     ])
 
-    // Extraer ts y token de la URL de redirect
     const finalUrl = new URL(page.url())
     const ts = finalUrl.searchParams.get('ts')
     const token = finalUrl.searchParams.get('token')
 
     if (!ts || !token) {
-      const currentUrl = page.url()
-      console.error(`[BCRA] No tokens in redirect URL: ${currentUrl}`)
-      throw new Error(`BCRA no devolvió tokens. URL: ${currentUrl}`)
+      throw new Error(`No tokens in URL: ${page.url()}`)
     }
 
-    console.log(`[BCRA] Got tokens: ts=${ts}, token=${token.substring(0, 16)}...`)
-    return { ts, token }
+    console.log(`[BCRA] [API] Got tokens, calling api-deudores.php...`)
+
+    // Llamar a la API con curl
+    const apiUrl = `https://www.bcra.gob.ar/api-deudores.php?cuit=${cuit}&ts=${ts}&token=${encodeURIComponent(token)}&lang=es`
+    const result = execSync(
+      `curl -sk "${apiUrl}" -H "Accept: application/json" --max-time 15`,
+      { encoding: 'utf-8', timeout: 20000 }
+    )
+
+    const parsed = JSON.parse(result.trim())
+    if (!parsed.success) throw new Error(parsed.error || 'API error')
+
+    return parsed
   } finally {
     await browser.close()
   }
 }
 
-/**
- * Llama a la API de deudores del BCRA con los tokens obtenidos.
- * Usa curl para evitar problemas de TLS con Node.js.
- */
-function fetchBcraApi(cuit: string, ts: string, token: string): any {
-  const url = `https://www.bcra.gob.ar/api-deudores.php?cuit=${cuit}&ts=${ts}&token=${encodeURIComponent(token)}&lang=es`
-  console.log(`[BCRA] Fetching API: ${url.substring(0, 80)}...`)
+// ── Estrategia 2 (fallback): Scrapear DOM directamente ─────────────────────
+
+async function getBcraViaScraping(cuit: string): Promise<any> {
+  const browser = await launchBrowser()
 
   try {
-    const result = execSync(
-      `curl -sk "${url}" -H "Accept: application/json" --max-time 15`,
-      { encoding: 'utf-8', timeout: 20000 }
+    const page = await setupStealthPage(browser)
+
+    console.log(`[BCRA] [SCRAPE] Navigating to situacion-crediticia...`)
+    await page.goto('https://www.bcra.gob.ar/situacion-crediticia/', {
+      waitUntil: 'networkidle2',
+      timeout: 25000,
+    })
+
+    // Escribir CUIT
+    await page.type('#user_cuit', cuit, { delay: 80 })
+
+    // Esperar Turnstile
+    console.log(`[BCRA] [SCRAPE] Waiting for Turnstile...`)
+    await page.waitForFunction(
+      () => {
+        const input = document.querySelector(
+          'input[name="cf-turnstile-response"]'
+        ) as HTMLInputElement | null
+        return input && input.value && input.value.length > 10
+      },
+      { timeout: 30000 }
     )
 
-    if (!result || !result.trim()) {
-      throw new Error('Respuesta vacía de la API del BCRA')
+    // Submit
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }),
+      page.click('#consulta-cuit'),
+    ])
+
+    console.log(`[BCRA] [SCRAPE] Page loaded: ${page.url()}`)
+
+    // Esperar a que la app Vue renderice los resultados (o un error)
+    await page.waitForFunction(
+      () => {
+        const container = document.getElementById('deudores-resultados')
+        if (!container) return false
+        // Esperar que desaparezca el loading spinner
+        const loading = container.querySelector('.deudores-loading')
+        if (loading) return false
+        // Tiene contenido renderizado
+        return container.innerHTML.length > 100
+      },
+      { timeout: 20000 }
+    )
+
+    // Interceptar los datos de la variable global apiData (la app Vue los guarda)
+    // O extraer directamente del DOM si apiData no está accesible
+    const scrapedData = await page.evaluate(() => {
+      const container = document.getElementById('deudores-resultados')
+      if (!container) return null
+
+      // Verificar si hay error
+      const errorEl = container.querySelector('.deudores-error')
+      if (errorEl) {
+        return { error: errorEl.textContent?.trim() || 'Error desconocido' }
+      }
+
+      // Extraer titular del header
+      const titular =
+        container.querySelector('.info-actualizacion-fecha-n b')?.textContent?.trim() || ''
+
+      // Extraer deudas de la tabla principal
+      const deudas: any[] = []
+      const tablaDeudas = container.querySelector('#tabla-rowcolspan-int tbody')
+      if (tablaDeudas) {
+        const rows = tablaDeudas.querySelectorAll('tr')
+        rows.forEach((row) => {
+          const cells = row.querySelectorAll('td')
+          if (cells.length >= 5) {
+            deudas.push({
+              denominacion: cells[0]?.textContent?.trim() || '',
+              entidad: cells[1]?.textContent?.trim() || '',
+              periodo: cells[2]?.textContent?.trim() || '',
+              situacion: parseInt(cells[3]?.textContent?.trim() || '1') || 1,
+              monto: parseFloat(
+                (cells[4]?.textContent?.trim() || '0')
+                  .replace(/\./g, '')
+                  .replace(',', '.')
+              ) || 0,
+              dias_atraso:
+                cells[5]?.textContent?.trim() === '-' || cells[5]?.textContent?.trim() === 'N/A'
+                  ? null
+                  : parseInt(cells[5]?.textContent?.trim() || '0') || null,
+              observaciones_text: cells[6]?.textContent?.trim() || '-',
+            })
+          }
+        })
+      }
+
+      // Verificar si dice "sin deudas"
+      const sinDeudas = container.querySelector('.alert-success')
+      const tieneDeudas = deudas.length > 0
+
+      // Extraer cheques rechazados
+      let tieneChequesRechazados = false
+      const chequesSection = container.innerHTML
+      if (
+        chequesSection.includes('Sin cheques rechazados') ||
+        chequesSection.includes('no registra cheques')
+      ) {
+        tieneChequesRechazados = false
+      }
+
+      return {
+        titular,
+        tieneDeudas,
+        deudas,
+        sinDeudas: !!sinDeudas && !tieneDeudas,
+        tieneChequesRechazados,
+      }
+    })
+
+    if (!scrapedData) throw new Error('No se pudo extraer datos del DOM')
+    if ('error' in scrapedData) throw new Error(scrapedData.error as string)
+
+    // Convertir datos scrapeados al formato de la API
+    return {
+      success: true,
+      cuit: parseInt(cuit),
+      titular: scrapedData.titular,
+      sistema_disponible: true,
+      deudas: {
+        tiene_datos: scrapedData.tieneDeudas,
+        registros: scrapedData.deudas.map((d: any) => ({
+          denominacion: d.denominacion,
+          entidad: d.entidad,
+          codigo_entidad: 0,
+          periodo: d.periodo,
+          situacion: d.situacion,
+          monto: d.monto,
+          dias_atraso: d.dias_atraso,
+          observaciones: d.observaciones_text === '-' ? [] : [d.observaciones_text],
+        })),
+        referencias: {
+          proceso_judicial: false,
+          revision: false,
+          refinanciaciones: false,
+          recategorizacion: false,
+          situacion_juridica: false,
+          irrecuperable: false,
+        },
+      },
+      cheques: {
+        tiene_datos_personales: false,
+        tiene_datos_juridicos: false,
+      },
+      historia24: {
+        tiene_datos: false,
+        entidades: [],
+      },
+      _source: 'scraping',
     }
-
-    const parsed = JSON.parse(result.trim())
-
-    if (!parsed.success) {
-      throw new Error(parsed.error || 'Error en la API del BCRA')
-    }
-
-    return parsed
-  } catch (error) {
-    console.error(`[BCRA] API fetch error:`, error instanceof Error ? error.message : error)
-    throw error
+  } finally {
+    await browser.close()
   }
 }
 
-// ── Mapeo de datos: nueva API → formato del frontend ────────────────────────
+// ── Mapeo de datos: API nueva → formato del frontend ────────────────────────
 
 function mapBcraResponse(apiData: any, cuit: string) {
   const denominacion = apiData.titular?.trim() || ''
@@ -220,17 +386,19 @@ function mapBcraResponse(apiData: any, cuit: string) {
       ? Math.max(...entidadesMapped.map((e: any) => Number(e.situacion) || 1))
       : 0
 
-  // Los montos de la API ya vienen en pesos (no en miles)
   const montoTotalDeuda = entidadesMapped.reduce(
     (sum: number, e: any) => sum + (Number(e.monto) || 0),
     0
   )
 
-  // Extraer período del primer registro (formato "MM/YY" → "YYYYMM")
+  // Período: "MM/YY" → "YYYYMM"
   let periodoInformacion = ''
   if (registros.length > 0 && registros[0].periodo) {
-    const [mm, yy] = registros[0].periodo.split('/')
-    periodoInformacion = `20${yy}${mm}`
+    const parts = registros[0].periodo.split('/')
+    if (parts.length === 2) {
+      const [mm, yy] = parts
+      periodoInformacion = `20${yy}${mm}`
+    }
   }
 
   const deudasTransformed = apiData.deudas?.tiene_datos
@@ -250,17 +418,14 @@ function mapBcraResponse(apiData: any, cuit: string) {
 
   const chequesData = apiData.cheques
   if (chequesData) {
-    // Procesar cheques personales y jurídicos
     for (const tipo of ['personales', 'juridicos'] as const) {
-      const tipoData = chequesData[tipo]
+      const tipoData = (chequesData as any)[tipo]
       if (!tipoData?.registros?.length) continue
 
-      const chequesRegistros = tipoData.registros
-      cantidadChequesRechazados += chequesRegistros.length
+      cantidadChequesRechazados += tipoData.registros.length
 
-      // Agrupar por causal
       const byCausal: Record<string, any[]> = {}
-      for (const ch of chequesRegistros) {
+      for (const ch of tipoData.registros) {
         const causal = ch.causal || 'Sin fondos'
         if (!byCausal[causal]) byCausal[causal] = []
         byCausal[causal].push({
@@ -286,14 +451,14 @@ function mapBcraResponse(apiData: any, cuit: string) {
 
   const chequesTransformed = {
     status: 200,
-    results: {
-      denominacion,
-      causales: causalesTransformed,
-    },
+    results: { denominacion, causales: causalesTransformed },
   }
 
-  // ── Históricos (historia24) → formato periodos[] del frontend ──
-  let historicasTransformed: any = { status: 200, results: { denominacion, periodos: [] } }
+  // ── Históricos ──
+  let historicasTransformed: any = {
+    status: 200,
+    results: { denominacion, periodos: [] },
+  }
   if (apiData.historia24?.tiene_datos && apiData.historia24.entidades?.length > 0) {
     const periodosMap: Record<string, any[]> = {}
     for (const ent of apiData.historia24.entidades) {
@@ -304,7 +469,6 @@ function mapBcraResponse(apiData: any, cuit: string) {
           entidad: ent.nombre?.trim() ?? '',
           situacion: per.situacion,
           monto: per.monto,
-          procesoJudicial: per.proceso_judicial,
         })
       }
     }
@@ -363,10 +527,9 @@ export async function GET(
     return NextResponse.json({ error: 'CUIT inválido' }, { status: 400 })
   }
 
-  // ?refresh=true fuerza reconsulta (ignora caché)
   const forceRefresh = request.nextUrl.searchParams.get('refresh') === 'true'
 
-  // Check 1h cache (unless forced refresh)
+  // Cache 1h
   if (!forceRefresh) {
     const cache = await prisma.bcraCache.findUnique({ where: { cuit } })
     if (cache) {
@@ -377,81 +540,97 @@ export async function GET(
           console.log(`[BCRA] Cache hit for ${cuit} (age: ${Math.round(age / 60000)}min)`)
           return NextResponse.json(cached)
         }
-        console.warn(`[BCRA] Cache for ${cuit} is invalid, refetching...`)
+        console.warn(`[BCRA] Cache invalid for ${cuit}, refetching...`)
       }
     }
   } else {
     console.log(`[BCRA] Force refresh for ${cuit}`)
   }
 
+  let apiData: any = null
+
+  // Estrategia 1: Turnstile → tokens → API JSON
   try {
-    // Paso 1: Obtener tokens via headless Chrome + Turnstile
-    console.log(`[BCRA] Starting token acquisition for ${cuit}...`)
-    const { ts, token } = await getBcraTokens(cuit)
-
-    // Paso 2: Llamar a la API con los tokens
-    const apiData = fetchBcraApi(cuit, ts, token)
-    console.log(`[BCRA] API response: success=${apiData.success}, titular=${apiData.titular}`)
-
-    // Paso 3: Verificar disponibilidad del sistema
-    if (!apiData.sistema_disponible) {
-      return NextResponse.json(
-        { error: 'El sistema de la Central de Deudores del BCRA no está disponible en este momento.' },
-        { status: 503 }
-      )
-    }
-
-    // Paso 4: Mapear al formato del frontend
-    const result = mapBcraResponse(apiData, cuit)
-
-    console.log(
-      `[BCRA] Result: semaforo=${result.resumen.semaforo}, deuda=$${result.resumen.montoTotalDeuda}, entidades=${result.resumen.cantidadEntidades}`
+    console.log(`[BCRA] Trying API strategy for ${cuit}...`)
+    apiData = await getBcraViaApi(cuit)
+    console.log(`[BCRA] API strategy succeeded`)
+  } catch (apiError) {
+    console.warn(
+      `[BCRA] API strategy failed: ${apiError instanceof Error ? apiError.message : apiError}`
     )
 
-    // Upsert cache
-    await prisma.bcraCache.upsert({
-      where: { cuit },
-      update: { data: result as any, consultedAt: new Date() },
-      create: { cuit, data: result as any },
-    })
-
-    // Save to search history (best-effort)
+    // Estrategia 2 (fallback): Scrapear DOM
     try {
-      const session = await auth()
-      if (session?.user?.id) {
-        await prisma.bcraSearchHistory.create({
-          data: {
-            cuit,
-            customerName: result.denominacion || '',
-            semaforo: result.resumen.semaforo,
-            userId: session.user.id,
-            result: result as any,
-          },
-        })
-      }
-    } catch (e) {
-      console.error('Error saving BCRA search history:', e)
-    }
-
-    return NextResponse.json(result)
-  } catch (error) {
-    console.error('[BCRA] Error:', error instanceof Error ? error.message : error)
-
-    const message =
-      error instanceof Error ? error.message : 'Error al consultar la Central de Deudores del BCRA'
-
-    // Si es un error de Chrome/puppeteer, dar indicación clara
-    if (message.includes('Chromium') || message.includes('Chrome') || message.includes('puppeteer')) {
-      return NextResponse.json(
-        {
-          error:
-            'No se pudo iniciar el navegador para consultar el BCRA. ' +
-            'Verificá que Chromium esté instalado en el servidor (apt install chromium-browser).',
-        },
-        { status: 500 }
+      console.log(`[BCRA] Trying scraping fallback for ${cuit}...`)
+      apiData = await getBcraViaScraping(cuit)
+      console.log(`[BCRA] Scraping fallback succeeded`)
+    } catch (scrapeError) {
+      console.error(
+        `[BCRA] Scraping fallback also failed: ${scrapeError instanceof Error ? scrapeError.message : scrapeError}`
       )
-    }
 
-    return NextResponse.json({ error: message }, { status: 500 })
+      const message =
+        scrapeError instanceof Error
+          ? scrapeError.message
+          : 'Error al consultar la Central de Deudores del BCRA'
+
+      if (
+        message.includes('Chromium') ||
+        message.includes('Chrome') ||
+        message.includes('puppeteer')
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              'No se pudo iniciar el navegador. Verificá que Chromium esté instalado: apt install chromium-browser',
+          },
+          { status: 500 }
+        )
+      }
+
+      return NextResponse.json({ error: message }, { status: 500 })
+    }
   }
+
+  // Verificar disponibilidad
+  if (!apiData.sistema_disponible) {
+    return NextResponse.json(
+      { error: 'El sistema de la Central de Deudores del BCRA no está disponible en este momento.' },
+      { status: 503 }
+    )
+  }
+
+  // Mapear al formato del frontend
+  const result = mapBcraResponse(apiData, cuit)
+
+  console.log(
+    `[BCRA] Result: semaforo=${result.resumen.semaforo}, deuda=$${result.resumen.montoTotalDeuda}, entidades=${result.resumen.cantidadEntidades}, source=${apiData._source || 'api'}`
+  )
+
+  // Upsert cache
+  await prisma.bcraCache.upsert({
+    where: { cuit },
+    update: { data: result as any, consultedAt: new Date() },
+    create: { cuit, data: result as any },
+  })
+
+  // Search history (best-effort)
+  try {
+    const session = await auth()
+    if (session?.user?.id) {
+      await prisma.bcraSearchHistory.create({
+        data: {
+          cuit,
+          customerName: result.denominacion || '',
+          semaforo: result.resumen.semaforo,
+          userId: session.user.id,
+          result: result as any,
+        },
+      })
+    }
+  } catch (e) {
+    console.error('Error saving BCRA search history:', e)
+  }
+
+  return NextResponse.json(result)
 }

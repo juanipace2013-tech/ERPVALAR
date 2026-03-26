@@ -1,376 +1,402 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import {
   Loader2,
   AlertCircle,
   CheckCircle2,
   AlertTriangle,
   XCircle,
-  ExternalLink,
-  Save,
-  Clock,
+  RefreshCw,
+  ShieldCheck,
 } from 'lucide-react'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
-type Semaforo = 'verde' | 'amarillo' | 'rojo'
+interface Entidad {
+  entidad: number
+  entidadNombre?: string
+  situacion: number
+  fechaSituacion?: string
+  diasAtrasoPago?: number
+  monto?: number
+  refinanciaciones?: boolean
+  recategorizacionObligacion?: boolean
+  situacionJuridica?: boolean
+  procesoJudicial?: boolean
+}
+
+interface ChequeEntidad {
+  entidad?: number
+  entidadNombre?: string
+  numeroCheque?: string
+  fechaRechazo?: string
+  monto?: number
+  moneda?: string
+  pagado?: boolean
+  fechaPago?: string | null
+}
+
+interface Causal {
+  causal?: number
+  descripcionCausal?: string
+  entidades?: ChequeEntidad[]
+  cantidadCheques?: number
+}
 
 interface BcraResult {
   cuit: string
   denominacion: string
+  deudas: {
+    status: number
+    results?: {
+      denominacion?: string
+      periodoInformacion?: string
+      entidades?: Entidad[]
+    }
+  } | null
+  historicas: {
+    status: number
+    results?: {
+      denominacion?: string
+      periodos?: Array<{
+        periodo: string
+        entidades: Array<{ entidad: number; situacion: number; monto?: number }>
+      }>
+    }
+  } | null
+  cheques: {
+    status: number
+    results?: {
+      denominacion?: string
+      causales?: Causal[]
+    }
+  } | null
   resumen: {
     situacionPeor: number
     montoTotalDeuda: number
     cantidadEntidades: number
     cantidadChequesRechazados: number
-    semaforo: Semaforo
+    semaforo: 'verde' | 'amarillo' | 'rojo'
   }
-  notas?: string
-  registradoPor?: string
-  registradoEl?: string
-  _source?: string
-  noData?: boolean
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function SemaforoIcon({ semaforo }: { semaforo: Semaforo }) {
+const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+
+function formatPeriodo(p: string): string {
+  const clean = p.replace('-', '')
+  const year = clean.substring(0, 4)
+  const month = clean.substring(4, 6)
+  return `${MESES[parseInt(month) - 1]} ${year.slice(2)}`
+}
+
+function formatMonto(n: number): string {
+  return n.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+}
+
+const SITUACION_LABEL: Record<number, string> = {
+  0: 'Sin deudas',
+  1: 'Normal',
+  2: 'Con seguimiento',
+  3: 'Con problemas',
+  4: 'Alto riesgo',
+  5: 'Irrecuperable',
+}
+
+const SITUACION_BADGE: Record<number, string> = {
+  0: 'bg-green-100 text-green-800',
+  1: 'bg-green-100 text-green-800',
+  2: 'bg-cyan-100 text-cyan-800',
+  3: 'bg-yellow-100 text-yellow-800',
+  4: 'bg-orange-100 text-orange-800',
+  5: 'bg-red-100 text-red-800',
+}
+
+function SemaforoIcon({ semaforo }: { semaforo: 'verde' | 'amarillo' | 'rojo' }) {
   if (semaforo === 'verde') return <CheckCircle2 className="h-7 w-7 text-green-500" />
   if (semaforo === 'amarillo') return <AlertTriangle className="h-7 w-7 text-yellow-500" />
   return <XCircle className="h-7 w-7 text-red-500" />
 }
 
-function semaforoLabel(s: Semaforo): string {
+function semaforoLabel(s: 'verde' | 'amarillo' | 'rojo'): string {
   if (s === 'verde') return 'SITUACIÓN NORMAL'
   if (s === 'amarillo') return 'CON OBSERVACIONES'
   return 'SITUACIÓN IRREGULAR'
 }
 
-function semaforoColor(s: Semaforo): string {
+function semaforoColor(s: 'verde' | 'amarillo' | 'rojo'): string {
   if (s === 'verde') return 'border-green-300 bg-green-50'
   if (s === 'amarillo') return 'border-yellow-300 bg-yellow-50'
   return 'border-red-300 bg-red-50'
-}
-
-function semaforoBtnClass(s: Semaforo, selected: boolean): string {
-  const base = 'flex-1 py-3 px-4 rounded-lg border-2 font-semibold text-sm transition-all'
-  if (!selected) return `${base} border-gray-200 bg-white text-gray-500 hover:border-gray-300`
-  if (s === 'verde') return `${base} border-green-500 bg-green-50 text-green-700 ring-2 ring-green-200`
-  if (s === 'amarillo') return `${base} border-yellow-500 bg-yellow-50 text-yellow-700 ring-2 ring-yellow-200`
-  return `${base} border-red-500 bg-red-50 text-red-700 ring-2 ring-red-200`
 }
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
 interface Props {
   cuit: string
-  customerName?: string
 }
 
-export default function TabAnalisisBCRA({ cuit, customerName }: Props) {
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+export default function TabAnalisisBCRA({ cuit }: Props) {
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState<BcraResult | null>(null)
 
-  // Estado del formulario de registro manual
-  const [showRegister, setShowRegister] = useState(false)
-  const [selectedSemaforo, setSelectedSemaforo] = useState<Semaforo | null>(null)
-  const [notas, setNotas] = useState('')
-  const [saveSuccess, setSaveSuccess] = useState(false)
-
-  const cleanCuit = cuit.replace(/\D/g, '')
-
-  // Cargar último resultado cacheado
-  const fetchCached = useCallback(async () => {
-    if (cleanCuit.length !== 11) return
+  const fetchBCRA = useCallback(async (refresh = false) => {
+    if (!cuit) return
+    const cleanCuit = cuit.replace(/\D/g, '')
+    if (cleanCuit.length !== 11) {
+      setError('CUIT inválido')
+      return
+    }
     setLoading(true)
     setError('')
     try {
-      const res = await fetch(`/api/bcra/${cleanCuit}`)
+      const url = `/api/bcra/${cleanCuit}${refresh ? '?refresh=true' : ''}`
+      const res = await fetch(url)
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || 'Error al consultar historial')
+        throw new Error(data.error || 'Error al consultar BCRA')
       }
-      const data = await res.json()
-      if (!data.noData) {
-        setResult(data)
-      }
+      const data: BcraResult = await res.json()
+      setResult(data)
     } catch (e: any) {
-      setError(e.message || 'Error al cargar datos')
+      setError(e.message || 'Error al consultar BCRA')
     } finally {
       setLoading(false)
     }
-  }, [cleanCuit])
+  }, [cuit])
 
   useEffect(() => {
-    fetchCached()
-  }, [fetchCached])
+    fetchBCRA(false)
+  }, [fetchBCRA])
 
-  // Abrir consulta BCRA en nueva pestaña
-  const openBcra = () => {
-    window.open(
-      `https://www.bcra.gob.ar/situacion-crediticia/`,
-      '_blank',
-      'noopener,noreferrer'
-    )
-  }
+  const entidades: Entidad[] = result?.deudas?.results?.entidades ?? []
 
-  // Guardar resultado manual
-  const saveResult = async () => {
-    if (!selectedSemaforo) return
-    setSaving(true)
-    setSaveSuccess(false)
-    setError('')
-    try {
-      const res = await fetch(`/api/bcra/${cleanCuit}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          semaforo: selectedSemaforo,
-          notas: notas.trim(),
-          denominacion: customerName || '',
-        }),
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || 'Error al guardar')
+  const allCheques = useMemo(() => {
+    const causales = result?.cheques?.results?.causales ?? []
+    const list: Array<ChequeEntidad & { descripcionCausal?: string }> = []
+    for (const c of causales) {
+      for (const ch of c.entidades ?? []) {
+        list.push({ ...ch, descripcionCausal: c.descripcionCausal })
       }
-      const data = await res.json()
-      setResult(data.data)
-      setShowRegister(false)
-      setSelectedSemaforo(null)
-      setNotas('')
-      setSaveSuccess(true)
-      setTimeout(() => setSaveSuccess(false), 3000)
-    } catch (e: any) {
-      setError(e.message || 'Error al guardar resultado')
-    } finally {
-      setSaving(false)
     }
-  }
+    return list
+  }, [result])
 
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-12">
         <Loader2 className="h-8 w-8 animate-spin text-blue-600 mb-3" />
-        <p className="text-gray-500 text-sm">Cargando datos BCRA...</p>
+        <p className="text-gray-500 text-sm">Consultando Central de Deudores BCRA...</p>
       </div>
     )
   }
 
+  if (error) {
+    return (
+      <div className="text-center py-8">
+        <AlertCircle className="h-8 w-8 text-red-400 mx-auto mb-2" />
+        <p className="text-red-600 text-sm">{error}</p>
+        <Button variant="outline" size="sm" className="mt-3" onClick={() => fetchBCRA(true)}>
+          Reintentar
+        </Button>
+      </div>
+    )
+  }
+
+  if (!result) return null
+
   return (
     <div className="space-y-4">
-      {/* Acción principal: consultar BCRA */}
-      <Card>
+      {/* Semáforo */}
+      <Card className={`border-2 ${semaforoColor(result.resumen.semaforo)}`}>
         <CardContent className="pt-5 pb-4">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="font-semibold text-gray-800">Central de Deudores BCRA</p>
-              <p className="text-sm text-gray-500 mt-0.5">
-                CUIT: {cleanCuit.replace(/(\d{2})(\d{8})(\d{1})/, '$1-$2-$3')}
-              </p>
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <SemaforoIcon semaforo={result.resumen.semaforo} />
+              <div>
+                <p
+                  className={`text-base font-bold ${
+                    result.resumen.semaforo === 'verde'
+                      ? 'text-green-700'
+                      : result.resumen.semaforo === 'amarillo'
+                      ? 'text-yellow-700'
+                      : 'text-red-700'
+                  }`}
+                >
+                  {semaforoLabel(result.resumen.semaforo)}
+                </p>
+                <p className="text-sm text-gray-500">
+                  {result.denominacion || '—'}
+                </p>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Button onClick={openBcra} variant="default" size="sm">
-                <ExternalLink className="h-4 w-4 mr-2" />
-                Consultar en BCRA
-              </Button>
-              <Button
-                onClick={() => setShowRegister(!showRegister)}
-                variant="outline"
-                size="sm"
-              >
-                <Save className="h-4 w-4 mr-2" />
-                Registrar resultado
+            <div className="flex items-center gap-4 text-right">
+              <div>
+                <p className="text-xs text-gray-500">Deuda total</p>
+                <p className="text-lg font-bold text-gray-800">
+                  ${formatMonto(result.resumen.montoTotalDeuda)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Entidades</p>
+                <p className="font-semibold">{result.resumen.cantidadEntidades}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Cheques rech.</p>
+                <p className={`font-semibold ${result.resumen.cantidadChequesRechazados > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                  {result.resumen.cantidadChequesRechazados}
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => fetchBCRA(true)} disabled={loading}>
+                <RefreshCw className="h-4 w-4" />
               </Button>
             </div>
           </div>
-
-          <p className="text-xs text-gray-400 mt-3">
-            Se abrirá la web del BCRA en una nueva pestaña. Ingresá el CUIT
-            ({cleanCuit.replace(/(\d{2})(\d{8})(\d{1})/, '$1-$2-$3')})
-            y luego registrá el resultado acá.
-          </p>
+          {result.deudas?.results?.periodoInformacion && (
+            <p className="text-xs text-gray-400 mt-2">
+              Período: {formatPeriodo(result.deudas.results.periodoInformacion)}
+            </p>
+          )}
         </CardContent>
       </Card>
 
-      {/* Formulario de registro manual */}
-      {showRegister && (
-        <Card className="border-blue-200 bg-blue-50/30">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Registrar resultado de consulta</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Selector de semáforo */}
-            <div>
-              <p className="text-sm font-medium text-gray-700 mb-2">Situación crediticia</p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  className={semaforoBtnClass('verde', selectedSemaforo === 'verde')}
-                  onClick={() => setSelectedSemaforo('verde')}
-                >
-                  <CheckCircle2 className="h-5 w-5 mx-auto mb-1 text-green-500" />
-                  Normal
-                </button>
-                <button
-                  type="button"
-                  className={semaforoBtnClass('amarillo', selectedSemaforo === 'amarillo')}
-                  onClick={() => setSelectedSemaforo('amarillo')}
-                >
-                  <AlertTriangle className="h-5 w-5 mx-auto mb-1 text-yellow-500" />
-                  Con observaciones
-                </button>
-                <button
-                  type="button"
-                  className={semaforoBtnClass('rojo', selectedSemaforo === 'rojo')}
-                  onClick={() => setSelectedSemaforo('rojo')}
-                >
-                  <XCircle className="h-5 w-5 mx-auto mb-1 text-red-500" />
-                  Irregular
-                </button>
-              </div>
-            </div>
-
-            {/* Notas */}
-            <div>
-              <label className="text-sm font-medium text-gray-700">
-                Notas (opcional)
-              </label>
-              <textarea
-                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
-                rows={3}
-                placeholder="Ej: Situación 1, deuda $3.8M en 7 entidades, sin cheques rechazados"
-                value={notas}
-                onChange={(e) => setNotas(e.target.value)}
-              />
-            </div>
-
-            {/* Botones */}
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setShowRegister(false)
-                  setSelectedSemaforo(null)
-                  setNotas('')
-                }}
-              >
-                Cancelar
-              </Button>
-              <Button
-                size="sm"
-                onClick={saveResult}
-                disabled={!selectedSemaforo || saving}
-              >
-                {saving ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : (
-                  <Save className="h-4 w-4 mr-2" />
-                )}
-                Guardar
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Mensaje de éxito */}
-      {saveSuccess && (
-        <div className="flex items-center gap-2 text-green-600 text-sm bg-green-50 border border-green-200 rounded-lg px-4 py-2">
-          <CheckCircle2 className="h-4 w-4" />
-          Resultado registrado correctamente
-        </div>
-      )}
-
-      {/* Error */}
-      {error && (
-        <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg px-4 py-2">
-          <AlertCircle className="h-4 w-4" />
-          {error}
-        </div>
-      )}
-
-      {/* Resultado actual (último registrado) */}
-      {result && result.resumen && (
-        <>
-          <Card className={`border-2 ${semaforoColor(result.resumen.semaforo)}`}>
-            <CardContent className="pt-5 pb-4">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <SemaforoIcon semaforo={result.resumen.semaforo} />
-                  <div>
-                    <p
-                      className={`text-base font-bold ${
-                        result.resumen.semaforo === 'verde'
-                          ? 'text-green-700'
-                          : result.resumen.semaforo === 'amarillo'
-                          ? 'text-yellow-700'
-                          : 'text-red-700'
-                      }`}
-                    >
-                      {semaforoLabel(result.resumen.semaforo)}
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      {result.denominacion || customerName || '—'}
-                    </p>
-                  </div>
-                </div>
-                {result._source === 'manual' && (
-                  <Badge className="bg-blue-100 text-blue-700 text-xs">
-                    Registro manual
-                  </Badge>
-                )}
-              </div>
-
-              {/* Notas */}
-              {result.notas && (
-                <div className="mt-3 p-3 bg-white/60 rounded-md border border-gray-200">
-                  <p className="text-sm text-gray-700">{result.notas}</p>
-                </div>
-              )}
-
-              {/* Metadata */}
-              {result.registradoEl && (
-                <div className="flex items-center gap-1 mt-3 text-xs text-gray-400">
-                  <Clock className="h-3 w-3" />
-                  Registrado el{' '}
-                  {new Date(result.registradoEl).toLocaleDateString('es-AR', {
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                  {result.registradoPor && ` por ${result.registradoPor}`}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </>
-      )}
-
-      {/* Sin datos previos */}
-      {!result && !error && (
+      {/* Deudas por entidad */}
+      {entidades.length > 0 ? (
         <Card>
-          <CardContent className="py-8 text-center text-gray-500">
-            <AlertCircle className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-            <p className="text-sm">No hay consultas BCRA registradas para este CUIT.</p>
-            <p className="text-xs text-gray-400 mt-1">
-              Consultá en la web del BCRA y registrá el resultado.
-            </p>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Deudas por Entidad</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Entidad</TableHead>
+                  <TableHead>Situación</TableHead>
+                  <TableHead className="text-right">Monto ($)</TableHead>
+                  <TableHead className="text-right">Días atraso</TableHead>
+                  <TableHead>Observaciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {entidades.map((e, i) => {
+                  const obs = []
+                  if (e.refinanciaciones) obs.push('Refinanciado')
+                  if (e.recategorizacionObligacion) obs.push('Recategorizado')
+                  if (e.situacionJuridica) obs.push('Sit. Jurídica')
+                  if (e.procesoJudicial) obs.push('Proceso Judicial')
+                  return (
+                    <TableRow key={i}>
+                      <TableCell>
+                        <p className="font-medium text-sm">{e.entidadNombre || `Entidad ${e.entidad}`}</p>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={SITUACION_BADGE[e.situacion] || SITUACION_BADGE[1]}>
+                          {e.situacion} - {SITUACION_LABEL[e.situacion] || 'Desconocida'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        {e.monto != null ? formatMonto(e.monto) : '—'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {e.diasAtrasoPago != null ? (
+                          <span className={e.diasAtrasoPago > 0 ? 'text-red-600 font-semibold' : ''}>
+                            {e.diasAtrasoPago}
+                          </span>
+                        ) : '—'}
+                      </TableCell>
+                      <TableCell className="text-sm text-gray-500">
+                        {obs.length > 0 ? obs.join(', ') : '—'}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="py-6 text-center text-gray-500">
+            <CheckCircle2 className="h-8 w-8 text-green-400 mx-auto mb-2" />
+            Sin deudas registradas en la Central de Deudores
           </CardContent>
         </Card>
       )}
+
+      {/* Cheques rechazados */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg">Cheques Rechazados</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {allCheques.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha Rechazo</TableHead>
+                  <TableHead>Entidad</TableHead>
+                  <TableHead>Nro Cheque</TableHead>
+                  <TableHead className="text-right">Monto</TableHead>
+                  <TableHead>Causal</TableHead>
+                  <TableHead>Estado</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {allCheques.map((ch, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="whitespace-nowrap text-sm">
+                      {ch.fechaRechazo
+                        ? new Date(ch.fechaRechazo).toLocaleDateString('es-AR')
+                        : '—'}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {ch.entidadNombre || `Entidad ${ch.entidad}` || '—'}
+                    </TableCell>
+                    <TableCell className="font-mono text-sm">{ch.numeroCheque || '—'}</TableCell>
+                    <TableCell className="text-right font-mono text-sm">
+                      {ch.monto != null ? `${ch.moneda || 'ARS'} ${formatMonto(ch.monto)}` : '—'}
+                    </TableCell>
+                    <TableCell>
+                      <Badge className="bg-red-100 text-red-800 text-xs">
+                        {ch.descripcionCausal || '—'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {ch.pagado ? (
+                        <Badge className="bg-green-100 text-green-800 text-xs">Pagado</Badge>
+                      ) : (
+                        <Badge className="bg-red-100 text-red-800 text-xs">Impago</Badge>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <div className="text-center py-4 text-gray-500">
+              <CheckCircle2 className="h-6 w-6 text-green-400 mx-auto mb-1" />
+              <p className="text-sm">Sin cheques rechazados</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <p className="text-xs text-gray-400 text-right">
-        Datos registrados manualmente desde la Central de Deudores del BCRA.
+        Datos del BCRA - Central de Deudores. Cache de 1 hora.
       </p>
     </div>
   )

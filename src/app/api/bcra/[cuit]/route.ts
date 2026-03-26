@@ -23,15 +23,15 @@ function calcularSemaforo(
   return 'verde'
 }
 
-// ── Nuevo flujo BCRA (web + Turnstile) ──────────────────────────────────────
+// ── Flujo BCRA (web + Cloudflare Turnstile) ─────────────────────────────────
 // La vieja API REST (api.bcra.gob.ar/CentralDeDeudores) está muerta.
 // El nuevo flujo usa el sitio web del BCRA:
-//   1. POST a /validar-recaptcha.php con CUIT + Cloudflare Turnstile token
-//   2. Redirect a /deudores/?cuit=XXX&ts=YYY&token=ZZZ
+//   1. Headless Chrome con stealth resuelve Turnstile en /situacion-crediticia/
+//   2. Submit del form redirige a /deudores/?cuit=XXX&ts=YYY&token=ZZZ
 //   3. GET /api-deudores.php?cuit=XXX&ts=YYY&token=ZZZ → JSON
 //
-// El Turnstile requiere un navegador real (headless Chrome via puppeteer-core).
-// En el VPS se necesita chromium instalado: apt install chromium-browser
+// Usa puppeteer-extra + stealth plugin para evadir detección de bot.
+// En el VPS se necesita chromium: apt install chromium-browser (o snap)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -81,28 +81,32 @@ function findChromePath(): string {
 }
 
 /**
- * Obtiene ts + token del BCRA usando puppeteer-core + headless Chrome.
- * Resuelve el Cloudflare Turnstile automáticamente.
+ * Obtiene ts + token del BCRA usando puppeteer-extra + stealth plugin.
+ * El stealth plugin evita que Cloudflare Turnstile detecte headless Chrome.
  */
 async function getBcraTokens(cuit: string): Promise<{ ts: string; token: string }> {
-  // Dynamic import para que no falle si puppeteer-core no está instalado
-  const puppeteer = await import('puppeteer-core')
+  // Dynamic imports para que no falle si los paquetes no están instalados
+  const puppeteerExtra = await import('puppeteer-extra')
+  const StealthPlugin = await import('puppeteer-extra-plugin-stealth')
+
+  const puppeteer = puppeteerExtra.default
+  puppeteer.use(StealthPlugin.default())
 
   const chromePath = findChromePath()
-  console.log(`[BCRA] Launching Chrome: ${chromePath}`)
+  console.log(`[BCRA] Launching Chrome (stealth): ${chromePath}`)
 
-  const browser = await puppeteer.default.launch({
+  const browser = await puppeteer.launch({
     executablePath: chromePath,
-    headless: true,
+    headless: 'new',
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-gpu',
       '--no-first-run',
-      '--no-zygote',
-      '--single-process',
-      '--disable-extensions',
+      '--disable-blink-features=AutomationControlled',
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--disable-web-security',
     ],
     timeout: 30000,
   })
@@ -110,19 +114,17 @@ async function getBcraTokens(cuit: string): Promise<{ ts: string; token: string 
   try {
     const page = await browser.newPage()
 
-    // User agent real para que Turnstile no bloquee
-    await page.setUserAgent(
-      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    )
+    // Viewport realista
+    await page.setViewport({ width: 1366, height: 768 })
 
     console.log(`[BCRA] Navigating to situacion-crediticia...`)
     await page.goto('https://www.bcra.gob.ar/situacion-crediticia/', {
       waitUntil: 'networkidle2',
-      timeout: 20000,
+      timeout: 25000,
     })
 
-    // Escribir el CUIT
-    await page.type('#user_cuit', cuit, { delay: 50 })
+    // Escribir el CUIT con delay humano
+    await page.type('#user_cuit', cuit, { delay: 80 })
 
     // Esperar a que Turnstile se resuelva (el hidden input cf-turnstile-response se llena)
     console.log(`[BCRA] Waiting for Turnstile to solve...`)
@@ -133,7 +135,7 @@ async function getBcraTokens(cuit: string): Promise<{ ts: string; token: string 
         ) as HTMLInputElement | null
         return input && input.value && input.value.length > 10
       },
-      { timeout: 20000 }
+      { timeout: 30000 }
     )
     console.log(`[BCRA] Turnstile solved!`)
 

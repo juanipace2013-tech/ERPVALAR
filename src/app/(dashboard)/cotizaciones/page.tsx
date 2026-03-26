@@ -44,6 +44,10 @@ import {
   XCircle,
   CheckCircle2,
   Paperclip,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import * as XLSX from 'xlsx'
@@ -115,6 +119,11 @@ export default function CotizacionesPage() {
   const [sortColumn, setSortColumn] = useState<string>('date')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
 
+  // Pagination
+  const PAGE_SIZE = 50
+  const [page, setPage] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
+
   // Duplicate dialog
   const [duplicateQuote, setDuplicateQuote] = useState<{ id: string; customerName: string } | null>(null)
 
@@ -142,8 +151,10 @@ export default function CotizacionesPage() {
       if (dateFrom) params.append('dateFrom', dateFrom)
       if (dateTo) params.append('dateTo', dateTo)
       if (salesPersonId !== 'ALL') params.append('salesPersonId', salesPersonId)
+      params.append('page', String(page - 1))
+      params.append('pageSize', String(PAGE_SIZE))
 
-      const url = `/api/quotes${params.toString() ? `?${params.toString()}` : ''}`
+      const url = `/api/quotes?${params.toString()}`
       const response = await fetch(url)
 
       if (!response.ok) {
@@ -152,13 +163,14 @@ export default function CotizacionesPage() {
 
       const data = await response.json()
       setQuotes(data.quotes || [])
+      setTotalCount(data.totalCount || 0)
     } catch (error) {
       console.error('Error:', error)
       toast.error('Error al cargar cotizaciones')
     } finally {
       setLoading(false)
     }
-  }, [statusFilter, search, dateFrom, dateTo, salesPersonId])
+  }, [statusFilter, search, dateFrom, dateTo, salesPersonId, page])
 
   useEffect(() => {
     fetchQuotes()
@@ -168,12 +180,18 @@ export default function CotizacionesPage() {
     fetchQuotes()
   }
 
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1)
+  }, [statusFilter, search, dateFrom, dateTo, salesPersonId])
+
   const handleClearFilters = () => {
     setSearch('')
     setStatusFilter('ACTIVE')
     setDateFrom('')
     setDateTo('')
     setSalesPersonId('ALL')
+    setPage(1)
   }
 
   const hasActiveFilters =
@@ -526,6 +544,7 @@ export default function CotizacionesPage() {
               )}
             </div>
           ) : (
+            <>
             <div className="rounded-lg border border-blue-100 overflow-hidden overflow-x-auto">
               <Table className="min-w-[1100px]">
                 <TableHeader>
@@ -724,6 +743,39 @@ export default function CotizacionesPage() {
                 </TableBody>
               </Table>
             </div>
+            {(() => {
+              const totalPages = Math.ceil(totalCount / PAGE_SIZE)
+              return totalPages > 1 ? (
+                <div className="flex items-center justify-between px-4 py-3 border-t border-blue-100">
+                  <div className="flex items-center gap-1">
+                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(1)} disabled={page === 1}>
+                      <ChevronsLeft className="h-4 w-4" />
+                    </Button>
+                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(page - 1)} disabled={page === 1}>
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span className="text-sm text-gray-500 px-3">
+                      Página <span className="font-semibold">{page}</span> de{' '}
+                      <span className="font-semibold">{totalPages}</span>
+                    </span>
+                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(page + 1)} disabled={page === totalPages}>
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(totalPages)} disabled={page === totalPages}>
+                      <ChevronsRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <span className="text-xs text-gray-400">
+                    {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalCount)} de {totalCount} cotizaciones
+                  </span>
+                </div>
+              ) : totalCount > 0 ? (
+                <div className="px-4 py-2 border-t border-blue-100">
+                  <span className="text-xs text-gray-400">{totalCount} cotizaciones</span>
+                </div>
+              ) : null
+            })()}
+            </>
           )}
         </CardContent>
       </Card>

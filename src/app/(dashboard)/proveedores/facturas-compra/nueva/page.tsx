@@ -207,10 +207,8 @@ function ProductSearchCell({
   onSelect: (product: Product) => void
   onClear: () => void
 }) {
-  // Código Colppy: quitar primeros 3 dígitos del código proveedor
-  const colppyCode = supplierProductCode && supplierProductCode.length > 3
-    ? supplierProductCode.substring(3)
-    : supplierProductCode || ''
+  // El código del proveedor ya viene limpio del backend OCR (sin prefijo "001" de GENEBRE)
+  const colppyCode = supplierProductCode?.trim() || ''
   const [searchTerm, setSearchTerm] = useState('')
   const [results, setResults] = useState<Product[]>([])
   const [loading, setLoading] = useState(false)

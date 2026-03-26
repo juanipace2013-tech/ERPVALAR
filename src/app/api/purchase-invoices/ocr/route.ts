@@ -15,8 +15,8 @@ Respondé SOLO con JSON válido, sin texto adicional, sin markdown, sin backtick
   },
   "factura": {
     "tipo": "FC A, FC B, FC C, ND A, NC A, etc (detectar de la letra y tipo)",
-    "puntoVenta": "4 dígitos del punto de venta",
-    "numero": "8 dígitos del número de comprobante",
+    "puntoVenta": "5 dígitos del punto de venta (ej: 00031)",
+    "numero": "8 dígitos del número de comprobante (ej: 00295265)",
     "fecha": "YYYY-MM-DD",
     "fechaVencimiento": "YYYY-MM-DD o null",
     "cae": "número CAE completo",
@@ -59,6 +59,7 @@ Respondé SOLO con JSON válido, sin texto adicional, sin markdown, sin backtick
 }
 
 IMPORTANTE:
+- CÓDIGOS DE ARTÍCULO CON ESPACIOS INTERNOS: Algunos proveedores (ej: GENEBRE) usan códigos con formato "XXXXX YY" donde YY son 2 dígitos de diámetro. El espacio entre XXXXX y YY es PARTE del código, NO es el inicio de la descripción. Ejemplo: en la línea "0012108A 12  VALV.MARIPOSA WAFER", el código completo es "0012108A 12" y la descripción es "VALV.MARIPOSA WAFER". Otros ejemplos: "0012034 09", "0013190 05", "0012416 04". NO cortar el código en el espacio antes de los últimos 2 dígitos.
 - Todos los montos deben ser números, no strings
 - Los precios unitarios e importes pueden tener puntos como separador de miles y comas para decimales (formato argentino). Convertí a números (ej: 1.234.567,89 => 1234567.89)
 - Extraé TODOS los items, no resumas ni agrupes
@@ -208,6 +209,16 @@ export async function POST(request: NextRequest) {
     const stopReason = response.stop_reason
     if (stopReason === 'max_tokens') {
       console.warn('⚠️ OCR response was TRUNCATED (max_tokens reached)')
+    }
+
+    // ── Normalizar punto de venta (5 dígitos) y número de comprobante (8 dígitos)
+    if (extractedData.factura) {
+      if (extractedData.factura.puntoVenta) {
+        extractedData.factura.puntoVenta = String(extractedData.factura.puntoVenta).replace(/\D/g, '').padStart(5, '0')
+      }
+      if (extractedData.factura.numero) {
+        extractedData.factura.numero = String(extractedData.factura.numero).replace(/\D/g, '').padStart(8, '0')
+      }
     }
 
     // Limpiar códigos de proveedor: eliminar prefijo "001" de facturas GENEBRE

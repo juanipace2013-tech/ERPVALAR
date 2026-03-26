@@ -144,6 +144,9 @@ export default function QuoteDetailPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [brandDiscounts, setBrandDiscounts] = useState<BrandDiscount[]>([])
 
+  // Editable en DRAFT, SENT y REVISED — bloqueado en estados finales
+  const isEditable = quote ? ['DRAFT', 'SENT', 'REVISED'].includes(quote.status) : false
+
   // Item form state
   const [showItemDialog, setShowItemDialog] = useState(false)
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
@@ -1226,7 +1229,7 @@ export default function QuoteDetailPage() {
                   <p className="font-medium font-mono">
                     USD 1 = ARS {formatNumber(quote.exchangeRate)}
                   </p>
-                  {quote.status === 'DRAFT' && (
+                  {isEditable && (
                     <Button
                       size="sm"
                       variant="ghost"
@@ -1296,7 +1299,7 @@ export default function QuoteDetailPage() {
                   <p className={`font-medium font-mono ${Number(quote.multiplier) > 1 ? 'text-amber-600' : ''}`}>
                     {formatNumber(quote.multiplier)}x
                   </p>
-                  {quote.status === 'DRAFT' && (
+                  {isEditable && (
                     <Button
                       size="sm"
                       variant="ghost"
@@ -1323,13 +1326,13 @@ export default function QuoteDetailPage() {
                       Number(quote.multiplier).toFixed(2) === val.toFixed(2)
                         ? 'bg-blue-100 border-blue-400 text-blue-700 font-semibold'
                         : 'border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600'
-                    } ${quote.status !== 'DRAFT' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                    } ${!isEditable ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                     onClick={() => {
-                      if (quote.status === 'DRAFT') {
+                      if (isEditable) {
                         handleMultiplierChange(val.toFixed(2))
                       }
                     }}
-                    disabled={quote.status !== 'DRAFT' || multiplierLoading}
+                    disabled={!isEditable || multiplierLoading}
                   >
                     {formatNumber(val)}x
                   </button>
@@ -2337,7 +2340,7 @@ export default function QuoteDetailPage() {
                     <span className={`font-mono font-semibold ${Number(quote.bonification) > 0 ? 'text-green-700' : 'text-muted-foreground'}`}>
                       {Number(quote.bonification || 0).toFixed(2)}%
                     </span>
-                    {quote.status === 'DRAFT' && (
+                    {isEditable && (
                       <Button
                         size="sm"
                         variant="ghost"

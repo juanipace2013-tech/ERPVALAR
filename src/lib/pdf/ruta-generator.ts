@@ -185,6 +185,23 @@ export function generateRutaPDF(data: RutaPDFData): Blob {
         stop.finalDestination || '-',
         '', // Firma (empty column for manual signature)
       ])
+
+      // Observations sub-row
+      if (stop.observations) {
+        tableBody.push([
+          {
+            content: `Obs: ${stop.observations}`,
+            colSpan: 10,
+            styles: {
+              fontSize: 6,
+              fontStyle: 'italic' as const,
+              textColor: [80, 80, 80] as [number, number, number],
+              fillColor: [245, 245, 245] as [number, number, number],
+              cellPadding: { top: 0.8, bottom: 0.8, left: 12, right: 2 },
+            },
+          },
+        ])
+      }
     }
   }
 

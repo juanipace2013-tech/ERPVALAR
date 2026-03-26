@@ -3,7 +3,7 @@ import { execSync } from 'child_process'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/auth'
 
-const BCRA_BASE = 'https://api.bcra.gob.ar/CentralDeDeudores/v1.0'
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function normalizeCuit(cuit: string): string {
   return cuit.replace(/[-.\s]/g, '').slice(0, 11)
@@ -23,35 +23,332 @@ function calcularSemaforo(
   return 'verde'
 }
 
+// ── Nuevo flujo BCRA (web + Turnstile) ──────────────────────────────────────
+// La vieja API REST (api.bcra.gob.ar/CentralDeDeudores) está muerta.
+// El nuevo flujo usa el sitio web del BCRA:
+//   1. POST a /validar-recaptcha.php con CUIT + Cloudflare Turnstile token
+//   2. Redirect a /deudores/?cuit=XXX&ts=YYY&token=ZZZ
+//   3. GET /api-deudores.php?cuit=XXX&ts=YYY&token=ZZZ → JSON
+//
+// El Turnstile requiere un navegador real (headless Chrome via puppeteer-core).
+// En el VPS se necesita chromium instalado: apt install chromium-browser
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * Fetch al BCRA usando curl via execSync.
- * El certificado TLS del BCRA falla intermitentemente con Node.js (tanto
- * fetch nativo como https.request dan ECONNRESET), pero curl -sk funciona
- * siempre. Cada consulta tarda <2s y se hace 1 vez por usuario.
+ * Detecta la ruta del ejecutable de Chromium/Chrome en el sistema.
  */
-function fetchBCRA(endpoint: string): any {
-  const url = `${BCRA_BASE}/${endpoint}`
-  console.log(`[BCRA] Fetching via curl: ${url}`)
+function findChromePath(): string {
+  const paths = [
+    // Linux
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/snap/bin/chromium',
+    // macOS
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    // Windows
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+  ]
+
+  for (const p of paths) {
+    try {
+      // Check if file exists (cross-platform)
+      execSync(`${process.platform === 'win32' ? 'where' : 'which'} "${p}" 2>/dev/null || test -f "${p}"`, {
+        timeout: 2000,
+        stdio: 'pipe',
+      })
+      return p
+    } catch {
+      // not found, try next
+    }
+  }
+
+  // Fallback: try 'which' commands
+  for (const cmd of ['chromium-browser', 'chromium', 'google-chrome', 'google-chrome-stable']) {
+    try {
+      const result = execSync(`which ${cmd} 2>/dev/null`, { encoding: 'utf-8', timeout: 2000 }).trim()
+      if (result) return result
+    } catch {
+      // not found
+    }
+  }
+
+  throw new Error(
+    'No se encontró Chromium/Chrome. Instalá con: apt install chromium-browser'
+  )
+}
+
+/**
+ * Obtiene ts + token del BCRA usando puppeteer-core + headless Chrome.
+ * Resuelve el Cloudflare Turnstile automáticamente.
+ */
+async function getBcraTokens(cuit: string): Promise<{ ts: string; token: string }> {
+  // Dynamic import para que no falle si puppeteer-core no está instalado
+  const puppeteer = await import('puppeteer-core')
+
+  const chromePath = findChromePath()
+  console.log(`[BCRA] Launching Chrome: ${chromePath}`)
+
+  const browser = await puppeteer.default.launch({
+    executablePath: chromePath,
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--no-first-run',
+      '--no-zygote',
+      '--single-process',
+      '--disable-extensions',
+    ],
+    timeout: 30000,
+  })
+
+  try {
+    const page = await browser.newPage()
+
+    // User agent real para que Turnstile no bloquee
+    await page.setUserAgent(
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    )
+
+    console.log(`[BCRA] Navigating to situacion-crediticia...`)
+    await page.goto('https://www.bcra.gob.ar/situacion-crediticia/', {
+      waitUntil: 'networkidle2',
+      timeout: 20000,
+    })
+
+    // Escribir el CUIT
+    await page.type('#user_cuit', cuit, { delay: 50 })
+
+    // Esperar a que Turnstile se resuelva (el hidden input cf-turnstile-response se llena)
+    console.log(`[BCRA] Waiting for Turnstile to solve...`)
+    await page.waitForFunction(
+      () => {
+        const input = document.querySelector(
+          'input[name="cf-turnstile-response"]'
+        ) as HTMLInputElement | null
+        return input && input.value && input.value.length > 10
+      },
+      { timeout: 20000 }
+    )
+    console.log(`[BCRA] Turnstile solved!`)
+
+    // Submit el formulario y esperar el redirect a /deudores/
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }),
+      page.click('#consulta-cuit'),
+    ])
+
+    // Extraer ts y token de la URL de redirect
+    const finalUrl = new URL(page.url())
+    const ts = finalUrl.searchParams.get('ts')
+    const token = finalUrl.searchParams.get('token')
+
+    if (!ts || !token) {
+      const currentUrl = page.url()
+      console.error(`[BCRA] No tokens in redirect URL: ${currentUrl}`)
+      throw new Error(`BCRA no devolvió tokens. URL: ${currentUrl}`)
+    }
+
+    console.log(`[BCRA] Got tokens: ts=${ts}, token=${token.substring(0, 16)}...`)
+    return { ts, token }
+  } finally {
+    await browser.close()
+  }
+}
+
+/**
+ * Llama a la API de deudores del BCRA con los tokens obtenidos.
+ * Usa curl para evitar problemas de TLS con Node.js.
+ */
+function fetchBcraApi(cuit: string, ts: string, token: string): any {
+  const url = `https://www.bcra.gob.ar/api-deudores.php?cuit=${cuit}&ts=${ts}&token=${encodeURIComponent(token)}&lang=es`
+  console.log(`[BCRA] Fetching API: ${url.substring(0, 80)}...`)
 
   try {
     const result = execSync(
-      `curl -sk "${url}" -H "Accept: application/json" --max-time 15 --retry 2 --retry-delay 1`,
+      `curl -sk "${url}" -H "Accept: application/json" --max-time 15`,
       { encoding: 'utf-8', timeout: 20000 }
     )
 
     if (!result || !result.trim()) {
-      console.warn(`[BCRA] Empty response for ${endpoint}`)
-      return { status: 404, errorMessages: ['Respuesta vacía del BCRA'] }
+      throw new Error('Respuesta vacía de la API del BCRA')
     }
 
     const parsed = JSON.parse(result.trim())
-    console.log(`[BCRA] Parsed ${endpoint}: status=${parsed?.status}, hasResults=${!!parsed?.results}`)
+
+    if (!parsed.success) {
+      throw new Error(parsed.error || 'Error en la API del BCRA')
+    }
+
     return parsed
   } catch (error) {
-    console.error(`[BCRA] Curl error for ${endpoint}:`, error instanceof Error ? error.message : error)
-    return { status: 500, errorMessages: ['Error al consultar BCRA'] }
+    console.error(`[BCRA] API fetch error:`, error instanceof Error ? error.message : error)
+    throw error
   }
 }
+
+// ── Mapeo de datos: nueva API → formato del frontend ────────────────────────
+
+function mapBcraResponse(apiData: any, cuit: string) {
+  const denominacion = apiData.titular?.trim() || ''
+
+  // ── Deudas ──
+  const registros: any[] = apiData.deudas?.registros ?? []
+  const referencias = apiData.deudas?.referencias ?? {}
+
+  const entidadesMapped = registros.map((r: any) => ({
+    entidad: r.codigo_entidad ?? 0,
+    entidadNombre: r.entidad?.trim() ?? undefined,
+    situacion: r.situacion ?? 1,
+    monto: r.monto ?? 0,
+    diasAtrasoPago: r.dias_atraso,
+    refinanciaciones: referencias.refinanciaciones ?? false,
+    recategorizacionObligacion: referencias.recategorizacion ?? false,
+    situacionJuridica: referencias.situacion_juridica ?? false,
+    procesoJudicial: referencias.proceso_judicial ?? false,
+  }))
+
+  const situacionPeor =
+    entidadesMapped.length > 0
+      ? Math.max(...entidadesMapped.map((e: any) => Number(e.situacion) || 1))
+      : 0
+
+  // Los montos de la API ya vienen en pesos (no en miles)
+  const montoTotalDeuda = entidadesMapped.reduce(
+    (sum: number, e: any) => sum + (Number(e.monto) || 0),
+    0
+  )
+
+  // Extraer período del primer registro (formato "MM/YY" → "YYYYMM")
+  let periodoInformacion = ''
+  if (registros.length > 0 && registros[0].periodo) {
+    const [mm, yy] = registros[0].periodo.split('/')
+    periodoInformacion = `20${yy}${mm}`
+  }
+
+  const deudasTransformed = apiData.deudas?.tiene_datos
+    ? {
+        status: 200,
+        results: {
+          denominacion,
+          periodoInformacion,
+          entidades: entidadesMapped,
+        },
+      }
+    : { status: 200, results: { denominacion, entidades: [] } }
+
+  // ── Cheques rechazados ──
+  let cantidadChequesRechazados = 0
+  const causalesTransformed: any[] = []
+
+  const chequesData = apiData.cheques
+  if (chequesData) {
+    // Procesar cheques personales y jurídicos
+    for (const tipo of ['personales', 'juridicos'] as const) {
+      const tipoData = chequesData[tipo]
+      if (!tipoData?.registros?.length) continue
+
+      const chequesRegistros = tipoData.registros
+      cantidadChequesRechazados += chequesRegistros.length
+
+      // Agrupar por causal
+      const byCausal: Record<string, any[]> = {}
+      for (const ch of chequesRegistros) {
+        const causal = ch.causal || 'Sin fondos'
+        if (!byCausal[causal]) byCausal[causal] = []
+        byCausal[causal].push({
+          entidad: 0,
+          entidadNombre: undefined,
+          numeroCheque: ch.cheque || '',
+          fechaRechazo: ch.fecha_rechazo || null,
+          monto: ch.monto ?? null,
+          moneda: 'ARS',
+          pagado: !!ch.fecha_pago,
+          fechaPago: ch.fecha_pago || null,
+        })
+      }
+
+      for (const [causal, cheques] of Object.entries(byCausal)) {
+        causalesTransformed.push({
+          descripcionCausal: causal,
+          entidades: cheques,
+        })
+      }
+    }
+  }
+
+  const chequesTransformed = {
+    status: 200,
+    results: {
+      denominacion,
+      causales: causalesTransformed,
+    },
+  }
+
+  // ── Históricos (historia24) → formato periodos[] del frontend ──
+  let historicasTransformed: any = { status: 200, results: { denominacion, periodos: [] } }
+  if (apiData.historia24?.tiene_datos && apiData.historia24.entidades?.length > 0) {
+    const periodosMap: Record<string, any[]> = {}
+    for (const ent of apiData.historia24.entidades) {
+      for (const per of ent.periodos ?? []) {
+        const key = `${per.anio}${String(per.mes).padStart(2, '0')}`
+        if (!periodosMap[key]) periodosMap[key] = []
+        periodosMap[key].push({
+          entidad: ent.nombre?.trim() ?? '',
+          situacion: per.situacion,
+          monto: per.monto,
+          procesoJudicial: per.proceso_judicial,
+        })
+      }
+    }
+
+    historicasTransformed = {
+      status: 200,
+      results: {
+        denominacion,
+        periodos: Object.entries(periodosMap)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([periodo, entidades]) => ({
+            periodo,
+            entidades: entidades.map((e) => ({
+              entidad: 0,
+              entidadNombre: e.entidad,
+              situacion: e.situacion,
+              monto: e.monto,
+            })),
+          })),
+      },
+    }
+  }
+
+  // ── Semáforo ──
+  const semaforo =
+    situacionPeor === 0 && cantidadChequesRechazados === 0
+      ? 'verde'
+      : calcularSemaforo(situacionPeor, cantidadChequesRechazados)
+
+  return {
+    cuit: formatCuit(cuit),
+    denominacion,
+    deudas: deudasTransformed,
+    historicas: historicasTransformed,
+    cheques: chequesTransformed,
+    resumen: {
+      situacionPeor,
+      montoTotalDeuda,
+      cantidadEntidades: entidadesMapped.length,
+      cantidadChequesRechazados,
+      semaforo,
+    },
+  }
+}
+
+// ── Route handler ───────────────────────────────────────────────────────────
 
 export async function GET(
   request: NextRequest,
@@ -73,12 +370,11 @@ export async function GET(
     if (cache) {
       const age = Date.now() - new Date(cache.consultedAt).getTime()
       if (age < 1 * 60 * 60 * 1000) {
-        // Validate cached data has actual content (not a stale error)
         const cached = cache.data as any
         if (cached?.resumen && cached?.deudas) {
+          console.log(`[BCRA] Cache hit for ${cuit} (age: ${Math.round(age / 60000)}min)`)
           return NextResponse.json(cached)
         }
-        // Cache exists but is invalid/incomplete → refetch
         console.warn(`[BCRA] Cache for ${cuit} is invalid, refetching...`)
       }
     }
@@ -86,166 +382,74 @@ export async function GET(
     console.log(`[BCRA] Force refresh for ${cuit}`)
   }
 
-  // Fetch 3 endpoints in parallel
-  // Fetch secuencial (curl es sincrónico, cada llamada ~1-2s)
-  const deudas = fetchBCRA(`Deudas/${cuit}`)
-  const historicas = fetchBCRA(`Deudas/Historicas/${cuit}`)
-  const cheques = fetchBCRA(`Deudas/ChequesRechazados/${cuit}`)
-
-  // ── Extraer entidades del período más reciente ───────────────────────────────
-  // La API devuelve results.periodos[].entidades (no results.entidades directamente)
-  const periodos: any[] =
-    deudas?.status === 200 ? (deudas?.results?.periodos ?? []) : []
-
-  console.log(`[BCRA] Deudas status=${deudas?.status}, periodos=${periodos.length}`)
-
-  const periodosOrdenados = [...periodos].sort((a, b) =>
-    a.periodo.localeCompare(b.periodo)
-  )
-  const periodoActual = periodosOrdenados[periodosOrdenados.length - 1]
-  const entidadesRaw: any[] = periodoActual?.entidades ?? []
-
-  console.log(`[BCRA] Periodo actual=${periodoActual?.periodo}, entidades=${entidadesRaw.length}`)
-
-  // El BCRA devuelve "entidad" como string (nombre del banco)
-  const entidadesMapped = entidadesRaw.map((e: any) => ({
-    entidad: typeof e.entidad === 'number' ? e.entidad : 0,
-    entidadNombre: typeof e.entidad === 'string' ? e.entidad : undefined,
-    situacion: e.situacion,
-    monto: e.monto,
-    diasAtrasoPago: e.diasAtrasoPago === 'N/A' ? null : e.diasAtrasoPago,
-    refinanciaciones: e.refinanciaciones,
-    recategorizacionObligacion: e.recategorizacionOblig,
-    situacionJuridica: e.situacionJuridica,
-    procesoJudicial: e.procesoJud,
-  }))
-
-  const situacionPeor =
-    entidadesMapped.length > 0
-      ? Math.max(...entidadesMapped.map((e: any) => Number(e.situacion) || 1))
-      : 0
-
-  // Los montos de la API del BCRA ya vienen en pesos (NO en miles)
-  // Ejemplo: monto=165659 → $165.659
-  const montoTotalDeuda = entidadesMapped.reduce(
-    (sum: number, e: any) => sum + (Number(e.monto) || 0),
-    0
-  )
-
-  console.log(`[BCRA] Situación peor=${situacionPeor}, deuda total=$${montoTotalDeuda}, entidades=${entidadesMapped.length}`)
-
-  // ── Cheques rechazados ────────────────────────────────────────────────────────
-  // Estructura real: causales[].entidades[].detalle[] (no causales[].entidades directamente)
-  // causales[].causal = string (nombre de la causal)
-  // causales[].entidades[].entidad = number (ID banco)
-  // causales[].entidades[].detalle[].nroCheque, fechaRechazo, monto, fechaPago
-  const causalesRaw: any[] =
-    cheques?.status === 200 ? (cheques?.results?.causales ?? []) : []
-
-  // Contar checks reales (sum de detalle.length de cada entidad)
-  let cantidadChequesRechazados = 0
-  for (const causal of causalesRaw) {
-    for (const ent of causal.entidades ?? []) {
-      cantidadChequesRechazados += (ent.detalle ?? []).length
-    }
-  }
-
-  // Transformar a estructura plana que el frontend puede renderizar:
-  // causales[].descripcionCausal + causales[].entidades[] con campos directos
-  const causalesTransformed = causalesRaw.map((c: any) => ({
-    descripcionCausal: c.causal ?? '',
-    entidades: (c.entidades ?? []).flatMap((ent: any) =>
-      (ent.detalle ?? []).map((d: any) => ({
-        entidad: typeof ent.entidad === 'number' ? ent.entidad : 0,
-        entidadNombre:
-          typeof ent.entidad === 'string'
-            ? ent.entidad
-            : ent.denomJuridica ?? undefined,
-        numeroCheque: String(d.nroCheque ?? ''),
-        fechaRechazo: d.fechaRechazo ?? null,
-        monto: d.monto ?? null,
-        moneda: 'ARS',
-        pagado: d.fechaPago != null,
-        fechaPago: d.fechaPago ?? null,
-      }))
-    ),
-  }))
-
-  const semaforo =
-    situacionPeor === 0 && cantidadChequesRechazados === 0
-      ? 'verde'
-      : calcularSemaforo(situacionPeor, cantidadChequesRechazados)
-
-  const denominacion =
-    deudas?.results?.denominacion ||
-    historicas?.results?.denominacion ||
-    cheques?.results?.denominacion ||
-    ''
-
-  // ── Construir respuesta con entidades aplanadas ───────────────────────────────
-  // El frontend espera deudas.results.entidades (no periodos[].entidades)
-  const deudasTransformed =
-    deudas?.status === 200
-      ? {
-          status: deudas.status,
-          results: {
-            denominacion: deudas.results?.denominacion,
-            periodoInformacion: periodoActual?.periodo,
-            entidades: entidadesMapped,
-          },
-        }
-      : deudas
-
-  const chequesTransformed =
-    cheques?.status === 200
-      ? {
-          status: cheques.status,
-          results: {
-            denominacion: cheques.results?.denominacion,
-            causales: causalesTransformed,
-          },
-        }
-      : cheques
-
-  const result = {
-    cuit: formatCuit(cuit),
-    denominacion,
-    deudas: deudasTransformed,
-    historicas,
-    cheques: chequesTransformed,
-    resumen: {
-      situacionPeor,
-      montoTotalDeuda,
-      cantidadEntidades: entidadesMapped.length,
-      cantidadChequesRechazados,
-      semaforo,
-    },
-  }
-
-  // Upsert cache
-  await prisma.bcraCache.upsert({
-    where: { cuit },
-    update: { data: result as any, consultedAt: new Date() },
-    create: { cuit, data: result as any },
-  })
-
-  // Save to search history (best-effort, don't fail the response)
   try {
-    const session = await auth()
-    if (session?.user?.id) {
-      await prisma.bcraSearchHistory.create({
-        data: {
-          cuit,
-          customerName: denominacion || '',
-          semaforo,
-          userId: session.user.id,
-          result: result as any,
-        },
-      })
-    }
-  } catch (e) {
-    console.error('Error saving BCRA search history:', e)
-  }
+    // Paso 1: Obtener tokens via headless Chrome + Turnstile
+    console.log(`[BCRA] Starting token acquisition for ${cuit}...`)
+    const { ts, token } = await getBcraTokens(cuit)
 
-  return NextResponse.json(result)
+    // Paso 2: Llamar a la API con los tokens
+    const apiData = fetchBcraApi(cuit, ts, token)
+    console.log(`[BCRA] API response: success=${apiData.success}, titular=${apiData.titular}`)
+
+    // Paso 3: Verificar disponibilidad del sistema
+    if (!apiData.sistema_disponible) {
+      return NextResponse.json(
+        { error: 'El sistema de la Central de Deudores del BCRA no está disponible en este momento.' },
+        { status: 503 }
+      )
+    }
+
+    // Paso 4: Mapear al formato del frontend
+    const result = mapBcraResponse(apiData, cuit)
+
+    console.log(
+      `[BCRA] Result: semaforo=${result.resumen.semaforo}, deuda=$${result.resumen.montoTotalDeuda}, entidades=${result.resumen.cantidadEntidades}`
+    )
+
+    // Upsert cache
+    await prisma.bcraCache.upsert({
+      where: { cuit },
+      update: { data: result as any, consultedAt: new Date() },
+      create: { cuit, data: result as any },
+    })
+
+    // Save to search history (best-effort)
+    try {
+      const session = await auth()
+      if (session?.user?.id) {
+        await prisma.bcraSearchHistory.create({
+          data: {
+            cuit,
+            customerName: result.denominacion || '',
+            semaforo: result.resumen.semaforo,
+            userId: session.user.id,
+            result: result as any,
+          },
+        })
+      }
+    } catch (e) {
+      console.error('Error saving BCRA search history:', e)
+    }
+
+    return NextResponse.json(result)
+  } catch (error) {
+    console.error('[BCRA] Error:', error instanceof Error ? error.message : error)
+
+    const message =
+      error instanceof Error ? error.message : 'Error al consultar la Central de Deudores del BCRA'
+
+    // Si es un error de Chrome/puppeteer, dar indicación clara
+    if (message.includes('Chromium') || message.includes('Chrome') || message.includes('puppeteer')) {
+      return NextResponse.json(
+        {
+          error:
+            'No se pudo iniciar el navegador para consultar el BCRA. ' +
+            'Verificá que Chromium esté instalado en el servidor (apt install chromium-browser).',
+        },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
 }

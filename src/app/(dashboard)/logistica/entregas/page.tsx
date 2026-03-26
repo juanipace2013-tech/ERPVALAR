@@ -55,7 +55,7 @@ interface EntregaStop {
   zone: string
   transportType: string
   transportName: string | null
-  packages: number
+  packages: string
   status: string
   completedAt: string | null
   observations: string | null
@@ -535,7 +535,7 @@ function DeliveryCard({
           <Badge className={`text-[10px] ${ZONE_BADGE[stop.zone] || 'bg-gray-100 text-gray-800'}`}>
             {stop.zone}
           </Badge>
-          {stop.packages > 0 && (
+          {stop.packages && stop.packages.trim() && (
             <span className="flex items-center gap-0.5 text-xs text-gray-500">
               <Package className="h-3 w-3" /> {stop.packages}
             </span>

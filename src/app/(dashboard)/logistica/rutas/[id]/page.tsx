@@ -62,7 +62,7 @@ interface DeliveryStop {
   transportName: string | null
   transportAddress: string | null
   transportPhone: string | null
-  packages: number
+  packages: string
   schedule: string | null
   contactName: string | null
   contactPhone: string | null
@@ -333,7 +333,7 @@ export default function RutaDetailPage() {
 
   const totalDeliveries = route.stops.filter((s) => s.type === 'DELIVERY').length
   const totalPickups = route.stops.filter((s) => s.type === 'PICKUP').length
-  const totalPackages = route.stops.reduce((sum, s) => sum + s.packages, 0)
+  const totalStopsWithPackages = route.stops.filter((s) => s.packages && s.packages.trim()).length
   const completedStops = route.stops.filter((s) => TERMINAL_STATUSES.includes(s.status)).length
   const allResolved = route.stops.length > 0 && completedStops === route.stops.length
 
@@ -466,8 +466,8 @@ export default function RutaDetailPage() {
         </Card>
         <Card>
           <CardContent className="p-4 text-center">
-            <p className="text-2xl font-bold text-orange-600">{totalPackages}</p>
-            <p className="text-sm text-gray-500">Bultos</p>
+            <p className="text-2xl font-bold text-orange-600">{totalStopsWithPackages}</p>
+            <p className="text-sm text-gray-500">Con bultos</p>
           </CardContent>
         </Card>
         <Card>

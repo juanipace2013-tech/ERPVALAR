@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
               schedule: stop.schedule || null,
               contactName: stop.contactName || null,
               contactPhone: stop.contactPhone || null,
-              packages: stop.packages || 0,
+              packages: stop.packages || '',
               finalDestination: stop.finalDestination || null,
               trackingNumber: stop.trackingNumber || null,
               deliveryDeadline: stop.deliveryDeadline

@@ -100,7 +100,7 @@ interface StopData {
   schedule: string
   contactName: string
   contactPhone: string
-  packages: number
+  packages: string
   finalDestination: string
   trackingNumber: string
   deliveryDeadline: string
@@ -205,7 +205,7 @@ function createEmptyStop(): StopData {
     schedule: '',
     contactName: '',
     contactPhone: '',
-    packages: 0,
+    packages: '',
     finalDestination: '',
     trackingNumber: '',
     deliveryDeadline: '',
@@ -354,7 +354,7 @@ export default function NuevaRutaPage() {
           schedule: stop.schedule || '',
           contactName: stop.contactName || '',
           contactPhone: stop.contactPhone || '',
-          packages: stop.packages || 0,
+          packages: stop.packages || '',
           finalDestination: stop.finalDestination || '',
           trackingNumber: stop.trackingNumber || '',
           deliveryDeadline: stop.deliveryDeadline
@@ -426,7 +426,7 @@ export default function NuevaRutaPage() {
       schedule: selected?.schedule || '',
       contactName: selected?.contactName || '',
       contactPhone: selected?.contactPhone || remito.customer.phone || '',
-      packages: parseInt(remito.bultos || '0') || 0,
+      packages: remito.bultos || '',
       finalDestination: isThirdParty ? [customerAddress, customerCity].filter(Boolean).join(', ') : '',
       trackingNumber: remito.trackingNumber || '',
       deliveryDeadline: '',
@@ -532,7 +532,7 @@ export default function NuevaRutaPage() {
             schedule: stop.schedule || null,
             contactName: stop.contactName || null,
             contactPhone: stop.contactPhone || null,
-            packages: stop.packages || 0,
+            packages: stop.packages || '',
             finalDestination: stop.finalDestination || null,
             trackingNumber: stop.trackingNumber || null,
             deliveryDeadline: stop.deliveryDeadline || null,
@@ -578,7 +578,7 @@ export default function NuevaRutaPage() {
       .filter((s) => s.zone === zone),
   })).filter((g) => g.stops.length > 0)
 
-  const totalPackages = stops.reduce((sum, s) => sum + (s.packages || 0), 0)
+  const totalStopsWithPackages = stops.filter((s) => s.packages && s.packages.trim()).length
 
   return (
     <div className="space-y-6">
@@ -682,8 +682,8 @@ export default function NuevaRutaPage() {
               <MapPin className="h-5 w-5" />
               Paradas de la Ruta
               <Badge variant="outline">{stops.length}</Badge>
-              {totalPackages > 0 && (
-                <Badge variant="outline" className="bg-blue-50">{totalPackages} bultos</Badge>
+              {totalStopsWithPackages > 0 && (
+                <Badge variant="outline" className="bg-blue-50">{totalStopsWithPackages} con bultos</Badge>
               )}
             </h2>
             <Button
@@ -879,10 +879,10 @@ export default function NuevaRutaPage() {
                           <div>
                             <Label className="text-xs">Bultos</Label>
                             <Input
-                              type="number"
-                              min="0"
+                              type="text"
+                              placeholder="Ej: 2 cajas + 1 tubo"
                               value={stop.packages}
-                              onChange={(e) => updateStop(stop.tempId, 'packages', parseInt(e.target.value) || 0)}
+                              onChange={(e) => updateStop(stop.tempId, 'packages', e.target.value)}
                               className="h-8 text-sm"
                             />
                           </div>
@@ -962,7 +962,7 @@ export default function NuevaRutaPage() {
                     <span><strong>{stops.length}</strong> paradas</span>
                     <span><strong>{stops.filter((s) => s.type === 'DELIVERY').length}</strong> entregas</span>
                     <span><strong>{stops.filter((s) => s.type === 'PICKUP').length}</strong> retiros</span>
-                    <span><strong>{totalPackages}</strong> bultos</span>
+                    <span><strong>{totalStopsWithPackages}</strong> con bultos</span>
                   </div>
                   <div className="flex gap-2">
                     {Object.entries(
@@ -1101,11 +1101,11 @@ export default function NuevaRutaPage() {
               <div>
                 <Label>Bultos</Label>
                 <Input
-                  type="number"
-                  min="0"
+                  type="text"
+                  placeholder="Ej: 1 pallet"
                   value={manualStop.packages}
                   onChange={(e) =>
-                    setManualStop((prev) => ({ ...prev, packages: parseInt(e.target.value) || 0 }))
+                    setManualStop((prev) => ({ ...prev, packages: e.target.value }))
                   }
                 />
               </div>

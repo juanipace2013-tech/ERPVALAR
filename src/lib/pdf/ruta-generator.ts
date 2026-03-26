@@ -19,7 +19,7 @@ export interface RutaPDFData {
     transportName?: string | null
     transportAddress?: string | null
     transportPhone?: string | null
-    packages: number
+    packages: string
     schedule?: string | null
     contactName?: string | null
     contactPhone?: string | null
@@ -179,7 +179,7 @@ export function generateRutaPDF(data: RutaPDFData): Blob {
         stop.customerName,
         [stop.address, stop.city].filter(Boolean).join(', ') || '-',
         transport,
-        stop.packages > 0 ? stop.packages.toString() : '-',
+        stop.packages || '-',
         stop.schedule || '-',
         contact || '-',
         stop.finalDestination || '-',
@@ -232,10 +232,10 @@ export function generateRutaPDF(data: RutaPDFData): Blob {
       2: { cellWidth: 40 },                       // Cliente
       3: { cellWidth: 45 },                       // Dirección
       4: { cellWidth: 34 },                       // Transporte
-      5: { cellWidth: 12, halign: 'center' },     // Bultos
-      6: { cellWidth: 18 },                       // Horario
-      7: { cellWidth: 30 },                       // Contacto
-      8: { cellWidth: 30 },                       // Destino Final
+      5: { cellWidth: 20 },                         // Bultos (texto libre)
+      6: { cellWidth: 16 },                       // Horario
+      7: { cellWidth: 28 },                       // Contacto
+      8: { cellWidth: 26 },                       // Destino Final
       9: { cellWidth: 24, halign: 'center' },     // Firma
     },
     margin: { left: ML, right: MR },
@@ -306,12 +306,12 @@ export function generateRutaPDF(data: RutaPDFData): Blob {
   const totalStops = data.stops.length
   const deliveries = data.stops.filter((s) => s.type !== 'PICKUP').length
   const pickups = data.stops.filter((s) => s.type === 'PICKUP').length
-  const totalPackages = data.stops.reduce((sum, s) => sum + s.packages, 0)
+  const stopsWithPackages = data.stops.filter((s) => s.packages && s.packages.trim()).length
 
   doc.setFontSize(7)
   doc.setTextColor(...GRAY)
   doc.text(
-    `Total: ${totalStops} paradas | ${deliveries} entregas | ${pickups} retiros | ${totalPackages} bultos`,
+    `Total: ${totalStops} paradas | ${deliveries} entregas | ${pickups} retiros | ${stopsWithPackages} con bultos`,
     PAGE_W - MR,
     PAGE_H - 8,
     { align: 'right' }

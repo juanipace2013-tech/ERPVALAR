@@ -2384,7 +2384,7 @@ model DeliveryStop {
   contactName       String?
   contactPhone      String?
 
-  packages          Int                 @default(0)
+  packages          String              @default("")
   finalDestination  String?             // Destino interior si aplica
 
   trackingNumber    String?             // Número de guía

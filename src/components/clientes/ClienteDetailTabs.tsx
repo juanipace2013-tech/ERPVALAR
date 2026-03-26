@@ -128,7 +128,7 @@ export default function ClienteDetailTabs({ colppyCustomer, cuit, onCustomerUpda
 
         <TabsContent value="bcra" className="mt-0">
           {activatedTabs.has('bcra') && (
-            <TabAnalisisBCRA cuit={cuit} />
+            <TabAnalisisBCRA cuit={cuit} customerName={colppyCustomer.businessName || colppyCustomer.name} />
           )}
         </TabsContent>
       </div>

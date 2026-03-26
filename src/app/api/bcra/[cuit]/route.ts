@@ -1,11 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { execSync } from 'child_process'
+import { exec } from 'child_process'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/auth'
 
 const BCRA_BASE = 'https://api.bcra.gob.ar/CentralDeDeudores/v1.0'
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24 horas — los datos BCRA se actualizan mensualmente
+const DELAY_BETWEEN_CALLS_MS = 2000
+const GLOBAL_COOLDOWN_MS = 10000 // mínimo 10s entre consultas nuevas al BCRA
+
+// ── Rate limit global ────────────────────────────────────────────────────────
+// Cola simple para serializar consultas al BCRA y evitar rate limiting.
+// Solo una consulta puede ejecutarse a la vez, con 10s de cooldown entre ellas.
+
+let lastBcraCallTime = 0
+let queuePromise: Promise<void> = Promise.resolve()
+
+function enqueue<T>(fn: () => Promise<T>): Promise<T> {
+  const p = queuePromise.then(async () => {
+    const now = Date.now()
+    const elapsed = now - lastBcraCallTime
+    if (elapsed < GLOBAL_COOLDOWN_MS) {
+      const wait = GLOBAL_COOLDOWN_MS - elapsed
+      console.log(`[BCRA] Rate limit: esperando ${wait}ms antes de la próxima consulta`)
+      await sleep(wait)
+    }
+  })
+
+  const result = p.then(fn).finally(() => {
+    lastBcraCallTime = Date.now()
+  })
+
+  // Actualizar la cola (se resuelve cuando fn termina, sin propagar errores a la cadena)
+  queuePromise = result.then(() => {}, () => {})
+
+  return result
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms))
+}
 
 function normalizeCuit(cuit: string): string {
   return cuit.replace(/[-.\s]/g, '').slice(0, 11)
@@ -26,31 +61,44 @@ function calcularSemaforo(
 }
 
 /**
- * Fetch al BCRA usando curl con --tlsv1.2.
- * Node.js fetch/https tienen problemas de TLS con el BCRA, pero curl funciona.
+ * Fetch al BCRA usando curl con --tlsv1.2 (async).
+ * Incluye --retry 1 --retry-delay 5 para un reintento automático con backoff.
  */
-function fetchBCRA(endpoint: string): any {
+function fetchBCRA(endpoint: string): Promise<any> {
   const url = `${BCRA_BASE}/${endpoint}`
   console.log(`[BCRA] Fetching: ${url}`)
 
-  try {
-    const result = execSync(
-      `curl -s --tlsv1.2 --max-time 30 "${url}" -H "Accept: application/json"`,
-      { encoding: 'utf-8', timeout: 35000 }
+  return new Promise((resolve) => {
+    exec(
+      `curl -s --tlsv1.2 --max-time 30 --retry 1 --retry-delay 5 "${url}" -H "Accept: application/json"`,
+      { encoding: 'utf-8', timeout: 70000 }, // 30s + 5s retry delay + 30s retry + margen
+      (error, stdout, stderr) => {
+        if (error) {
+          console.error(`[BCRA] Error for ${endpoint}:`, error.message)
+          resolve({ status: 500, errorMessages: ['Error al consultar BCRA'] })
+          return
+        }
+
+        const result = (stdout ?? '').trim()
+        if (!result) {
+          console.warn(`[BCRA] Empty response for ${endpoint}`)
+          resolve({ status: 404, errorMessages: ['Respuesta vacía del BCRA'] })
+          return
+        }
+
+        try {
+          const parsed = JSON.parse(result)
+          console.log(
+            `[BCRA] ${endpoint}: status=${parsed?.status}, hasResults=${!!parsed?.results}`
+          )
+          resolve(parsed)
+        } catch {
+          console.error(`[BCRA] JSON parse error for ${endpoint}: ${result.slice(0, 200)}`)
+          resolve({ status: 500, errorMessages: ['Respuesta inválida del BCRA'] })
+        }
+      }
     )
-
-    if (!result || !result.trim()) {
-      console.warn(`[BCRA] Empty response for ${endpoint}`)
-      return { status: 404, errorMessages: ['Respuesta vacía del BCRA'] }
-    }
-
-    const parsed = JSON.parse(result.trim())
-    console.log(`[BCRA] ${endpoint}: status=${parsed?.status}, hasResults=${!!parsed?.results}`)
-    return parsed
-  } catch (error) {
-    console.error(`[BCRA] Error for ${endpoint}:`, error instanceof Error ? error.message : error)
-    return { status: 500, errorMessages: ['Error al consultar BCRA'] }
-  }
+  })
 }
 
 // ── Route handler ───────────────────────────────────────────────────────────
@@ -68,15 +116,15 @@ export async function GET(
 
   const forceRefresh = request.nextUrl.searchParams.get('refresh') === 'true'
 
-  // Cache 1h
+  // ── Cache 24h ──
   if (!forceRefresh) {
     const cache = await prisma.bcraCache.findUnique({ where: { cuit } })
     if (cache) {
       const age = Date.now() - new Date(cache.consultedAt).getTime()
-      if (age < 1 * 60 * 60 * 1000) {
+      if (age < CACHE_TTL_MS) {
         const cached = cache.data as any
         if (cached?.resumen && cached?.deudas) {
-          console.log(`[BCRA] Cache hit for ${cuit} (age: ${Math.round(age / 60000)}min)`)
+          console.log(`[BCRA] Cache hit for ${cuit} (age: ${Math.round(age / 3600000)}h)`)
           return NextResponse.json(cached)
         }
         console.warn(`[BCRA] Cache invalid for ${cuit}, refetching...`)
@@ -86,10 +134,50 @@ export async function GET(
     console.log(`[BCRA] Force refresh for ${cuit}`)
   }
 
-  // ── Fetch 3 endpoints (curl es sincrónico, cada llamada ~1-2s) ──
-  const deudas = fetchBCRA(`Deudas/${cuit}`)
-  const historicas = fetchBCRA(`Deudas/Historicas/${cuit}`)
-  const cheques = fetchBCRA(`Deudas/ChequesRechazados/${cuit}`)
+  // ── Fetch 3 endpoints secuenciales con delay (vía cola global) ──
+  let deudas: any
+  let historicas: any
+  let cheques: any
+
+  try {
+    ;({ deudas, historicas, cheques } = await enqueue(async () => {
+      const d = await fetchBCRA(`Deudas/${cuit}`)
+      await sleep(DELAY_BETWEEN_CALLS_MS)
+
+      const h = await fetchBCRA(`Deudas/Historicas/${cuit}`)
+      await sleep(DELAY_BETWEEN_CALLS_MS)
+
+      const c = await fetchBCRA(`Deudas/ChequesRechazados/${cuit}`)
+
+      return { deudas: d, historicas: h, cheques: c }
+    }))
+  } catch (error) {
+    console.error('[BCRA] Queue error:', error)
+    return NextResponse.json(
+      {
+        error:
+          'El BCRA está limitando las consultas. Intentá de nuevo en unos minutos.',
+      },
+      { status: 503 }
+    )
+  }
+
+  // ── Verificar si todas las llamadas fallaron ──
+  const allFailed =
+    deudas?.status >= 400 &&
+    historicas?.status >= 400 &&
+    cheques?.status >= 400
+
+  if (allFailed) {
+    console.error(`[BCRA] Todas las llamadas fallaron para ${cuit}`)
+    return NextResponse.json(
+      {
+        error:
+          'El BCRA está limitando las consultas. Intentá de nuevo en unos minutos.',
+      },
+      { status: 503 }
+    )
+  }
 
   // ── Deudas: extraer entidades del período más reciente ──
   const periodos: any[] =
@@ -101,7 +189,9 @@ export async function GET(
   const periodoActual = periodosOrdenados[periodosOrdenados.length - 1]
   const entidadesRaw: any[] = periodoActual?.entidades ?? []
 
-  console.log(`[BCRA] Periodo actual=${periodoActual?.periodo}, entidades=${entidadesRaw.length}`)
+  console.log(
+    `[BCRA] Periodo actual=${periodoActual?.periodo}, entidades=${entidadesRaw.length}`
+  )
 
   const entidadesMapped = entidadesRaw.map((e: any) => ({
     entidad: typeof e.entidad === 'number' ? e.entidad : 0,
@@ -217,7 +307,7 @@ export async function GET(
     create: { cuit, data: result as any },
   })
 
-  // Historial (best-effort)
+  // Historial (best-effort) — solo guardar si la consulta fue exitosa
   try {
     const session = await auth()
     if (session?.user?.id) {

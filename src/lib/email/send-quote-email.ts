@@ -1,23 +1,24 @@
 /**
- * Función para enviar emails de cotizaciones
+ * Función para enviar emails de cotizaciones con PDF adjunto
+ * Usa Microsoft Graph API (Azure / Microsoft 365)
  */
 
-import { randomBytes } from 'crypto';
-import { resend, emailConfig } from './resend';
-import { generateQuoteEmailHTML, generateQuoteEmailText } from './templates/quote-email';
-import { prisma } from '@/lib/prisma';
+import { randomBytes } from 'crypto'
+import { sendMail, emailConfig } from './microsoft-graph'
+import { generateQuoteEmailHTML, generateQuoteEmailText } from './templates/quote-email'
+import { prisma } from '@/lib/prisma'
 
 interface SendQuoteEmailOptions {
-  quoteId: string;
-  recipientEmail: string;
-  message?: string;
+  quoteId: string
+  recipientEmail: string
+  message?: string
 }
 
 /**
- * Envía una cotización por email al cliente
+ * Envía una cotización por email al cliente, con el PDF adjunto
  */
 export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
-  const { quoteId, recipientEmail, message } = options;
+  const { quoteId, recipientEmail, message } = options
 
   // Buscar cotización con datos completos
   const quote = await prisma.quote.findUnique({
@@ -27,38 +28,46 @@ export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
       salesPerson: true,
       items: {
         include: {
-          product: true
-        }
-      }
-    }
-  });
+          product: true,
+          additionals: {
+            include: {
+              product: {
+                select: { sku: true, name: true },
+              },
+            },
+          },
+        },
+        orderBy: [{ itemNumber: 'asc' }, { isAlternative: 'asc' }],
+      },
+    },
+  })
 
   if (!quote) {
-    throw new Error('Cotización no encontrada');
+    throw new Error('Cotización no encontrada')
   }
 
   // Generar token único para acceso público
-  const publicToken = await generatePublicToken(quoteId);
+  const publicToken = await generatePublicToken(quoteId)
 
   // URLs públicas
-  const viewUrl = `${emailConfig.appUrl}/public/quotes/${publicToken}`;
-  const acceptUrl = `${emailConfig.appUrl}/public/quotes/${publicToken}/accept`;
-  const rejectUrl = `${emailConfig.appUrl}/public/quotes/${publicToken}/reject`;
+  const viewUrl = `${emailConfig.appUrl}/public/quotes/${publicToken}`
+  const acceptUrl = `${emailConfig.appUrl}/public/quotes/${publicToken}/accept`
+  const rejectUrl = `${emailConfig.appUrl}/public/quotes/${publicToken}/reject`
 
   // Formatear datos para el template
-  const currencySymbol = quote.currency === 'USD' ? 'USD' : 'ARS';
+  const currencySymbol = quote.currency === 'USD' ? 'USD' : 'ARS'
   const formattedTotal = `${currencySymbol} ${Number(quote.total).toLocaleString('es-AR', {
     minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  })}`;
+    maximumFractionDigits: 2,
+  })}`
 
   const formattedValidUntil = quote.validUntil
     ? new Date(quote.validUntil).toLocaleDateString('es-AR', {
         day: '2-digit',
         month: 'long',
-        year: 'numeric'
+        year: 'numeric',
       })
-    : 'No especificada';
+    : 'No especificada'
 
   const emailData = {
     quoteNumber: quote.quoteNumber,
@@ -68,67 +77,153 @@ export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
     viewUrl,
     acceptUrl,
     rejectUrl,
-    companyName: 'Valarg',
-    message
-  };
+    companyName: 'Val Arg',
+    message,
+  }
 
   // Generar HTML y texto plano
-  const htmlContent = generateQuoteEmailHTML(emailData);
-  const textContent = generateQuoteEmailText(emailData);
+  const htmlContent = generateQuoteEmailHTML(emailData)
+  const textContent = generateQuoteEmailText(emailData)
 
-  // Enviar email
+  // Generar PDF para adjuntar
+  let pdfAttachment: { filename: string; contentBase64: string; contentType: string } | undefined
   try {
-    const result = await resend.emails.send({
-      from: emailConfig.from,
+    const { generateQuotePDF } = await import('@/lib/pdf/quote-generator')
+
+    const altCounters: Record<number, number> = {}
+    const pdfData = {
+      quoteNumber: quote.quoteNumber,
+      date: quote.date,
+      validUntil: quote.validUntil || new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
+      customer: {
+        name: quote.customer.name,
+        legalName: quote.customer.businessName || undefined,
+        taxId: quote.customer.cuit || undefined,
+        address: quote.customer.address
+          ? `${quote.customer.address}${quote.customer.city ? ', ' + quote.customer.city : ''}${quote.customer.province ? ', ' + quote.customer.province : ''}`
+          : undefined,
+      },
+      salesPerson: {
+        name: quote.salesPerson.name,
+        email: quote.salesPerson.email || 'ventas@val-ar.com.ar',
+        phone: quote.salesPerson.phone || undefined,
+      },
+      items: quote.items.map((item) => {
+        let displayNumber: string
+        if (item.isAlternative) {
+          if (!altCounters[item.itemNumber]) altCounters[item.itemNumber] = 0
+          const letter = String.fromCharCode(65 + altCounters[item.itemNumber])
+          altCounters[item.itemNumber]++
+          displayNumber = `${item.itemNumber}${letter}`
+        } else {
+          displayNumber = item.itemNumber.toString()
+        }
+
+        let description = item.description || item.product?.name || 'Item manual'
+        if (item.isAlternative) description = `Alternativa: ${description}`
+        if (item.additionals.length > 0) {
+          description +=
+            '\n' +
+            item.additionals
+              .map((add) =>
+                add.product ? `+ ${add.product.sku} - ${add.product.name}` : `+ ${add.description || 'Adicional'}`
+              )
+              .join('\n')
+        }
+
+        let code = item.product?.sku || item.manualSku || ''
+        if (item.additionals.length > 0) {
+          code += '\n' + item.additionals.map((add) => (add.product ? `+ ${add.product.sku}` : '+')).join('\n')
+        }
+
+        return {
+          itemNumber: displayNumber,
+          code,
+          description,
+          brand: item.product?.brand || item.manualBrand || '-',
+          quantity: item.quantity,
+          unitPrice: Number(item.unitPrice),
+          totalPrice: Number(item.totalPrice),
+          deliveryTime: item.deliveryTime || 'Inmediato',
+          isAlternative: item.isAlternative,
+        }
+      }),
+      subtotal: Number(quote.subtotal),
+      bonification: Number(quote.bonification || 0),
+      total: Number(quote.total),
+      exchangeRate: Number(quote.exchangeRate),
+      paymentTerms: quote.terms || 'Cuenta corriente a 30 días fecha factura',
+      validityDays: quote.validUntil
+        ? Math.ceil((quote.validUntil.getTime() - quote.date.getTime()) / (1000 * 60 * 60 * 24))
+        : 5,
+      purchaseOrderNumber: quote.purchaseOrderNumber || undefined,
+      purchaseOrderDate: quote.purchaseOrderDate || undefined,
+      tenderNumber: quote.tenderNumber || undefined,
+    }
+
+    const pdfBlob = await generateQuotePDF(pdfData)
+    const buffer = Buffer.from(await pdfBlob.arrayBuffer())
+    const customerLabel = (quote.customer.businessName || quote.customer.name)
+      .replace(/[/\\:*?"<>|]/g, '-')
+      .trim()
+
+    pdfAttachment = {
+      filename: `Cotizacion-${quote.quoteNumber} ${customerLabel}.pdf`,
+      contentBase64: buffer.toString('base64'),
+      contentType: 'application/pdf',
+    }
+
+    console.log(`[Mail] PDF generado: ${pdfAttachment.filename} (${buffer.length} bytes)`)
+  } catch (pdfError) {
+    console.error('[Mail] Error generando PDF para adjuntar:', pdfError)
+    // Continuar sin adjunto — el email tiene link para ver online
+  }
+
+  const subject = `Cotización ${quote.quoteNumber} - Val Arg`
+
+  // Enviar email via Microsoft Graph
+  try {
+    await sendMail({
       to: recipientEmail,
-      subject: `Nueva Cotización ${quote.quoteNumber} - Valarg`,
+      subject,
       html: htmlContent,
       text: textContent,
-      tags: [
-        {
-          name: 'category',
-          value: 'quote'
-        },
-        {
-          name: 'quote_id',
-          value: quoteId
-        }
-      ]
-    });
+      attachments: pdfAttachment ? [pdfAttachment] : undefined,
+      replyTo: quote.salesPerson.email || undefined,
+    })
 
     // Registrar envío en la base de datos
     await prisma.quoteEmailLog.create({
       data: {
         quoteId,
         recipientEmail,
-        subject: `Nueva Cotización ${quote.quoteNumber} - Valarg`,
+        subject,
         status: 'sent',
-        emailId: result.data?.id || null,
-        publicToken
-      }
-    });
+        emailId: null,
+        publicToken,
+      },
+    })
 
     return {
       success: true,
-      emailId: result.data?.id,
       publicToken,
-      viewUrl
-    };
+      viewUrl,
+    }
   } catch (error) {
-    console.error('Error enviando email:', error);
+    console.error('Error enviando email:', error)
 
     // Registrar error
     await prisma.quoteEmailLog.create({
       data: {
         quoteId,
         recipientEmail,
-        subject: `Nueva Cotización ${quote.quoteNumber} - Valarg`,
+        subject,
         status: 'failed',
-        error: error instanceof Error ? error.message : 'Error desconocido'
-      }
-    });
+        error: error instanceof Error ? error.message : 'Error desconocido',
+      },
+    })
 
-    throw new Error(`Error al enviar email: ${error instanceof Error ? error.message : 'Error desconocido'}`);
+    throw new Error(`Error al enviar email: ${error instanceof Error ? error.message : 'Error desconocido'}`)
   }
 }
 
@@ -136,31 +231,22 @@ export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
  * Genera un token único para acceso público a la cotización
  */
 async function generatePublicToken(quoteId: string): Promise<string> {
-  // Generar token único
-  const token = generateRandomToken();
+  const token = randomBytes(32).toString('hex')
 
-  // Guardar en base de datos
   await prisma.quotePublicToken.upsert({
     where: { quoteId },
     update: {
       token,
-      expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000) // 90 días
+      expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), // 90 días
     },
     create: {
       quoteId,
       token,
-      expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000) // 90 días
-    }
-  });
+      expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+    },
+  })
 
-  return token;
-}
-
-/**
- * Genera un token aleatorio criptográficamente seguro
- */
-function generateRandomToken(): string {
-  return randomBytes(32).toString('hex');
+  return token
 }
 
 /**
@@ -176,21 +262,21 @@ export async function verifyPublicToken(token: string) {
           salesPerson: true,
           items: {
             include: {
-              product: true
-            }
-          }
-        }
-      }
-    }
-  });
+              product: true,
+            },
+          },
+        },
+      },
+    },
+  })
 
   if (!tokenData) {
-    throw new Error('Token inválido');
+    throw new Error('Token inválido')
   }
 
   if (tokenData.expiresAt < new Date()) {
-    throw new Error('Token expirado');
+    throw new Error('Token expirado')
   }
 
-  return tokenData.quote;
+  return tokenData.quote
 }

@@ -46,9 +46,11 @@ import {
   RefreshCw,
   Pencil,
   Trash2,
+  Mail,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { generateRemitoPDF, type RemitoPDFData, type CaiPDFData } from '@/lib/pdf/remito-generator'
+import { SendRemitoDialog } from '@/components/remitos/SendRemitoDialog'
 
 interface DeliveryNote {
   id: string
@@ -161,6 +163,8 @@ export default function DeliveryNoteDetailPage() {
   const [pointOfSale, setPointOfSale] = useState('0001')
   const [invoiceDueDate, setInvoiceDueDate] = useState('')
   const [invoiceNotes, setInvoiceNotes] = useState('')
+
+  const [showSendEmailDialog, setShowSendEmailDialog] = useState(false)
 
   useEffect(() => {
     fetchDeliveryNote()
@@ -564,6 +568,11 @@ export default function DeliveryNoteDetailPage() {
             <Button variant="outline" onClick={handleDownloadPDF}>
               <Download className="h-4 w-4 mr-2" />
               Descargar PDF
+            </Button>
+
+            <Button variant="outline" onClick={() => setShowSendEmailDialog(true)}>
+              <Mail className="h-4 w-4 mr-2" />
+              Enviar por Email
             </Button>
 
             <Button variant="outline" onClick={handleDownloadExcel}>
@@ -1021,6 +1030,24 @@ export default function DeliveryNoteDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog enviar remito por email */}
+      {deliveryNote && (
+        <SendRemitoDialog
+          deliveryNote={{
+            id: deliveryNote.id,
+            deliveryNumber: deliveryNote.deliveryNumber,
+            customer: {
+              name: deliveryNote.customer.name,
+              businessName: deliveryNote.customer.businessName,
+              email: deliveryNote.customer.email,
+            },
+            itemCount: deliveryNote.items.length,
+          }}
+          open={showSendEmailDialog}
+          onOpenChange={setShowSendEmailDialog}
+        />
+      )}
     </div>
   )
 }

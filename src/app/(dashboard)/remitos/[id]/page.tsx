@@ -1098,6 +1098,7 @@ export default function DeliveryNoteDetailPage() {
               email: deliveryNote.supplier?.email || deliveryNote.customer?.email || null,
             },
             itemCount: deliveryNote.items.length,
+            signedDocUrl: deliveryNote.signedDocUrl,
           }}
           open={showSendEmailDialog}
           onOpenChange={setShowSendEmailDialog}

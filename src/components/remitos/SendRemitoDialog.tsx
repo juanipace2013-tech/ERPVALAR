@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
-import { Loader2, Send, Mail } from 'lucide-react'
+import { Loader2, Send, Mail, FileCheck, FileText } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface SendRemitoDialogProps {
@@ -26,6 +26,7 @@ interface SendRemitoDialogProps {
       email: string | null
     }
     itemCount: number
+    signedDocUrl?: string | null
   }
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -179,6 +180,33 @@ export function SendRemitoDialog({
             />
           </div>
 
+          {/* Indicador de adjunto */}
+          {deliveryNote.signedDocUrl ? (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-start gap-2">
+              <FileCheck className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-green-800">
+                  Se enviará el remito firmado adjunto
+                </p>
+                <p className="text-xs text-green-600 mt-0.5">
+                  El documento escaneado/firmado tiene prioridad sobre el PDF generado
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex items-start gap-2">
+              <FileText className="h-4 w-4 text-gray-500 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-gray-700">
+                  Se enviará el PDF del remito generado por el sistema
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  No hay remito firmado cargado
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Info */}
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
             <p className="text-xs text-gray-700">
@@ -186,7 +214,7 @@ export function SendRemitoDialog({
             </p>
             <ul className="text-xs text-gray-600 mt-2 space-y-1 ml-4 list-disc">
               <li>Datos del remito y entrega</li>
-              <li>PDF del remito adjunto</li>
+              <li>{deliveryNote.signedDocUrl ? 'Remito firmado adjunto' : 'PDF del remito adjunto'}</li>
               {parsedCount > 1 && (
                 <li>
                   El primer email será el destinatario principal, los demás irán en CC

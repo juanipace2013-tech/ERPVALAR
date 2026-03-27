@@ -1,6 +1,7 @@
 'use client'
 
 import { useSession } from 'next-auth/react'
+import { useRouter } from 'next/navigation'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -11,12 +12,19 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
-import { LogOut, User, Settings } from 'lucide-react'
+import { LogOut, User, Settings, ShieldCheck, Shield } from 'lucide-react'
 import { ROLE_LABELS } from '@/lib/constants'
 import { signOut } from '@/lib/auth-actions'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 export function Navbar() {
   const { data: session } = useSession()
+  const router = useRouter()
 
   const handleLogout = async () => {
     await signOut()
@@ -53,6 +61,32 @@ export function Navbar() {
         <div className="flex items-center gap-4">
           {session?.user && (
             <>
+              {/* Indicador 2FA */}
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => router.push('/configuracion/seguridad')}
+                      className="flex items-center"
+                    >
+                      {session.user.mfaEnabled ? (
+                        <ShieldCheck className="h-5 w-5 text-green-300 hover:text-green-200 transition-colors" />
+                      ) : (
+                        <Shield className="h-5 w-5 text-blue-300/50 hover:text-blue-200 transition-colors" />
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>
+                      {session.user.mfaEnabled
+                        ? '2FA activado - Tu cuenta está protegida'
+                        : '2FA desactivado - Activar autenticación de dos factores'
+                      }
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+
               <div className="hidden sm:block text-right">
                 <p className="text-sm font-medium text-white">
                   {session.user.name}
@@ -85,7 +119,11 @@ export function Navbar() {
                     <User className="mr-2 h-4 w-4" />
                     <span>Perfil</span>
                   </DropdownMenuItem>
-                  <DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => router.push('/configuracion/seguridad')}>
+                    <ShieldCheck className="mr-2 h-4 w-4" />
+                    <span>Seguridad 2FA</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => router.push('/configuracion')}>
                     <Settings className="mr-2 h-4 w-4" />
                     <span>Configuración</span>
                   </DropdownMenuItem>

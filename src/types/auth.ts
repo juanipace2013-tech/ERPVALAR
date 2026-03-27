@@ -8,6 +8,7 @@ declare module 'next-auth' {
       role: UserRole
       status: string
       avatar: string | null
+      mfaEnabled: boolean
     } & DefaultSession['user']
   }
 
@@ -16,6 +17,7 @@ declare module 'next-auth' {
     role: UserRole
     status: string
     avatar: string | null
+    mfaEnabled: boolean
   }
 }
 
@@ -25,5 +27,6 @@ declare module '@auth/core/jwt' {
     role: UserRole
     status: string
     avatar: string | null
+    mfaEnabled: boolean
   }
 }

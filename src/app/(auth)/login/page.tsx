@@ -11,10 +11,14 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from 'sonner'
 import { signIn } from '@/lib/auth-actions'
+import { ShieldCheck, ArrowLeft, Loader2 } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
+  const [mfaRequired, setMfaRequired] = useState(false)
+  const [mfaCode, setMfaCode] = useState('')
+  const [credentials, setCredentials] = useState<{ email: string; password: string } | null>(null)
 
   const {
     register,
@@ -30,7 +34,13 @@ export default function LoginPage() {
     try {
       const result = await signIn(data.email, data.password)
 
-      if (result?.error) {
+      if (result?.mfaRequired) {
+        setMfaRequired(true)
+        setCredentials({ email: data.email, password: data.password })
+        if (result?.error) {
+          toast.error(result.error)
+        }
+      } else if (result?.error) {
         toast.error(result.error)
       } else {
         toast.success('Inicio de sesión exitoso')
@@ -42,6 +52,36 @@ export default function LoginPage() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const handleMfaSubmit = async () => {
+    if (!credentials || mfaCode.length !== 6) return
+
+    setIsLoading(true)
+    try {
+      const result = await signIn(credentials.email, credentials.password, mfaCode)
+
+      if (result?.mfaRequired && result?.error) {
+        toast.error(result.error)
+        setMfaCode('')
+      } else if (result?.error) {
+        toast.error(result.error)
+      } else {
+        toast.success('Inicio de sesión exitoso')
+        router.push('/')
+        router.refresh()
+      }
+    } catch (error) {
+      toast.error('Ocurrió un error al verificar el código')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleBackToLogin = () => {
+    setMfaRequired(false)
+    setMfaCode('')
+    setCredentials(null)
   }
 
   return (
@@ -62,61 +102,137 @@ export default function LoginPage() {
         <Card className="shadow-xl border-blue-100">
           <CardHeader className="space-y-1 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-t-lg">
             <CardTitle className="text-2xl font-bold text-center">
-              Iniciar Sesión
+              {mfaRequired ? 'Verificación 2FA' : 'Iniciar Sesión'}
             </CardTitle>
             <CardDescription className="text-center text-blue-100">
-              Ingresa tus credenciales para acceder al sistema
+              {mfaRequired
+                ? 'Ingresá el código de Google Authenticator'
+                : 'Ingresa tus credenciales para acceder al sistema'
+              }
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-6">
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email" className="text-gray-700">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="usuario@ejemplo.com"
-                  {...register('email')}
+            {!mfaRequired ? (
+              /* Formulario de login normal */
+              <>
+                <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="email" className="text-gray-700">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="usuario@ejemplo.com"
+                      {...register('email')}
+                      disabled={isLoading}
+                      className="border-blue-200 focus:border-blue-500 focus:ring-blue-500"
+                    />
+                    {errors.email && (
+                      <p className="text-sm text-red-500">{errors.email.message}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="password" className="text-gray-700">Contraseña</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      placeholder="••••••••"
+                      {...register('password')}
+                      disabled={isLoading}
+                      className="border-blue-200 focus:border-blue-500 focus:ring-blue-500"
+                    />
+                    {errors.password && (
+                      <p className="text-sm text-red-500">{errors.password.message}</p>
+                    )}
+                  </div>
+
+                  <Button
+                    type="submit"
+                    className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg"
+                    disabled={isLoading}
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Iniciando sesión...
+                      </>
+                    ) : (
+                      'Iniciar sesión'
+                    )}
+                  </Button>
+                </form>
+
+                <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-100">
+                  <p className="text-xs font-semibold text-blue-900 mb-2 text-center">Usuarios de prueba:</p>
+                  <div className="space-y-1 text-xs text-blue-700">
+                    <p><span className="font-medium">Admin:</span> admin@valarg.com / admin123</p>
+                    <p><span className="font-medium">Vendedor:</span> vendedor@valarg.com / vendedor123</p>
+                    <p><span className="font-medium">Gerente:</span> gerente@valarg.com / gerente123</p>
+                  </div>
+                </div>
+              </>
+            ) : (
+              /* Formulario de verificación 2FA */
+              <div className="space-y-6">
+                <div className="flex justify-center">
+                  <div className="p-4 bg-blue-50 rounded-full">
+                    <ShieldCheck className="h-12 w-12 text-blue-600" />
+                  </div>
+                </div>
+
+                <p className="text-center text-sm text-gray-600">
+                  Tu cuenta tiene autenticación de dos factores activada.
+                  Abrí Google Authenticator e ingresá el código de 6 dígitos.
+                </p>
+
+                <div className="space-y-2">
+                  <Label htmlFor="mfa-code" className="text-gray-700">Código de verificación</Label>
+                  <Input
+                    id="mfa-code"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    placeholder="000000"
+                    value={mfaCode}
+                    onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ''))}
+                    disabled={isLoading}
+                    className="font-mono text-center text-3xl tracking-[0.5em] border-blue-200 focus:border-blue-500"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && mfaCode.length === 6) {
+                        handleMfaSubmit()
+                      }
+                    }}
+                  />
+                </div>
+
+                <Button
+                  onClick={handleMfaSubmit}
+                  className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg"
+                  disabled={isLoading || mfaCode.length !== 6}
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Verificando...
+                    </>
+                  ) : (
+                    'Verificar código'
+                  )}
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  onClick={handleBackToLogin}
+                  className="w-full text-gray-500"
                   disabled={isLoading}
-                  className="border-blue-200 focus:border-blue-500 focus:ring-blue-500"
-                />
-                {errors.email && (
-                  <p className="text-sm text-red-500">{errors.email.message}</p>
-                )}
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Volver al login
+                </Button>
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="password" className="text-gray-700">Contraseña</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="••••••••"
-                  {...register('password')}
-                  disabled={isLoading}
-                  className="border-blue-200 focus:border-blue-500 focus:ring-blue-500"
-                />
-                {errors.password && (
-                  <p className="text-sm text-red-500">{errors.password.message}</p>
-                )}
-              </div>
-
-              <Button
-                type="submit"
-                className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg"
-                disabled={isLoading}
-              >
-                {isLoading ? 'Iniciando sesión...' : 'Iniciar sesión'}
-              </Button>
-            </form>
-
-            <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-100">
-              <p className="text-xs font-semibold text-blue-900 mb-2 text-center">Usuarios de prueba:</p>
-              <div className="space-y-1 text-xs text-blue-700">
-                <p><span className="font-medium">Admin:</span> admin@valarg.com / admin123</p>
-                <p><span className="font-medium">Vendedor:</span> vendedor@valarg.com / vendedor123</p>
-                <p><span className="font-medium">Gerente:</span> gerente@valarg.com / gerente123</p>
-              </div>
-            </div>
+            )}
           </CardContent>
         </Card>
 

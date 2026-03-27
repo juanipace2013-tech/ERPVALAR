@@ -3,6 +3,7 @@ import Credentials from 'next-auth/providers/credentials'
 import { PrismaAdapter } from '@auth/prisma-adapter'
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
+import * as OTPAuth from 'otpauth'
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma) as any,
@@ -12,6 +13,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       credentials: {
         email: { label: 'Email', type: 'email' },
         password: { label: 'Password', type: 'password' },
+        mfaCode: { label: 'Código 2FA', type: 'text' },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
@@ -41,6 +43,30 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           throw new Error('Email o contraseña incorrectos')
         }
 
+        // Verificar 2FA si está habilitado
+        if (user.mfaEnabled && user.mfaSecret) {
+          const mfaCode = credentials.mfaCode as string
+
+          if (!mfaCode) {
+            throw new Error('MFA_REQUIRED')
+          }
+
+          const totp = new OTPAuth.TOTP({
+            issuer: 'ERP VAL ARG',
+            label: user.email,
+            algorithm: 'SHA1',
+            digits: 6,
+            period: 30,
+            secret: OTPAuth.Secret.fromBase32(user.mfaSecret),
+          })
+
+          const delta = totp.validate({ token: mfaCode, window: 1 })
+
+          if (delta === null) {
+            throw new Error('MFA_INVALID')
+          }
+        }
+
         return {
           id: user.id,
           email: user.email,
@@ -48,6 +74,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           role: user.role,
           status: user.status,
           avatar: user.avatar,
+          mfaEnabled: user.mfaEnabled,
         }
       },
     }),
@@ -61,13 +88,26 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     error: '/login',
   },
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.id = user.id as string
         token.role = (user as any).role
         token.status = (user as any).status
         token.avatar = (user as any).avatar
+        token.mfaEnabled = (user as any).mfaEnabled
       }
+
+      // Refrescar mfaEnabled cuando se actualiza la sesión
+      if (trigger === 'update') {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: token.id as string },
+          select: { mfaEnabled: true },
+        })
+        if (dbUser) {
+          token.mfaEnabled = dbUser.mfaEnabled
+        }
+      }
+
       return token
     },
     async session({ session, token }) {
@@ -76,6 +116,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.role = token.role as any
         session.user.status = token.status as any
         session.user.avatar = (token.avatar as string | null) || null
+        session.user.mfaEnabled = token.mfaEnabled as boolean
       }
       return session
     },

@@ -1,287 +1,282 @@
 /**
  * Template de email para envío de cotizaciones
+ * Diseño profesional con tablas (compatible Outlook/Gmail/Apple Mail)
  */
 
 interface QuoteEmailData {
-  quoteNumber: string;
-  customerName: string;
-  total: string;
-  validUntil: string;
-  viewUrl: string;
-  acceptUrl: string;
-  rejectUrl: string;
-  companyName: string;
-  message?: string;
+  quoteNumber: string
+  customerName: string
+  total: string
+  validUntil: string
+  viewUrl: string
+  acceptUrl: string
+  rejectUrl: string
+  companyName: string
+  message?: string
+  salesPersonName?: string
+  salesPersonEmail?: string
+  salesPersonPhone?: string
 }
 
 export function generateQuoteEmailHTML(data: QuoteEmailData): string {
+  const messageBlock = data.message
+    ? `
+    <tr>
+      <td style="padding: 0 40px 25px 40px;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #eff6ff; border-left: 4px solid #2563eb; border-radius: 4px;">
+          <tr>
+            <td style="padding: 16px 20px; font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #1f2937;">
+              <strong style="color: #1e40af;">Mensaje del vendedor:</strong><br />
+              <span style="color: #374151; line-height: 1.6;">${data.message}</span>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>`
+    : ''
+
   return `
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" xmlns="http://www.w3.org/1999/xhtml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nueva Cotización - ${data.quoteNumber}</title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      line-height: 1.6;
-      color: #333;
-      margin: 0;
-      padding: 0;
-      background-color: #f5f5f5;
-    }
-    .container {
-      max-width: 600px;
-      margin: 40px auto;
-      background-color: #ffffff;
-      border-radius: 8px;
-      overflow: hidden;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    }
-    .header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      padding: 40px 30px;
-      text-align: center;
-    }
-    .header h1 {
-      margin: 0;
-      font-size: 28px;
-      font-weight: 600;
-    }
-    .header p {
-      margin: 10px 0 0;
-      font-size: 16px;
-      opacity: 0.9;
-    }
-    .content {
-      padding: 40px 30px;
-    }
-    .greeting {
-      font-size: 18px;
-      margin-bottom: 20px;
-      color: #333;
-    }
-    .message {
-      background-color: #f8f9fa;
-      border-left: 4px solid #667eea;
-      padding: 15px 20px;
-      margin: 20px 0;
-      border-radius: 4px;
-    }
-    .quote-details {
-      background-color: #f8f9fa;
-      border-radius: 8px;
-      padding: 25px;
-      margin: 25px 0;
-    }
-    .quote-row {
-      display: flex;
-      justify-content: space-between;
-      padding: 10px 0;
-      border-bottom: 1px solid #e0e0e0;
-    }
-    .quote-row:last-child {
-      border-bottom: none;
-      font-weight: 600;
-      font-size: 18px;
-      color: #667eea;
-      padding-top: 15px;
-      margin-top: 5px;
-      border-top: 2px solid #667eea;
-    }
-    .quote-label {
-      color: #666;
-    }
-    .quote-value {
-      font-weight: 500;
-      color: #333;
-    }
-    .actions {
-      text-align: center;
-      margin: 35px 0;
-    }
-    .btn {
-      display: inline-block;
-      padding: 14px 32px;
-      margin: 8px;
-      border-radius: 6px;
-      text-decoration: none;
-      font-weight: 600;
-      font-size: 15px;
-      transition: all 0.3s ease;
-    }
-    .btn-primary {
-      background-color: #10b981;
-      color: white;
-    }
-    .btn-primary:hover {
-      background-color: #059669;
-    }
-    .btn-secondary {
-      background-color: #ef4444;
-      color: white;
-    }
-    .btn-secondary:hover {
-      background-color: #dc2626;
-    }
-    .btn-outline {
-      background-color: transparent;
-      color: #667eea;
-      border: 2px solid #667eea;
-    }
-    .btn-outline:hover {
-      background-color: #667eea;
-      color: white;
-    }
-    .divider {
-      height: 1px;
-      background-color: #e0e0e0;
-      margin: 30px 0;
-    }
-    .footer {
-      background-color: #f8f9fa;
-      padding: 25px 30px;
-      text-align: center;
-      color: #666;
-      font-size: 14px;
-    }
-    .footer p {
-      margin: 5px 0;
-    }
-    .footer-links {
-      margin-top: 15px;
-    }
-    .footer-links a {
-      color: #667eea;
-      text-decoration: none;
-      margin: 0 10px;
-    }
-    .validity-notice {
-      background-color: #fef3c7;
-      border-left: 4px solid #f59e0b;
-      padding: 12px 15px;
-      margin: 20px 0;
-      border-radius: 4px;
-      font-size: 14px;
-    }
-    @media only screen and (max-width: 600px) {
-      .container {
-        margin: 0;
-        border-radius: 0;
-      }
-      .content {
-        padding: 30px 20px;
-      }
-      .btn {
-        display: block;
-        margin: 10px 0;
-      }
-    }
-  </style>
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>Cotización ${data.quoteNumber} - VAL ARG</title>
+  <!--[if mso]>
+  <noscript>
+    <xml>
+      <o:OfficeDocumentSettings>
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+  </noscript>
+  <![endif]-->
 </head>
-<body>
-  <div class="container">
-    <!-- Header -->
-    <div class="header">
-      <h1>📋 Nueva Cotización</h1>
-      <p>${data.companyName}</p>
-    </div>
+<body style="margin: 0; padding: 0; background-color: #f3f4f6; font-family: Arial, Helvetica, sans-serif; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%;">
 
-    <!-- Content -->
-    <div class="content">
-      <p class="greeting">Estimado/a ${data.customerName},</p>
+  <!-- Outer wrapper -->
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f3f4f6;">
+    <tr>
+      <td align="center" style="padding: 30px 10px;">
 
-      <p>Nos complace enviarle la siguiente cotización para su revisión:</p>
+        <!-- Main container 600px -->
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width: 600px; width: 100%; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
 
-      ${data.message ? `
-      <div class="message">
-        <p style="margin: 0;"><strong>Mensaje del vendedor:</strong></p>
-        <p style="margin: 10px 0 0;">${data.message}</p>
-      </div>
-      ` : ''}
+          <!-- ═══ HEADER ═══ -->
+          <tr>
+            <td align="center" bgcolor="#1a365d" style="background-color: #1a365d; padding: 30px 40px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td align="center" style="padding-bottom: 12px;">
+                    <img src="https://val-ar.com.ar/logo.png" alt="VAL ARG" width="160" style="display: block; max-width: 160px; height: auto; border: 0;" />
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="font-family: Arial, Helvetica, sans-serif; font-size: 22px; font-weight: bold; color: #ffffff; letter-spacing: 0.5px;">
+                    VAL ARG S.R.L.
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #bfdbfe; padding-top: 6px;">
+                    Cotización N° ${data.quoteNumber}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-      <!-- Quote Details -->
-      <div class="quote-details">
-        <div class="quote-row">
-          <span class="quote-label">Número de Cotización:</span>
-          <span class="quote-value">${data.quoteNumber}</span>
-        </div>
-        <div class="quote-row">
-          <span class="quote-label">Válida hasta:</span>
-          <span class="quote-value">${data.validUntil}</span>
-        </div>
-        <div class="quote-row">
-          <span class="quote-label">Total:</span>
-          <span class="quote-value">${data.total}</span>
-        </div>
-      </div>
+          <!-- ═══ GREETING ═══ -->
+          <tr>
+            <td style="padding: 35px 40px 10px 40px; font-family: Arial, Helvetica, sans-serif; font-size: 17px; color: #1f2937; line-height: 1.5;">
+              Estimado/a <strong>${data.customerName}</strong>,
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 0 40px 20px 40px; font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #4b5563; line-height: 1.6;">
+              Nos complace enviarle la siguiente cotización para su revisión. Encontrará el detalle completo en el PDF adjunto.
+            </td>
+          </tr>
 
-      <!-- Validity Notice -->
-      <div class="validity-notice">
-        ⏰ <strong>Importante:</strong> Esta cotización es válida hasta el ${data.validUntil}
-      </div>
+          <!-- ═══ SELLER MESSAGE (optional) ═══ -->
+          ${messageBlock}
 
-      <!-- Actions -->
-      <div class="actions">
-        <p style="margin-bottom: 20px; font-size: 16px;">¿Qué desea hacer con esta cotización?</p>
+          <!-- ═══ QUOTE DETAILS TABLE ═══ -->
+          <tr>
+            <td style="padding: 0 40px 25px 40px;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb;">
+                <!-- Row: Cotización -->
+                <tr>
+                  <td style="padding: 14px 20px; font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #6b7280; border-bottom: 1px solid #e5e7eb; width: 50%;">
+                    N° de Cotización
+                  </td>
+                  <td style="padding: 14px 20px; font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #1f2937; font-weight: 600; border-bottom: 1px solid #e5e7eb; text-align: right;">
+                    ${data.quoteNumber}
+                  </td>
+                </tr>
+                <!-- Row: Válida hasta -->
+                <tr>
+                  <td style="padding: 14px 20px; font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #6b7280; border-bottom: 1px solid #e5e7eb;">
+                    Válida hasta
+                  </td>
+                  <td style="padding: 14px 20px; font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #1f2937; font-weight: 600; border-bottom: 1px solid #e5e7eb; text-align: right;">
+                    ${data.validUntil}
+                  </td>
+                </tr>
+                <!-- Row: Total -->
+                <tr>
+                  <td style="padding: 16px 20px; font-family: Arial, Helvetica, sans-serif; font-size: 16px; color: #1a365d; font-weight: bold;">
+                    Total
+                  </td>
+                  <td style="padding: 16px 20px; font-family: Arial, Helvetica, sans-serif; font-size: 18px; color: #1a365d; font-weight: bold; text-align: right;">
+                    ${data.total}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-        <a href="${data.acceptUrl}" class="btn btn-primary">
-          ✅ Aceptar Cotización
-        </a>
+          <!-- ═══ VALIDITY NOTICE ═══ -->
+          <tr>
+            <td style="padding: 0 40px 30px 40px;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 4px;">
+                <tr>
+                  <td style="padding: 12px 16px; font-family: Arial, Helvetica, sans-serif; font-size: 13px; color: #92400e;">
+                    <strong>Importante:</strong> Esta cotización es válida hasta el ${data.validUntil}.
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-        <a href="${data.rejectUrl}" class="btn btn-secondary">
-          ❌ Rechazar Cotización
-        </a>
+          <!-- ═══ ACTION BUTTONS ═══ -->
+          <tr>
+            <td style="padding: 0 40px 10px 40px;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td align="center" style="font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #4b5563; padding-bottom: 20px;">
+                    ¿Qué desea hacer con esta cotización?
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-        <div style="margin-top: 20px;">
-          <a href="${data.viewUrl}" class="btn btn-outline">
-            👁️ Ver Cotización Completa
-          </a>
-        </div>
-      </div>
+          <!-- Button: Ver Cotización -->
+          <tr>
+            <td align="center" style="padding: 0 40px 12px 40px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td align="center" bgcolor="#2563eb" style="background-color: #2563eb; border-radius: 6px;">
+                    <a href="${data.viewUrl}" target="_blank" style="display: inline-block; padding: 14px 48px; font-family: Arial, Helvetica, sans-serif; font-size: 15px; font-weight: 600; color: #ffffff; text-decoration: none; border-radius: 6px;">
+                      Ver Cotización Completa
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-      <div class="divider"></div>
+          <!-- Buttons: Aceptar / Rechazar side by side -->
+          <tr>
+            <td align="center" style="padding: 0 40px 30px 40px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <!-- Aceptar -->
+                  <td align="center" bgcolor="#16a34a" style="background-color: #16a34a; border-radius: 6px;">
+                    <a href="${data.acceptUrl}" target="_blank" style="display: inline-block; padding: 12px 32px; font-family: Arial, Helvetica, sans-serif; font-size: 14px; font-weight: 600; color: #ffffff; text-decoration: none; border-radius: 6px;">
+                      Aceptar
+                    </a>
+                  </td>
+                  <td width="16" style="width: 16px;">&nbsp;</td>
+                  <!-- Rechazar -->
+                  <td align="center" bgcolor="#dc2626" style="background-color: #dc2626; border-radius: 6px;">
+                    <a href="${data.rejectUrl}" target="_blank" style="display: inline-block; padding: 12px 32px; font-family: Arial, Helvetica, sans-serif; font-size: 14px; font-weight: 600; color: #ffffff; text-decoration: none; border-radius: 6px;">
+                      Rechazar
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-      <p style="font-size: 14px; color: #666;">
-        Si tiene alguna pregunta o necesita aclaraciones, no dude en contactarnos respondiendo a este email.
-      </p>
-    </div>
+          <!-- ═══ DIVIDER ═══ -->
+          <tr>
+            <td style="padding: 0 40px;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="border-top: 1px solid #e5e7eb; font-size: 0; line-height: 0; height: 1px;">&nbsp;</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-    <!-- Footer -->
-    <div class="footer">
-      <p><strong>${data.companyName}</strong></p>
-      <p>Sistema de Gestión Comercial</p>
-      <div class="footer-links">
-        <a href="${data.viewUrl}">Ver Cotización</a>
-        <span style="color: #ccc;">•</span>
-        <a href="mailto:ventas@valarg.com">Contacto</a>
-      </div>
-      <p style="margin-top: 15px; font-size: 12px; color: #999;">
-        Este es un email automático, por favor no responder.
-      </p>
-    </div>
-  </div>
+          <!-- ═══ CONTACT NOTE ═══ -->
+          <tr>
+            <td style="padding: 20px 40px 25px 40px; font-family: Arial, Helvetica, sans-serif; font-size: 13px; color: #6b7280; line-height: 1.5;">
+              Si tiene alguna pregunta o necesita aclaraciones, no dude en contactarnos respondiendo a este email o comunicándose a los datos indicados abajo.
+            </td>
+          </tr>
+
+          <!-- ═══ FOOTER ═══ -->
+          <tr>
+            <td bgcolor="#1a365d" style="background-color: #1a365d; padding: 28px 40px;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td align="center" style="font-family: Arial, Helvetica, sans-serif; font-size: 15px; font-weight: bold; color: #ffffff; padding-bottom: 8px;">
+                    VAL ARG S.R.L.
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="font-family: Arial, Helvetica, sans-serif; font-size: 13px; color: #bfdbfe; line-height: 1.8;">
+                    14 de Julio 175, C.P: 1427 – C.A.B.A.<br />
+                    Tel: +54 11 4551-3343 / 4552-2874<br />
+                    <a href="mailto:ventas@val-ar.com.ar" style="color: #93c5fd; text-decoration: none;">ventas@val-ar.com.ar</a>
+                    &nbsp;|&nbsp;
+                    <a href="https://www.val-ar.com.ar" style="color: #93c5fd; text-decoration: none;">www.val-ar.com.ar</a>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #64748b; padding-top: 16px;">
+                    Este es un email generado automáticamente por el sistema de gestión de VAL ARG.
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+        </table>
+        <!-- /Main container -->
+
+      </td>
+    </tr>
+  </table>
+
 </body>
 </html>
-  `.trim();
+  `.trim()
 }
 
 export function generateQuoteEmailText(data: QuoteEmailData): string {
   return `
-Nueva Cotización - ${data.quoteNumber}
+COTIZACIÓN ${data.quoteNumber} - VAL ARG S.R.L.
+${'='.repeat(50)}
 
 Estimado/a ${data.customerName},
 
-Nos complace enviarle la siguiente cotización para su revisión:
+Nos complace enviarle la siguiente cotización para su revisión.
+Encontrará el detalle completo en el PDF adjunto.
 
-${data.message ? `Mensaje del vendedor:\n${data.message}\n\n` : ''}
-
+${data.message ? `Mensaje del vendedor:\n${data.message}\n` : ''}
 Detalles de la Cotización:
-- Número: ${data.quoteNumber}
+- N° de Cotización: ${data.quoteNumber}
 - Válida hasta: ${data.validUntil}
 - Total: ${data.total}
+
+IMPORTANTE: Esta cotización es válida hasta el ${data.validUntil}.
+
+Para ver la cotización completa:
+${data.viewUrl}
 
 Para aceptar esta cotización:
 ${data.acceptUrl}
@@ -289,15 +284,12 @@ ${data.acceptUrl}
 Para rechazar esta cotización:
 ${data.rejectUrl}
 
-Ver cotización completa:
-${data.viewUrl}
-
-IMPORTANTE: Esta cotización es válida hasta el ${data.validUntil}
-
 Si tiene alguna pregunta o necesita aclaraciones, no dude en contactarnos.
 
 ---
-${data.companyName}
-Sistema de Gestión Comercial
-  `.trim();
+VAL ARG S.R.L.
+14 de Julio 175, C.P: 1427 – C.A.B.A.
+Tel: +54 11 4551-3343 / 4552-2874
+ventas@val-ar.com.ar | www.val-ar.com.ar
+  `.trim()
 }

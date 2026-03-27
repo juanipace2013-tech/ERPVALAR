@@ -4,7 +4,7 @@
  */
 
 import { randomBytes } from 'crypto'
-import { sendMail, emailConfig } from './microsoft-graph'
+import { sendMail, getEmailConfig } from './microsoft-graph'
 import { generateQuoteEmailHTML, generateQuoteEmailText } from './templates/quote-email'
 import { prisma } from '@/lib/prisma'
 
@@ -50,9 +50,10 @@ export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
   const publicToken = await generatePublicToken(quoteId)
 
   // URLs públicas
-  const viewUrl = `${emailConfig.appUrl}/public/quotes/${publicToken}`
-  const acceptUrl = `${emailConfig.appUrl}/public/quotes/${publicToken}/accept`
-  const rejectUrl = `${emailConfig.appUrl}/public/quotes/${publicToken}/reject`
+  const { appUrl } = getEmailConfig()
+  const viewUrl = `${appUrl}/public/quotes/${publicToken}`
+  const acceptUrl = `${appUrl}/public/quotes/${publicToken}/accept`
+  const rejectUrl = `${appUrl}/public/quotes/${publicToken}/reject`
 
   // Formatear datos para el template
   const currencySymbol = quote.currency === 'USD' ? 'USD' : 'ARS'

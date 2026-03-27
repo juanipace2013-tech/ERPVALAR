@@ -3,7 +3,7 @@
  * Usa Microsoft Graph API (Azure / Microsoft 365)
  */
 
-import { sendMail, emailConfig } from './microsoft-graph'
+import { sendMail, getEmailConfig } from './microsoft-graph'
 import { generateRemitoEmailHTML, generateRemitoEmailText } from './templates/remito-email'
 import { generateRemitoPDF, type RemitoPDFData } from '@/lib/pdf/remito-generator'
 import { prisma } from '@/lib/prisma'

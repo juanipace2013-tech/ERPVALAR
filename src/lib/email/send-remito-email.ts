@@ -11,6 +11,7 @@ import { prisma } from '@/lib/prisma'
 interface SendRemitoEmailOptions {
   deliveryNoteId: string
   recipientEmail: string
+  ccEmails?: string[]
   message?: string
 }
 
@@ -18,7 +19,7 @@ interface SendRemitoEmailOptions {
  * Envía un remito por email al cliente, con el PDF adjunto
  */
 export async function sendRemitoEmail(options: SendRemitoEmailOptions) {
-  const { deliveryNoteId, recipientEmail, message } = options
+  const { deliveryNoteId, recipientEmail, ccEmails, message } = options
 
   // Buscar remito con datos completos
   const dn = await prisma.deliveryNote.findUnique({
@@ -149,6 +150,7 @@ export async function sendRemitoEmail(options: SendRemitoEmailOptions) {
       html: htmlContent,
       text: textContent,
       attachments: pdfAttachment ? [pdfAttachment] : undefined,
+      cc: ccEmails,
     })
 
     console.log(`[Mail] Remito ${dn.deliveryNumber} enviado a ${recipientEmail}`)

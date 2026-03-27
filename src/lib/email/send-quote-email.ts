@@ -11,6 +11,7 @@ import { prisma } from '@/lib/prisma'
 interface SendQuoteEmailOptions {
   quoteId: string
   recipientEmail: string
+  ccEmails?: string[]
   message?: string
 }
 
@@ -18,7 +19,7 @@ interface SendQuoteEmailOptions {
  * Envía una cotización por email al cliente, con el PDF adjunto
  */
 export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
-  const { quoteId, recipientEmail, message } = options
+  const { quoteId, recipientEmail, ccEmails, message } = options
 
   // Buscar cotización con datos completos
   const quote = await prisma.quote.findUnique({
@@ -190,6 +191,7 @@ export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
       html: htmlContent,
       text: textContent,
       attachments: pdfAttachment ? [pdfAttachment] : undefined,
+      cc: ccEmails,
       replyTo: quote.salesPerson.email || undefined,
     })
 

@@ -32,27 +32,46 @@ interface SendRemitoDialogProps {
   onSent?: () => void
 }
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+/** Parsea un string de emails separados por , o ; y devuelve el array limpio */
+function parseEmails(raw: string): string[] {
+  return raw
+    .split(/[,;]/)
+    .map((e) => e.trim())
+    .filter(Boolean)
+}
+
 export function SendRemitoDialog({
   deliveryNote,
   open,
   onOpenChange,
   onSent,
 }: SendRemitoDialogProps) {
-  const [email, setEmail] = useState(deliveryNote.customer.email || '')
+  const [emails, setEmails] = useState(deliveryNote.customer.email || '')
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
 
-  async function handleSend() {
-    if (!email || !email.trim()) {
-      toast.error('Debe ingresar un email')
-      return
+  function validateEmails(): string[] | null {
+    const parsed = parseEmails(emails)
+
+    if (parsed.length === 0) {
+      toast.error('Debe ingresar al menos un email')
+      return null
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(email)) {
-      toast.error('Email inválido')
-      return
+    const invalid = parsed.filter((e) => !EMAIL_REGEX.test(e))
+    if (invalid.length > 0) {
+      toast.error(`Email(s) inválido(s): ${invalid.join(', ')}`)
+      return null
     }
+
+    return parsed
+  }
+
+  async function handleSend() {
+    const validEmails = validateEmails()
+    if (!validEmails) return
 
     setSending(true)
 
@@ -63,7 +82,7 @@ export function SendRemitoDialog({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            email: email.trim(),
+            email: validEmails.join(', '),
             message: message.trim() || undefined,
           }),
         }
@@ -74,7 +93,12 @@ export function SendRemitoDialog({
         throw new Error(error.error || 'Error al enviar email')
       }
 
-      toast.success('Remito enviado por email exitosamente')
+      const count = validEmails.length
+      toast.success(
+        count === 1
+          ? 'Remito enviado por email exitosamente'
+          : `Remito enviado a ${count} destinatarios`
+      )
 
       onOpenChange(false)
       onSent?.()
@@ -88,6 +112,8 @@ export function SendRemitoDialog({
       setSending(false)
     }
   }
+
+  const parsedCount = parseEmails(emails).length
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -118,18 +144,26 @@ export function SendRemitoDialog({
             </p>
           </div>
 
-          {/* Email */}
+          {/* Emails */}
           <div>
-            <Label htmlFor="remito-email">Email del Cliente *</Label>
+            <Label htmlFor="remito-email">Email(s) del Cliente *</Label>
             <Input
               id="remito-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="cliente@empresa.com"
+              type="text"
+              value={emails}
+              onChange={(e) => setEmails(e.target.value)}
+              placeholder="email1@ejemplo.com, email2@ejemplo.com"
               className="mt-1"
               required
             />
+            <p className="text-xs text-gray-500 mt-1">
+              Separá múltiples emails con coma.{' '}
+              {parsedCount > 1 && (
+                <span className="text-blue-600 font-medium">
+                  {parsedCount} destinatarios
+                </span>
+              )}
+            </p>
           </div>
 
           {/* Mensaje opcional */}
@@ -153,6 +187,11 @@ export function SendRemitoDialog({
             <ul className="text-xs text-gray-600 mt-2 space-y-1 ml-4 list-disc">
               <li>Datos del remito y entrega</li>
               <li>PDF del remito adjunto</li>
+              {parsedCount > 1 && (
+                <li>
+                  El primer email será el destinatario principal, los demás irán en CC
+                </li>
+              )}
             </ul>
           </div>
         </div>
@@ -167,7 +206,7 @@ export function SendRemitoDialog({
           </Button>
           <Button
             onClick={handleSend}
-            disabled={!email || sending}
+            disabled={!emails.trim() || sending}
             className="bg-blue-600 hover:bg-blue-700"
           >
             {sending ? (

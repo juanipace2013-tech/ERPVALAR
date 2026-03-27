@@ -32,13 +32,23 @@ interface SendQuoteDialogProps {
   onSent?: () => void
 }
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+/** Parsea un string de emails separados por , o ; y devuelve el array limpio */
+function parseEmails(raw: string): string[] {
+  return raw
+    .split(/[,;]/)
+    .map((e) => e.trim())
+    .filter(Boolean)
+}
+
 export function SendQuoteDialog({
   quote,
   open,
   onOpenChange,
   onSent
 }: SendQuoteDialogProps) {
-  const [email, setEmail] = useState(quote.customer.email || '')
+  const [emails, setEmails] = useState(quote.customer.email || '')
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
 
@@ -50,28 +60,35 @@ export function SendQuoteDialog({
     })}`
   }
 
-  async function handleSend() {
-    // Validar email
-    if (!email || !email.trim()) {
-      toast.error('Debe ingresar un email')
-      return
+  function validateEmails(): string[] | null {
+    const parsed = parseEmails(emails)
+
+    if (parsed.length === 0) {
+      toast.error('Debe ingresar al menos un email')
+      return null
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(email)) {
-      toast.error('Email inválido')
-      return
+    const invalid = parsed.filter((e) => !EMAIL_REGEX.test(e))
+    if (invalid.length > 0) {
+      toast.error(`Email(s) inválido(s): ${invalid.join(', ')}`)
+      return null
     }
+
+    return parsed
+  }
+
+  async function handleSend() {
+    const validEmails = validateEmails()
+    if (!validEmails) return
 
     setSending(true)
 
     try {
-      // Enviar email
       const response = await fetch(`/api/quotes/${quote.id}/send-email`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: email.trim(),
+          email: validEmails.join(', '),
           message: message.trim() || undefined
         })
       })
@@ -83,14 +100,16 @@ export function SendQuoteDialog({
 
       const result = await response.json()
 
-      toast.success('Email enviado exitosamente')
+      const count = validEmails.length
+      toast.success(
+        count === 1
+          ? 'Email enviado exitosamente'
+          : `Email enviado a ${count} destinatarios`
+      )
       console.log('Email enviado:', result)
 
-      // Cerrar diálogo y notificar
       onOpenChange(false)
       onSent?.()
-
-      // Limpiar campos
       setMessage('')
     } catch (error) {
       console.error('Error enviando email:', error)
@@ -99,6 +118,8 @@ export function SendQuoteDialog({
       setSending(false)
     }
   }
+
+  const parsedCount = parseEmails(emails).length
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -127,20 +148,25 @@ export function SendQuoteDialog({
             </p>
           </div>
 
-          {/* Email */}
+          {/* Emails */}
           <div>
-            <Label htmlFor="email">Email del Cliente *</Label>
+            <Label htmlFor="email">Email(s) del Cliente *</Label>
             <Input
               id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="cliente@empresa.com"
+              type="text"
+              value={emails}
+              onChange={(e) => setEmails(e.target.value)}
+              placeholder="email1@ejemplo.com, email2@ejemplo.com"
               className="mt-1"
               required
             />
             <p className="text-xs text-gray-500 mt-1">
-              El cliente recibirá un email con la cotización y botones para aceptar/rechazar
+              Separá múltiples emails con coma.{' '}
+              {parsedCount > 1 && (
+                <span className="text-blue-600 font-medium">
+                  {parsedCount} destinatarios
+                </span>
+              )}
             </p>
           </div>
 
@@ -163,12 +189,18 @@ export function SendQuoteDialog({
           {/* Info */}
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
             <p className="text-xs text-gray-700">
-              <strong>📧 El email incluirá:</strong>
+              <strong>El email incluirá:</strong>
             </p>
             <ul className="text-xs text-gray-600 mt-2 space-y-1 ml-4 list-disc">
               <li>Detalles completos de la cotización</li>
+              <li>PDF de la cotización adjunto</li>
               <li>Botones para aceptar o rechazar</li>
               <li>Link para ver la cotización online</li>
+              {parsedCount > 1 && (
+                <li>
+                  El primer email será el destinatario principal, los demás irán en CC
+                </li>
+              )}
             </ul>
           </div>
         </div>
@@ -183,7 +215,7 @@ export function SendQuoteDialog({
           </Button>
           <Button
             onClick={handleSend}
-            disabled={!email || sending}
+            disabled={!emails.trim() || sending}
             className="bg-blue-600 hover:bg-blue-700"
           >
             {sending ? (

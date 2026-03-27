@@ -8,6 +8,9 @@
  *   AZURE_MAIL_FROM     — Email del remitente (ej: ventas@val-ar.com.ar)
  */
 
+import { config } from 'dotenv'
+config()
+
 import { ConfidentialClientApplication } from '@azure/msal-node'
 
 // ── Config ──────────────────────────────────────────────────────────────────

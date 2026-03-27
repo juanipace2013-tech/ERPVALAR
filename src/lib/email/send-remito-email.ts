@@ -120,8 +120,8 @@ export async function sendRemitoEmail(options: SendRemitoEmailOptions) {
     }
 
     const pdfBlob = generateRemitoPDF(pdfData)
-    // generateRemitoPDF returns a jsPDF instance
-    const pdfArrayBuffer = pdfBlob.output('arraybuffer')
+    // generateRemitoPDF returns a Blob
+    const pdfArrayBuffer = await pdfBlob.arrayBuffer()
     const buffer = Buffer.from(pdfArrayBuffer)
 
     const customerLabel = (dn.customer.businessName || dn.customer.name)

@@ -10,7 +10,23 @@
 
 import { config } from 'dotenv'
 import path from 'path'
-config({ path: path.resolve(process.cwd(), '.env') })
+import fs from 'fs'
+
+// Try multiple .env paths
+const envPaths = [
+  path.join(process.cwd(), '.env'),
+  path.resolve(__dirname, '../../.env'),
+  path.resolve(__dirname, '../../../.env'),
+  '/root/crm-valarg/.env'
+]
+
+for (const envPath of envPaths) {
+  if (fs.existsSync(envPath)) {
+    config({ path: envPath })
+    console.log('[EMAIL] .env loaded from:', envPath)
+    break
+  }
+}
 
 // Log temporal para debug - BORRAR después de confirmar que funciona
 console.log('[EMAIL] AZURE_TENANT_ID loaded:', process.env.AZURE_TENANT_ID ? 'YES' : 'NO')

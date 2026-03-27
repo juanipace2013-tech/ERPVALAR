@@ -49,8 +49,10 @@ import {
   Mail,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { Copy } from 'lucide-react'
 import { generateRemitoPDF, type RemitoPDFData, type CaiPDFData } from '@/lib/pdf/remito-generator'
 import { SendRemitoDialog } from '@/components/remitos/SendRemitoDialog'
+import { DuplicateDeliveryNoteDialog } from '@/components/remitos/DuplicateDeliveryNoteDialog'
 
 interface DeliveryNote {
   id: string
@@ -88,7 +90,18 @@ interface DeliveryNote {
     city: string | null
     province: string | null
     taxCondition: string | null
-  }
+  } | null
+  supplier: {
+    id: string
+    name: string
+    legalName: string | null
+    taxId: string | null
+    email: string | null
+    phone: string | null
+    address: string | null
+    city: string | null
+    province: string | null
+  } | null
   quote: {
     id: string
     quoteNumber: string
@@ -165,6 +178,7 @@ export default function DeliveryNoteDetailPage() {
   const [invoiceNotes, setInvoiceNotes] = useState('')
 
   const [showSendEmailDialog, setShowSendEmailDialog] = useState(false)
+  const [showDuplicateDialog, setShowDuplicateDialog] = useState(false)
 
   useEffect(() => {
     fetchDeliveryNote()
@@ -316,17 +330,21 @@ export default function DeliveryNoteDetailPage() {
       }
       // Si falla (no hay CAI activo), genera PDF sin CAI (PV 0002 legacy)
 
+      const recipientName = deliveryNote.supplier?.name || deliveryNote.customer?.name || ''
+      const recipientLegalName = deliveryNote.supplier?.legalName || deliveryNote.customer?.businessName || null
+      const recipientTaxId = deliveryNote.supplier?.taxId || deliveryNote.customer?.cuit || ''
+
       const pdfData: RemitoPDFData = {
         deliveryNumber,
         date: new Date(deliveryNote.date),
         customer: {
-          name: deliveryNote.customer.name,
-          businessName: deliveryNote.customer.businessName,
-          cuit: deliveryNote.customer.cuit,
-          address: deliveryNote.deliveryAddress || deliveryNote.customer.address,
-          city: deliveryNote.deliveryCity || deliveryNote.customer.city,
-          province: deliveryNote.deliveryProvince || deliveryNote.customer.province,
-          taxCondition: deliveryNote.customer.taxCondition,
+          name: recipientName,
+          businessName: recipientLegalName,
+          cuit: recipientTaxId,
+          address: deliveryNote.deliveryAddress || deliveryNote.supplier?.address || deliveryNote.customer?.address || null,
+          city: deliveryNote.deliveryCity || deliveryNote.supplier?.city || deliveryNote.customer?.city || null,
+          province: deliveryNote.deliveryProvince || deliveryNote.supplier?.province || deliveryNote.customer?.province || null,
+          taxCondition: deliveryNote.customer?.taxCondition || null,
         },
         items: deliveryNote.items.map((item) => ({
           sku: item.sku || item.product?.sku || null,
@@ -505,7 +523,7 @@ export default function DeliveryNoteDetailPage() {
               Remito {deliveryNote.deliveryNumber}
             </h1>
             <p className="text-sm text-gray-600 mt-1">
-              Cliente: {deliveryNote.customer.name}
+              {deliveryNote.supplier ? 'Proveedor' : 'Cliente'}: {deliveryNote.supplier?.name || deliveryNote.customer?.name}
             </p>
           </div>
         </div>
@@ -573,6 +591,11 @@ export default function DeliveryNoteDetailPage() {
             <Button variant="outline" onClick={() => setShowSendEmailDialog(true)}>
               <Mail className="h-4 w-4 mr-2" />
               Enviar por Email
+            </Button>
+
+            <Button variant="outline" onClick={() => setShowDuplicateDialog(true)}>
+              <Copy className="h-4 w-4 mr-2" />
+              Duplicar
             </Button>
 
             <Button variant="outline" onClick={handleDownloadExcel}>
@@ -725,14 +748,14 @@ export default function DeliveryNoteDetailPage() {
           </Card>
 
           {/* Dirección de Entrega */}
-          {(deliveryNote.deliveryAddress || deliveryNote.customer.address) && (
+          {(deliveryNote.deliveryAddress || deliveryNote.customer?.address || deliveryNote.supplier?.address) && (
             <Card>
               <CardHeader>
                 <CardTitle>Dirección de Entrega</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 <p className="font-medium">
-                  {deliveryNote.deliveryAddress || deliveryNote.customer.address}
+                  {deliveryNote.deliveryAddress || deliveryNote.customer?.address || deliveryNote.supplier?.address}
                 </p>
                 <p className="text-sm text-gray-600">
                   {deliveryNote.deliveryCity && `${deliveryNote.deliveryCity}, `}
@@ -826,35 +849,67 @@ export default function DeliveryNoteDetailPage() {
 
         {/* Sidebar */}
         <div className="space-y-6">
-          {/* Cliente */}
+          {/* Destinatario (Cliente o Proveedor) */}
           <Card>
             <CardHeader>
-              <CardTitle>Cliente</CardTitle>
+              <CardTitle>{deliveryNote.supplier ? 'Proveedor' : 'Cliente'}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div>
-                <p className="text-sm text-gray-600">Nombre</p>
-                <p className="font-semibold">{deliveryNote.customer.name}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">CUIT</p>
-                <p className="font-mono text-sm">{deliveryNote.customer.cuit}</p>
-              </div>
-              {deliveryNote.customer.email && (
-                <div>
-                  <p className="text-sm text-gray-600">Email</p>
-                  <p className="text-sm">{deliveryNote.customer.email}</p>
-                </div>
-              )}
-              {deliveryNote.customer.phone && (
-                <div>
-                  <p className="text-sm text-gray-600">Teléfono</p>
-                  <p className="text-sm">{deliveryNote.customer.phone}</p>
-                </div>
-              )}
-              <Button variant="outline" className="w-full mt-2" asChild>
-                <Link href={`/clientes/${deliveryNote.customer.id}`}>Ver Cliente</Link>
-              </Button>
+              {deliveryNote.supplier ? (
+                <>
+                  <div>
+                    <p className="text-sm text-gray-600">Nombre</p>
+                    <p className="font-semibold">{deliveryNote.supplier.name}</p>
+                  </div>
+                  {deliveryNote.supplier.taxId && (
+                    <div>
+                      <p className="text-sm text-gray-600">CUIT</p>
+                      <p className="font-mono text-sm">{deliveryNote.supplier.taxId}</p>
+                    </div>
+                  )}
+                  {deliveryNote.supplier.email && (
+                    <div>
+                      <p className="text-sm text-gray-600">Email</p>
+                      <p className="text-sm">{deliveryNote.supplier.email}</p>
+                    </div>
+                  )}
+                  {deliveryNote.supplier.phone && (
+                    <div>
+                      <p className="text-sm text-gray-600">Teléfono</p>
+                      <p className="text-sm">{deliveryNote.supplier.phone}</p>
+                    </div>
+                  )}
+                  <Button variant="outline" className="w-full mt-2" asChild>
+                    <Link href={`/proveedores/${deliveryNote.supplier.id}`}>Ver Proveedor</Link>
+                  </Button>
+                </>
+              ) : deliveryNote.customer ? (
+                <>
+                  <div>
+                    <p className="text-sm text-gray-600">Nombre</p>
+                    <p className="font-semibold">{deliveryNote.customer.name}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">CUIT</p>
+                    <p className="font-mono text-sm">{deliveryNote.customer.cuit}</p>
+                  </div>
+                  {deliveryNote.customer.email && (
+                    <div>
+                      <p className="text-sm text-gray-600">Email</p>
+                      <p className="text-sm">{deliveryNote.customer.email}</p>
+                    </div>
+                  )}
+                  {deliveryNote.customer.phone && (
+                    <div>
+                      <p className="text-sm text-gray-600">Teléfono</p>
+                      <p className="text-sm">{deliveryNote.customer.phone}</p>
+                    </div>
+                  )}
+                  <Button variant="outline" className="w-full mt-2" asChild>
+                    <Link href={`/clientes/${deliveryNote.customer.id}`}>Ver Cliente</Link>
+                  </Button>
+                </>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -1038,14 +1093,28 @@ export default function DeliveryNoteDetailPage() {
             id: deliveryNote.id,
             deliveryNumber: deliveryNote.deliveryNumber,
             customer: {
-              name: deliveryNote.customer.name,
-              businessName: deliveryNote.customer.businessName,
-              email: deliveryNote.customer.email,
+              name: deliveryNote.supplier?.name || deliveryNote.customer?.name || '',
+              businessName: deliveryNote.supplier?.legalName || deliveryNote.customer?.businessName || null,
+              email: deliveryNote.supplier?.email || deliveryNote.customer?.email || null,
             },
             itemCount: deliveryNote.items.length,
           }}
           open={showSendEmailDialog}
           onOpenChange={setShowSendEmailDialog}
+        />
+      )}
+
+      {deliveryNote && (
+        <DuplicateDeliveryNoteDialog
+          open={showDuplicateDialog}
+          onOpenChange={setShowDuplicateDialog}
+          deliveryNoteId={deliveryNote.id}
+          recipientName={deliveryNote.supplier?.name || deliveryNote.customer?.name || 'Sin destinatario'}
+          onDuplicated={(newId) => {
+            setShowDuplicateDialog(false)
+            toast.success('Remito duplicado correctamente')
+            router.push(`/remitos/${newId}`)
+          }}
         />
       )}
     </div>

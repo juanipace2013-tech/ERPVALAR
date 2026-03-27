@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
       where.OR = [
         { deliveryNumber: { contains: search, mode: 'insensitive' } },
         { customer: { name: { contains: search, mode: 'insensitive' } } },
+        { supplier: { name: { contains: search, mode: 'insensitive' } } },
       ];
     }
 
@@ -54,6 +55,13 @@ export async function GET(request: NextRequest) {
               id: true,
               name: true,
               cuit: true,
+            },
+          },
+          supplier: {
+            select: {
+              id: true,
+              name: true,
+              taxId: true,
             },
           },
           quote: {
@@ -246,7 +254,7 @@ export async function POST(request: NextRequest) {
       entity: 'DELIVERY_NOTE',
       entityId: deliveryNote.id,
       entityRef: deliveryNote.deliveryNumber,
-      description: `Creó remito ${deliveryNote.deliveryNumber} para ${deliveryNote.customer.name}`,
+      description: `Creó remito ${deliveryNote.deliveryNumber} para ${deliveryNote.customer?.name || 'N/A'}`,
     });
 
     return NextResponse.json(deliveryNote, { status: 201 });

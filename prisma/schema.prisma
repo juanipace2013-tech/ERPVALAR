@@ -328,6 +328,7 @@ model Supplier {
   payments        SupplierPayment[]
   treasuryPayments Payment[]
   deliveryStops   DeliveryStop[]
+  deliveryNotes   DeliveryNote[]
 
   // Timestamps
   createdAt       DateTime       @default(now())
@@ -1150,9 +1151,11 @@ model DeliveryNote {
   quoteId           String?
   quote             Quote?             @relation(fields: [quoteId], references: [id])
 
-  // Cliente
-  customerId        String
-  customer          Customer           @relation(fields: [customerId], references: [id])
+  // Cliente / Proveedor (uno u otro)
+  customerId        String?
+  customer          Customer?          @relation(fields: [customerId], references: [id])
+  supplierId        String?
+  supplier          Supplier?          @relation(fields: [supplierId], references: [id])
 
   // Fechas
   date              DateTime           @default(now())
@@ -1214,6 +1217,7 @@ model DeliveryNote {
 
   @@index([deliveryNumber])
   @@index([customerId])
+  @@index([supplierId])
   @@index([quoteId])
   @@index([status])
   @@index([date])

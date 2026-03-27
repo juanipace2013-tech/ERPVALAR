@@ -18,6 +18,7 @@ export async function GET(
       where: { id },
       include: {
         customer: true,
+        supplier: true,
         quote: {
           include: {
             items: {

@@ -297,8 +297,8 @@ export default function EditarRemitoPage() {
               Editar Remito {deliveryNote.deliveryNumber}
             </h1>
             <p className="text-sm text-gray-600 mt-1">
-              Cliente: {deliveryNote.customer.businessName || deliveryNote.customer.name}{' '}
-              ({deliveryNote.customer.cuit})
+              {deliveryNote.supplier ? 'Proveedor' : 'Cliente'}: {deliveryNote.supplier?.legalName || deliveryNote.supplier?.name || deliveryNote.customer?.businessName || deliveryNote.customer?.name}{' '}
+              ({deliveryNote.supplier?.taxId || deliveryNote.customer?.cuit})
             </p>
           </div>
         </div>
@@ -403,12 +403,12 @@ export default function EditarRemitoPage() {
         <CardContent className="space-y-4">
           {deliveryNote?.customer?.id && (
             <DeliveryAddressSelector
-              customerId={deliveryNote.customer.id}
+              customerId={deliveryNote.customer?.id || deliveryNote.supplier?.id || ''}
               fiscalAddress={{
-                address: deliveryNote.customer.address || null,
-                city: deliveryNote.customer.city || null,
-                province: deliveryNote.customer.province || null,
-                postalCode: deliveryNote.customer.postalCode || null,
+                address: deliveryNote.customer?.address || deliveryNote.supplier?.address || null,
+                city: deliveryNote.customer?.city || deliveryNote.supplier?.city || null,
+                province: deliveryNote.customer?.province || deliveryNote.supplier?.province || null,
+                postalCode: deliveryNote.customer?.postalCode || null,
               }}
               onSelect={(addr) => {
                 setDeliveryAddress(addr.deliveryAddress || '')

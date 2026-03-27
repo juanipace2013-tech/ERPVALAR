@@ -42,8 +42,10 @@ import {
   CheckCircle2,
   Pencil,
   Trash2,
+  Copy,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { DuplicateDeliveryNoteDialog } from '@/components/remitos/DuplicateDeliveryNoteDialog'
 
 interface DeliveryNote {
   id: string
@@ -55,7 +57,12 @@ interface DeliveryNote {
     id: string
     name: string
     cuit: string
-  }
+  } | null
+  supplier: {
+    id: string
+    name: string
+    taxId: string | null
+  } | null
   quote: {
     id: string
     quoteNumber: string
@@ -100,6 +107,8 @@ export default function RemitosPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [sortColumn, setSortColumn] = useState<string>('deliveryNumber')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
+  const [showDuplicateDialog, setShowDuplicateDialog] = useState(false)
+  const [duplicateTarget, setDuplicateTarget] = useState<{ id: string; recipientName: string } | null>(null)
 
   useEffect(() => {
     fetchDeliveryNotes()
@@ -162,7 +171,7 @@ export default function RemitosPage() {
     const matchesSearch =
       !searchTerm ||
       dn.deliveryNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      dn.customer.name.toLowerCase().includes(searchTerm.toLowerCase())
+      (dn.customer?.name || dn.supplier?.name || '').toLowerCase().includes(searchTerm.toLowerCase())
     return matchesSearch
   })
 
@@ -186,7 +195,7 @@ export default function RemitosPage() {
           cmp = new Date(a.date).getTime() - new Date(b.date).getTime()
           break
         case 'customer':
-          cmp = a.customer.name.localeCompare(b.customer.name)
+          cmp = (a.supplier?.name || a.customer?.name || '').localeCompare(b.supplier?.name || b.customer?.name || '')
           break
         case 'quote':
           cmp = (a.quote?.quoteNumber || '').localeCompare(b.quote?.quoteNumber || '')
@@ -424,8 +433,9 @@ export default function RemitosPage() {
                       <TableCell>{formatDate(dn.date)}</TableCell>
                       <TableCell>
                         <div>
-                          <p className="font-medium">{dn.customer.name}</p>
-                          <p className="text-sm text-gray-500">{dn.customer.cuit}</p>
+                          <p className="font-medium">{dn.supplier?.name || dn.customer?.name}</p>
+                          <p className="text-sm text-gray-500">{dn.supplier?.taxId || dn.customer?.cuit}</p>
+                          {dn.supplier && <span className="text-xs text-orange-600 font-medium">Proveedor</span>}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -494,6 +504,16 @@ export default function RemitosPage() {
                               <Eye className="mr-2 h-4 w-4" />
                               Ver Detalle
                             </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setDuplicateTarget({ id: dn.id, recipientName: dn.supplier?.name || dn.customer?.name || 'Sin destinatario' })
+                                setShowDuplicateDialog(true)
+                              }}
+                            >
+                              <Copy className="mr-2 h-4 w-4" />
+                              Duplicar
+                            </DropdownMenuItem>
                             {dn.status === 'PENDING' && (
                               <DropdownMenuItem
                                 onClick={(e) => {
@@ -546,6 +566,24 @@ export default function RemitosPage() {
           )}
         </CardContent>
       </Card>
+
+      {duplicateTarget && (
+        <DuplicateDeliveryNoteDialog
+          open={showDuplicateDialog}
+          onOpenChange={(open) => {
+            setShowDuplicateDialog(open)
+            if (!open) setDuplicateTarget(null)
+          }}
+          deliveryNoteId={duplicateTarget.id}
+          recipientName={duplicateTarget.recipientName}
+          onDuplicated={(newId) => {
+            setShowDuplicateDialog(false)
+            setDuplicateTarget(null)
+            toast.success('Remito duplicado correctamente')
+            router.push(`/remitos/${newId}`)
+          }}
+        />
+      )}
     </div>
   )
 }

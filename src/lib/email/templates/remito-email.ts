@@ -3,6 +3,8 @@
  * Diseño profesional con tablas (compatible Outlook/Gmail/Apple Mail)
  */
 
+import { VALARG_LOGO_BASE64 } from './logo-base64'
+
 interface RemitoEmailData {
   deliveryNumber: string
   customerName: string
@@ -92,7 +94,7 @@ export function generateRemitoEmailHTML(data: RemitoEmailData): string {
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td align="center" style="padding-bottom: 12px;">
-                    <img src="https://val-ar.com.ar/logo.png" alt="VAL ARG" width="160" style="display: block; max-width: 160px; height: auto; border: 0;" />
+                    <img src="${VALARG_LOGO_BASE64}" alt="VAL ARG" width="160" style="display: block; max-width: 160px; height: auto; border: 0;" />
                   </td>
                 </tr>
                 <tr>

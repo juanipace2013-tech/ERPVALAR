@@ -9,7 +9,11 @@
  */
 
 import { config } from 'dotenv'
-config()
+import path from 'path'
+config({ path: path.resolve(process.cwd(), '.env') })
+
+// Log temporal para debug - BORRAR después de confirmar que funciona
+console.log('[EMAIL] AZURE_TENANT_ID loaded:', process.env.AZURE_TENANT_ID ? 'YES' : 'NO')
 
 import { ConfidentialClientApplication } from '@azure/msal-node'
 

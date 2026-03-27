@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
+import { logAudit } from '@/lib/audit';
 
 const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads', 'remitos-firmados');
 const MAX_SIZE = 10 * 1024 * 1024; // 10MB
@@ -80,6 +81,18 @@ export async function POST(
         signedDocName: true,
         signedAt: true,
       },
+    });
+
+    // Registrar auditoría
+    logAudit({
+      userId: session.user.id,
+      userName: session.user.name || '',
+      userEmail: session.user.email || '',
+      action: 'UPLOAD',
+      entity: 'DELIVERY_NOTE',
+      entityId: id,
+      entityRef: deliveryNote.deliveryNumber,
+      description: `Subió remito firmado ${deliveryNote.deliveryNumber} (${file.name})`,
     });
 
     return NextResponse.json(updated);

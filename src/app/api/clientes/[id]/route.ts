@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { customerSchema } from '@/lib/validations'
 import { z } from 'zod'
+import { logAudit } from '@/lib/audit'
 
 // GET /api/clientes/[id] - Obtener cliente por ID
 export async function GET(
@@ -203,6 +204,18 @@ export async function PUT(
         description: `Se actualizó el cliente ${customer.name}`,
       },
     })
+
+    // Registrar auditoría
+    logAudit({
+      userId: session.user.id,
+      userName: session.user.name || '',
+      userEmail: session.user.email || '',
+      action: 'UPDATE',
+      entity: 'CLIENT',
+      entityId: customer.id,
+      entityRef: customer.cuit,
+      description: `Actualizó cliente ${customer.name} (${customer.cuit})`,
+    });
 
     return NextResponse.json(customer)
   } catch (error) {

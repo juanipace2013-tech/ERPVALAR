@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { customerSchema } from '@/lib/validations'
 import { z } from 'zod'
+import { logAudit } from '@/lib/audit'
 
 // GET /api/clientes - Listar clientes con filtros y paginación
 export async function GET(request: NextRequest) {
@@ -190,6 +191,18 @@ export async function POST(request: NextRequest) {
         description: `Se creó el cliente ${customer.name} (${customer.cuit})`,
       },
     })
+
+    // Registrar auditoría
+    logAudit({
+      userId: session.user.id,
+      userName: session.user.name || '',
+      userEmail: session.user.email || '',
+      action: 'CREATE',
+      entity: 'CLIENT',
+      entityId: customer.id,
+      entityRef: customer.cuit,
+      description: `Creó cliente ${customer.name} (${customer.cuit})`,
+    });
 
     return NextResponse.json(customer, { status: 201 })
   } catch (error) {

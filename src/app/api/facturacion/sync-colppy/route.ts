@@ -14,6 +14,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import * as crypto from 'crypto'
+import { logAudit } from '@/lib/audit'
 
 const COLPPY_ENDPOINT = 'https://login.colppy.com/lib/frontera2/service.php'
 const COLPPY_USER = process.env.COLPPY_USER || ''
@@ -790,6 +791,16 @@ export async function POST(request: NextRequest) {
     if (Object.keys(skipReasons).length > 0) {
       console.log('[Sync Colppy] Razones de omisión:', JSON.stringify(skipReasons))
     }
+
+    // Registrar auditoría
+    logAudit({
+      userId: session.user!.id,
+      userName: session.user!.name || '',
+      userEmail: session.user!.email || '',
+      action: 'SYNC',
+      entity: 'INVOICE',
+      description: `Sincronizó facturas desde Colppy: ${created} creadas, ${updated} actualizadas, ${skipped} omitidas (${dateFromStr} a ${dateToStr})`,
+    });
 
     return NextResponse.json({
       success: true,

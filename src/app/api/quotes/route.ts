@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/prisma'
 import { getMultiplierForClient } from '@/lib/client-multipliers'
+import { logAudit } from '@/lib/audit'
 
 /**
  * GET /api/quotes
@@ -285,6 +286,18 @@ export async function POST(request: NextRequest) {
         title: `Cotización creada: ${quote.quoteNumber}`,
         description: `Se creó la cotización ${quote.quoteNumber} para ${quote.customer.name}`,
       },
+    })
+
+    // Registrar auditoría
+    logAudit({
+      userId: session.user.id,
+      userName: session.user.name || '',
+      userEmail: session.user.email || '',
+      action: 'CREATE',
+      entity: 'QUOTE',
+      entityId: quote.id,
+      entityRef: quote.quoteNumber,
+      description: `Creó cotización ${quote.quoteNumber} para ${quote.customer.name}`,
     })
 
     console.log('✅ Cotización creada:', quote.quoteNumber)

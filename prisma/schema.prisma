@@ -1454,6 +1454,29 @@ model Activity {
 }
 
 // ========================================
+// AUDITORÍA DE ACCESO
+// ========================================
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String
+  userName    String
+  userEmail   String
+  action      String   // CREATE, UPDATE, DELETE, SEND, APPROVE, SYNC, UPLOAD, STATUS_CHANGE
+  entity      String   // QUOTE, DELIVERY_NOTE, INVOICE, CLIENT
+  entityId    String?
+  entityRef   String?  // ej: "VAL-2026-123"
+  description String
+  ip          String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([entity])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ========================================
 // MÓDULO DE CONTABILIDAD ARGENTINA
 // ========================================
 

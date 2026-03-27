@@ -8,6 +8,7 @@ import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { sendQuoteToColppy, type SendToColppyOptions, buildSplitItem, calcComponentPrice } from '@/lib/colppy';
 import { QuoteStatus } from '@prisma/client';
+import { logAudit } from '@/lib/audit';
 
 // ============================================================================
 // TIPOS
@@ -236,7 +237,19 @@ export async function POST(
       },
     });
 
-    // 13. Retornar resultado
+    // 13. Registrar auditoría
+    logAudit({
+      userId: session.user.id,
+      userName: session.user.name || '',
+      userEmail: session.user.email || '',
+      action: 'SEND',
+      entity: 'QUOTE',
+      entityId: quote.id,
+      entityRef: quote.quoteNumber,
+      description: `Envió cotización ${quote.quoteNumber} a Colppy (${action}). ${result.remitoNumber ? `Remito: ${result.remitoNumber}` : ''} ${result.facturaNumber ? `Factura: ${result.facturaNumber}` : ''}`.trim(),
+    });
+
+    // 14. Retornar resultado
     return NextResponse.json({
       success: true,
       message: 'Cotización enviada a Colppy exitosamente',

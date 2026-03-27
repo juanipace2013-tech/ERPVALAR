@@ -2,6 +2,7 @@ import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { updateQuoteStatus } from '@/lib/quote-workflow';
 import { QuoteStatus } from '@prisma/client';
+import { logAudit } from '@/lib/audit';
 
 export async function POST(
   request: NextRequest,
@@ -43,6 +44,22 @@ export async function POST(
         revertReason,
       }
     );
+
+    // Registrar auditoría
+    const statusLabels: Record<string, string> = {
+      SENT: 'Envió', ACCEPTED: 'Aceptó', REJECTED: 'Rechazó',
+      EXPIRED: 'Expiró', CANCELLED: 'Anuló', DRAFT: 'Volvió a borrador',
+    };
+    logAudit({
+      userId: session.user.id,
+      userName: session.user.name || '',
+      userEmail: session.user.email || '',
+      action: 'STATUS_CHANGE',
+      entity: 'QUOTE',
+      entityId: id,
+      entityRef: updatedQuote.quoteNumber,
+      description: `${statusLabels[status] || 'Cambió estado de'} cotización ${updatedQuote.quoteNumber} → ${status}`,
+    });
 
     return NextResponse.json(updatedQuote);
   } catch (error) {

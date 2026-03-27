@@ -2,6 +2,7 @@ import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { updateDeliveryNoteStatus } from '@/lib/quote-workflow';
 import { DeliveryNoteStatus } from '@prisma/client';
+import { logAudit } from '@/lib/audit';
 
 export async function POST(
   request: NextRequest,
@@ -42,6 +43,22 @@ export async function POST(
         notes
       }
     );
+
+    // Registrar auditoría
+    const statusLabels: Record<string, string> = {
+      PENDING: 'Pendiente', PREPARING: 'En preparación', READY: 'Listo',
+      DISPATCHED: 'Despachado', DELIVERED: 'Entregado', CANCELLED: 'Anulado',
+    };
+    logAudit({
+      userId: session.user.id,
+      userName: session.user.name || '',
+      userEmail: session.user.email || '',
+      action: 'STATUS_CHANGE',
+      entity: 'DELIVERY_NOTE',
+      entityId: id,
+      entityRef: updatedDeliveryNote.deliveryNumber,
+      description: `Cambió estado de remito ${updatedDeliveryNote.deliveryNumber} → ${statusLabels[status] || status}`,
+    });
 
     return NextResponse.json(updatedDeliveryNote);
   } catch (error) {

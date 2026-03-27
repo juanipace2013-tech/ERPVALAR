@@ -2,6 +2,7 @@ import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { generateDeliveryNumber } from '@/lib/quote-workflow';
+import { logAudit } from '@/lib/audit';
 
 export async function GET(request: NextRequest) {
   try {
@@ -234,6 +235,18 @@ export async function POST(request: NextRequest) {
         },
         customer: true,
       },
+    });
+
+    // Registrar auditoría
+    logAudit({
+      userId: session.user.id,
+      userName: session.user.name || '',
+      userEmail: session.user.email || '',
+      action: 'CREATE',
+      entity: 'DELIVERY_NOTE',
+      entityId: deliveryNote.id,
+      entityRef: deliveryNote.deliveryNumber,
+      description: `Creó remito ${deliveryNote.deliveryNumber} para ${deliveryNote.customer.name}`,
     });
 
     return NextResponse.json(deliveryNote, { status: 201 });

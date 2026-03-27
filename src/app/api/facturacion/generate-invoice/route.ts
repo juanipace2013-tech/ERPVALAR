@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { sendQuoteToColppy, type SendToColppyOptions, buildSplitItem, calcComponentPrice } from '@/lib/colppy'
 import { calcDueDate } from '@/lib/quote-workflow'
+import { logAudit } from '@/lib/audit'
 
 interface InvoiceItemRequest {
   quoteItemId: string
@@ -327,6 +328,18 @@ export async function POST(request: NextRequest) {
         })
       }
     })
+
+    // Registrar auditoría
+    logAudit({
+      userId: session.user.id,
+      userName: session.user.name || '',
+      userEmail: session.user.email || '',
+      action: 'CREATE',
+      entity: 'INVOICE',
+      entityId: colppyResult.facturaId || colppyResult.remitoId || undefined,
+      entityRef: colppyResult.facturaNumber || colppyResult.remitoNumber || undefined,
+      description: `Generó factura desde cotización ${quote.quoteNumber} para ${quote.customer.name}. ${colppyResult.facturaNumber ? `Factura: ${colppyResult.facturaNumber}` : ''} ${colppyResult.remitoNumber ? `Remito: ${colppyResult.remitoNumber}` : ''}`.trim(),
+    });
 
     return NextResponse.json({
       success: true,

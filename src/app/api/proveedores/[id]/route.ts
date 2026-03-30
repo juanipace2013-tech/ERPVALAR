@@ -175,6 +175,8 @@ export async function DELETE(
         _count: {
           select: {
             products: true,
+            purchaseInvoices: true,
+            purchaseOrders: true,
           },
         },
       },
@@ -187,16 +189,25 @@ export async function DELETE(
       )
     }
 
-    // Verificar si tiene productos asociados
-    if (supplier._count.products > 0) {
+    // Verificar si tiene relaciones
+    const hasRelations = supplier._count.products > 0
+      || supplier._count.purchaseInvoices > 0
+      || supplier._count.purchaseOrders > 0
+
+    if (hasRelations) {
       // Soft delete: cambiar estado a INACTIVE
       await prisma.supplier.update({
         where: { id },
         data: { status: 'INACTIVE' },
       })
 
+      const reasons = []
+      if (supplier._count.products > 0) reasons.push(`${supplier._count.products} productos`)
+      if (supplier._count.purchaseInvoices > 0) reasons.push(`${supplier._count.purchaseInvoices} facturas de compra`)
+      if (supplier._count.purchaseOrders > 0) reasons.push(`${supplier._count.purchaseOrders} órdenes de compra`)
+
       return NextResponse.json({
-        message: 'Proveedor desactivado (tiene productos asociados)',
+        message: `Proveedor desactivado (tiene ${reasons.join(', ')})`,
         status: 'INACTIVE',
       })
     }

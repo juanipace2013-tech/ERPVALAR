@@ -1,70 +1,34 @@
 import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { colppyLogin, colppyLogout, getColppyConfig, md5Hash, callColppyAPI, ColppySession } from '@/lib/colppy'
 
 export const maxDuration = 120 // 2 minutos para sincronizar proveedores
 
-// Colppy config
-const COLPPY_ENDPOINT = 'https://login.colppy.com/lib/frontera2/service.php'
-const COLPPY_USER = process.env.COLPPY_USER || ''
-const COLPPY_PASSWORD = process.env.COLPPY_PASSWORD || ''
-const COLPPY_ID_EMPRESA = process.env.COLPPY_ID_EMPRESA || ''
-
-function md5(text: string): string {
-  const crypto = require('crypto')
-  return crypto.createHash('md5').update(text).digest('hex')
-}
-
-async function callColppyAPI(payload: any): Promise<any> {
-  const response = await fetch(COLPPY_ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(120000), // 2 min timeout
-  })
-  const text = await response.text()
-  if (text.trim().startsWith('<')) {
-    throw new Error('Sesión expirada (HTML recibido)')
-  }
-  return JSON.parse(text)
-}
-
-async function getColppySession(): Promise<string> {
-  const passwordMD5 = md5(COLPPY_PASSWORD)
-  const response = await callColppyAPI({
-    auth: { usuario: COLPPY_USER, password: passwordMD5 },
-    service: { provision: 'Usuario', operacion: 'iniciar_sesion' },
-    parameters: { usuario: COLPPY_USER, password: passwordMD5 },
-  })
-  if (response.result?.estado !== 0) {
-    throw new Error(`Error login Colppy: ${response.result?.mensaje}`)
-  }
-  return response.response.data.claveSesion
-}
-
-async function fetchAllColppySuppliers(claveSesion: string): Promise<any[]> {
-  const passwordMD5 = md5(COLPPY_PASSWORD)
+async function fetchAllColppySuppliers(session: ColppySession): Promise<any[]> {
+  const config = getColppyConfig()
+  const passwordMD5 = md5Hash(config.password)
   const allSuppliers: any[] = []
   let start = 0
   const limit = 500
 
   // Paginar porque puede haber muchos proveedores
   while (true) {
-    const response = await callColppyAPI({
-      auth: { usuario: COLPPY_USER, password: passwordMD5 },
+    const response = await callColppyAPI<any>({
+      auth: { usuario: config.user, password: passwordMD5 },
       service: { provision: 'Proveedor', operacion: 'listar_proveedor' },
       parameters: {
-        sesion: { usuario: COLPPY_USER, claveSesion },
-        idEmpresa: COLPPY_ID_EMPRESA,
+        sesion: { usuario: session.usuario, claveSesion: session.claveSesion },
+        idEmpresa: session.idEmpresa,
         start,
         limit,
         filter: [],
         order: [{ field: 'RazonSocial', dir: 'asc' }],
       },
-    })
+    }, 120000)
 
-    if (response.result?.estado !== 0 || !response.response?.success) {
-      throw new Error(response.result?.mensaje || 'Error cargando proveedores de Colppy')
+    if (!response.response?.success) {
+      throw new Error('Error cargando proveedores de Colppy')
     }
 
     const data = response.response.data || []
@@ -108,12 +72,14 @@ export async function POST() {
 
     console.log('[Sync Proveedores] Iniciando sincronización de proveedores...')
     const startTime = Date.now()
+    let colppySession: ColppySession | null = null
 
+    try {
     // 1. Obtener sesión de Colppy
-    const claveSesion = await getColppySession()
+    colppySession = await colppyLogin()
 
     // 2. Traer TODOS los proveedores de Colppy
-    const colppySuppliers = await fetchAllColppySuppliers(claveSesion)
+    const colppySuppliers = await fetchAllColppySuppliers(colppySession)
     console.log(`[Sync Proveedores] ${colppySuppliers.length} proveedores recibidos de Colppy`)
 
     // Log del primer proveedor para ver la estructura
@@ -261,6 +227,11 @@ export async function POST() {
       totalErrores: errores.length,
       tiempoMs: elapsed,
     })
+    } finally {
+      if (colppySession) {
+        await colppyLogout(colppySession).catch(() => {})
+      }
+    }
   } catch (error: any) {
     console.error('[Sync Proveedores] Error:', error)
     return NextResponse.json(

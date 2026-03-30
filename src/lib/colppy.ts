@@ -97,14 +97,14 @@ export class ColppySessionExpiredError extends Error {
  * - Sin límites de tamaño de comando
  * - Manejo correcto de redirects
  */
-async function callColppyAPI<T>(payload: any): Promise<T> {
+export async function callColppyAPI<T>(payload: any, timeoutMs = 30000): Promise<T> {
   try {
     const response = await fetch(COLPPY_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
       redirect: 'follow',
-      signal: AbortSignal.timeout(30000), // 30s timeout
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     const responseText = await response.text();
@@ -136,7 +136,7 @@ async function callColppyAPI<T>(payload: any): Promise<T> {
       throw error;
     }
     if (error.name === 'TimeoutError' || error.name === 'AbortError') {
-      throw new Error(`Timeout en llamada a Colppy (30s): ${error.message}`);
+      throw new Error(`Timeout en llamada a Colppy: ${error.message}`);
     }
     if (error.message?.includes('JSON') || error.message?.includes('Unexpected')) {
       console.error(`[Colppy] Respuesta no-JSON: ${error.message}`);

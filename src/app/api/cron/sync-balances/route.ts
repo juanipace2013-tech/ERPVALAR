@@ -10,32 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import * as crypto from 'crypto'
-
-// ─── Colppy config ──────────────────────────────────────────────────────────
-
-const COLPPY_ENDPOINT = 'https://login.colppy.com/lib/frontera2/service.php'
-const COLPPY_USER = process.env.COLPPY_USER || ''
-const COLPPY_PASSWORD = process.env.COLPPY_PASSWORD || ''
-const COLPPY_ID_EMPRESA = process.env.COLPPY_ID_EMPRESA || ''
-
-function md5(text: string): string {
-  return crypto.createHash('md5').update(text).digest('hex')
-}
-
-async function callColppy(payload: any): Promise<any> {
-  const response = await fetch(COLPPY_ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(30000),
-  })
-  const text = await response.text()
-  if (text.trim().startsWith('<')) {
-    throw new Error('Sesión expirada (HTML recibido)')
-  }
-  return JSON.parse(text)
-}
+import { colppyLogin, colppyLogout, getColppyConfig, md5Hash, callColppyAPI, ColppySession } from '@/lib/colppy'
 
 // ─── Estado en memoria ──────────────────────────────────────────────────────
 
@@ -69,26 +44,18 @@ export async function GET(req: NextRequest) {
 
   try {
     // 1. Login Colppy
-    const passwordMD5 = md5(COLPPY_PASSWORD)
-    const loginRes = await callColppy({
-      auth: { usuario: COLPPY_USER, password: passwordMD5 },
-      service: { provision: 'Usuario', operacion: 'iniciar_sesion' },
-      parameters: { usuario: COLPPY_USER, password: passwordMD5 },
-    })
+    const session = await colppyLogin()
+    const config = getColppyConfig()
+    const passwordMD5 = md5Hash(config.password)
 
-    if (loginRes.result?.estado !== 0) {
-      throw new Error(`Error login Colppy: ${loginRes.result?.mensaje}`)
-    }
-
-    const claveSesion = loginRes.response.data.claveSesion
-
+    try {
     // 2. Traer todos los clientes de Colppy (solo necesitamos idCliente + Saldo)
-    const listRes = await callColppy({
-      auth: { usuario: COLPPY_USER, password: passwordMD5 },
+    const listRes = await callColppyAPI<any>({
+      auth: { usuario: config.user, password: passwordMD5 },
       service: { provision: 'Cliente', operacion: 'listar_cliente' },
       parameters: {
-        sesion: { usuario: COLPPY_USER, claveSesion },
-        idEmpresa: COLPPY_ID_EMPRESA,
+        sesion: { usuario: session.usuario, claveSesion: session.claveSesion },
+        idEmpresa: session.idEmpresa,
         start: 0,
         limit: 10000,
         filter: [],
@@ -96,8 +63,8 @@ export async function GET(req: NextRequest) {
       },
     })
 
-    if (listRes.result?.estado !== 0 || !listRes.response?.success) {
-      throw new Error(listRes.result?.mensaje || 'Error cargando clientes de Colppy')
+    if (!listRes.response?.success) {
+      throw new Error('Error cargando clientes de Colppy')
     }
 
     const colppyClients: any[] = listRes.response.data || []
@@ -156,6 +123,9 @@ export async function GET(req: NextRequest) {
       errors,
       duration: `${duration}s`,
     })
+    } finally {
+      await colppyLogout(session).catch(() => {})
+    }
   } catch (error: any) {
     const duration = ((Date.now() - startTime) / 1000).toFixed(1)
     console.error(`[CRON] Sync balances FAILED after ${duration}s:`, error.message)

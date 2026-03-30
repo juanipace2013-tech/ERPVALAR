@@ -36,7 +36,7 @@ import {
   CheckCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { formatNumber } from '@/lib/utils'
+import { formatNumber, getLocalDateString } from '@/lib/utils'
 
 interface PurchaseOrder {
   id: string
@@ -116,7 +116,7 @@ export default function PurchaseOrderDetailPage() {
   const [voucherType, setVoucherType] = useState('A')
   const [pointOfSale, setPointOfSale] = useState('')
   const [invoiceNumberSuffix, setInvoiceNumberSuffix] = useState('')
-  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0])
+  const [invoiceDate, setInvoiceDate] = useState(getLocalDateString())
   const [dueDate, setDueDate] = useState('')
   const [paymentTerms, setPaymentTerms] = useState('')
   const [generalDiscount, setGeneralDiscount] = useState(0)
@@ -168,7 +168,7 @@ export default function PurchaseOrderDetailPage() {
           pointOfSale,
           invoiceNumberSuffix,
           invoiceDate,
-          dueDate: dueDate || new Date(new Date(invoiceDate).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          dueDate: dueDate || getLocalDateString(new Date(new Date(invoiceDate).getTime() + 30 * 24 * 60 * 60 * 1000)),
           paymentTerms: paymentTerms || null,
           generalDiscount,
         }),

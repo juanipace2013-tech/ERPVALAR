@@ -17,6 +17,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { getLocalDateString } from '@/lib/utils'
 import {
   ArrowLeft,
   Loader2,
@@ -131,7 +132,7 @@ export default function EditarRemitoPage() {
       setDeliveryNote(data)
 
       // Rellenar formulario
-      setDate(data.date ? new Date(data.date).toISOString().split('T')[0] : '')
+      setDate(data.date ? getLocalDateString(new Date(data.date)) : '')
       setCarrier(data.carrier || '')
       setTransportAddress(data.transportAddress || '')
       setPurchaseOrder(data.purchaseOrder || '')

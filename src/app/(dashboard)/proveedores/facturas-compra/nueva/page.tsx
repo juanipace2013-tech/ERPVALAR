@@ -55,6 +55,7 @@ import {
   Check,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { getLocalDateString } from '@/lib/utils'
 
 // ============ PAYMENT TERM NORMALIZATION ============
 
@@ -352,9 +353,9 @@ export default function NewPurchaseInvoicePage() {
   const [supplierInfo, setSupplierInfo] = useState({ razonSocial: '', cuit: '', condicionIva: '', direccion: '' })
   const [voucherType, setVoucherType] = useState('A')
   const [invoiceType, setInvoiceType] = useState('FA')
-  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0])
+  const [invoiceDate, setInvoiceDate] = useState(getLocalDateString())
   const [dueDate, setDueDate] = useState(
-    new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    getLocalDateString(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000))
   )
   const [pointOfSale, setPointOfSale] = useState('')
   const [invoiceNumberSuffix, setInvoiceNumberSuffix] = useState('')

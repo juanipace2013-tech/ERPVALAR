@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Plus, Trash2, ArrowLeft, Save } from 'lucide-react'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
-import { formatNumber } from '@/lib/utils'
+import { formatNumber, getLocalDateString } from '@/lib/utils'
 import Link from 'next/link'
 
 interface Account {
@@ -37,7 +37,7 @@ export default function NuevoAsientoPage() {
   const router = useRouter()
   const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(false)
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [date, setDate] = useState(getLocalDateString())
   const [description, setDescription] = useState('')
   const [lines, setLines] = useState<EntryLine[]>([
     { accountId: '', description: '', debit: 0, credit: 0 },

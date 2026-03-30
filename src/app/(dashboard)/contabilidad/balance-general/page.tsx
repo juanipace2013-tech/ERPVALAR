@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label'
 import { Download, Printer, Calendar } from 'lucide-react'
 import { toast } from 'sonner'
-import { formatNumber } from '@/lib/utils'
+import { formatNumber, getLocalDateString } from '@/lib/utils'
 
 interface BalanceItem {
   account: {
@@ -36,7 +36,7 @@ interface BalanceGeneral {
 export default function BalanceGeneralPage() {
   const [data, setData] = useState<BalanceGeneral | null>(null)
   const [loading, setLoading] = useState(false)
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [date, setDate] = useState(getLocalDateString())
 
   const fetchBalanceGeneral = async () => {
     if (!date) {

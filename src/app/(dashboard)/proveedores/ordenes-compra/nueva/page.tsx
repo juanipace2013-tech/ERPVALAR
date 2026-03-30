@@ -25,6 +25,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { Loader2, ArrowLeft, Plus, Trash2, Save } from 'lucide-react'
 import { toast } from 'sonner'
+import { getLocalDateString } from '@/lib/utils'
 
 interface Supplier {
   id: string
@@ -57,7 +58,7 @@ export default function NewPurchaseOrderPage() {
 
   // Form data
   const [supplierId, setSupplierId] = useState('')
-  const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0])
+  const [orderDate, setOrderDate] = useState(getLocalDateString())
   const [expectedDate, setExpectedDate] = useState('')
   const [currency, setCurrency] = useState('ARS')
   const [notes, setNotes] = useState('')

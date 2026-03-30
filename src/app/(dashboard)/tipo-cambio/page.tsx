@@ -40,7 +40,7 @@ import {
   TrendingDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { formatNumber } from '@/lib/utils'
+import { formatNumber, getLocalDateString } from '@/lib/utils'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 interface ExchangeRate {
@@ -77,7 +77,7 @@ export default function TipoCambioPage() {
     toCurrency: 'ARS',
     rate: '',
     source: 'MANUAL',
-    validFrom: new Date().toISOString().split('T')[0], // YYYY-MM-DD
+    validFrom: getLocalDateString(), // YYYY-MM-DD
   })
 
   useEffect(() => {
@@ -176,7 +176,7 @@ export default function TipoCambioPage() {
         toCurrency: 'ARS',
         rate: '',
         source: 'MANUAL',
-        validFrom: new Date().toISOString().split('T')[0],
+        validFrom: getLocalDateString(),
       })
       fetchExchangeRates()
     } catch (error) {

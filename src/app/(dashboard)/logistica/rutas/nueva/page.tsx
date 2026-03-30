@@ -37,6 +37,7 @@ import {
   Truck,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { getLocalDateString } from '@/lib/utils'
 
 interface PendingRemito {
   id: string
@@ -299,7 +300,7 @@ export default function NuevaRutaPage() {
   const editId = searchParams.get('edit')
   const isEditMode = Boolean(editId)
 
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [date, setDate] = useState(getLocalDateString())
   const [notes, setNotes] = useState('')
   const [stops, setStops] = useState<StopData[]>([])
   const [saving, setSaving] = useState(false)
@@ -335,7 +336,7 @@ export default function NuevaRutaPage() {
       }
 
       // Populate form with existing data
-      setDate(route.date ? new Date(route.date).toISOString().split('T')[0] : '')
+      setDate(route.date ? getLocalDateString(new Date(route.date)) : '')
       setNotes(route.notes || '')
       setStops(
         route.stops.map((stop: any) => ({
@@ -358,7 +359,7 @@ export default function NuevaRutaPage() {
           finalDestination: stop.finalDestination || '',
           trackingNumber: stop.trackingNumber || '',
           deliveryDeadline: stop.deliveryDeadline
-            ? new Date(stop.deliveryDeadline).toISOString().split('T')[0]
+            ? getLocalDateString(new Date(stop.deliveryDeadline))
             : '',
           observations: stop.observations || '',
           addressOptions: [],

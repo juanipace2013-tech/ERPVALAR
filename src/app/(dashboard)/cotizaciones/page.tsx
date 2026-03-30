@@ -50,6 +50,7 @@ import {
   ChevronsRight,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { getLocalDateString } from '@/lib/utils'
 import * as XLSX from 'xlsx'
 import { DuplicateQuoteDialog } from '@/components/quotes/DuplicateQuoteDialog'
 
@@ -291,7 +292,7 @@ export default function CotizacionesPage() {
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Cotizaciones')
 
-    const today = new Date().toISOString().split('T')[0].replace(/-/g, '')
+    const today = getLocalDateString().replace(/-/g, '')
     XLSX.writeFile(wb, `Cotizaciones_VAL_ARG_${today}.xlsx`)
     toast.success('Excel descargado correctamente')
   }
@@ -311,7 +312,7 @@ export default function CotizacionesPage() {
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
-      const today = new Date().toISOString().split('T')[0].replace(/-/g, '')
+      const today = getLocalDateString().replace(/-/g, '')
       a.href = url
       a.download = `Analisis_Rechazos_${today}.xlsx`
       document.body.appendChild(a)

@@ -24,7 +24,7 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { BookOpen, Download, Printer, Search } from 'lucide-react'
 import { toast } from 'sonner'
-import { formatNumber } from '@/lib/utils'
+import { formatNumber, getLocalDateString } from '@/lib/utils'
 import * as XLSX from 'xlsx'
 
 interface Account {
@@ -323,8 +323,8 @@ export default function LibroMayorPage() {
       }
 
       const fileName = showAll
-        ? `libro-mayor-completo-${new Date().toISOString().split('T')[0]}.xlsx`
-        : `libro-mayor-${data.account?.code}-${new Date().toISOString().split('T')[0]}.xlsx`
+        ? `libro-mayor-completo-${getLocalDateString()}.xlsx`
+        : `libro-mayor-${data.account?.code}-${getLocalDateString()}.xlsx`
 
       XLSX.writeFile(workbook, fileName)
       toast.success('Archivo Excel exportado correctamente')

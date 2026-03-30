@@ -48,6 +48,7 @@ import {
   Ban,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { getLocalDateString } from '@/lib/utils'
 import { generateRutaPDF, type RutaPDFData } from '@/lib/pdf/ruta-generator'
 
 interface DeliveryStop {
@@ -274,7 +275,7 @@ export default function RutaDetailPage() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      const dateStr = new Date(route.date).toISOString().split('T')[0]
+      const dateStr = getLocalDateString(new Date(route.date))
       a.download = `Hoja-de-Ruta-${dateStr}.pdf`
       document.body.appendChild(a)
       a.click()

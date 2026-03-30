@@ -40,6 +40,7 @@ import {
   Save,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { getLocalDateString } from '@/lib/utils'
 import { IIBB_JURISDICTIONS } from '@/lib/cobros/withholding-account-mapping'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -141,7 +142,7 @@ const formatDate = (dateStr: string) =>
 
 const generateId = () => Math.random().toString(36).slice(2, 10)
 
-const today = new Date().toISOString().split('T')[0]
+const today = getLocalDateString()
 
 const statusColors: Record<string, string> = {
   AUTHORIZED: 'bg-green-100 text-green-800',

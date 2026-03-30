@@ -44,6 +44,7 @@ import {
   CalendarIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { getLocalDateString } from '@/lib/utils'
 import * as XLSX from 'xlsx'
 import {
   BarChart,
@@ -189,7 +190,7 @@ export default function AnalisisFacturacionPage() {
   // Sync modal
   const [syncModalOpen, setSyncModalOpen] = useState(false)
   const [syncDateFrom, setSyncDateFrom] = useState('2026-01-01')
-  const [syncDateTo, setSyncDateTo] = useState(new Date().toISOString().split('T')[0])
+  const [syncDateTo, setSyncDateTo] = useState(getLocalDateString())
   const [syncResult, setSyncResult] = useState<Record<string, unknown> | null>(null)
 
   // Vendedor edit
@@ -368,7 +369,7 @@ export default function AnalisisFacturacionPage() {
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Facturación')
 
-    const today = new Date().toISOString().split('T')[0].replace(/-/g, '')
+    const today = getLocalDateString().replace(/-/g, '')
     XLSX.writeFile(wb, `Facturacion_VAL_ARG_${today}.xlsx`)
     toast.success('Excel descargado correctamente')
   }

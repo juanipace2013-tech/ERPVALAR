@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/select'
 import { ArrowLeft, Save, Loader2, DollarSign, UserCheck } from 'lucide-react'
 import { toast } from 'sonner'
-import { formatNumber } from '@/lib/utils'
+import { formatNumber, getLocalDateString } from '@/lib/utils'
 import { ColppyCustomerSearch, type ColppyCustomer } from '@/components/ColppyCustomerSearch'
 
 interface Product {
@@ -48,7 +48,7 @@ export default function NuevaCotizacionPage() {
   const getDefaultValidUntil = () => {
     const date = new Date()
     date.setDate(date.getDate() + 5)
-    return date.toISOString().split('T')[0] // yyyy-mm-dd
+    return getLocalDateString(date)
   }
 
   const [formData, setFormData] = useState({

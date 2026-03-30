@@ -23,6 +23,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { toast } from 'sonner'
+import { getLocalDateString } from '@/lib/utils'
 import {
   Shield,
   Search,
@@ -181,7 +182,7 @@ export default function AuditoriaPage() {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `auditoria_${new Date().toISOString().split('T')[0]}.csv`
+      a.download = `auditoria_${getLocalDateString()}.csv`
       a.click()
       window.URL.revokeObjectURL(url)
       toast.success('CSV descargado')

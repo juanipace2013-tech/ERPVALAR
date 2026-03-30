@@ -113,6 +113,12 @@ export function formatDateTimeAR(date: Date | string | null | undefined): string
   })
 }
 
+/** Devuelve la fecha local actual en formato YYYY-MM-DD (respeta timezone del browser) */
+export function getLocalDateString(date?: Date): string {
+  const d = date || new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 /**
  * Capitaliza la primera letra de cada palabra
  */

@@ -17,6 +17,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { getLocalDateString } from '@/lib/utils'
 import {
   ArrowLeft,
   ArrowRight,
@@ -212,7 +213,7 @@ export default function NuevoRemitoPage() {
   const [bultos, setBultos] = useState('')
   const [notes, setNotes] = useState('')
   const [remitoDate, setRemitoDate] = useState(
-    new Date().toISOString().split('T')[0]
+    getLocalDateString()
   )
   const [totalAmountARS, setTotalAmountARS] = useState('')
 

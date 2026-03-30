@@ -53,6 +53,7 @@ import { Copy } from 'lucide-react'
 import { generateRemitoPDF, type RemitoPDFData, type CaiPDFData } from '@/lib/pdf/remito-generator'
 import { SendRemitoDialog } from '@/components/remitos/SendRemitoDialog'
 import { DuplicateDeliveryNoteDialog } from '@/components/remitos/DuplicateDeliveryNoteDialog'
+import { getLocalDateString } from '@/lib/utils'
 
 interface DeliveryNote {
   id: string
@@ -211,7 +212,7 @@ export default function DeliveryNoteDetailPage() {
 
   const handleChangeStatus = (status: string) => {
     setNewStatus(status)
-    setDeliveryDate(status === 'DELIVERED' ? new Date().toISOString().split('T')[0] : '')
+    setDeliveryDate(status === 'DELIVERED' ? getLocalDateString() : '')
     setReceivedBy('')
     setStatusNotes('')
     setShowStatusDialog(true)
@@ -251,7 +252,7 @@ export default function DeliveryNoteDetailPage() {
     setPointOfSale('0001')
     const dueDate = new Date()
     dueDate.setDate(dueDate.getDate() + 30)
-    setInvoiceDueDate(dueDate.toISOString().split('T')[0])
+    setInvoiceDueDate(getLocalDateString(dueDate))
     setInvoiceNotes('')
     setShowInvoiceDialog(true)
   }

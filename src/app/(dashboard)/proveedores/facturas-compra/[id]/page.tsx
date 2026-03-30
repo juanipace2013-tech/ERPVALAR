@@ -29,7 +29,7 @@ import {
   AlertTriangle,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { formatNumber } from '@/lib/utils'
+import { formatNumber, getLocalDateString } from '@/lib/utils'
 import {
   Dialog,
   DialogContent,
@@ -180,7 +180,7 @@ export default function PurchaseInvoiceDetailPage() {
   const [showCreditNoteDialog, setShowCreditNoteDialog] = useState(false)
   const [creatingCreditNote, setCreatingCreditNote] = useState(false)
   const [creditNoteNumber, setCreditNoteNumber] = useState('')
-  const [creditNoteDate, setCreditNoteDate] = useState(new Date().toISOString().split('T')[0])
+  const [creditNoteDate, setCreditNoteDate] = useState(getLocalDateString())
   const [selectedItems, setSelectedItems] = useState<Array<{ originalItemId: string; quantity: number; reason: string }>>([])
 
 

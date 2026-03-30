@@ -30,7 +30,7 @@ import {
   CalendarDays,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { formatNumber } from '@/lib/utils'
+import { formatNumber, getLocalDateString } from '@/lib/utils'
 import { useColppyStock, refreshInventoryCache } from '@/hooks/useColppyStock'
 import { StockBadge, StockWarning } from '@/components/StockBadge'
 
@@ -458,7 +458,7 @@ export default function QuoteDetailPage() {
   const handleQuickValidity = (days: number) => {
     const date = new Date()
     date.setDate(date.getDate() + days)
-    const dateStr = date.toISOString().split('T')[0]
+    const dateStr = getLocalDateString(date)
     setValidityValue(dateStr)
     handleValidityChange(dateStr)
   }
@@ -1062,7 +1062,7 @@ export default function QuoteDetailPage() {
                         onChange={(e) => setValidityValue(e.target.value)}
                         className="w-44 h-8 text-sm"
                         disabled={validityLoading}
-                        min={new Date().toISOString().split('T')[0]}
+                        min={getLocalDateString()}
                       />
                       <Button
                         size="sm"
@@ -1110,7 +1110,7 @@ export default function QuoteDetailPage() {
                         onClick={() => {
                           setValidityValue(
                             quote.validUntil
-                              ? new Date(quote.validUntil).toISOString().split('T')[0]
+                              ? getLocalDateString(new Date(quote.validUntil))
                               : ''
                           )
                           setShowEditValidity(true)

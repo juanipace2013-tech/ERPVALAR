@@ -35,6 +35,7 @@ import {
   DollarSign
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { getLocalDateString } from '@/lib/utils'
 
 interface Customer {
   id: string
@@ -105,9 +106,9 @@ export default function NuevaFacturaPage() {
   const [invoiceType, setInvoiceType] = useState<'A' | 'B' | 'C' | 'E'>('B')
   const [currency, setCurrency] = useState<'ARS' | 'USD' | 'EUR'>('ARS')
   const [exchangeRate, setExchangeRate] = useState(1)
-  const [issueDate, setIssueDate] = useState(new Date().toISOString().split('T')[0])
+  const [issueDate, setIssueDate] = useState(getLocalDateString())
   const [dueDate, setDueDate] = useState(
-    new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    getLocalDateString(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000))
   )
   const [notes, setNotes] = useState('')
   const [items, setItems] = useState<InvoiceItem[]>([])

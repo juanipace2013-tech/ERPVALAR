@@ -53,7 +53,7 @@ import {
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { formatNumber } from '@/lib/utils'
+import { formatNumber, getLocalDateString } from '@/lib/utils'
 import { SendQuoteDialog } from '@/components/quotes/SendQuoteDialog'
 import { SendToColppyDialog } from '@/components/quotes/SendToColppyDialog'
 import { DuplicateQuoteDialog } from '@/components/quotes/DuplicateQuoteDialog'
@@ -224,7 +224,7 @@ export default function QuoteViewPage() {
       if (data.purchaseOrderNumber) setOcNumber(data.purchaseOrderNumber)
       if (data.purchaseOrderDate) {
         const d = new Date(data.purchaseOrderDate)
-        setOcDate(d.toISOString().split('T')[0])
+        setOcDate(getLocalDateString(d))
       }
       // Fetch BCRA indicator from session cache or API (background, no await)
       if (!bcraFetched.current && data?.customer?.cuit) {
@@ -600,7 +600,7 @@ export default function QuoteViewPage() {
   const handleQuickValidity = (days: number) => {
     const date = new Date()
     date.setDate(date.getDate() + days)
-    const dateStr = date.toISOString().split('T')[0]
+    const dateStr = getLocalDateString(date)
     setValidityValue(dateStr)
     handleValidityChange(dateStr)
   }
@@ -864,7 +864,7 @@ export default function QuoteViewPage() {
                       onChange={(e) => setValidityValue(e.target.value)}
                       className="w-44 h-8 text-sm"
                       disabled={validityLoading}
-                      min={new Date().toISOString().split('T')[0]}
+                      min={getLocalDateString()}
                     />
                     <Button
                       size="sm"
@@ -902,7 +902,7 @@ export default function QuoteViewPage() {
                     type="button"
                     className="text-blue-400 hover:text-blue-700 transition-colors"
                     onClick={() => {
-                      setValidityValue(new Date(quote.validUntil!).toISOString().split('T')[0])
+                      setValidityValue(getLocalDateString(new Date(quote.validUntil!)))
                       setShowEditValidity(true)
                     }}
                     title="Editar fecha de vencimiento"

@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/select'
 import { ArrowLeft, Save, Loader2, Package, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
+import { getLocalDateString } from '@/lib/utils'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
 interface Product {
@@ -64,7 +65,7 @@ export default function NuevoMovimientoPage() {
     unitCost: 0,
     reference: '',
     notes: '',
-    date: new Date().toISOString().split('T')[0], // Fecha de hoy en formato YYYY-MM-DD
+    date: getLocalDateString(),
   })
 
   useEffect(() => {

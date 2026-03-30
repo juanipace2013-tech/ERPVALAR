@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -43,6 +43,10 @@ import {
   Pencil,
   Trash2,
   Copy,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { DuplicateDeliveryNoteDialog } from '@/components/remitos/DuplicateDeliveryNoteDialog'
@@ -110,11 +114,12 @@ export default function RemitosPage() {
   const [showDuplicateDialog, setShowDuplicateDialog] = useState(false)
   const [duplicateTarget, setDuplicateTarget] = useState<{ id: string; recipientName: string } | null>(null)
 
-  useEffect(() => {
-    fetchDeliveryNotes()
-  }, [])
+  // Pagination
+  const PAGE_SIZE = 50
+  const [page, setPage] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
 
-  const fetchDeliveryNotes = async () => {
+  const fetchDeliveryNotes = useCallback(async () => {
     try {
       setLoading(true)
       const params = new URLSearchParams()
@@ -124,6 +129,8 @@ export default function RemitosPage() {
       if (searchTerm) {
         params.append('search', searchTerm)
       }
+      params.append('page', String(page - 1))
+      params.append('pageSize', String(PAGE_SIZE))
 
       const response = await fetch(`/api/delivery-notes?${params.toString()}`)
 
@@ -133,23 +140,26 @@ export default function RemitosPage() {
 
       const data = await response.json()
       setDeliveryNotes(data.deliveryNotes || data)
+      setTotalCount(data.totalCount || 0)
     } catch (error) {
       console.error('Error:', error)
       toast.error('Error al cargar remitos')
     } finally {
       setLoading(false)
     }
-  }
+  }, [statusFilter, searchTerm, page])
+
+  useEffect(() => {
+    fetchDeliveryNotes()
+  }, [fetchDeliveryNotes])
 
   const handleSearch = () => {
-    fetchDeliveryNotes()
+    setPage(1)
   }
 
   const handleStatusFilterChange = (value: string) => {
+    setPage(1)
     setStatusFilter(value)
-    setTimeout(() => {
-      fetchDeliveryNotes()
-    }, 100)
   }
 
   const formatDate = (date: string) => {
@@ -167,13 +177,7 @@ export default function RemitosPage() {
     return dn._count?.items ?? 0
   }
 
-  const filteredDeliveryNotes = deliveryNotes.filter((dn) => {
-    const matchesSearch =
-      !searchTerm ||
-      dn.deliveryNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (dn.customer?.name || dn.supplier?.name || '').toLowerCase().includes(searchTerm.toLowerCase())
-    return matchesSearch
-  })
+  const filteredDeliveryNotes = deliveryNotes
 
   const handleSort = (column: string) => {
     if (sortColumn === column) {
@@ -306,7 +310,7 @@ export default function RemitosPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Total Remitos</p>
-                <p className="text-2xl font-bold">{deliveryNotes.length}</p>
+                <p className="text-2xl font-bold">{totalCount}</p>
               </div>
               <Package className="h-8 w-8 text-gray-400" />
             </div>
@@ -564,6 +568,38 @@ export default function RemitosPage() {
               </Table>
             </div>
           )}
+          {(() => {
+            const totalPages = Math.ceil(totalCount / PAGE_SIZE)
+            return totalPages > 1 ? (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200">
+                <div className="flex items-center gap-1">
+                  <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(1)} disabled={page === 1}>
+                    <ChevronsLeft className="h-4 w-4" />
+                  </Button>
+                  <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(page - 1)} disabled={page === 1}>
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="text-sm text-gray-500 px-3">
+                    Página <span className="font-semibold">{page}</span> de{' '}
+                    <span className="font-semibold">{totalPages}</span>
+                  </span>
+                  <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(page + 1)} disabled={page === totalPages}>
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                  <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(totalPages)} disabled={page === totalPages}>
+                    <ChevronsRight className="h-4 w-4" />
+                  </Button>
+                </div>
+                <span className="text-xs text-gray-400">
+                  {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalCount)} de {totalCount} remitos
+                </span>
+              </div>
+            ) : totalCount > 0 ? (
+              <div className="px-4 py-2 border-t border-gray-200">
+                <span className="text-xs text-gray-400">{totalCount} remitos</span>
+              </div>
+            ) : null
+          })()}
         </CardContent>
       </Card>
 

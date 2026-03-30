@@ -449,7 +449,7 @@ export async function POST(
       // 5. Enviar a Colppy
       const colppyParams = {
         idProveedor: supplier.idProveedor,
-        descripcion: `FC ${invoice.invoiceNumber}`,
+        descripcion: `${invoice.invoiceType === 'NC' ? 'NC' : invoice.invoiceType === 'ND' ? 'ND' : 'FC'} ${invoice.invoiceNumber}`,
         fechaFactura,
         fechaFacturaDoc,
         fechaPago,

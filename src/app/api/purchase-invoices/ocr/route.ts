@@ -72,6 +72,7 @@ IMPORTANTE:
 - El punto de venta y número deben tener ceros a la izquierda
 - Si no podés leer un campo, poné null
 - En condicionPago incluí el texto COMPLETO (ej: "CUENTA CORRIENTE 30 DIAS", no solo "CUENTA CORRIENTE")
+- TIPO DE COMPROBANTE: Detectar cuidadosamente si es FACTURA (FC), NOTA DE CRÉDITO (NC), o NOTA DE DÉBITO (ND). Buscar las palabras exactas "NOTA DE CRÉDITO" o "NOTA DE DÉBITO" en el encabezado del comprobante. El COD. también indica: COD.01=Factura, COD.02=Nota de Débito, COD.03=Nota de Crédito. Devolver como "NC A", "ND B", "FC A", etc.
 `
 
 export async function POST(request: NextRequest) {

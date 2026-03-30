@@ -667,7 +667,7 @@ export default function NewPurchaseInvoicePage() {
           setVoucherType(tipoStr)
         }
       }
-      if (f.tipoComprobante) setInvoiceType(f.tipoComprobante)
+      if (!f.tipo && f.tipoComprobante) setInvoiceType(f.tipoComprobante)
       if (f.puntoVenta) setPointOfSale(f.puntoVenta)
       if (f.numero) setInvoiceNumberSuffix(f.numero)
       if (f.fecha) setInvoiceDate(f.fecha)

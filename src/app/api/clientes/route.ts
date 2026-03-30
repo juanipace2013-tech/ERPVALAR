@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/prisma'
 import { customerSchema } from '@/lib/validations'
+import { normalizeCuit, buildCuitWhereClause } from '@/lib/cuit-utils'
 import { z } from 'zod'
 import { logAudit } from '@/lib/audit'
 
@@ -139,10 +140,11 @@ export async function POST(request: NextRequest) {
     // Validar datos
     const validatedData = customerSchema.parse(body)
 
-    // Verificar si el CUIT ya existe
-    const existingCustomer = await prisma.customer.findUnique({
-      where: { cuit: validatedData.cuit },
-    })
+    // Verificar si el CUIT ya existe (buscar ambos formatos)
+    const normalizedCuit = normalizeCuit(validatedData.cuit)
+    const existingCustomer = normalizedCuit
+      ? await prisma.customer.findFirst({ where: buildCuitWhereClause(normalizedCuit) })
+      : null
 
     if (existingCustomer) {
       return NextResponse.json(
@@ -157,7 +159,7 @@ export async function POST(request: NextRequest) {
         name: validatedData.name,
         businessName: validatedData.businessName,
         type: validatedData.type,
-        cuit: validatedData.cuit,
+        cuit: normalizedCuit || validatedData.cuit,
         taxCondition: validatedData.taxCondition,
         email: validatedData.email || null,
         phone: validatedData.phone,

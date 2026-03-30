@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { normalizeCuit, buildCuitWhereClause } from '@/lib/cuit-utils';
 
 export async function POST(
   request: NextRequest,
@@ -48,9 +49,10 @@ export async function POST(
     if (body.colppyCustomer) {
       const colppyCustomer = body.colppyCustomer;
 
-      const existingCustomer = await prisma.customer.findFirst({
-        where: { cuit: colppyCustomer.cuit },
-      });
+      const normalizedCuit = normalizeCuit(colppyCustomer.cuit);
+      const existingCustomer = normalizedCuit
+        ? await prisma.customer.findFirst({ where: buildCuitWhereClause(normalizedCuit) })
+        : null;
 
       if (existingCustomer) {
         await prisma.customer.update({
@@ -76,7 +78,7 @@ export async function POST(
           data: {
             name: colppyCustomer.name,
             businessName: colppyCustomer.businessName,
-            cuit: colppyCustomer.cuit,
+            cuit: normalizedCuit || colppyCustomer.cuit,
             taxCondition: colppyCustomer.taxCondition,
             email: colppyCustomer.email || null,
             phone: colppyCustomer.phone || null,

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getMultiplierForClient } from '@/lib/client-multipliers'
 import { logAudit } from '@/lib/audit'
+import { normalizeCuit, buildCuitWhereClause } from '@/lib/cuit-utils'
 
 /**
  * GET /api/quotes
@@ -146,10 +147,11 @@ export async function POST(request: NextRequest) {
     if (body.colppyCustomer) {
       const colppyCustomer = body.colppyCustomer
 
-      // Buscar o crear el cliente por CUIT
-      const existingCustomer = await prisma.customer.findFirst({
-        where: { cuit: colppyCustomer.cuit },
-      })
+      // Buscar o crear el cliente por CUIT (ambos formatos)
+      const normalizedCuit = normalizeCuit(colppyCustomer.cuit)
+      const existingCustomer = normalizedCuit
+        ? await prisma.customer.findFirst({ where: buildCuitWhereClause(normalizedCuit) })
+        : null
 
       if (existingCustomer) {
         // Actualizar datos del cliente existente
@@ -192,7 +194,7 @@ export async function POST(request: NextRequest) {
           data: {
             name: colppyCustomer.name,
             businessName: colppyCustomer.businessName,
-            cuit: colppyCustomer.cuit,
+            cuit: normalizedCuit || colppyCustomer.cuit,
             taxCondition: colppyCustomer.taxCondition,
             email: colppyCustomer.email || null,
             phone: colppyCustomer.phone || null,

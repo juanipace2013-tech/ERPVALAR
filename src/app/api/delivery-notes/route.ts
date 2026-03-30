@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { generateDeliveryNumber } from '@/lib/quote-workflow';
 import { logAudit } from '@/lib/audit';
+import { normalizeCuit, buildCuitWhereClause } from '@/lib/cuit-utils';
 
 export async function GET(request: NextRequest) {
   try {
@@ -140,9 +141,10 @@ export async function POST(request: NextRequest) {
 
     // Si viene colppyCustomer, upsert en la base local (igual que en quotes)
     if (colppyCustomer && colppyCustomer.cuit) {
-      const existing = await prisma.customer.findFirst({
-        where: { cuit: colppyCustomer.cuit },
-      });
+      const normalizedCuit = normalizeCuit(colppyCustomer.cuit);
+      const existing = normalizedCuit
+        ? await prisma.customer.findFirst({ where: buildCuitWhereClause(normalizedCuit) })
+        : null;
 
       if (existing) {
         await prisma.customer.update({
@@ -166,7 +168,7 @@ export async function POST(request: NextRequest) {
           data: {
             name: colppyCustomer.name,
             businessName: colppyCustomer.businessName,
-            cuit: colppyCustomer.cuit,
+            cuit: normalizedCuit || colppyCustomer.cuit,
             taxCondition: colppyCustomer.taxCondition,
             email: colppyCustomer.email || null,
             phone: colppyCustomer.phone || null,

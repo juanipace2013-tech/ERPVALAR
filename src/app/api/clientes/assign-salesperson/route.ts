@@ -71,7 +71,7 @@ export async function PATCH(request: NextRequest) {
       customer = await prisma.customer.create({
         data: {
           name: formattedCuit, // Se actualizará cuando se sincronice con Colppy
-          cuit: normalizedCuit,
+          cuit: formattedCuit,
           taxCondition: 'RESPONSABLE_INSCRIPTO',
           salesPersonId: salesPersonId || null,
         },

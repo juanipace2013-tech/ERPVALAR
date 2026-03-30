@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { normalizeCuit, buildCuitWhereClause } from '@/lib/cuit-utils'
 
 // Schema de validación para importación
 const importCustomerSchema = z.object({
@@ -76,10 +77,11 @@ export async function POST(request: NextRequest) {
           priceMultiplier: customer.priceMultiplier ? Number(customer.priceMultiplier) : 1.0,
         })
 
-        // Verificar si el CUIT ya existe
-        const existingCustomer = await prisma.customer.findUnique({
-          where: { cuit: validatedData.cuit },
-        })
+        // Verificar si el CUIT ya existe (buscar ambos formatos)
+        const importNormalizedCuit = normalizeCuit(validatedData.cuit)
+        const existingCustomer = importNormalizedCuit
+          ? await prisma.customer.findFirst({ where: buildCuitWhereClause(importNormalizedCuit) })
+          : null
 
         if (existingCustomer) {
           validationResults.push({
@@ -138,7 +140,7 @@ export async function POST(request: NextRequest) {
               name: result.customer.name,
               businessName: result.customer.businessName || result.customer.name,
               type: result.customer.type,
-              cuit: result.customer.cuit,
+              cuit: normalizeCuit(result.customer.cuit) || result.customer.cuit,
               taxCondition: result.customer.taxCondition,
               email: result.customer.email,
               phone: result.customer.phone,

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -38,6 +38,10 @@ import {
   MoreHorizontal,
   FileText,
   ShoppingCart,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -80,18 +84,18 @@ const statusColors: Record<string, string> = {
   CANCELLED: 'bg-red-100 text-red-800',
 }
 
+const PAGE_SIZE = 50
+
 export default function PurchaseOrdersPage() {
   const router = useRouter()
   const [orders, setOrders] = useState<PurchaseOrder[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [page, setPage] = useState(0)
+  const [totalCount, setTotalCount] = useState(0)
 
-  useEffect(() => {
-    fetchOrders()
-  }, [])
-
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     try {
       setLoading(true)
       const params = new URLSearchParams()
@@ -101,6 +105,8 @@ export default function PurchaseOrdersPage() {
       if (searchTerm) {
         params.append('search', searchTerm)
       }
+      params.append('page', String(page))
+      params.append('pageSize', String(PAGE_SIZE))
 
       const response = await fetch(`/api/purchase-orders?${params.toString()}`)
 
@@ -109,24 +115,27 @@ export default function PurchaseOrdersPage() {
       }
 
       const data = await response.json()
-      setOrders(data)
+      setOrders(data.purchaseOrders || [])
+      setTotalCount(data.totalCount || 0)
     } catch (error) {
       console.error('Error:', error)
       toast.error('Error al cargar órdenes de compra')
     } finally {
       setLoading(false)
     }
-  }
+  }, [statusFilter, searchTerm, page])
+
+  useEffect(() => {
+    fetchOrders()
+  }, [fetchOrders])
 
   const handleSearch = () => {
-    fetchOrders()
+    setPage(0)
   }
 
   const handleStatusFilterChange = (value: string) => {
     setStatusFilter(value)
-    setTimeout(() => {
-      fetchOrders()
-    }, 100)
+    setPage(0)
   }
 
   const formatDate = (date: string) => {
@@ -152,13 +161,7 @@ export default function PurchaseOrdersPage() {
     return orders.filter((order) => order.status === 'PENDING' || order.status === 'APPROVED').length
   }
 
-  const filteredOrders = orders.filter((order) => {
-    const matchesSearch =
-      !searchTerm ||
-      order.orderNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.supplier.name.toLowerCase().includes(searchTerm.toLowerCase())
-    return matchesSearch
-  })
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE)
 
   return (
     <div className="container mx-auto px-6 py-8">
@@ -265,7 +268,7 @@ export default function PurchaseOrdersPage() {
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
             </div>
-          ) : filteredOrders.length === 0 ? (
+          ) : orders.length === 0 ? (
             <div className="text-center py-12">
               <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
               <p className="text-gray-600">No se encontraron órdenes de compra</p>
@@ -292,7 +295,7 @@ export default function PurchaseOrdersPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredOrders.map((order) => (
+                  {orders.map((order) => (
                     <TableRow
                       key={order.id}
                       className="cursor-pointer hover:bg-gray-50"
@@ -364,6 +367,32 @@ export default function PurchaseOrdersPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4">
+          <p className="text-sm text-gray-600">
+            Mostrando {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, totalCount)} de {totalCount}
+          </p>
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(0)}>
+              <ChevronsLeft className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(p => p - 1)}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="px-3 text-sm">
+              Página {page + 1} de {totalPages}
+            </span>
+            <Button variant="outline" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage(totalPages - 1)}>
+              <ChevronsRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

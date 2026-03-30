@@ -14,6 +14,8 @@ export async function GET(request: NextRequest) {
     const supplierId = searchParams.get('supplierId');
     const search = searchParams.get('search');
 
+    const page = parseInt(searchParams.get('page') || '0');
+    const pageSize = parseInt(searchParams.get('pageSize') || '50');
     const where: any = {};
 
     if (status) {
@@ -31,30 +33,35 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    const purchaseInvoices = await prisma.purchaseInvoice.findMany({
-      where,
-      include: {
-        supplier: {
-          select: {
-            id: true,
-            name: true,
-            taxId: true,
+    const [purchaseInvoices, totalCount] = await Promise.all([
+      prisma.purchaseInvoice.findMany({
+        where,
+        include: {
+          supplier: {
+            select: {
+              id: true,
+              name: true,
+              taxId: true,
+            },
+          },
+          items: {
+            select: {
+              id: true,
+              quantity: true,
+              total: true,
+            },
           },
         },
-        items: {
-          select: {
-            id: true,
-            quantity: true,
-            total: true,
-          },
+        orderBy: {
+          invoiceDate: 'desc',
         },
-      },
-      orderBy: {
-        invoiceDate: 'desc',
-      },
-    });
+        take: pageSize,
+        skip: page * pageSize,
+      }),
+      prisma.purchaseInvoice.count({ where }),
+    ]);
 
-    return NextResponse.json(purchaseInvoices);
+    return NextResponse.json({ purchaseInvoices, totalCount, page, pageSize });
   } catch (error) {
     console.error('Error fetching purchase invoices:', error);
     return NextResponse.json(

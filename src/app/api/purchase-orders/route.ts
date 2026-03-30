@@ -14,6 +14,8 @@ export async function GET(request: NextRequest) {
     const supplierId = searchParams.get('supplierId');
     const search = searchParams.get('search');
 
+    const page = parseInt(searchParams.get('page') || '0');
+    const pageSize = parseInt(searchParams.get('pageSize') || '50');
     const where: any = {};
 
     if (status && status !== 'all') {
@@ -31,41 +33,46 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    const purchaseOrders = await prisma.purchaseOrder.findMany({
-      where,
-      include: {
-        supplier: {
-          select: {
-            id: true,
-            name: true,
-            taxId: true,
+    const [purchaseOrders, totalCount] = await Promise.all([
+      prisma.purchaseOrder.findMany({
+        where,
+        include: {
+          supplier: {
+            select: {
+              id: true,
+              name: true,
+              taxId: true,
+            },
           },
-        },
-        items: {
-          include: {
-            product: {
-              select: {
-                id: true,
-                name: true,
-                sku: true,
+          items: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  sku: true,
+                },
               },
             },
           },
-        },
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
           },
         },
-      },
-      orderBy: {
-        orderDate: 'desc',
-      },
-    });
+        orderBy: {
+          orderDate: 'desc',
+        },
+        take: pageSize,
+        skip: page * pageSize,
+      }),
+      prisma.purchaseOrder.count({ where }),
+    ]);
 
-    return NextResponse.json(purchaseOrders);
+    return NextResponse.json({ purchaseOrders, totalCount, page, pageSize });
   } catch (error) {
     console.error('Error fetching purchase orders:', error);
     return NextResponse.json(

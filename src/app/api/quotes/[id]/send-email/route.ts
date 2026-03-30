@@ -23,7 +23,7 @@ export async function POST(
 
     const { id } = await params;
     const body = await request.json();
-    const { email, message } = body;
+    const { email, message, additionalAttachments } = body;
 
     // Validar que haya al menos un email
     if (!email || !email.trim()) {
@@ -75,7 +75,8 @@ export async function POST(
       quoteId: id,
       recipientEmail: primaryEmail,
       ccEmails: ccEmails.length > 0 ? ccEmails : undefined,
-      message
+      message,
+      additionalAttachments,
     });
 
     return NextResponse.json({

@@ -13,13 +13,18 @@ interface SendQuoteEmailOptions {
   recipientEmail: string
   ccEmails?: string[]
   message?: string
+  additionalAttachments?: Array<{
+    filename: string
+    contentBase64: string
+    contentType: string
+  }>
 }
 
 /**
  * Envía una cotización por email al cliente, con el PDF adjunto
  */
 export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
-  const { quoteId, recipientEmail, ccEmails, message } = options
+  const { quoteId, recipientEmail, ccEmails, message, additionalAttachments } = options
 
   // Buscar cotización con datos completos
   const quote = await prisma.quote.findUnique({
@@ -181,6 +186,11 @@ export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
     // Continuar sin adjunto — el email tiene link para ver online
   }
 
+  // Construir array de todos los adjuntos
+  const allAttachments: Array<{ filename: string; contentBase64: string; contentType: string }> = []
+  if (pdfAttachment) allAttachments.push(pdfAttachment)
+  if (additionalAttachments) allAttachments.push(...additionalAttachments)
+
   const subject = `Cotización ${quote.quoteNumber} - Val Arg`
 
   // Enviar email via Microsoft Graph
@@ -190,7 +200,7 @@ export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
       subject,
       html: htmlContent,
       text: textContent,
-      attachments: pdfAttachment ? [pdfAttachment] : undefined,
+      attachments: allAttachments.length > 0 ? allAttachments : undefined,
       cc: ccEmails,
       replyTo: quote.salesPerson.email || undefined,
     })

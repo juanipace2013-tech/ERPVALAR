@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
-import { Loader2, Send, Mail } from 'lucide-react'
+import { Loader2, Send, Mail, Paperclip, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface SendQuoteDialogProps {
@@ -51,6 +51,37 @@ export function SendQuoteDialog({
   const [emails, setEmails] = useState(quote.customer.email || '')
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([])
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || [])
+
+    const oversized = files.filter(f => f.size > 3 * 1024 * 1024)
+    if (oversized.length > 0) {
+      toast.error(`Archivos demasiado grandes (máx 3MB): ${oversized.map(f => f.name).join(', ')}`)
+      return
+    }
+
+    const currentSize = attachedFiles.reduce((sum, f) => sum + f.size, 0)
+    const newSize = files.reduce((sum, f) => sum + f.size, 0)
+    if (currentSize + newSize > 10 * 1024 * 1024) {
+      toast.error('El total de archivos adjuntos no puede superar 10MB')
+      return
+    }
+
+    setAttachedFiles(prev => [...prev, ...files])
+    e.target.value = ''
+  }
+
+  function removeFile(index: number) {
+    setAttachedFiles(prev => prev.filter((_, i) => i !== index))
+  }
+
+  function formatFileSize(bytes: number): string {
+    if (bytes < 1024) return bytes + ' B'
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+  }
 
   const formatCurrency = (amount: number) => {
     const symbol = quote.currency === 'USD' ? 'USD' : 'ARS'
@@ -84,12 +115,28 @@ export function SendQuoteDialog({
     setSending(true)
 
     try {
+      // Convertir archivos a base64
+      const fileAttachments = await Promise.all(
+        attachedFiles.map(async (file) => {
+          const buffer = await file.arrayBuffer()
+          const base64 = btoa(
+            new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+          )
+          return {
+            filename: file.name,
+            contentBase64: base64,
+            contentType: file.type || 'application/octet-stream',
+          }
+        })
+      )
+
       const response = await fetch(`/api/quotes/${quote.id}/send-email`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: validEmails.join(', '),
-          message: message.trim() || undefined
+          message: message.trim() || undefined,
+          additionalAttachments: fileAttachments.length > 0 ? fileAttachments : undefined,
         })
       })
 
@@ -111,6 +158,7 @@ export function SendQuoteDialog({
       onOpenChange(false)
       onSent?.()
       setMessage('')
+      setAttachedFiles([])
     } catch (error) {
       console.error('Error enviando email:', error)
       toast.error(error instanceof Error ? error.message : 'Error al enviar email')
@@ -186,6 +234,56 @@ export function SendQuoteDialog({
             </p>
           </div>
 
+          {/* Archivos adjuntos */}
+          <div>
+            <Label>Fichas Técnicas / Adjuntos (opcional)</Label>
+            <div className="mt-1">
+              <label
+                htmlFor="file-upload"
+                className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors"
+              >
+                <Paperclip className="h-4 w-4 text-gray-500" />
+                <span className="text-sm text-gray-600">
+                  Click para adjuntar archivos
+                </span>
+                <input
+                  id="file-upload"
+                  type="file"
+                  multiple
+                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+              </label>
+            </div>
+
+            {attachedFiles.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {attachedFiles.map((file, index) => (
+                  <div
+                    key={`${file.name}-${index}`}
+                    className="flex items-center justify-between bg-gray-50 rounded px-3 py-1.5 text-sm"
+                  >
+                    <span className="truncate flex-1 mr-2">
+                      📎 {file.name} ({formatFileSize(file.size)})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeFile(index)}
+                      className="text-red-500 hover:text-red-700 flex-shrink-0"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+                <p className="text-xs text-gray-500">
+                  {attachedFiles.length} archivo(s) — Total:{' '}
+                  {formatFileSize(attachedFiles.reduce((sum, f) => sum + f.size, 0))}
+                </p>
+              </div>
+            )}
+          </div>
+
           {/* Info */}
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
             <p className="text-xs text-gray-700">
@@ -194,6 +292,9 @@ export function SendQuoteDialog({
             <ul className="text-xs text-gray-600 mt-2 space-y-1 ml-4 list-disc">
               <li>Detalles completos de la cotización</li>
               <li>PDF de la cotización adjunto</li>
+              {attachedFiles.length > 0 && (
+                <li>{attachedFiles.length} ficha(s) técnica(s) adjunta(s)</li>
+              )}
               <li>Botones para aceptar o rechazar</li>
               <li>Link para ver la cotización online</li>
               {parsedCount > 1 && (

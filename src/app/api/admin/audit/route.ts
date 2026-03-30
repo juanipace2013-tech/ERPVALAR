@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getLocalDateString } from '@/lib/utils'
 
 /**
  * GET /api/admin/audit
@@ -85,7 +86,7 @@ export async function GET(request: NextRequest) {
       return new NextResponse(csv, {
         headers: {
           'Content-Type': 'text/csv; charset=utf-8',
-          'Content-Disposition': `attachment; filename="auditoria_${new Date().toISOString().split('T')[0]}.csv"`,
+          'Content-Disposition': `attachment; filename="auditoria_${getLocalDateString()}.csv"`,
         },
       })
     }

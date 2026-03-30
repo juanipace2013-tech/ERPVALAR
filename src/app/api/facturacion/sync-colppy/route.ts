@@ -13,52 +13,15 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import * as crypto from 'crypto'
+import { getLocalDateString } from '@/lib/utils'
 import { logAudit } from '@/lib/audit'
-
-const COLPPY_ENDPOINT = 'https://login.colppy.com/lib/frontera2/service.php'
-const COLPPY_USER = process.env.COLPPY_USER || ''
-const COLPPY_PASSWORD = process.env.COLPPY_PASSWORD || ''
-const COLPPY_ID_EMPRESA = process.env.COLPPY_ID_EMPRESA || ''
+import { colppyLogin as colppyLoginCentral, colppyLogout, getColppyConfig, md5Hash, callColppyAPI, ColppySession } from '@/lib/colppy'
 
 const PAGE_SIZE = 500
 
-function md5(text: string): string {
-  return crypto.createHash('md5').update(text).digest('hex')
-}
-
-/**
- * Llama a la API de Colppy usando fetch() nativo.
- * Migrado desde execSync(curl) para mayor confiabilidad.
- */
-async function callColppy(payload: unknown): Promise<Record<string, unknown>> {
-  try {
-    const response = await fetch(COLPPY_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      redirect: 'follow',
-      signal: AbortSignal.timeout(120000), // 120s timeout para sync (payloads grandes)
-    })
-
-    const responseText = await response.text()
-    const trimmed = responseText.trim()
-
-    // Verificar que la respuesta sea JSON antes de parsear
-    if (!trimmed || (!trimmed.startsWith('{') && !trimmed.startsWith('['))) {
-      const preview = trimmed.substring(0, 500)
-      console.error(`[Colppy] Respuesta NO-JSON recibida (${trimmed.length} bytes). Primeros 500 chars:\n${preview}`)
-      throw new Error(`Colppy devolvió respuesta no-JSON (${trimmed.length} bytes). Posible error de sesión, rate limit, o mantenimiento. Preview: ${preview.substring(0, 200)}`)
-    }
-
-    return JSON.parse(trimmed)
-  } catch (error: unknown) {
-    if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
-      throw new Error(`Timeout en llamada a Colppy (120s): ${error.message}`)
-    }
-    throw error
-  }
-}
+// Convenience aliases from centralized config
+const { user: COLPPY_USER, password: COLPPY_PASSWORD, idEmpresa: COLPPY_ID_EMPRESA } = getColppyConfig()
+const COLPPY_PASSWORD_MD5 = md5Hash(COLPPY_PASSWORD)
 
 /** Helper: esperar N milisegundos sin bloquear el event loop */
 function sleep(ms: number): Promise<void> {
@@ -75,7 +38,7 @@ async function callColppyWithRetry(
   updatePayloadSession: (payload: unknown, claveSesion: string) => unknown
 ): Promise<Record<string, unknown>> {
   try {
-    return await callColppy(payload)
+    return await callColppyAPI<Record<string, unknown>>(payload, 120000)
   } catch (firstError: unknown) {
     const msg = firstError instanceof Error ? firstError.message : ''
     console.warn(`[Colppy] Primer intento falló: ${msg.substring(0, 200)}. Re-autenticando...`)
@@ -87,24 +50,14 @@ async function callColppyWithRetry(
     // Esperar 2 segundos antes de reintentar (evitar rate limit)
     await sleep(2000)
 
-    return await callColppy(updatedPayload)
+    return await callColppyAPI<Record<string, unknown>>(updatedPayload, 120000)
   }
 }
 
-async function colppyLogin(): Promise<string> {
-  const passwordMD5 = md5(COLPPY_PASSWORD)
-  const response = await callColppy({
-    auth: { usuario: COLPPY_USER, password: passwordMD5 },
-    service: { provision: 'Usuario', operacion: 'iniciar_sesion' },
-    parameters: { usuario: COLPPY_USER, password: passwordMD5 },
-  }) as { result?: { estado?: number; mensaje?: string }; response?: { data?: { claveSesion?: string } } }
-
-  if (response.result?.estado !== 0) {
-    throw new Error(`Error login Colppy: ${response.result?.mensaje}`)
-  }
-  const key = response.response?.data?.claveSesion || ''
-  console.log(`[Sync Colppy] Login OK, sesión: ${key.substring(0, 8)}...`)
-  return key
+async function localColppyLogin(): Promise<string> {
+  const session = await colppyLoginCentral()
+  console.log(`[Sync Colppy] Login OK, sesión: ${session.claveSesion.substring(0, 8)}...`)
+  return session.claveSesion
 }
 
 // Mapeos de Colppy
@@ -200,7 +153,7 @@ async function fetchAllColppyClients(claveSesion: string, passwordMD5: string): 
     const response = await callColppyWithRetry(
       payload,
       async () => {
-        const newSession = await colppyLogin()
+        const newSession = await localColppyLogin()
         return { claveSesion: newSession, passwordMD5 }
       },
       (p, newSession) => {
@@ -272,7 +225,7 @@ async function fetchAllColppyFacturas(
       const response = await callColppyWithRetry(
         payload,
         async () => {
-          currentSession = await colppyLogin()
+          currentSession = await localColppyLogin()
           return { claveSesion: currentSession, passwordMD5 }
         },
         (p, newSession) => {
@@ -361,14 +314,14 @@ export async function POST(request: NextRequest) {
       ? new Date(body.dateTo)
       : new Date()
 
-    const dateFromStr = dateFrom.toISOString().split('T')[0]
-    const dateToStr = dateTo.toISOString().split('T')[0]
+    const dateFromStr = getLocalDateString(dateFrom)
+    const dateToStr = getLocalDateString(dateTo)
 
     console.log(`[Sync Colppy] Sincronizando facturas desde ${dateFromStr} hasta ${dateToStr}...`)
 
     // 1. Login a Colppy
-    const claveSesion = await colppyLogin()
-    const passwordMD5 = md5(COLPPY_PASSWORD)
+    const claveSesion = await localColppyLogin()
+    const passwordMD5 = COLPPY_PASSWORD_MD5
 
     // 2. Fetch TODAS las facturas de Colppy con paginación (con degradación graceful)
     const fetchResult = await fetchAllColppyFacturas(claveSesion, passwordMD5, dateFromStr, dateToStr)
@@ -623,7 +576,7 @@ export async function POST(request: NextRequest) {
       const aplicadoARS = parseFloat(String(f.totalaplicado || '0'))
       const netoGravadoARS = parseFloat(String(f.netoGravado || '0'))
       const totalIVAARS = parseFloat(String(f.totalIVA || '0'))
-      const fechaFactura = String(f.fechaFactura || new Date().toISOString().split('T')[0]).split(' ')[0]
+      const fechaFactura = String(f.fechaFactura || getLocalDateString()).split(' ')[0]
 
       let monedaCode: string
       let tipoCambio: number

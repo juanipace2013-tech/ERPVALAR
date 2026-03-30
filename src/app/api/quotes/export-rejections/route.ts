@@ -11,6 +11,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getLocalDateString } from '@/lib/utils'
 import ExcelJS from 'exceljs'
 
 const HEADER_FILL: ExcelJS.FillPattern = {
@@ -255,7 +256,7 @@ export async function GET(request: NextRequest) {
     // ======================== ENVIAR ========================
     const buffer = await workbook.xlsx.writeBuffer()
 
-    const today = new Date().toISOString().split('T')[0].replace(/-/g, '')
+    const today = getLocalDateString().replace(/-/g, '')
     return new NextResponse(buffer as Buffer, {
       headers: {
         'Content-Type':

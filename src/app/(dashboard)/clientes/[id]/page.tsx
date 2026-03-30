@@ -132,8 +132,25 @@ export default function ClienteDetailPage() {
         }
 
         if (match) {
-          setCustomer(match)
-          setCuit(match.cuit?.replace(/\D/g, '') || '')
+          const cleanCuit = match.cuit?.replace(/\D/g, '') || ''
+          setCuit(cleanCuit)
+          // Buscar datos locales para no perder priceMultiplier y transport
+          if (cleanCuit) {
+            const localCustomer = await fetchLocalByCuit(cleanCuit)
+            if (localCustomer) {
+              setCustomer({
+                ...match,
+                priceMultiplier: Number(localCustomer.priceMultiplier) || match.priceMultiplier || 1,
+                defaultTransportName: localCustomer.defaultTransportName || match.defaultTransportName || '',
+                defaultTransportAddress: localCustomer.defaultTransportAddress || match.defaultTransportAddress || '',
+                defaultTransportSchedule: localCustomer.defaultTransportSchedule || match.defaultTransportSchedule || '',
+              })
+            } else {
+              setCustomer(match)
+            }
+          } else {
+            setCustomer(match)
+          }
         } else {
           // Fallback: buscar en DB local por colppyId (search busca por nombre/cuit/email)
           // No hay filtro directo por colppyId en el endpoint, así que solo informar
@@ -147,7 +164,19 @@ export default function ClienteDetailPage() {
         // Intentar Colppy primero
         const colppyMatch = await tryColppyByCuit(cleanCuit)
         if (colppyMatch) {
-          setCustomer(colppyMatch)
+          // Buscar datos locales para no perder priceMultiplier y transport
+          const localCustomer = await fetchLocalByCuit(cleanCuit)
+          if (localCustomer) {
+            setCustomer({
+              ...colppyMatch,
+              priceMultiplier: Number(localCustomer.priceMultiplier) || colppyMatch.priceMultiplier || 1,
+              defaultTransportName: localCustomer.defaultTransportName || colppyMatch.defaultTransportName || '',
+              defaultTransportAddress: localCustomer.defaultTransportAddress || colppyMatch.defaultTransportAddress || '',
+              defaultTransportSchedule: localCustomer.defaultTransportSchedule || colppyMatch.defaultTransportSchedule || '',
+            })
+          } else {
+            setCustomer(colppyMatch)
+          }
         } else {
           // Fallback: buscar en DB local por CUIT
           const localCustomer = await fetchLocalByCuit(cleanCuit)
@@ -170,12 +199,13 @@ export default function ClienteDetailPage() {
         if (localCuit && localCuit.length === 11) {
           const colppyMatch = await tryColppyByCuit(localCuit)
           if (colppyMatch) {
-            // Merge: Colppy data + local transport defaults
+            // Merge: Colppy data + local commercial data (priceMultiplier, transport)
             setCustomer({
               ...colppyMatch,
-              defaultTransportName: colppyMatch.defaultTransportName || localData.defaultTransportName || '',
-              defaultTransportAddress: colppyMatch.defaultTransportAddress || localData.defaultTransportAddress || '',
-              defaultTransportSchedule: colppyMatch.defaultTransportSchedule || localData.defaultTransportSchedule || '',
+              priceMultiplier: Number(localData.priceMultiplier) || colppyMatch.priceMultiplier || 1,
+              defaultTransportName: localData.defaultTransportName || colppyMatch.defaultTransportName || '',
+              defaultTransportAddress: localData.defaultTransportAddress || colppyMatch.defaultTransportAddress || '',
+              defaultTransportSchedule: localData.defaultTransportSchedule || colppyMatch.defaultTransportSchedule || '',
             })
             return
           }

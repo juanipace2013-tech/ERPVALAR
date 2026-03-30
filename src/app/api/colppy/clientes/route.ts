@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as crypto from 'crypto';
 import { getMultiplierForClient } from '@/lib/client-multipliers';
+import { auth } from '@/auth';
 
 // ============================================================================
 // CONFIGURACIÓN
@@ -253,6 +254,11 @@ function mapCustomers(data: any[]): CachedCustomer[] {
  */
 export async function GET(request: NextRequest) {
   try {
+    const session = await auth()
+    if (!session?.user) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    }
+
     const { searchParams } = new URL(request.url);
     const search = (searchParams.get('search') || '').trim().toLowerCase();
     const limit = parseInt(searchParams.get('limit') || '20');
@@ -323,6 +329,11 @@ export async function GET(request: NextRequest) {
  */
 export async function POST() {
   try {
+    const session = await auth()
+    if (!session?.user) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    }
+
     console.log('[Colppy] Refrescando cache de clientes manualmente...');
 
     // Invalidar cache

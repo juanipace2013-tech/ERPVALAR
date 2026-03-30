@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
+import { auth } from '@/auth';
 
 // ============================================================================
 // CONFIGURACIÓN
@@ -199,6 +200,11 @@ async function loadAllInventory(): Promise<Map<string, InventoryItem>> {
  */
 export async function GET(request: NextRequest) {
   try {
+    const session = await auth()
+    if (!session?.user) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    }
+
     const { searchParams } = new URL(request.url);
     const sku = searchParams.get('sku');
     const skusParam = searchParams.get('skus');
@@ -285,6 +291,11 @@ export async function GET(request: NextRequest) {
  */
 export async function POST() {
   try {
+    const session = await auth()
+    if (!session?.user) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    }
+
     console.log('[Colppy Inventario] Refrescando cache y persistiendo stock en DB...');
 
     // Invalidar cache

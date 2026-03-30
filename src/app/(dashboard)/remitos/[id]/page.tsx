@@ -49,8 +49,9 @@ import {
   Mail,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Copy } from 'lucide-react'
+import { Copy, Tag } from 'lucide-react'
 import { generateRemitoPDF, type RemitoPDFData, type CaiPDFData } from '@/lib/pdf/remito-generator'
+import { generateShippingLabels, type ShippingLabelData } from '@/lib/pdf/shipping-label-generator'
 import { SendRemitoDialog } from '@/components/remitos/SendRemitoDialog'
 import { DuplicateDeliveryNoteDialog } from '@/components/remitos/DuplicateDeliveryNoteDialog'
 import { getLocalDateString } from '@/lib/utils'
@@ -380,6 +381,51 @@ export default function DeliveryNoteDetailPage() {
     }
   }
 
+  const handleDownloadLabel = () => {
+    if (!deliveryNote) return
+    try {
+      const recipient = deliveryNote.customer || deliveryNote.supplier
+
+      const labelData: ShippingLabelData = {
+        deliveryNumber: deliveryNote.deliveryNumber,
+        date: new Date(deliveryNote.date),
+        customer: {
+          name: recipient?.name || 'Sin destinatario',
+          businessName: deliveryNote.customer?.businessName || deliveryNote.supplier?.legalName || null,
+          cuit: recipient
+            ? (deliveryNote.customer?.cuit || deliveryNote.supplier?.taxId || '')
+            : '',
+          phone: recipient?.phone || null,
+          address: recipient?.address || null,
+          city: recipient?.city || null,
+          province: recipient?.province || null,
+        },
+        deliveryAddress: deliveryNote.deliveryAddress,
+        deliveryCity: deliveryNote.deliveryCity,
+        deliveryProvince: deliveryNote.deliveryProvince,
+        deliveryPostalCode: deliveryNote.deliveryPostalCode,
+        carrier: deliveryNote.carrier,
+        transportAddress: deliveryNote.transportAddress,
+        purchaseOrder: deliveryNote.purchaseOrder,
+        bultos: deliveryNote.bultos,
+      }
+
+      const blob = generateShippingLabels(labelData)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Rotulo-${deliveryNote.deliveryNumber.replace(/\s/g, '-')}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast.success('Rótulo generado correctamente')
+    } catch (error) {
+      console.error('Error generating label:', error)
+      toast.error('Error al generar el rótulo')
+    }
+  }
+
   const handleDownloadExcel = async () => {
     if (!deliveryNote) return
     try {
@@ -587,6 +633,11 @@ export default function DeliveryNoteDetailPage() {
             <Button variant="outline" onClick={handleDownloadPDF}>
               <Download className="h-4 w-4 mr-2" />
               Descargar PDF
+            </Button>
+
+            <Button variant="outline" onClick={handleDownloadLabel}>
+              <Tag className="h-4 w-4 mr-2" />
+              Imprimir Rótulo
             </Button>
 
             <Button variant="outline" onClick={() => setShowSendEmailDialog(true)}>

@@ -18,6 +18,8 @@ export interface ShippingLabelData {
   deliveryCity?: string | null
   deliveryProvince?: string | null
   deliveryPostalCode?: string | null
+  deliveryContactName?: string | null
+  deliveryContactPhone?: string | null
   carrier?: string | null
   transportAddress?: string | null
   purchaseOrder?: string | null
@@ -108,7 +110,14 @@ function drawLabel(
   y += 8 + (addressLines.length * 5) + 6
 
   // CONTACTO
-  const contactInfo = data.customer.phone || data.customer.mobile || ''
+  const contactParts: string[] = []
+  if (data.deliveryContactName) contactParts.push(data.deliveryContactName)
+  if (data.deliveryContactPhone) contactParts.push(`Tel: ${data.deliveryContactPhone}`)
+  if (contactParts.length === 0) {
+    if (data.customer.phone) contactParts.push(data.customer.phone)
+    else if (data.customer.mobile) contactParts.push(data.customer.mobile)
+  }
+  const contactInfo = contactParts.join(' — ')
   if (contactInfo) {
     drawField(doc, 'CONTACTO', contactInfo, margin, y, contentWidth, 11)
     y += 14

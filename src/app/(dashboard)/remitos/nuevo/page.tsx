@@ -246,6 +246,8 @@ export default function NuevoRemitoPage() {
   const [deliveryCity, setDeliveryCity] = useState('')
   const [deliveryProvince, setDeliveryProvince] = useState('')
   const [deliveryPostalCode, setDeliveryPostalCode] = useState('')
+  const [deliveryContactName, setDeliveryContactName] = useState('')
+  const [deliveryContactPhone, setDeliveryContactPhone] = useState('')
 
   // Resolve local customer ID when customer is selected (direct mode)
   // Also pre-fill transport defaults from customer
@@ -508,6 +510,8 @@ export default function NuevoRemitoPage() {
           deliveryCity: deliveryCity || undefined,
           deliveryProvince: deliveryProvince || undefined,
           deliveryPostalCode: deliveryPostalCode || undefined,
+          deliveryContactName: deliveryContactName || undefined,
+          deliveryContactPhone: deliveryContactPhone || undefined,
         }),
       })
 
@@ -571,6 +575,8 @@ export default function NuevoRemitoPage() {
           deliveryCity: deliveryCity || undefined,
           deliveryProvince: deliveryProvince || undefined,
           deliveryPostalCode: deliveryPostalCode || undefined,
+          deliveryContactName: deliveryContactName || undefined,
+          deliveryContactPhone: deliveryContactPhone || undefined,
           items: items.map((item) => ({
             productId: item.productId,
             sku: item.sku,
@@ -751,6 +757,8 @@ export default function NuevoRemitoPage() {
                     setDeliveryCity(addr.deliveryCity || '')
                     setDeliveryProvince(addr.deliveryProvince || '')
                     setDeliveryPostalCode(addr.deliveryPostalCode || '')
+                    setDeliveryContactName(addr.deliveryContactName || '')
+                    setDeliveryContactPhone(addr.deliveryContactPhone || '')
                   }}
                 />
               )}
@@ -929,6 +937,8 @@ export default function NuevoRemitoPage() {
                   setDeliveryCity(addr.deliveryCity || '')
                   setDeliveryProvince(addr.deliveryProvince || '')
                   setDeliveryPostalCode(addr.deliveryPostalCode || '')
+                  setDeliveryContactName(addr.deliveryContactName || '')
+                  setDeliveryContactPhone(addr.deliveryContactPhone || '')
                 }}
               />
             )}

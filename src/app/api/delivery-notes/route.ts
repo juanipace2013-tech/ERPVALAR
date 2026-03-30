@@ -226,6 +226,8 @@ export async function POST(request: NextRequest) {
         deliveryCity: body.deliveryCity || customer.city || null,
         deliveryProvince: body.deliveryProvince || customer.province || null,
         deliveryPostalCode: body.deliveryPostalCode || customer.postalCode || null,
+        deliveryContactName: body.deliveryContactName || null,
+        deliveryContactPhone: body.deliveryContactPhone || null,
         status: 'PENDING',
         items: {
           create: items.map((item: any) => ({

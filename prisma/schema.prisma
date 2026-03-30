@@ -1166,6 +1166,8 @@ model DeliveryNote {
   deliveryCity      String?
   deliveryProvince  String?
   deliveryPostalCode String?
+  deliveryContactName  String?
+  deliveryContactPhone String?
 
   // Estado
   status            DeliveryNoteStatus @default(PENDING)

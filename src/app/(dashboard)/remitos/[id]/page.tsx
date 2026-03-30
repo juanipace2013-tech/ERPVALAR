@@ -66,6 +66,8 @@ interface DeliveryNote {
   deliveryCity: string | null
   deliveryProvince: string | null
   deliveryPostalCode: string | null
+  deliveryContactName: string | null
+  deliveryContactPhone: string | null
   carrier: string | null
   transportAddress: string | null
   trackingNumber: string | null
@@ -404,6 +406,8 @@ export default function DeliveryNoteDetailPage() {
         deliveryCity: deliveryNote.deliveryCity,
         deliveryProvince: deliveryNote.deliveryProvince,
         deliveryPostalCode: deliveryNote.deliveryPostalCode,
+        deliveryContactName: deliveryNote.deliveryContactName,
+        deliveryContactPhone: deliveryNote.deliveryContactPhone,
         carrier: deliveryNote.carrier,
         transportAddress: deliveryNote.transportAddress,
         purchaseOrder: deliveryNote.purchaseOrder,

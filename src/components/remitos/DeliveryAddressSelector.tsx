@@ -28,6 +28,8 @@ interface AddressSelection {
   deliveryCity: string | null
   deliveryProvince: string | null
   deliveryPostalCode: string | null
+  deliveryContactName: string | null
+  deliveryContactPhone: string | null
 }
 
 interface Props {
@@ -69,6 +71,8 @@ export default function DeliveryAddressSelector({
               deliveryCity: defaultAddr.city,
               deliveryProvince: defaultAddr.province,
               deliveryPostalCode: defaultAddr.postalCode,
+              deliveryContactName: defaultAddr.contactName,
+              deliveryContactPhone: defaultAddr.contactPhone,
             })
           } else {
             setSelected('fiscal')
@@ -103,6 +107,8 @@ export default function DeliveryAddressSelector({
         deliveryCity: fiscalAddress.city,
         deliveryProvince: fiscalAddress.province,
         deliveryPostalCode: fiscalAddress.postalCode,
+        deliveryContactName: null,
+        deliveryContactPhone: null,
       })
     } else {
       const addr = addresses.find((a) => a.id === value)
@@ -112,6 +118,8 @@ export default function DeliveryAddressSelector({
           deliveryCity: addr.city,
           deliveryProvince: addr.province,
           deliveryPostalCode: addr.postalCode,
+          deliveryContactName: addr.contactName,
+          deliveryContactPhone: addr.contactPhone,
         })
       }
     }

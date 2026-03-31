@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 export async function GET(
   request: NextRequest,
@@ -44,7 +45,7 @@ export async function GET(
 
     return NextResponse.json(route)
   } catch (error) {
-    console.error('Error fetching route:', error)
+    logger.error('Error fetching route:', error)
     return NextResponse.json(
       { error: 'Error al obtener hoja de ruta' },
       { status: 500 }
@@ -143,7 +144,7 @@ export async function PUT(
 
     return NextResponse.json(route)
   } catch (error) {
-    console.error('Error updating route:', error)
+    logger.error('Error updating route:', error)
     return NextResponse.json(
       { error: 'Error al actualizar hoja de ruta' },
       { status: 500 }

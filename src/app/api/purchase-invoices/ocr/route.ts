@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { logger } from '@/lib/logger'
 
 const EXTRACTION_PROMPT = `Analizá esta factura de compra argentina y extraé TODOS los datos con precisión.
 Es CRÍTICO que extraigas las cantidades, precios unitarios e importes EXACTOS como figuran en la factura.
@@ -196,7 +197,7 @@ export async function POST(request: NextRequest) {
       jsonText = jsonText.replace(/^```json?\s*/i, '').replace(/\s*```$/i, '')
       extractedData = JSON.parse(jsonText)
     } catch {
-      console.error('Error parsing Claude response:', textBlock.text)
+      logger.error('Error parsing Claude response:', textBlock.text)
       return NextResponse.json(
         {
           error: 'Error al parsear la respuesta de la IA. Intentá con una imagen más clara.',
@@ -209,7 +210,7 @@ export async function POST(request: NextRequest) {
     // Check stop reason - if max_tokens, the response was truncated
     const stopReason = response.stop_reason
     if (stopReason === 'max_tokens') {
-      console.warn('⚠️ OCR response was TRUNCATED (max_tokens reached)')
+      logger.warn('⚠️ OCR response was TRUNCATED (max_tokens reached)')
     }
 
     // ── Normalizar punto de venta (5 dígitos) y número de comprobante (8 dígitos)
@@ -265,7 +266,7 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Error in OCR endpoint:', error)
+    logger.error('Error in OCR endpoint:', error)
 
     if (error instanceof Anthropic.APIError) {
       if (error.status === 401) {

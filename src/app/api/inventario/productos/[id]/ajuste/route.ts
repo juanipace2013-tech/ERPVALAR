@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 /**
  * API Endpoint: /api/inventario/productos/[id]/ajuste
  * Adjust product stock to a specific quantity
@@ -61,7 +62,7 @@ export async function POST(
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    console.error('Error adjusting stock:', error);
+    logger.error('Error adjusting stock:', error);
     return NextResponse.json(
       { error: 'Error al ajustar el stock' },
       { status: 500 }

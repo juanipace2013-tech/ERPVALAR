@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 /**
  * GET /api/clientes/by-cuit/[cuit]
@@ -129,7 +130,7 @@ export async function GET(
       },
     })
   } catch (error: any) {
-    console.error('Error fetching customer by CUIT:', error)
+    logger.error('Error fetching customer by CUIT:', error)
     return NextResponse.json(
       { error: error.message || 'Error al buscar cliente', found: false },
       { status: 500 }

@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { logger } from '@/lib/logger'
 
 export async function POST(
   request: NextRequest,
@@ -149,7 +150,7 @@ export async function POST(
 
     return NextResponse.json(purchaseInvoice, { status: 201 });
   } catch (error: any) {
-    console.error('Error converting purchase order to invoice:', error);
+    logger.error('Error converting purchase order to invoice:', error);
     return NextResponse.json(
       { error: error.message || 'Error al convertir orden en factura' },
       { status: 500 }

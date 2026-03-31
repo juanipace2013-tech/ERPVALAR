@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -25,7 +26,7 @@ export async function GET(_request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Error generating template:', error)
+    logger.error('Error generating template:', error)
     return NextResponse.json(
       { error: 'Error al generar plantilla' },
       { status: 500 }
@@ -143,7 +144,7 @@ export async function POST(request: NextRequest) {
       success: validateOnly ? 0 : validCount,
     })
   } catch (error) {
-    console.error('Error importing suppliers:', error)
+    logger.error('Error importing suppliers:', error)
     return NextResponse.json(
       { error: 'Error al procesar importación' },
       { status: 500 }

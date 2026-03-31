@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { getMultiplierForClient } from '@/lib/client-multipliers'
 import { logAudit } from '@/lib/audit'
 import { normalizeCuit, buildCuitWhereClause } from '@/lib/cuit-utils'
+import { logger } from '@/lib/logger'
 
 /**
  * GET /api/quotes
@@ -118,7 +119,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ quotes, totalCount, page, pageSize })
   } catch (error) {
-    console.error('Error fetching quotes:', error)
+    logger.error('Error fetching quotes:', error)
     return NextResponse.json(
       { error: 'Error al obtener cotizaciones' },
       { status: 500 }
@@ -139,7 +140,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
 
-    console.log('📥 Creando cotización:', body)
+    logger.info('📥 Creando cotización:', body)
 
     // Si se envió un cliente de Colppy, hacer upsert en la base de datos local
     let customerId = body.customerId
@@ -181,9 +182,9 @@ export async function POST(request: NextRequest) {
         })
         customerId = updatedCustomer.id
         if (shouldSyncMultiplier) {
-          console.log(`✅ Cliente actualizado desde Colppy: ${updatedCustomer.name} (multiplicador sincronizado: ${configuredMultiplier}x)`)
+          logger.info(`✅ Cliente actualizado desde Colppy: ${updatedCustomer.name} (multiplicador sincronizado: ${configuredMultiplier}x)`)
         } else {
-          console.log('✅ Cliente actualizado desde Colppy:', updatedCustomer.name)
+          logger.info('✅ Cliente actualizado desde Colppy:', updatedCustomer.name)
         }
       } else {
         // Crear nuevo cliente - buscar multiplicador preconfigurado por razón social
@@ -210,7 +211,7 @@ export async function POST(request: NextRequest) {
           },
         })
         customerId = newCustomer.id
-        console.log(`✅ Cliente creado desde Colppy: ${newCustomer.name} (multiplicador: ${configuredMultiplier}x)`)
+        logger.info(`✅ Cliente creado desde Colppy: ${newCustomer.name} (multiplicador: ${configuredMultiplier}x)`)
       }
     }
 
@@ -222,29 +223,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Generar número de cotización
-    const year = new Date().getFullYear()
-    const lastQuote = await prisma.quote.findFirst({
-      where: {
-        quoteNumber: {
-          startsWith: `VAL-${year}-`,
-        },
-      },
-      orderBy: {
-        quoteNumber: 'desc',
-      },
-    })
-
-    let nextNumber = 1
-    if (lastQuote) {
-      const match = lastQuote.quoteNumber.match(/VAL-\d{4}-(\d{3})/)
-      if (match) {
-        nextNumber = parseInt(match[1]) + 1
-      }
-    }
-
-    const quoteNumber = `VAL-${year}-${String(nextNumber).padStart(3, '0')}`
-
     // Obtener multiplicador del cliente para precargar en la cotización
     const customerForMultiplier = await prisma.customer.findUnique({
       where: { id: customerId },
@@ -252,29 +230,53 @@ export async function POST(request: NextRequest) {
     })
     const customerMultiplier = customerForMultiplier ? Number(customerForMultiplier.priceMultiplier) : 1.0
 
-    // Crear cotización
-    const quote = await prisma.quote.create({
-      data: {
-        quoteNumber,
-        customerId,
-        salesPersonId: body.salesPersonId || session.user.id,
-        opportunityId: body.opportunityId,
-        date: new Date(body.date || Date.now()),
-        exchangeRate: body.exchangeRate,
-        currency: body.currency || 'USD',
-        multiplier: body.multiplier || customerMultiplier,
-        subtotal: body.subtotal || 0,
-        total: body.total || 0,
-        validUntil: body.validUntil ? new Date(body.validUntil) : null,
-        terms: body.terms,
-        notes: body.notes,
-        tenderNumber: body.tenderNumber || null,
-        status: 'DRAFT',
-      },
-      include: {
-        customer: true,
-        salesPerson: true,
-      },
+    // Generar número + crear cotización en transacción para evitar race conditions
+    const quote = await prisma.$transaction(async (tx) => {
+      const year = new Date().getFullYear()
+      const lastQuote = await tx.quote.findFirst({
+        where: {
+          quoteNumber: {
+            startsWith: `VAL-${year}-`,
+          },
+        },
+        orderBy: {
+          quoteNumber: 'desc',
+        },
+      })
+
+      let nextNumber = 1
+      if (lastQuote) {
+        const match = lastQuote.quoteNumber.match(/VAL-\d{4}-(\d{3})/)
+        if (match) {
+          nextNumber = parseInt(match[1]) + 1
+        }
+      }
+
+      const quoteNumber = `VAL-${year}-${String(nextNumber).padStart(3, '0')}`
+
+      return tx.quote.create({
+        data: {
+          quoteNumber,
+          customerId,
+          salesPersonId: body.salesPersonId || session.user.id,
+          opportunityId: body.opportunityId,
+          date: new Date(body.date || Date.now()),
+          exchangeRate: body.exchangeRate,
+          currency: body.currency || 'USD',
+          multiplier: body.multiplier || customerMultiplier,
+          subtotal: body.subtotal || 0,
+          total: body.total || 0,
+          validUntil: body.validUntil ? new Date(body.validUntil) : null,
+          terms: body.terms,
+          notes: body.notes,
+          tenderNumber: body.tenderNumber || null,
+          status: 'DRAFT',
+        },
+        include: {
+          customer: true,
+          salesPerson: true,
+        },
+      })
     })
 
     // Registrar actividad
@@ -302,11 +304,11 @@ export async function POST(request: NextRequest) {
       description: `Creó cotización ${quote.quoteNumber} para ${quote.customer.name}`,
     })
 
-    console.log('✅ Cotización creada:', quote.quoteNumber)
+    logger.info('✅ Cotización creada:', quote.quoteNumber)
 
     return NextResponse.json(quote, { status: 201 })
   } catch (error) {
-    console.error('❌ Error al crear cotización:', error)
+    logger.error('❌ Error al crear cotización:', error)
     return NextResponse.json(
       {
         error: 'Error al crear cotización',

@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 import {
   getFarthestDelivery,
   type KanbanColumn,
@@ -271,7 +272,7 @@ export async function GET(request: NextRequest) {
       filters: { vendedores, clientes },
     })
   } catch (error) {
-    console.error('Error fetching facturacion board:', error)
+    logger.error('Error fetching facturacion board:', error)
     return NextResponse.json(
       { error: 'Error al cargar tablero de facturación' },
       { status: 500 }

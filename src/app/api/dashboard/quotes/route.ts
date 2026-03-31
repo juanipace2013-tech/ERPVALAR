@@ -1,5 +1,6 @@
 import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
+import { logger } from '@/lib/logger'
 import {
   getQuoteDashboardMetrics,
   getCotizacionesPorMes,
@@ -50,7 +51,7 @@ export async function GET() {
       tipoCambio
     })
   } catch (error) {
-    console.error('Error en dashboard de cotizaciones:', error)
+    logger.error('Error en dashboard de cotizaciones:', error)
     return NextResponse.json(
       { error: 'Error al obtener datos del dashboard' },
       { status: 500 }

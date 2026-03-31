@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { colppyLogin, colppyLogout, getColppyConfig, md5Hash, callColppyAPI, ColppySession } from '@/lib/colppy'
+import { logger } from '@/lib/logger'
 
 // ─── Estado en memoria ──────────────────────────────────────────────────────
 
@@ -68,7 +69,7 @@ export async function GET(req: NextRequest) {
     }
 
     const colppyClients: any[] = listRes.response.data || []
-    console.log(`[CRON] Sync balances: ${colppyClients.length} clientes de Colppy`)
+    logger.info(`[CRON] Sync balances: ${colppyClients.length} clientes de Colppy`)
 
     // 3. Cargar mapa colppyId → id de la DB local
     const localCustomers = await prisma.customer.findMany({
@@ -115,7 +116,7 @@ export async function GET(req: NextRequest) {
       duration: `${duration}s`,
     }
 
-    console.log(`[CRON] Sync balances completed: ${updated} clients updated, ${errors} errors in ${duration}s`)
+    logger.info(`[CRON] Sync balances completed: ${updated} clients updated, ${errors} errors in ${duration}s`)
 
     return NextResponse.json({
       status: 'ok',
@@ -128,7 +129,7 @@ export async function GET(req: NextRequest) {
     }
   } catch (error: any) {
     const duration = ((Date.now() - startTime) / 1000).toFixed(1)
-    console.error(`[CRON] Sync balances FAILED after ${duration}s:`, error.message)
+    logger.error(`[CRON] Sync balances FAILED after ${duration}s:`, error.message)
 
     return NextResponse.json(
       { error: error.message, duration: `${duration}s` },

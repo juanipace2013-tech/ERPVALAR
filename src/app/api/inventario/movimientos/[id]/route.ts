@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 /**
  * API Endpoint: /api/inventario/movimientos/[id]
  * Get details of a specific stock movement
@@ -75,7 +76,7 @@ export async function GET(
       totalCost: Number(movement.totalCost),
     });
   } catch (error) {
-    console.error('Error fetching stock movement:', error);
+    logger.error('Error fetching stock movement:', error);
     return NextResponse.json(
       { error: 'Error al obtener el movimiento' },
       { status: 500 }

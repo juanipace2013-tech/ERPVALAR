@@ -4,6 +4,7 @@
 
 import axios from 'axios'
 import https from 'https'
+import { logger } from '@/lib/logger'
 
 interface BCRAMoneda {
   codigoMoneda: string
@@ -49,7 +50,7 @@ export async function getBCRAUSDRate(): Promise<{
     // API del BCRA v1 - Cotizaciones
     const url = 'https://api.bcra.gob.ar/estadisticascambiarias/v1.0/Cotizaciones'
 
-    console.log('📊 Consultando BCRA:', url)
+    logger.info('📊 Consultando BCRA:', url)
 
     const response = await bcraClient.get<BCRACotizacionResponse>(url)
 
@@ -68,7 +69,7 @@ export async function getBCRAUSDRate(): Promise<{
       throw new Error('No se encontró cotización USD en los datos del BCRA')
     }
 
-    console.log('✅ Tipo de cambio BCRA obtenido:', {
+    logger.info('✅ Tipo de cambio BCRA obtenido:', {
       fecha: data.results.fecha,
       moneda: usdData.descripcion,
       tipoCotizacion: usdData.tipoCotizacion,
@@ -80,7 +81,7 @@ export async function getBCRAUSDRate(): Promise<{
       source: 'BANCO_CENTRAL',
     }
   } catch (error) {
-    console.error('❌ Error al obtener tipo de cambio del BCRA:', error)
+    logger.error('❌ Error al obtener tipo de cambio del BCRA:', error)
     throw new Error(
       error instanceof Error
         ? `Error BCRA: ${error.message}`
@@ -96,20 +97,20 @@ export async function getBCRACotizaciones(): Promise<BCRACotizacionResponse> {
   try {
     const url = 'https://api.bcra.gob.ar/estadisticascambiarias/v1.0/Cotizaciones'
 
-    console.log('📊 Consultando cotizaciones BCRA:', url)
+    logger.info('📊 Consultando cotizaciones BCRA:', url)
 
     const response = await bcraClient.get<BCRACotizacionResponse>(url)
 
     const data = response.data
 
-    console.log('✅ Cotizaciones BCRA obtenidas:', {
+    logger.info('✅ Cotizaciones BCRA obtenidas:', {
       fecha: data.results.fecha,
       monedas: data.results.detalle.length,
     })
 
     return data
   } catch (error) {
-    console.error('❌ Error al obtener cotizaciones del BCRA:', error)
+    logger.error('❌ Error al obtener cotizaciones del BCRA:', error)
     throw new Error(
       error instanceof Error
         ? `Error BCRA: ${error.message}`

@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { logger } from '@/lib/logger'
 
 export async function GET(
   request: NextRequest,
@@ -45,7 +46,7 @@ export async function GET(
 
     return NextResponse.json(purchaseOrder);
   } catch (error) {
-    console.error('Error fetching purchase order:', error);
+    logger.error('Error fetching purchase order:', error);
     return NextResponse.json(
       { error: 'Error al cargar orden de compra' },
       { status: 500 }
@@ -86,7 +87,7 @@ export async function PUT(
 
     return NextResponse.json(purchaseOrder);
   } catch (error) {
-    console.error('Error updating purchase order:', error);
+    logger.error('Error updating purchase order:', error);
     return NextResponse.json(
       { error: 'Error al actualizar orden de compra' },
       { status: 500 }
@@ -141,7 +142,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error deleting purchase order:', error);
+    logger.error('Error deleting purchase order:', error);
     return NextResponse.json(
       { error: 'Error al eliminar orden de compra' },
       { status: 500 }

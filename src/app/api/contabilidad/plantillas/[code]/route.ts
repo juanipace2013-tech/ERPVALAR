@@ -6,6 +6,7 @@
 import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { getTemplateByCode, validateTemplate } from '@/lib/contabilidad/apply-template';
+import { logger } from '@/lib/logger'
 
 interface RouteParams {
   params: Promise<{
@@ -45,7 +46,7 @@ export async function GET(
       validation,
     });
   } catch (error) {
-    console.error('Error fetching template:', error);
+    logger.error('Error fetching template:', error);
     return NextResponse.json(
       { error: 'Error al obtener plantilla' },
       { status: 500 }
@@ -92,7 +93,7 @@ export async function PATCH(
       template,
     });
   } catch (error) {
-    console.error('Error updating template:', error);
+    logger.error('Error updating template:', error);
     return NextResponse.json(
       { error: 'Error al actualizar plantilla' },
       { status: 500 }

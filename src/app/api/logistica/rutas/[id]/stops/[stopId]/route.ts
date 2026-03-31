@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 /** Solo se pueden eliminar paradas en estos estados */
 const DELETABLE_STATUSES = ['PENDING', 'NOT_DELIVERED']
@@ -51,7 +52,7 @@ export async function DELETE(
 
     return NextResponse.json({ ok: true })
   } catch (error) {
-    console.error('Error deleting stop:', error)
+    logger.error('Error deleting stop:', error)
     return NextResponse.json(
       { error: 'Error al eliminar la parada' },
       { status: 500 }

@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -84,7 +85,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(results.slice(0, 10));
   } catch (error) {
-    console.error('Error searching entities:', error);
+    logger.error('Error searching entities:', error);
     return NextResponse.json(
       { error: 'Error al buscar' },
       { status: 500 }

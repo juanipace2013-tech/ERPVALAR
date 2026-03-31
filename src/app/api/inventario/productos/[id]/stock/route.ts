@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 /**
  * API Endpoint: /api/inventario/productos/[id]/stock
  * Get stock history for a specific product
@@ -57,7 +58,7 @@ export async function GET(
       return NextResponse.json({ error: error.message }, { status: 404 });
     }
 
-    console.error('Error fetching product stock history:', error);
+    logger.error('Error fetching product stock history:', error);
     return NextResponse.json(
       { error: 'Error al obtener historial de stock' },
       { status: 500 }

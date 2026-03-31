@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -72,7 +73,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Error fetching suppliers:', error)
+    logger.error('Error fetching suppliers:', error)
     return NextResponse.json(
       { error: 'Error al obtener proveedores' },
       { status: 500 }
@@ -135,7 +136,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(supplier, { status: 201 })
   } catch (error) {
-    console.error('Error creating supplier:', error)
+    logger.error('Error creating supplier:', error)
     return NextResponse.json(
       { error: 'Error al crear proveedor' },
       { status: 500 }

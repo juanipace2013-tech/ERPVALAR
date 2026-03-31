@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -282,7 +283,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ error: 'groupBy inválido' }, { status: 400 })
   } catch (error: unknown) {
-    console.error('Error in purchase analysis:', error)
+    logger.error('Error in purchase analysis:', error)
     const message = error instanceof Error ? error.message : 'Error en análisis de compras'
     return NextResponse.json({ error: message }, { status: 500 })
   }

@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 export async function GET() {
   try {
@@ -46,7 +47,7 @@ export async function GET() {
       usagePercent,
     })
   } catch (error) {
-    console.error('Error fetching active CAI:', error)
+    logger.error('Error fetching active CAI:', error)
     return NextResponse.json({ error: 'Error al obtener CAI activo' }, { status: 500 })
   }
 }

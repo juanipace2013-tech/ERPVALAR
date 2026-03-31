@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -36,7 +37,7 @@ export async function GET(
 
     return NextResponse.json({ payments })
   } catch (error) {
-    console.error('Error fetching supplier payments:', error)
+    logger.error('Error fetching supplier payments:', error)
     return NextResponse.json(
       { error: 'Error al obtener pagos' },
       { status: 500 }
@@ -107,7 +108,7 @@ export async function POST(
       },
     }, { status: 201 })
   } catch (error) {
-    console.error('Error creating payment:', error)
+    logger.error('Error creating payment:', error)
     return NextResponse.json(
       { error: 'Error al registrar pago' },
       { status: 500 }

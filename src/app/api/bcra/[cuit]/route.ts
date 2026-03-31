@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { exec } from 'child_process'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/auth'
+import { logger } from '@/lib/logger'
 
 const BCRA_BASE = 'https://api.bcra.gob.ar/CentralDeDeudores/v1.0'
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24 horas — los datos BCRA se actualizan mensualmente
@@ -21,7 +22,7 @@ function enqueue<T>(fn: () => Promise<T>): Promise<T> {
     const elapsed = now - lastBcraCallTime
     if (elapsed < GLOBAL_COOLDOWN_MS) {
       const wait = GLOBAL_COOLDOWN_MS - elapsed
-      console.log(`[BCRA] Rate limit: esperando ${wait}ms antes de la próxima consulta`)
+      logger.info(`[BCRA] Rate limit: esperando ${wait}ms antes de la próxima consulta`)
       await sleep(wait)
     }
   })
@@ -66,7 +67,7 @@ function calcularSemaforo(
  */
 function fetchBCRA(endpoint: string): Promise<any> {
   const url = `${BCRA_BASE}/${endpoint}`
-  console.log(`[BCRA] Fetching: ${url}`)
+  logger.info(`[BCRA] Fetching: ${url}`)
 
   return new Promise((resolve) => {
     exec(
@@ -74,26 +75,26 @@ function fetchBCRA(endpoint: string): Promise<any> {
       { encoding: 'utf-8', timeout: 70000 }, // 30s + 5s retry delay + 30s retry + margen
       (error, stdout, stderr) => {
         if (error) {
-          console.error(`[BCRA] Error for ${endpoint}:`, error.message)
+          logger.error(`[BCRA] Error for ${endpoint}:`, error.message)
           resolve({ status: 500, errorMessages: ['Error al consultar BCRA'] })
           return
         }
 
         const result = (stdout ?? '').trim()
         if (!result) {
-          console.warn(`[BCRA] Empty response for ${endpoint}`)
+          logger.warn(`[BCRA] Empty response for ${endpoint}`)
           resolve({ status: 404, errorMessages: ['Respuesta vacía del BCRA'] })
           return
         }
 
         try {
           const parsed = JSON.parse(result)
-          console.log(
+          logger.info(
             `[BCRA] ${endpoint}: status=${parsed?.status}, hasResults=${!!parsed?.results}`
           )
           resolve(parsed)
         } catch {
-          console.error(`[BCRA] JSON parse error for ${endpoint}: ${result.slice(0, 200)}`)
+          logger.error(`[BCRA] JSON parse error for ${endpoint}: ${result.slice(0, 200)}`)
           resolve({ status: 500, errorMessages: ['Respuesta inválida del BCRA'] })
         }
       }
@@ -124,14 +125,14 @@ export async function GET(
       if (age < CACHE_TTL_MS) {
         const cached = cache.data as any
         if (cached?.resumen && cached?.deudas) {
-          console.log(`[BCRA] Cache hit for ${cuit} (age: ${Math.round(age / 3600000)}h)`)
+          logger.info(`[BCRA] Cache hit for ${cuit} (age: ${Math.round(age / 3600000)}h)`)
           return NextResponse.json(cached)
         }
-        console.warn(`[BCRA] Cache invalid for ${cuit}, refetching...`)
+        logger.warn(`[BCRA] Cache invalid for ${cuit}, refetching...`)
       }
     }
   } else {
-    console.log(`[BCRA] Force refresh for ${cuit}`)
+    logger.info(`[BCRA] Force refresh for ${cuit}`)
   }
 
   // ── Fetch 3 endpoints secuenciales con delay (vía cola global) ──
@@ -152,7 +153,7 @@ export async function GET(
       return { deudas: d, historicas: h, cheques: c }
     }))
   } catch (error) {
-    console.error('[BCRA] Queue error:', error)
+    logger.error('[BCRA] Queue error:', error)
     return NextResponse.json(
       {
         error:
@@ -169,7 +170,7 @@ export async function GET(
     cheques?.status >= 400
 
   if (allFailed) {
-    console.error(`[BCRA] Todas las llamadas fallaron para ${cuit}`)
+    logger.error(`[BCRA] Todas las llamadas fallaron para ${cuit}`)
     return NextResponse.json(
       {
         error:
@@ -189,7 +190,7 @@ export async function GET(
   const periodoActual = periodosOrdenados[periodosOrdenados.length - 1]
   const entidadesRaw: any[] = periodoActual?.entidades ?? []
 
-  console.log(
+  logger.info(
     `[BCRA] Periodo actual=${periodoActual?.periodo}, entidades=${entidadesRaw.length}`
   )
 
@@ -296,7 +297,7 @@ export async function GET(
     },
   }
 
-  console.log(
+  logger.info(
     `[BCRA] Result: semaforo=${semaforo}, deuda=$${montoTotalDeuda}, entidades=${entidadesMapped.length}`
   )
 
@@ -322,7 +323,7 @@ export async function GET(
       })
     }
   } catch (e) {
-    console.error('Error saving BCRA search history:', e)
+    logger.error('Error saving BCRA search history:', e)
   }
 
   return NextResponse.json(result)

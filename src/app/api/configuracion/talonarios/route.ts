@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -38,7 +39,7 @@ export async function GET(_request: NextRequest) {
 
     return NextResponse.json(talonarios)
   } catch (error) {
-    console.error('Error fetching talonarios:', error)
+    logger.error('Error fetching talonarios:', error)
     return NextResponse.json(
       { error: 'Error al obtener talonarios' },
       { status: 500 }
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Error creating talonario:', error)
+    logger.error('Error creating talonario:', error)
     return NextResponse.json(
       { error: 'Error al crear talonario' },
       { status: 500 }

@@ -2,6 +2,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { sendRemitoEmail } from '@/lib/email/send-remito-email'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -64,14 +65,13 @@ export async function POST(
     })
 
     return NextResponse.json({
-      success: true,
       message: emails.length === 1
         ? 'Email enviado correctamente'
         : `Email enviado a ${emails.length} destinatarios`,
       ...result,
     })
   } catch (error) {
-    console.error('Error enviando email de remito:', error)
+    logger.error('Error enviando email de remito:', error)
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : 'Error al enviar email',

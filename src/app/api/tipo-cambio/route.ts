@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -67,7 +68,7 @@ export async function GET(request: NextRequest) {
       count: latestRates.size,
     })
   } catch (error) {
-    console.error('Error fetching exchange rates:', error)
+    logger.error('Error fetching exchange rates:', error)
     return NextResponse.json(
       { error: 'Error al obtener tipos de cambio' },
       { status: 500 }
@@ -88,7 +89,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
 
-    console.log('📥 Datos recibidos para tipo de cambio:', body)
+    logger.info('📥 Datos recibidos para tipo de cambio:', body)
 
     // Preparar datos para validación
     const dataToValidate: Record<string, unknown> = {
@@ -147,12 +148,12 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    console.log('✅ Tipo de cambio creado:', exchangeRate.id)
+    logger.info('✅ Tipo de cambio creado:', exchangeRate.id)
 
     return NextResponse.json(exchangeRate, { status: 201 })
   } catch (error) {
     if (error instanceof z.ZodError) {
-      console.error('❌ ERROR DE VALIDACIÓN:', error.issues)
+      logger.error('❌ ERROR DE VALIDACIÓN:', error.issues)
       const errorMessages = error.issues.map(err => {
         const field = err.path.join('.')
         return `Campo "${field}": ${err.message}`
@@ -168,7 +169,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('❌ Error al crear tipo de cambio:', error)
+    logger.error('❌ Error al crear tipo de cambio:', error)
     return NextResponse.json(
       {
         error: 'Error al crear tipo de cambio',

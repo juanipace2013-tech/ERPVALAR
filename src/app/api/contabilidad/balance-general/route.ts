@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -152,7 +153,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Error fetching balance general:', error)
+    logger.error('Error fetching balance general:', error)
     return NextResponse.json(
       { error: 'Error al obtener balance general' },
       { status: 500 }

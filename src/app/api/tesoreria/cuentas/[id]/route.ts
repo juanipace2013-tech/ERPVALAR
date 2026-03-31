@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -39,7 +40,7 @@ export async function GET(
 
     return NextResponse.json({ account })
   } catch (error) {
-    console.error('[GET /api/tesoreria/cuentas/[id]]', error)
+    logger.error('[GET /api/tesoreria/cuentas/[id]]', error)
     return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
   }
 }
@@ -101,7 +102,7 @@ export async function PUT(
 
     return NextResponse.json({ account })
   } catch (error) {
-    console.error('[PUT /api/tesoreria/cuentas/[id]]', error)
+    logger.error('[PUT /api/tesoreria/cuentas/[id]]', error)
     return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
   }
 }
@@ -145,7 +146,7 @@ export async function DELETE(
     await prisma.treasuryAccount.delete({ where: { id } })
     return NextResponse.json({ message: 'Cuenta eliminada correctamente' })
   } catch (error) {
-    console.error('[DELETE /api/tesoreria/cuentas/[id]]', error)
+    logger.error('[DELETE /api/tesoreria/cuentas/[id]]', error)
     return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
   }
 }

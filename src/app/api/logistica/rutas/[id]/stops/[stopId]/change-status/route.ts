@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 const TERMINAL_STATUSES = ['DELIVERED', 'NOT_DELIVERED', 'PICKED_UP']
 const VALID_STATUSES = ['PENDING', 'PREPARING', 'IN_ROUTE', ...TERMINAL_STATUSES]
@@ -71,7 +72,7 @@ export async function POST(
 
     return NextResponse.json(updated)
   } catch (error) {
-    console.error('Error changing stop status:', error)
+    logger.error('Error changing stop status:', error)
     return NextResponse.json(
       { error: 'Error al cambiar estado de la parada' },
       { status: 500 }

@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -62,7 +63,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ customer, invoices: withBalance })
   } catch (error) {
-    console.error('[GET /api/cobros/facturas-pendientes]', error)
+    logger.error('[GET /api/cobros/facturas-pendientes]', error)
     return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
   }
 }

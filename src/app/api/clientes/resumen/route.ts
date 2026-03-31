@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -131,7 +132,7 @@ export async function GET(_request: NextRequest) {
 
     return NextResponse.json(summary)
   } catch (error) {
-    console.error('Error fetching customer summary:', error)
+    logger.error('Error fetching customer summary:', error)
     return NextResponse.json(
       { error: 'Error al obtener resumen de clientes' },
       { status: 500 }

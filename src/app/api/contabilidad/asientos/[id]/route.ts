@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -40,7 +41,7 @@ export async function GET(
 
     return NextResponse.json(entry)
   } catch (error) {
-    console.error('Error fetching journal entry:', error)
+    logger.error('Error fetching journal entry:', error)
     return NextResponse.json(
       { error: 'Error al obtener asiento contable' },
       { status: 500 }
@@ -159,7 +160,7 @@ export async function PUT(
       )
     }
 
-    console.error('Error updating journal entry:', error)
+    logger.error('Error updating journal entry:', error)
     return NextResponse.json(
       { error: 'Error al actualizar asiento contable' },
       { status: 500 }
@@ -219,7 +220,7 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'Asiento eliminado exitosamente' })
   } catch (error) {
-    console.error('Error deleting journal entry:', error)
+    logger.error('Error deleting journal entry:', error)
     return NextResponse.json(
       { error: 'Error al eliminar asiento contable' },
       { status: 500 }

@@ -2,6 +2,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 const caiConfigUpdateSchema = z.object({
   pointOfSale: z.number().int().positive().optional(),
@@ -52,7 +53,7 @@ export async function PUT(
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: 'Datos inválidos', details: error.issues }, { status: 400 })
     }
-    console.error('Error updating CAI config:', error)
+    logger.error('Error updating CAI config:', error)
     return NextResponse.json({ error: 'Error al actualizar configuración de CAI' }, { status: 500 })
   }
 }
@@ -71,7 +72,7 @@ export async function DELETE(
 
     return NextResponse.json({ ok: true })
   } catch (error) {
-    console.error('Error deleting CAI config:', error)
+    logger.error('Error deleting CAI config:', error)
     return NextResponse.json({ error: 'Error al eliminar configuración de CAI' }, { status: 500 })
   }
 }

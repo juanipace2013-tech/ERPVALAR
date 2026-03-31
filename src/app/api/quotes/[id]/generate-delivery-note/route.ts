@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { generateDeliveryNoteFromQuote } from '@/lib/quote-workflow';
+import { logger } from '@/lib/logger'
 
 export async function POST(
   request: NextRequest,
@@ -42,7 +43,7 @@ export async function POST(
 
     return NextResponse.json(deliveryNote, { status: 201 });
   } catch (error) {
-    console.error('Error generating delivery note:', error);
+    logger.error('Error generating delivery note:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Error al generar remito' },
       { status: 500 }

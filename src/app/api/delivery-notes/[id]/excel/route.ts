@@ -2,6 +2,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { generateRemitoExcel, type RemitoExcelData } from '@/lib/excel/remito-generator'
+import { logger } from '@/lib/logger'
 
 /**
  * GET /api/delivery-notes/[id]/excel
@@ -56,19 +57,24 @@ export async function GET(
     }
 
     // Armar datos para el generador Excel
+    const customer = deliveryNote.customer
+    if (!customer) {
+      return NextResponse.json({ error: 'Remito sin cliente asociado' }, { status: 422 })
+    }
+
     const excelData: RemitoExcelData = {
       deliveryNumber: deliveryNote.deliveryNumber,
       date: deliveryNote.date,
       customer: {
-        businessName: deliveryNote.customer.businessName || deliveryNote.customer.name,
-        address: deliveryNote.deliveryAddress || deliveryNote.customer.address || '',
+        businessName: customer.businessName || customer.name,
+        address: deliveryNote.deliveryAddress || customer.address || '',
         city: [
-          deliveryNote.deliveryCity || deliveryNote.customer.city,
-          deliveryNote.deliveryProvince || deliveryNote.customer.province,
+          deliveryNote.deliveryCity || customer.city,
+          deliveryNote.deliveryProvince || customer.province,
         ]
           .filter(Boolean)
           .join(', '),
-        cuit: deliveryNote.customer.cuit || '',
+        cuit: customer.cuit || '',
       },
       purchaseOrder: deliveryNote.purchaseOrder,
       customerInvoiceNumber:
@@ -89,13 +95,13 @@ export async function GET(
 
     // Sanitizar nombre de archivo
     const safeCustomer = (
-      deliveryNote.customer.businessName || deliveryNote.customer.name
+      customer.businessName || customer.name
     )
       .replace(/[/\\:*?"<>|]/g, '-')
       .trim()
     const safeNumber = deliveryNote.deliveryNumber.replace(/\s/g, '-')
 
-    return new NextResponse(buffer, {
+    return new NextResponse(buffer as unknown as BodyInit, {
       headers: {
         'Content-Type':
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -103,7 +109,7 @@ export async function GET(
       },
     })
   } catch (error) {
-    console.error('Error generando Excel remito:', error)
+    logger.error('Error generando Excel remito:', error)
     return NextResponse.json(
       {
         error: 'Error al generar Excel',

@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -81,7 +82,7 @@ export async function GET(request: NextRequest) {
           })
 
           // Calcular saldos correctamente (siempre positivos)
-          let runningBalance = { amount: 0, nature: 'DEUDOR' as const }
+          let runningBalance: { amount: number; nature: 'DEUDOR' | 'ACREEDOR' } = { amount: 0, nature: 'DEUDOR' }
           const movementsWithBalance = movements.map((movement) => {
             const debit = Number(movement.debit)
             const credit = Number(movement.credit)
@@ -173,7 +174,7 @@ export async function GET(request: NextRequest) {
     })
 
     // Calcular saldos correctamente (siempre positivos)
-    let runningBalance = { amount: 0, nature: 'DEUDOR' as const }
+    let runningBalance: { amount: number; nature: 'DEUDOR' | 'ACREEDOR' } = { amount: 0, nature: 'DEUDOR' }
     const movementsWithBalance = movements.map((movement) => {
       const debit = Number(movement.debit)
       const credit = Number(movement.credit)
@@ -209,7 +210,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Error fetching libro mayor:', error)
+    logger.error('Error fetching libro mayor:', error)
     return NextResponse.json(
       { error: 'Error al obtener libro mayor' },
       { status: 500 }

@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -30,13 +31,14 @@ export async function GET(
     const where: Record<string, unknown> = { bankAccountId: id }
 
     if (dateFrom || dateTo) {
-      where.date = {}
-      if (dateFrom) where.date.gte = new Date(dateFrom)
+      const dateFilter: Record<string, unknown> = {}
+      if (dateFrom) dateFilter.gte = new Date(dateFrom)
       if (dateTo) {
         const endDate = new Date(dateTo)
         endDate.setHours(23, 59, 59, 999)
-        where.date.lte = endDate
+        dateFilter.lte = endDate
       }
+      where.date = dateFilter
     }
 
     // Obtener total de transacciones
@@ -67,7 +69,7 @@ export async function GET(
       totalPages: Math.ceil(total / pageSize)
     })
   } catch (error) {
-    console.error('Error fetching transactions:', error)
+    logger.error('Error fetching transactions:', error)
     return NextResponse.json(
       { error: 'Error al obtener movimientos' },
       { status: 500 }

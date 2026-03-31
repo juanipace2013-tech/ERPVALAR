@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -74,7 +75,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ purchaseOrders, totalCount, page, pageSize });
   } catch (error) {
-    console.error('Error fetching purchase orders:', error);
+    logger.error('Error fetching purchase orders:', error);
     return NextResponse.json(
       { error: 'Error al cargar órdenes de compra' },
       { status: 500 }
@@ -131,63 +132,64 @@ export async function POST(request: NextRequest) {
 
     const total = subtotal + taxAmount;
 
-    // Generate order number
-    const lastOrder = await prisma.purchaseOrder.findFirst({
-      orderBy: { orderNumber: 'desc' },
-      select: { orderNumber: true },
-    });
+    // Generate order number + create in a transaction to prevent race conditions
+    const purchaseOrder = await prisma.$transaction(async (tx) => {
+      const lastOrder = await tx.purchaseOrder.findFirst({
+        orderBy: { orderNumber: 'desc' },
+        select: { orderNumber: true },
+      });
 
-    let nextNumber = 1;
-    if (lastOrder?.orderNumber) {
-      const match = lastOrder.orderNumber.match(/OC-(\d+)/);
-      if (match) {
-        nextNumber = parseInt(match[1]) + 1;
+      let nextNumber = 1;
+      if (lastOrder?.orderNumber) {
+        const match = lastOrder.orderNumber.match(/OC-(\d+)/);
+        if (match) {
+          nextNumber = parseInt(match[1]) + 1;
+        }
       }
-    }
 
-    const orderNumber = `OC-${nextNumber.toString().padStart(6, '0')}`;
+      const orderNumber = `OC-${nextNumber.toString().padStart(6, '0')}`;
 
-    // Create purchase order
-    const purchaseOrder = await prisma.purchaseOrder.create({
-      data: {
-        orderNumber,
-        supplierId,
-        userId: session.user.id,
-        status,
-        currency: currency || 'ARS',
-        subtotal,
-        taxAmount,
-        discount: 0,
-        total,
-        orderDate: orderDate ? new Date(orderDate) : new Date(),
-        expectedDate: expectedDate ? new Date(expectedDate) : null,
-        notes,
-        items: {
-          create: items.map((item: any) => ({
-            productId: item.productId,
-            quantity: parseInt(item.quantity),
-            unitCost: Number(item.unitCost),
-            discount: Number(item.discount || 0),
-            taxRate: Number(item.taxRate || 21),
-            subtotal: Number(item.quantity) * Number(item.unitCost),
-            description: item.description,
-          })),
-        },
-      },
-      include: {
-        supplier: true,
-        items: {
-          include: {
-            product: true,
+      return tx.purchaseOrder.create({
+        data: {
+          orderNumber,
+          supplierId,
+          userId: session.user.id,
+          status,
+          currency: currency || 'ARS',
+          subtotal,
+          taxAmount,
+          discount: 0,
+          total,
+          orderDate: orderDate ? new Date(orderDate) : new Date(),
+          expectedDate: expectedDate ? new Date(expectedDate) : null,
+          notes,
+          items: {
+            create: items.map((item: any) => ({
+              productId: item.productId,
+              quantity: parseInt(item.quantity),
+              unitCost: Number(item.unitCost),
+              discount: Number(item.discount || 0),
+              taxRate: Number(item.taxRate || 21),
+              subtotal: Number(item.quantity) * Number(item.unitCost),
+              description: item.description,
+            })),
           },
         },
-        user: true,
-      },
+        include: {
+          supplier: true,
+          items: {
+            include: {
+              product: true,
+            },
+          },
+          user: true,
+        },
+      });
     });
 
     return NextResponse.json(purchaseOrder, { status: 201 });
   } catch (error) {
-    console.error('Error creating purchase order:', error);
+    logger.error('Error creating purchase order:', error);
     return NextResponse.json(
       { error: 'Error al crear orden de compra' },
       { status: 500 }

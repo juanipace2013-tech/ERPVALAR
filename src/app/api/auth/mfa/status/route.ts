@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 // GET: Obtener estado de 2FA del usuario actual
 export async function GET() {
@@ -21,7 +22,7 @@ export async function GET() {
 
     return NextResponse.json({ mfaEnabled: user.mfaEnabled })
   } catch (error) {
-    console.error('Error obteniendo estado MFA:', error)
+    logger.error('Error obteniendo estado MFA:', error)
     return NextResponse.json(
       { error: 'Error al obtener estado de 2FA' },
       { status: 500 }

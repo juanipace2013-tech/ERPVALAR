@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 /**
  * PATCH /api/clientes/assign-salesperson
@@ -94,7 +95,7 @@ export async function PATCH(request: NextRequest) {
       salesPerson: updated?.salesPerson || null,
     })
   } catch (error: any) {
-    console.error('Error assigning salesperson:', error)
+    logger.error('Error assigning salesperson:', error)
     return NextResponse.json(
       { error: error.message || 'Error al asignar vendedor' },
       { status: 500 }

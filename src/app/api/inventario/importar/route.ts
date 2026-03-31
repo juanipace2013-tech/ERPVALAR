@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -118,7 +119,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(results, { status: 201 })
   } catch (error) {
-    console.error('Error importing products:', error)
+    logger.error('Error importing products:', error)
     return NextResponse.json(
       { error: 'Error al importar productos' },
       { status: 500 }

@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(data)
   } catch (error) {
-    console.error('Error en dashboard API:', error)
+    logger.error('Error en dashboard API:', error)
     return NextResponse.json(
       { error: 'Error al obtener datos', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }

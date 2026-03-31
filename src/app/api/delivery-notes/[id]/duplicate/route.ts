@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { generateDeliveryNumber } from '@/lib/quote-workflow';
 import { logAudit } from '@/lib/audit';
+import { logger } from '@/lib/logger'
 
 export async function POST(
   request: NextRequest,
@@ -135,7 +136,7 @@ export async function POST(
 
     return NextResponse.json(newDeliveryNote, { status: 201 });
   } catch (error) {
-    console.error('Error duplicating delivery note:', error);
+    logger.error('Error duplicating delivery note:', error);
     return NextResponse.json(
       { error: 'Error al duplicar remito' },
       { status: 500 }

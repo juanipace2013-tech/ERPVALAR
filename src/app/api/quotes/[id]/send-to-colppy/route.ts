@@ -9,6 +9,7 @@ import { prisma } from '@/lib/prisma';
 import { sendQuoteToColppy, type SendToColppyOptions, buildSplitItem, calcComponentPrice } from '@/lib/colppy';
 import { QuoteStatus } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
+import { logger } from '@/lib/logger'
 
 // ============================================================================
 // TIPOS
@@ -156,7 +157,7 @@ export async function POST(
       : quote.items.map((item) => buildSplitItem(item, calcComponentPrice, quote))
     );
 
-    console.log('[Send to Colppy] Items a enviar:', JSON.stringify(quoteItems, null, 2));
+    logger.info('[Send to Colppy] Items a enviar:', JSON.stringify(quoteItems, null, 2));
 
     const quoteData = {
       id: quote.id,
@@ -219,10 +220,10 @@ export async function POST(
           where: { id: quote.customerId },
           data: { paymentTerms: result.customerPaymentTermsDays },
         });
-        console.log(`[Colppy Sync] paymentTerms=${result.customerPaymentTermsDays} guardado para cliente ${quote.customerId}`);
+        logger.info(`[Colppy Sync] paymentTerms=${result.customerPaymentTermsDays} guardado para cliente ${quote.customerId}`);
       } catch (syncErr: any) {
         // No bloquear la operación principal si falla el sync
-        console.warn(`[Colppy Sync] Error al sincronizar paymentTerms: ${syncErr.message}`);
+        logger.warn(`[Colppy Sync] Error al sincronizar paymentTerms: ${syncErr.message}`);
       }
     }
 
@@ -259,7 +260,7 @@ export async function POST(
       facturaNumber: result.facturaNumber,
     });
   } catch (error: any) {
-    console.error('Error en POST /api/quotes/[id]/send-to-colppy:', error);
+    logger.error('Error en POST /api/quotes/[id]/send-to-colppy:', error);
 
     return NextResponse.json(
       { error: error.message || 'Error interno del servidor' },

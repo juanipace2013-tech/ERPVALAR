@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -37,7 +38,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ products })
   } catch (error: unknown) {
-    console.error('Error searching products:', error)
+    logger.error('Error searching products:', error)
     const message = error instanceof Error ? error.message : 'Error al buscar productos'
     return NextResponse.json({ error: message }, { status: 500 })
   }

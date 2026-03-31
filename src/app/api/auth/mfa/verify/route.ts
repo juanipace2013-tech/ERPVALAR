@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import * as OTPAuth from 'otpauth'
+import { logger } from '@/lib/logger'
 
 // POST: Verificar código TOTP y activar 2FA
 export async function POST(request: NextRequest) {
@@ -67,7 +68,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error verificando MFA:', error)
+    logger.error('Error verificando MFA:', error)
     return NextResponse.json(
       { error: 'Error al verificar código' },
       { status: 500 }

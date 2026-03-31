@@ -9,6 +9,7 @@
  */
 
 import * as crypto from 'crypto';
+import { logger } from '@/lib/logger';
 
 // ============================================================================
 // CONFIGURACIÓN
@@ -112,7 +113,7 @@ export async function callColppyAPI<T>(payload: any, timeoutMs = 30000): Promise
 
     // Verificar si la respuesta es HTML (sesión expirada → página de login)
     if (trimmed.startsWith('<') || trimmed.startsWith('<!')) {
-      console.error(`[Colppy] Respuesta HTML detectada (${trimmed.length} bytes). Sesión probablemente expirada.`);
+      logger.error(`[Colppy] Respuesta HTML detectada (${trimmed.length} bytes). Sesión probablemente expirada.`);
       throw new ColppySessionExpiredError(trimmed);
     }
 
@@ -139,7 +140,7 @@ export async function callColppyAPI<T>(payload: any, timeoutMs = 30000): Promise
       throw new Error(`Timeout en llamada a Colppy: ${error.message}`);
     }
     if (error.message?.includes('JSON') || error.message?.includes('Unexpected')) {
-      console.error(`[Colppy] Respuesta no-JSON: ${error.message}`);
+      logger.error(`[Colppy] Respuesta no-JSON: ${error.message}`);
       throw new ColppySessionExpiredError(error.message);
     }
     throw new Error(`Error en llamada a Colppy: ${error.message}`);
@@ -217,7 +218,7 @@ export async function colppyLogout(session: ColppySession): Promise<void> {
     await callColppyAPI(payload);
   } catch (error: any) {
     // No lanzar error si falla logout, solo loguear
-    console.warn(`Advertencia al cerrar sesión en Colppy: ${error.message}`);
+    logger.warn(`Advertencia al cerrar sesión en Colppy: ${error.message}`);
   }
 }
 
@@ -315,9 +316,9 @@ export async function colppyFindCustomerByCUIT(
     const cliente = response.response.data[0];
 
     // === DIAGNÓSTICO: Log de todos los campos del cliente de Colppy ===
-    console.log('=== CAMPOS DEL CLIENTE EN COLPPY ===');
-    console.log(JSON.stringify(cliente, null, 2));
-    console.log('=== FIN CAMPOS CLIENTE ===');
+    logger.info('=== CAMPOS DEL CLIENTE EN COLPPY ===');
+    logger.info(JSON.stringify(cliente, null, 2));
+    logger.info('=== FIN CAMPOS CLIENTE ===');
 
     // Intentar múltiples nombres posibles para la condición de pago
     const idCondicionPago = cliente.idCondicionPago
@@ -475,7 +476,7 @@ export async function getColppyItemId(
 
     return '0'; // Si no existe en Colppy, item manual
   } catch (error: any) {
-    console.warn(`No se pudo buscar item ${sku} en Colppy:`, error.message);
+    logger.warn(`No se pudo buscar item ${sku} en Colppy:`, error.message);
     return '0'; // En caso de error, retornar "0" para item manual
   }
 }
@@ -527,16 +528,16 @@ export async function colppyCreateDeliveryNote(
     },
   };
 
-  console.log('=== PAYLOAD REMITO COLPPY ===');
-  console.log(JSON.stringify(payload, null, 2));
-  console.log('=== FIN PAYLOAD ===');
+  logger.info('=== PAYLOAD REMITO COLPPY ===');
+  logger.info(JSON.stringify(payload, null, 2));
+  logger.info('=== FIN PAYLOAD ===');
 
   try {
     const response = await callColppyAPI<any>(payload);
 
-    console.log('=== RESPUESTA COLPPY REMITO ===');
-    console.log(JSON.stringify(response, null, 2));
-    console.log('=== FIN RESPUESTA ===');
+    logger.info('=== RESPUESTA COLPPY REMITO ===');
+    logger.info(JSON.stringify(response, null, 2));
+    logger.info('=== FIN RESPUESTA ===');
 
     // Verificar si la operación fue exitosa
     if (response.response?.success === false) {
@@ -679,16 +680,16 @@ export async function colppyCreateInvoice(
     },
   };
 
-  console.log('=== PAYLOAD FACTURA COLPPY ===');
-  console.log(JSON.stringify(payload, null, 2));
-  console.log('=== FIN PAYLOAD ===');
+  logger.info('=== PAYLOAD FACTURA COLPPY ===');
+  logger.info(JSON.stringify(payload, null, 2));
+  logger.info('=== FIN PAYLOAD ===');
 
   try {
     const response = await callColppyAPI<any>(payload);
 
-    console.log('=== RESPUESTA COLPPY FACTURA ===');
-    console.log(JSON.stringify(response, null, 2));
-    console.log('=== FIN RESPUESTA ===');
+    logger.info('=== RESPUESTA COLPPY FACTURA ===');
+    logger.info(JSON.stringify(response, null, 2));
+    logger.info('=== FIN RESPUESTA ===');
 
     // Verificar si la operación fue exitosa
     if (response.response?.success === false) {
@@ -774,7 +775,7 @@ export async function colppyFindSupplierByCUIT(
     }
 
     const proveedor = response.response.data[0];
-    console.log('[Colppy] Proveedor encontrado:', JSON.stringify(proveedor, null, 2));
+    logger.info('[Colppy] Proveedor encontrado:', JSON.stringify(proveedor, null, 2));
 
     return {
       idProveedor: String(proveedor.idProveedor || proveedor.id),
@@ -868,7 +869,7 @@ export async function colppyCreatePurchaseInvoice(
     }
   }
 
-  console.log(`[Colppy FC] idCondicionPago original: "${invoice.idCondicionPago}" → normalizado: "${normalizedCondicionPago}"`);
+  logger.info(`[Colppy FC] idCondicionPago original: "${invoice.idCondicionPago}" → normalizado: "${normalizedCondicionPago}"`);
 
   const payload = {
     auth: {
@@ -916,16 +917,16 @@ export async function colppyCreatePurchaseInvoice(
     },
   };
 
-  console.log('=== PAYLOAD FACTURA COMPRA COLPPY ===');
-  console.log(JSON.stringify(payload, null, 2));
-  console.log('=== FIN PAYLOAD ===');
+  logger.info('=== PAYLOAD FACTURA COMPRA COLPPY ===');
+  logger.info(JSON.stringify(payload, null, 2));
+  logger.info('=== FIN PAYLOAD ===');
 
   try {
     const response = await callColppyAPI<any>(payload);
 
-    console.log('=== RESPUESTA COLPPY FACTURA COMPRA ===');
-    console.log(JSON.stringify(response, null, 2));
-    console.log('=== FIN RESPUESTA ===');
+    logger.info('=== RESPUESTA COLPPY FACTURA COMPRA ===');
+    logger.info(JSON.stringify(response, null, 2));
+    logger.info('=== FIN RESPUESTA ===');
 
     if (response.response?.success === false) {
       throw new Error(`Error de Colppy: ${response.response?.message || 'Error desconocido'}`);
@@ -937,7 +938,7 @@ export async function colppyCreatePurchaseInvoice(
 
     if (!idFactura) {
       // Algunos endpoints devuelven éxito sin ID explícito
-      console.warn('[Colppy] No se recibió idFactura, pero la operación pudo haber sido exitosa');
+      logger.warn('[Colppy] No se recibió idFactura, pero la operación pudo haber sido exitosa');
       return { idFactura: `colppy-${Date.now()}` };
     }
 
@@ -1009,7 +1010,7 @@ export function buildSplitItem(
 
   const additionals = originalItem.additionals.map((add, idx) => {
     const name = add.product?.name || add.description || 'Adicional manual';
-    console.log(`[buildSplitItem] Adicional ${idx}: product?.name="${add.product?.name}", description="${add.description}", sku="${add.product?.sku}" → name="${name}"`);
+    logger.info(`[buildSplitItem] Adicional ${idx}: product?.name="${add.product?.name}", description="${add.description}", sku="${add.product?.sku}" → name="${name}"`);
     return {
       name,
       unitPrice: Number((addPrices[idx] * scaleFactor).toFixed(2)),
@@ -1017,7 +1018,7 @@ export function buildSplitItem(
     };
   });
 
-  console.log(`[buildSplitItem] productName="${productName}", productSku="${productSku}", additionals=${additionals.length}`);
+  logger.info(`[buildSplitItem] productName="${productName}", productSku="${productSku}", additionals=${additionals.length}`);
 
   return {
     productName,
@@ -1081,7 +1082,7 @@ export async function sendQuoteToColppy(
       return await fn(session!);
     } catch (error: any) {
       if (error instanceof ColppySessionExpiredError) {
-        console.log('[Colppy] Sesión expirada, re-autenticando...');
+        logger.info('[Colppy] Sesión expirada, re-autenticando...');
         session = await colppyLogin();
         return await fn(session);
       }
@@ -1135,7 +1136,7 @@ export async function sendQuoteToColppy(
       return [mainItem, ...additionalItems];
     });
 
-    console.log(`[Colppy] preparedItems (${preparedItems.length} líneas):`, JSON.stringify(preparedItems.map(p => ({
+    logger.info(`[Colppy] preparedItems (${preparedItems.length} líneas):`, JSON.stringify(preparedItems.map(p => ({
       sku: p.productSku,
       desc: p.descripcion,
       cant: p.cantidad,
@@ -1225,7 +1226,7 @@ export async function sendQuoteToColppy(
         ?? parseInt(customer.idCondicionPago || '0'))
         || 5; // fallback mínimo de 5 días
 
-      console.log(`[Colppy Factura] condicionPago="${idCondicionPago}", diasVto=${diasVto}, customer.idCondicionPago="${customer.idCondicionPago}"`);
+      logger.info(`[Colppy Factura] condicionPago="${idCondicionPago}", diasVto=${diasVto}, customer.idCondicionPago="${customer.idCondicionPago}"`);
 
       // Calcular fecha de vencimiento
       const fechaVtoDate = new Date();
@@ -1274,8 +1275,8 @@ export async function sendQuoteToColppy(
       const totalIVA = netoGravado * 0.21;
       const totalFactura = netoGravado + totalIVA;
 
-      console.log(`[Colppy Factura] fechaFactura="${fechaFactura}", fechaVto="${fechaVto}"`);
-      console.log(`[Colppy Factura] itemsFactura Descripcion:`, itemsFactura.map((i, idx) => ({
+      logger.info(`[Colppy Factura] fechaFactura="${fechaFactura}", fechaVto="${fechaVto}"`);
+      logger.info(`[Colppy Factura] itemsFactura Descripcion:`, itemsFactura.map((i, idx) => ({
         idx,
         idItem: i.idItem,
         Descripcion: i.Descripcion,

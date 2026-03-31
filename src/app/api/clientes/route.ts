@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -119,7 +120,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Error fetching customers:', error)
+    logger.error('Error fetching customers:', error)
     return NextResponse.json(
       { error: 'Error al obtener clientes' },
       { status: 500 }
@@ -215,7 +216,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Error creating customer:', error)
+    logger.error('Error creating customer:', error)
     return NextResponse.json(
       { error: 'Error al crear cliente' },
       { status: 500 }

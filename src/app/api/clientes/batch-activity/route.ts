@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 /**
  * POST /api/clientes/batch-activity
@@ -98,7 +99,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ activity })
   } catch (error: any) {
-    console.error('Error fetching batch activity:', error)
+    logger.error('Error fetching batch activity:', error)
     return NextResponse.json(
       { error: error.message || 'Error al obtener actividad', activity: {} },
       { status: 500 }

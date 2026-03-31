@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import { logAudit } from '@/lib/audit';
+import { logger } from '@/lib/logger'
 
 const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads', 'remitos-firmados');
 const MAX_SIZE = 10 * 1024 * 1024; // 10MB
@@ -97,7 +98,7 @@ export async function POST(
 
     return NextResponse.json(updated);
   } catch (error) {
-    console.error('Error uploading signed document:', error);
+    logger.error('Error uploading signed document:', error);
     return NextResponse.json(
       { error: 'Error al subir el archivo' },
       { status: 500 }

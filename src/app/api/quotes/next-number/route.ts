@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -40,7 +41,7 @@ export async function GET(_request: NextRequest) {
 
     return NextResponse.json({ quoteNumber })
   } catch (error) {
-    console.error('Error getting next quote number:', error)
+    logger.error('Error getting next quote number:', error)
     return NextResponse.json(
       { error: 'Error al obtener número de cotización' },
       { status: 500 }

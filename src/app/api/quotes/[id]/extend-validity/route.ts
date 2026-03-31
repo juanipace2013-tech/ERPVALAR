@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 export async function PUT(
   request: NextRequest,
@@ -59,7 +60,7 @@ export async function PUT(
       validUntil: updated.validUntil,
     })
   } catch (error: unknown) {
-    console.error('Error extending validity:', error)
+    logger.error('Error extending validity:', error)
     const message = error instanceof Error ? error.message : 'Error al actualizar validez'
     return NextResponse.json({ error: message }, { status: 500 })
   }

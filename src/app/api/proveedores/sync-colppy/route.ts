@@ -2,6 +2,7 @@ import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { colppyLogin, colppyLogout, getColppyConfig, md5Hash, callColppyAPI, ColppySession } from '@/lib/colppy'
+import { logger } from '@/lib/logger'
 
 export const maxDuration = 120 // 2 minutos para sincronizar proveedores
 
@@ -34,7 +35,7 @@ async function fetchAllColppySuppliers(session: ColppySession): Promise<any[]> {
     const data = response.response.data || []
     allSuppliers.push(...data)
 
-    console.log(`[Sync Proveedores] Página start=${start}: ${data.length} proveedores`)
+    logger.info(`[Sync Proveedores] Página start=${start}: ${data.length} proveedores`)
 
     // Si recibimos menos del limit, ya terminamos
     if (data.length < limit) break
@@ -70,7 +71,7 @@ export async function POST() {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
 
-    console.log('[Sync Proveedores] Iniciando sincronización de proveedores...')
+    logger.info('[Sync Proveedores] Iniciando sincronización de proveedores...')
     const startTime = Date.now()
     let colppySession: ColppySession | null = null
 
@@ -80,11 +81,11 @@ export async function POST() {
 
     // 2. Traer TODOS los proveedores de Colppy
     const colppySuppliers = await fetchAllColppySuppliers(colppySession)
-    console.log(`[Sync Proveedores] ${colppySuppliers.length} proveedores recibidos de Colppy`)
+    logger.info(`[Sync Proveedores] ${colppySuppliers.length} proveedores recibidos de Colppy`)
 
     // Log del primer proveedor para ver la estructura
     if (colppySuppliers.length > 0) {
-      console.log('[Sync Proveedores] Ejemplo de proveedor:', JSON.stringify(colppySuppliers[0], null, 2))
+      logger.info('[Sync Proveedores] Ejemplo de proveedor:', JSON.stringify(colppySuppliers[0], null, 2))
     }
 
     // 3. Cargar TODOS los CUITs existentes en la base local
@@ -211,12 +212,12 @@ export async function POST() {
 
       // Log progreso
       if ((i + BATCH_SIZE) % 200 === 0 || i + BATCH_SIZE >= colppySuppliers.length) {
-        console.log(`[Sync Proveedores] Progreso: ${Math.min(i + BATCH_SIZE, colppySuppliers.length)}/${colppySuppliers.length}`)
+        logger.info(`[Sync Proveedores] Progreso: ${Math.min(i + BATCH_SIZE, colppySuppliers.length)}/${colppySuppliers.length}`)
       }
     }
 
     const elapsed = Date.now() - startTime
-    console.log(`[Sync Proveedores] Completado en ${elapsed}ms: ${creados} creados, ${actualizados} actualizados, ${omitidos} omitidos, ${errores.length} errores`)
+    logger.info(`[Sync Proveedores] Completado en ${elapsed}ms: ${creados} creados, ${actualizados} actualizados, ${omitidos} omitidos, ${errores.length} errores`)
 
     return NextResponse.json({
       total: colppySuppliers.length,
@@ -233,7 +234,7 @@ export async function POST() {
       }
     }
   } catch (error: any) {
-    console.error('[Sync Proveedores] Error:', error)
+    logger.error('[Sync Proveedores] Error:', error)
     return NextResponse.json(
       { error: error.message || 'Error al sincronizar proveedores' },
       { status: 500 }

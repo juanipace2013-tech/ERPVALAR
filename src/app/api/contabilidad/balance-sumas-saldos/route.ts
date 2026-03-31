@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -26,20 +27,23 @@ export async function GET(request: NextRequest) {
     })
 
     // Construir filtro para movimientos
-    const where: Record<string, unknown> = {
-      journalEntry: {
-        status: 'POSTED',
-      },
+    const journalEntryFilter: Record<string, unknown> = {
+      status: 'POSTED',
     }
 
     if (startDate || endDate) {
-      where.journalEntry.date = {}
+      const dateFilter: Record<string, unknown> = {}
       if (startDate) {
-        where.journalEntry.date.gte = new Date(startDate)
+        dateFilter.gte = new Date(startDate)
       }
       if (endDate) {
-        where.journalEntry.date.lte = new Date(endDate)
+        dateFilter.lte = new Date(endDate)
       }
+      journalEntryFilter.date = dateFilter
+    }
+
+    const where: Record<string, unknown> = {
+      journalEntry: journalEntryFilter,
     }
 
     // Obtener todos los movimientos
@@ -137,7 +141,7 @@ export async function GET(request: NextRequest) {
       totals,
     })
   } catch (error) {
-    console.error('Error fetching balance:', error)
+    logger.error('Error fetching balance:', error)
     return NextResponse.json(
       { error: 'Error al obtener balance de sumas y saldos' },
       { status: 500 }

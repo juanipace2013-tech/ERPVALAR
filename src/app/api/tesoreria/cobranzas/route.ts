@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -136,7 +137,7 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Error creating receipt:', error)
+    logger.error('Error creating receipt:', error)
     return NextResponse.json(
       { error: 'Error al registrar la cobranza' },
       { status: 500 }

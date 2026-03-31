@@ -15,6 +15,7 @@ import { prisma } from '@/lib/prisma'
 import { sendQuoteToColppy, type SendToColppyOptions, buildSplitItem, calcComponentPrice } from '@/lib/colppy'
 import { calcDueDate } from '@/lib/quote-workflow'
 import { logAudit } from '@/lib/audit'
+import { logger } from '@/lib/logger'
 
 interface InvoiceItemRequest {
   quoteItemId: string
@@ -166,7 +167,7 @@ export async function POST(request: NextRequest) {
           return buildSplitItem(quoteItem, calcComponentPrice, quote, { cantidad: req.quantity })
         })
 
-    console.log('[Generate Invoice] Items a enviar:', JSON.stringify(colppyItems, null, 2))
+    logger.info('[Generate Invoice] Items a enviar:', JSON.stringify(colppyItems, null, 2))
 
     // Enviar a Colppy usando la función existente
     const colppyAction = action || 'factura-cuenta-corriente'
@@ -207,9 +208,9 @@ export async function POST(request: NextRequest) {
           where: { id: quote.customerId },
           data: { paymentTerms: colppyResult.customerPaymentTermsDays },
         });
-        console.log(`[Colppy Sync] paymentTerms=${colppyResult.customerPaymentTermsDays} guardado para cliente ${quote.customerId}`);
+        logger.info(`[Colppy Sync] paymentTerms=${colppyResult.customerPaymentTermsDays} guardado para cliente ${quote.customerId}`);
       } catch (syncErr: any) {
-        console.warn(`[Colppy Sync] Error al sincronizar paymentTerms: ${syncErr.message}`);
+        logger.warn(`[Colppy Sync] Error al sincronizar paymentTerms: ${syncErr.message}`);
       }
     }
 
@@ -351,7 +352,7 @@ export async function POST(request: NextRequest) {
       sentAt: now.toISOString(),
     })
   } catch (error: any) {
-    console.error('Error generating invoice for Colppy:', error)
+    logger.error('Error generating invoice for Colppy:', error)
     return NextResponse.json(
       { error: error.message || 'Error al enviar a Colppy' },
       { status: 500 }

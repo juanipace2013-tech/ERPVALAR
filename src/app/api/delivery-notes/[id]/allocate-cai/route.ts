@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 /**
  * POST /api/delivery-notes/[id]/allocate-cai
@@ -102,7 +103,7 @@ export async function POST(
       alreadyAllocated: false,
     })
   } catch (error) {
-    console.error('Error allocating CAI:', error)
+    logger.error('Error allocating CAI:', error)
     return NextResponse.json(
       { error: 'Error al asignar número de CAI' },
       { status: 500 }

@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -80,7 +81,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Error fetching purchase orders:', error)
+    logger.error('Error fetching purchase orders:', error)
     return NextResponse.json(
       { error: 'Error al obtener órdenes de compra' },
       { status: 500 }
@@ -98,10 +99,6 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
 
-    // Generar número de orden
-    const count = await prisma.purchaseOrder.count()
-    const orderNumber = `OC-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`
-
     // Calcular totales
     let subtotal = 0
     let taxAmount = 0
@@ -115,8 +112,11 @@ export async function POST(request: NextRequest) {
     const discount = body.discount || 0
     const total = subtotal + taxAmount - discount
 
-    // Crear orden de compra con items
-    const order = await prisma.purchaseOrder.create({
+    // Crear orden de compra con items — generar número en transacción para evitar race condition
+    const order = await prisma.$transaction(async (tx) => {
+      const count = await tx.purchaseOrder.count()
+      const orderNumber = `OC-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`
+      return tx.purchaseOrder.create({
       data: {
         orderNumber,
         supplierId: body.supplierId,
@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
         expectedDate: body.expectedDate ? new Date(body.expectedDate) : null,
         notes: body.notes || null,
         items: {
-          create: body.items.map((item: { productId: string; quantity: number; unitCost: number; notes?: string }) => ({
+          create: body.items.map((item: { productId: string; quantity: number; unitCost: number; notes?: string; discount?: number; taxRate?: number; description?: string }) => ({
             productId: item.productId,
             quantity: item.quantity,
             receivedQty: 0,
@@ -169,6 +169,7 @@ export async function POST(request: NextRequest) {
         },
       },
     })
+    }) // end $transaction
 
     // Actualizar saldo del proveedor si la orden está aprobada
     if (body.status === 'APPROVED' || body.status === 'RECEIVED') {
@@ -184,7 +185,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(order, { status: 201 })
   } catch (error) {
-    console.error('Error creating purchase order:', error)
+    logger.error('Error creating purchase order:', error)
     return NextResponse.json(
       { error: 'Error al crear orden de compra' },
       { status: 500 }

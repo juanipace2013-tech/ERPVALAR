@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -64,7 +65,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(retiros)
   } catch (error) {
-    console.error('Error fetching retiros:', error)
+    logger.error('Error fetching retiros:', error)
     return NextResponse.json(
       { error: 'Error al obtener retiros' },
       { status: 500 }
@@ -169,7 +170,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(retiro, { status: 201 })
   } catch (error) {
-    console.error('Error creating retiro:', error)
+    logger.error('Error creating retiro:', error)
     return NextResponse.json(
       { error: 'Error al crear retiro' },
       { status: 500 }

@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { registerPurchasePayment } from '@/lib/payment-accounting';
+import { logger } from '@/lib/logger'
 
 export async function POST(
   request: NextRequest,
@@ -45,7 +46,7 @@ export async function POST(
 
     return NextResponse.json(result, { status: 201 });
   } catch (error: any) {
-    console.error('Error registering payment:', error);
+    logger.error('Error registering payment:', error);
     return NextResponse.json(
       { error: error.message || 'Error al registrar pago' },
       { status: 500 }

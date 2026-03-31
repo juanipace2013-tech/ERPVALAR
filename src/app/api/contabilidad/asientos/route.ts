@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -81,7 +82,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Error fetching journal entries:', error)
+    logger.error('Error fetching journal entries:', error)
     return NextResponse.json(
       { error: 'Error al obtener asientos contables' },
       { status: 500 }
@@ -174,7 +175,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Error creating journal entry:', error)
+    logger.error('Error creating journal entry:', error)
     return NextResponse.json(
       { error: 'Error al crear asiento contable' },
       { status: 500 }

@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -130,7 +131,7 @@ export async function GET(
 
     return NextResponse.json(chartData)
   } catch (error) {
-    console.error('Error fetching chart data:', error)
+    logger.error('Error fetching chart data:', error)
     return NextResponse.json(
       { error: 'Error al obtener datos del gráfico' },
       { status: 500 }

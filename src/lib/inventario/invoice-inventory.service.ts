@@ -9,7 +9,7 @@ import { validateStockAvailability } from './stock.service';
 import { calculateCMV, getProductNames } from './cmv.service';
 import { createCMVJournalEntry } from '@/lib/contabilidad/journal-entry.helper';
 import { createSaleJournalEntry } from '@/lib/contabilidad/sale-accounting';
-import type { InvoiceWithInventoryResult } from './types';
+import type { InvoiceWithInventoryResult, StockValidationResult, CMVCalculation } from './types';
 
 /**
  * Invoice item for processing
@@ -149,26 +149,27 @@ export async function processInvoiceCreationWithInventory(
         const cmvItem = cmvData.itemsCost[i];
 
         // Get current stock before movement
-        const product = await tx.product.findUnique({
-          where: { id: item.productId },
+        const productId = item.productId ?? undefined;
+        const product = productId ? await tx.product.findUnique({
+          where: { id: productId },
           select: { stockQuantity: true },
-        });
+        }) : null;
 
-        if (!product) {
+        if (!product || !productId) {
           throw new Error(`Producto ${item.productId} no encontrado`);
         }
 
         const stockBefore = product.stockQuantity;
-        const stockAfter = stockBefore - item.quantity;
+        const stockAfter = Number(stockBefore) - Number(item.quantity);
 
         // Create stock movement (negative quantity for sale)
         const movement = await tx.stockMovement.create({
           data: {
-            productId: item.productId,
+            productId,
             invoiceId: invoice.id,
             userId: invoiceData.userId,
             type: StockMovementType.VENTA,
-            quantity: -item.quantity, // Negative for sale (outgoing)
+            quantity: -Number(item.quantity), // Negative for sale (outgoing)
             unitCost: cmvItem.unitCost,
             totalCost: cmvItem.totalCost,
             currency: invoiceData.currency,
@@ -185,17 +186,17 @@ export async function processInvoiceCreationWithInventory(
         // STEP 5: Update product stock using atomic decrement
         const updateResult = await tx.product.updateMany({
           where: {
-            id: item.productId,
-            stockQuantity: { gte: item.quantity }, // Extra safety check
+            id: productId,
+            stockQuantity: { gte: Number(item.quantity) }, // Extra safety check
           },
           data: {
-            stockQuantity: { decrement: item.quantity },
+            stockQuantity: { decrement: Number(item.quantity) },
           },
         });
 
         if (updateResult.count === 0) {
           throw new Error(
-            `No se pudo actualizar el stock del producto ${item.product.name}. ` +
+            `No se pudo actualizar el stock del producto ${item.product?.name}. ` +
               `Posible condición de carrera o stock insuficiente.`
           );
         }

@@ -21,6 +21,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as crypto from 'crypto';
 import { auth } from '@/auth';
+import { logger } from '@/lib/logger'
 
 const COLPPY_ENDPOINT = 'https://login.colppy.com/lib/frontera2/service.php';
 const COLPPY_USER = process.env.COLPPY_USER || '';
@@ -259,7 +260,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    console.log(`[Colppy] Cargando facturas para cliente ${idCliente}...`);
+    logger.info(`[Colppy] Cargando facturas para cliente ${idCliente}...`);
     const claveSesion = await getSession();
     const passwordMD5 = md5(COLPPY_PASSWORD);
 
@@ -279,11 +280,11 @@ export async function GET(request: NextRequest) {
     const facturas = mapFacturas(response.response?.data || []);
     facturaCache.set(idCliente, { data: facturas, timestamp: Date.now() });
 
-    console.log(`[Colppy] ${facturas.length} facturas cargadas para cliente ${idCliente}`);
+    logger.info(`[Colppy] ${facturas.length} facturas cargadas para cliente ${idCliente}`);
 
     return NextResponse.json({ facturas, total: facturas.length, cached: false });
   } catch (error: any) {
-    console.error('Error fetching Colppy facturas:', error);
+    logger.error('Error fetching Colppy facturas:', error);
     return NextResponse.json(
       { error: error.message || 'Error al cargar facturas', facturas: [] },
       { status: 500 }

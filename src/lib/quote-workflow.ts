@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { QuoteStatus, DeliveryNoteStatus } from '@prisma/client';
+import { logger } from '@/lib/logger';
 
 /**
  * Calcula la fecha de vencimiento según los días de la condición de pago del cliente.
@@ -174,28 +175,28 @@ export async function generateDeliveryNumber(): Promise<{ deliveryNumber: string
   } catch (error) {
     // Si caiConfig no existe en el Prisma client o la tabla no existe,
     // continuar con fallback PV 0002 sin romper
-    console.warn('CAI config not available, falling back to PV 0002:', error instanceof Error ? error.message : error);
+    logger.warn('CAI config not available, falling back to PV 0002:', error instanceof Error ? error.message : error);
   }
 
-  // Fallback: PV 0002 (legacy / contingencia)
-  const lastDeliveryNote = await prisma.deliveryNote.findFirst({
-    where: { deliveryNumber: { startsWith: 'RE 0002' } },
-    orderBy: { createdAt: 'desc' },
-    select: { deliveryNumber: true },
+  // Fallback: PV 0002 (legacy / contingencia) — wrapped in transaction to prevent race conditions
+  const deliveryNumber = await prisma.$transaction(async (tx) => {
+    const lastDeliveryNote = await tx.deliveryNote.findFirst({
+      where: { deliveryNumber: { startsWith: 'RE 0002' } },
+      orderBy: { createdAt: 'desc' },
+      select: { deliveryNumber: true },
+    });
+
+    let lastNumber = 0;
+    if (lastDeliveryNote) {
+      const match = lastDeliveryNote.deliveryNumber.match(/(\d+)$/);
+      lastNumber = match ? parseInt(match[1]) : 0;
+    }
+
+    const number = Math.max(lastNumber, DELIVERY_NUMBER_MIN) + 1;
+    return `RE 0002-${String(number).padStart(8, '0')}`;
   });
 
-  let lastNumber = 0;
-  if (lastDeliveryNote) {
-    const match = lastDeliveryNote.deliveryNumber.match(/(\d+)$/);
-    lastNumber = match ? parseInt(match[1]) : 0;
-  }
-
-  const number = Math.max(lastNumber, DELIVERY_NUMBER_MIN) + 1;
-
-  return {
-    deliveryNumber: `RE 0002-${String(number).padStart(8, '0')}`,
-    caiNumber: null,
-  };
+  return { deliveryNumber, caiNumber: null };
 }
 
 /**
@@ -425,7 +426,7 @@ export async function generateInvoiceFromDeliveryNote(
   }
 
   // Determinar tipo de factura
-  const invoiceType = determineInvoiceType(deliveryNote.customer.taxCondition);
+  const invoiceType = determineInvoiceType(deliveryNote.customer!.taxCondition);
   const pointOfSale = data?.pointOfSale || '0001';
 
   // Generar número de factura
@@ -438,7 +439,7 @@ export async function generateInvoiceFromDeliveryNote(
       qi => qi.productId === item.productId
     );
     const unitPrice = quoteItem?.unitPrice || 0;
-    return sum + (Number(unitPrice) * item.quantity);
+    return sum + (Number(unitPrice) * Number(item.quantity));
   }, 0);
 
   // IVA 21% aplica tanto a factura A como B (en B se incluye en el precio, en A se discrimina)
@@ -454,7 +455,7 @@ export async function generateInvoiceFromDeliveryNote(
       transactionType: 'SALE',
       quoteId: deliveryNote.quoteId,
       deliveryNoteId: deliveryNote.id,
-      customerId: deliveryNote.customerId,
+      customerId: deliveryNote.customerId!,
       userId,
       status: 'DRAFT',
       currency: deliveryNote.quote?.currency || 'ARS',
@@ -465,7 +466,7 @@ export async function generateInvoiceFromDeliveryNote(
       total,
       balance: total,
       issueDate: new Date(),
-      dueDate: data?.dueDate || calcDueDate(new Date(), deliveryNote.customer.paymentTerms),
+      dueDate: data?.dueDate || calcDueDate(new Date(), deliveryNote.customer!.paymentTerms),
       notes: data?.notes || null,
       afipStatus: 'PENDING',
       paymentStatus: 'UNPAID',
@@ -475,7 +476,7 @@ export async function generateInvoiceFromDeliveryNote(
             qi => qi.productId === item.productId
           );
           const unitPrice = Number(quoteItem?.unitPrice || 0);
-          const itemSubtotal = unitPrice * item.quantity;
+          const itemSubtotal = unitPrice * Number(item.quantity);
 
           return {
             productId: item.productId,

@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -37,7 +38,7 @@ export async function POST(
       message: `Recibo aprobado. Asiento contable #${result.entryNumber} generado.`
     })
   } catch (error: any) {
-    console.error('[POST /api/cobros/[id]/aprobar]', error)
+    logger.error('[POST /api/cobros/[id]/aprobar]', error)
     if (error?.message) {
       return NextResponse.json({ error: error.message }, { status: 422 })
     }

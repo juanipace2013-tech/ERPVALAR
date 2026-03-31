@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -80,7 +81,7 @@ export async function POST(
 
     return NextResponse.json(confirmedEntry)
   } catch (error) {
-    console.error('Error confirming journal entry:', error)
+    logger.error('Error confirming journal entry:', error)
     return NextResponse.json(
       { error: 'Error al confirmar asiento contable' },
       { status: 500 }

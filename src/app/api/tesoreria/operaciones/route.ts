@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -231,7 +232,7 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Error creating bank operation:', error)
+    logger.error('Error creating bank operation:', error)
     return NextResponse.json(
       { error: 'Error al registrar la operación bancaria' },
       { status: 500 }

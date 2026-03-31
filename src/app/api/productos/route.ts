@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { productWithPricesSchema } from '@/lib/validations'
 import { z } from 'zod'
+import { logger } from '@/lib/logger'
 
 // GET /api/productos - Listar productos con filtros y paginación
 export async function GET(request: NextRequest) {
@@ -112,7 +113,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Error fetching products:', error)
+    logger.error('Error fetching products:', error)
     return NextResponse.json(
       { error: 'Error al obtener productos' },
       { status: 500 }
@@ -130,12 +131,12 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
 
-    console.log('📥 Datos recibidos en API:', JSON.stringify(body, null, 2))
+    logger.info('📥 Datos recibidos en API:', JSON.stringify(body, null, 2))
 
     // Validar datos
     const validatedData = productWithPricesSchema.parse(body)
 
-    console.log('✅ Datos validados:', JSON.stringify(validatedData, null, 2))
+    logger.info('✅ Datos validados:', JSON.stringify(validatedData, null, 2))
 
     // Verificar si el SKU ya existe
     const existingProduct = await prisma.product.findUnique({
@@ -207,8 +208,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(product, { status: 201 })
   } catch (error) {
     if (error instanceof z.ZodError) {
-      console.error('❌ ERROR DE VALIDACIÓN ZOD:')
-      console.error(JSON.stringify(error.issues, null, 2))
+      logger.error('❌ ERROR DE VALIDACIÓN ZOD:')
+      logger.error(JSON.stringify(error.issues, null, 2))
 
       // Crear mensajes de error más legibles
       const errorMessages = error.issues.map(err => {
@@ -232,10 +233,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('❌ ERROR AL CREAR PRODUCTO:', error)
+    logger.error('❌ ERROR AL CREAR PRODUCTO:', error)
     if (error instanceof Error) {
-      console.error('Mensaje:', error.message)
-      console.error('Stack:', error.stack)
+      logger.error('Mensaje:', error.message)
+      logger.error('Stack:', error.stack)
     }
 
     return NextResponse.json(

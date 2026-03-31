@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -120,7 +121,7 @@ export async function GET(request: NextRequest) {
       }
     })
   } catch (error) {
-    console.error('[GET /api/cobros]', error)
+    logger.error('[GET /api/cobros]', error)
     return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
   }
 }
@@ -149,7 +150,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ receipt }, { status: 201 })
   } catch (error: any) {
-    console.error('[POST /api/cobros]', error)
+    logger.error('[POST /api/cobros]', error)
     if (error?.message) {
       return NextResponse.json({ error: error.message }, { status: 422 })
     }

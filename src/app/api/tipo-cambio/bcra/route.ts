@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -15,12 +16,12 @@ export async function GET(_request: NextRequest) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
 
-    console.log('🔄 Actualizando tipo de cambio desde BCRA...')
+    logger.info('🔄 Actualizando tipo de cambio desde BCRA...')
 
     // Obtener tipo de cambio del BCRA
     const bcraData = await getBCRAUSDRate()
 
-    console.log('📊 Datos BCRA obtenidos:', bcraData)
+    logger.info('📊 Datos BCRA obtenidos:', bcraData)
 
     // Verificar si ya existe un tipo de cambio para esta fecha
     const existingRate = await prisma.exchangeRate.findFirst({
@@ -44,7 +45,7 @@ export async function GET(_request: NextRequest) {
         },
       })
 
-      console.log('✅ Tipo de cambio actualizado:', exchangeRate.id)
+      logger.info('✅ Tipo de cambio actualizado:', exchangeRate.id)
     } else {
       // Crear nuevo
       exchangeRate = await prisma.exchangeRate.create({
@@ -57,7 +58,7 @@ export async function GET(_request: NextRequest) {
         },
       })
 
-      console.log('✅ Tipo de cambio creado:', exchangeRate.id)
+      logger.info('✅ Tipo de cambio creado:', exchangeRate.id)
     }
 
     // Registrar actividad
@@ -83,7 +84,7 @@ export async function GET(_request: NextRequest) {
       message: existingRate ? 'Tipo de cambio actualizado' : 'Tipo de cambio creado',
     })
   } catch (error) {
-    console.error('❌ Error al obtener tipo de cambio del BCRA:', error)
+    logger.error('❌ Error al obtener tipo de cambio del BCRA:', error)
     return NextResponse.json(
       {
         error: 'Error al obtener tipo de cambio del BCRA',

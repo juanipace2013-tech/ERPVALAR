@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -34,7 +35,7 @@ export async function GET(
 
     return NextResponse.json(exchangeRate)
   } catch (error) {
-    console.error('Error fetching exchange rate:', error)
+    logger.error('Error fetching exchange rate:', error)
     return NextResponse.json(
       { error: 'Error al obtener tipo de cambio' },
       { status: 500 }
@@ -129,7 +130,7 @@ export async function PUT(
       )
     }
 
-    console.error('Error updating exchange rate:', error)
+    logger.error('Error updating exchange rate:', error)
     return NextResponse.json(
       { error: 'Error al actualizar tipo de cambio' },
       { status: 500 }
@@ -184,7 +185,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, message: 'Tipo de cambio eliminado' })
   } catch (error) {
-    console.error('Error deleting exchange rate:', error)
+    logger.error('Error deleting exchange rate:', error)
     return NextResponse.json(
       { error: 'Error al eliminar tipo de cambio' },
       { status: 500 }

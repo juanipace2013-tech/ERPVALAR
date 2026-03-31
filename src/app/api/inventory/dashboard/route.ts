@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -218,7 +219,7 @@ export async function GET(request: NextRequest) {
       purchasesByMonth,
     })
   } catch (error: unknown) {
-    console.error('Error in inventory dashboard:', error)
+    logger.error('Error in inventory dashboard:', error)
     const message = error instanceof Error ? error.message : 'Error al cargar dashboard'
     return NextResponse.json({ error: message }, { status: 500 })
   }

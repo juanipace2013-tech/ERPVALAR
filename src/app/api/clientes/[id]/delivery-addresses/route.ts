@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 // GET /api/clientes/[id]/delivery-addresses
 export async function GET(
@@ -22,7 +23,7 @@ export async function GET(
 
     return NextResponse.json({ addresses })
   } catch (error) {
-    console.error('Error fetching delivery addresses:', error)
+    logger.error('Error fetching delivery addresses:', error)
     return NextResponse.json(
       { error: 'Error al obtener direcciones de entrega' },
       { status: 500 }
@@ -87,7 +88,7 @@ export async function POST(
 
     return NextResponse.json({ address }, { status: 201 })
   } catch (error) {
-    console.error('Error creating delivery address:', error)
+    logger.error('Error creating delivery address:', error)
     return NextResponse.json(
       { error: 'Error al crear dirección de entrega' },
       { status: 500 }

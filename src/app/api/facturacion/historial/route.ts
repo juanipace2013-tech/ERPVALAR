@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 /**
  * GET /api/facturacion/historial
@@ -97,7 +98,7 @@ export async function GET(request: NextRequest) {
       filters: { vendedores, clientes },
     })
   } catch (error) {
-    console.error('Error fetching facturacion historial:', error)
+    logger.error('Error fetching facturacion historial:', error)
     return NextResponse.json(
       { error: 'Error al cargar historial de facturación' },
       { status: 500 }

@@ -2,6 +2,7 @@ import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { colppyLogin, colppyLogout, getColppyConfig, md5Hash, callColppyAPI, ColppySession } from '@/lib/colppy'
+import { logger } from '@/lib/logger'
 
 // Sync corre en background, el endpoint responde inmediatamente
 
@@ -57,7 +58,7 @@ let syncStatus: {
 } = { running: false, startedAt: null, result: null, error: null }
 
 async function syncColppyClients() {
-  console.log('[Sync Colppy] Iniciando sincronización de clientes...')
+  logger.info('[Sync Colppy] Iniciando sincronización de clientes...')
   const startTime = Date.now()
   let session: ColppySession | null = null
 
@@ -67,7 +68,7 @@ async function syncColppyClients() {
 
   // 2. Traer TODOS los clientes de Colppy
   const colppyCustomers = await fetchAllColppyCustomers(session)
-  console.log(`[Sync Colppy] ${colppyCustomers.length} clientes recibidos de Colppy`)
+  logger.info(`[Sync Colppy] ${colppyCustomers.length} clientes recibidos de Colppy`)
 
   // 3. Cargar TODOS los CUITs existentes en la base local
   const existingCustomers = await prisma.customer.findMany({
@@ -186,12 +187,12 @@ async function syncColppyClients() {
     })
 
     if ((i + BATCH_SIZE) % 500 === 0 || i + BATCH_SIZE >= colppyCustomers.length) {
-      console.log(`[Sync Colppy] Progreso: ${Math.min(i + BATCH_SIZE, colppyCustomers.length)}/${colppyCustomers.length}`)
+      logger.info(`[Sync Colppy] Progreso: ${Math.min(i + BATCH_SIZE, colppyCustomers.length)}/${colppyCustomers.length}`)
     }
   }
 
   const elapsed = Date.now() - startTime
-  console.log(`[Sync Colppy] Completado en ${elapsed}ms: ${creados} creados, ${actualizados} actualizados, ${omitidos} omitidos, ${errores.length} errores`)
+  logger.info(`[Sync Colppy] Completado en ${elapsed}ms: ${creados} creados, ${actualizados} actualizados, ${omitidos} omitidos, ${errores.length} errores`)
 
   return {
     total: colppyCustomers.length,
@@ -237,7 +238,7 @@ export async function POST() {
         syncStatus = { running: false, startedAt: null, result, error: null }
       })
       .catch((err) => {
-        console.error('[Sync Colppy] Error:', err)
+        logger.error('[Sync Colppy] Error:', err)
         syncStatus = { running: false, startedAt: null, result: null, error: err.message || 'Error desconocido' }
       })
 
@@ -246,7 +247,7 @@ export async function POST() {
       message: 'Sincronización iniciada en background',
     })
   } catch (error: any) {
-    console.error('[Sync Colppy] Error:', error)
+    logger.error('[Sync Colppy] Error:', error)
     return NextResponse.json(
       { error: error.message || 'Error al sincronizar clientes' },
       { status: 500 }

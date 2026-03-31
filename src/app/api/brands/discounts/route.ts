@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -22,7 +23,7 @@ export async function GET(_request: NextRequest) {
 
     return NextResponse.json({ discounts })
   } catch (error) {
-    console.error('Error fetching brand discounts:', error)
+    logger.error('Error fetching brand discounts:', error)
     return NextResponse.json(
       { error: 'Error al obtener descuentos de marca' },
       { status: 500 }

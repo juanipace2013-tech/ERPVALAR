@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -130,7 +131,7 @@ export async function GET(request: NextRequest) {
       invoices: Object.values(grouped),
     })
   } catch (error: unknown) {
-    console.error('Error in unlinked items:', error)
+    logger.error('Error in unlinked items:', error)
     const message = error instanceof Error ? error.message : 'Error al cargar items sin vincular'
     return NextResponse.json({ error: message }, { status: 500 })
   }

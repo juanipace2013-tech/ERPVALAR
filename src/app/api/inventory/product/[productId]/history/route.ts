@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import { StockMovementType } from '@prisma/client'
+import { logger } from '@/lib/logger'
 
 export async function GET(
   request: NextRequest,
@@ -120,7 +121,7 @@ export async function GET(
       },
     })
   } catch (error: unknown) {
-    console.error('Error in product history:', error)
+    logger.error('Error in product history:', error)
     const message = error instanceof Error ? error.message : 'Error al cargar historial'
     return NextResponse.json({ error: message }, { status: 500 })
   }

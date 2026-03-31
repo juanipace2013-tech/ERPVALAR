@@ -306,7 +306,7 @@ export async function approveReceipt(receiptId: string, userId: string) {
 
     // 7. Decrementar balance del cliente
     await tx.customer.update({
-      where: { id: receipt.customerId },
+      where: { id: receipt.customerId! },
       data: { balance: { decrement: totalApplied } }
     })
 

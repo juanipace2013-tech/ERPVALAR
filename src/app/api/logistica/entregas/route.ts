@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -72,7 +73,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ stops, vendedores })
   } catch (error) {
-    console.error('Error fetching entregas:', error)
+    logger.error('Error fetching entregas:', error)
     return NextResponse.json(
       { error: 'Error al obtener entregas' },
       { status: 500 }

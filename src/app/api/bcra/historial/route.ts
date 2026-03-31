@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -41,7 +42,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(searches)
   } catch (error) {
-    console.error('Error fetching BCRA search history:', error)
+    logger.error('Error fetching BCRA search history:', error)
     return NextResponse.json(
       { error: 'Error al obtener historial' },
       { status: 500 }

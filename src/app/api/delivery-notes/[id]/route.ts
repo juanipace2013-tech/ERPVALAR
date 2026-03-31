@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 export async function GET(
   request: NextRequest,
@@ -46,7 +47,7 @@ export async function GET(
 
     return NextResponse.json(deliveryNote);
   } catch (error) {
-    console.error('Error fetching delivery note:', error);
+    logger.error('Error fetching delivery note:', error);
     return NextResponse.json(
       { error: 'Error al cargar remito' },
       { status: 500 }
@@ -141,7 +142,7 @@ export async function PUT(
 
     return NextResponse.json(updated)
   } catch (error) {
-    console.error('Error updating delivery note:', error)
+    logger.error('Error updating delivery note:', error)
     return NextResponse.json(
       { error: 'Error al actualizar remito' },
       { status: 500 }
@@ -209,7 +210,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, message: 'Remito eliminado correctamente' })
   } catch (error) {
-    console.error('Error deleting delivery note:', error)
+    logger.error('Error deleting delivery note:', error)
     return NextResponse.json(
       { error: 'Error al eliminar remito' },
       { status: 500 }

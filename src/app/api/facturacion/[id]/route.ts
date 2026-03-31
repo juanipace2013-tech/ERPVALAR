@@ -2,6 +2,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 const updateInvoiceSchema = z.object({
   userId: z.string().min(1, 'El vendedor es obligatorio'),
@@ -73,7 +74,7 @@ export async function PATCH(
       )
     }
 
-    console.error('Error updating invoice:', error)
+    logger.error('Error updating invoice:', error)
     return NextResponse.json(
       { error: 'Error al actualizar factura' },
       { status: 500 }

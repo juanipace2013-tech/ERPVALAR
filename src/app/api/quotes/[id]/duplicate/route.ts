@@ -2,6 +2,7 @@ import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { normalizeCuit, buildCuitWhereClause } from '@/lib/cuit-utils';
+import { logger } from '@/lib/logger'
 
 export async function POST(
   request: NextRequest,
@@ -165,7 +166,7 @@ export async function POST(
 
     return NextResponse.json(newQuote, { status: 201 });
   } catch (error) {
-    console.error('Error duplicating quote:', error);
+    logger.error('Error duplicating quote:', error);
     return NextResponse.json(
       { error: 'Error al duplicar cotización' },
       { status: 500 }

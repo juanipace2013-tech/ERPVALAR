@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 /**
  * GET /api/facturacion/analisis
@@ -330,7 +331,7 @@ export async function GET(request: NextRequest) {
       marcas,
     })
   } catch (error) {
-    console.error('Error en análisis de facturación:', error)
+    logger.error('Error en análisis de facturación:', error)
     return NextResponse.json(
       { error: 'Error al obtener análisis de facturación' },
       { status: 500 }

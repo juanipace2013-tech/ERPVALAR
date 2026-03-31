@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import * as crypto from 'crypto';
+import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
 import { auth } from '@/auth';
 
@@ -97,7 +98,7 @@ async function loadAllInventory(): Promise<Map<string, InventoryItem>> {
     return inventoryCache;
   }
 
-  console.log('[Colppy Inventario] Cargando todos los items...');
+  logger.info('[Colppy Inventario] Cargando todos los items...');
   const startTime = Date.now();
 
   const claveSesion = await getSession();
@@ -185,7 +186,7 @@ async function loadAllInventory(): Promise<Map<string, InventoryItem>> {
   inventoryCache = newCache;
   cacheTimestamp = Date.now();
   const elapsed = Date.now() - startTime;
-  console.log(`[Colppy Inventario] ${newCache.size} items cargados en ${elapsed}ms`);
+  logger.info(`[Colppy Inventario] ${newCache.size} items cargados en ${elapsed}ms`);
 
   return inventoryCache;
 }
@@ -270,7 +271,7 @@ export async function GET(request: NextRequest) {
     }, { status: 400 });
 
   } catch (error: any) {
-    console.error('Error obteniendo inventario:', error);
+    logger.error('Error obteniendo inventario:', error);
     return NextResponse.json(
       {
         error: error.message || 'Error al obtener inventario',
@@ -296,7 +297,7 @@ export async function POST() {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
 
-    console.log('[Colppy Inventario] Refrescando cache y persistiendo stock en DB...');
+    logger.info('[Colppy Inventario] Refrescando cache y persistiendo stock en DB...');
 
     // Invalidar cache
     cacheTimestamp = 0;
@@ -367,7 +368,7 @@ export async function POST() {
       );
     }
 
-    console.log(
+    logger.info(
       `[Colppy Inventario] Stock persistido: ${updated} actualizados, ${unchanged} sin cambios, ${notFound} sin match`
     );
 
@@ -383,7 +384,7 @@ export async function POST() {
       },
     });
   } catch (error: any) {
-    console.error('Error refrescando cache:', error);
+    logger.error('Error refrescando cache:', error);
     return NextResponse.json(
       { error: error.message || 'Error al refrescar cache' },
       { status: 500 }

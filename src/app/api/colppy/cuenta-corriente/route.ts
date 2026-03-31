@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 /**
  * API Endpoint: GET /api/colppy/cuenta-corriente
  * Estado de cuenta corriente de un cliente desde Colppy.
@@ -224,7 +225,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ...cached.data, cached: true });
     }
 
-    console.log(`[Colppy] Cargando cuenta corriente para cliente ${idCliente}...`);
+    logger.info(`[Colppy] Cargando cuenta corriente para cliente ${idCliente}...`);
     const claveSesion = await getSession();
     const passwordMD5 = md5(COLPPY_PASSWORD);
 
@@ -267,11 +268,11 @@ export async function GET(request: NextRequest) {
     const result = buildMovimientosFromFacturas(response.response?.data || []);
 
     ccCache.set(idCliente, { data: result, timestamp: Date.now() });
-    console.log(`[Colppy CC] ${result.movimientos.length} movimientos para cliente ${idCliente}, saldo: ${result.saldo}`);
+    logger.info(`[Colppy CC] ${result.movimientos.length} movimientos para cliente ${idCliente}, saldo: ${result.saldo}`);
 
     return NextResponse.json({ ...result, cached: false });
   } catch (error: any) {
-    console.error('Error fetching Colppy cuenta corriente:', error);
+    logger.error('Error fetching Colppy cuenta corriente:', error);
     return NextResponse.json(
       { error: error.message || 'Error al cargar cuenta corriente', saldo: 0, movimientos: [] },
       { status: 500 }

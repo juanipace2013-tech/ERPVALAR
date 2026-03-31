@@ -2,6 +2,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getLocalDateString } from '@/lib/utils'
+import { logger } from '@/lib/logger'
 
 /**
  * GET /api/admin/audit
@@ -122,7 +123,7 @@ export async function GET(request: NextRequest) {
       users,
     })
   } catch (error) {
-    console.error('Error fetching audit logs:', error)
+    logger.error('Error fetching audit logs:', error)
     return NextResponse.json(
       { error: 'Error al obtener logs de auditoría' },
       { status: 500 }

@@ -7,6 +7,7 @@ import { randomBytes } from 'crypto'
 import { sendMail, getEmailConfig } from './microsoft-graph'
 import { generateQuoteEmailHTML, generateQuoteEmailText } from './templates/quote-email'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 interface SendQuoteEmailOptions {
   quoteId: string
@@ -180,9 +181,9 @@ export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
       contentType: 'application/pdf',
     }
 
-    console.log(`[Mail] PDF generado: ${pdfAttachment.filename} (${buffer.length} bytes)`)
+    logger.info(`[Mail] PDF generado: ${pdfAttachment.filename} (${buffer.length} bytes)`)
   } catch (pdfError) {
-    console.error('[Mail] Error generando PDF para adjuntar:', pdfError)
+    logger.error('[Mail] Error generando PDF para adjuntar:', pdfError)
     // Continuar sin adjunto — el email tiene link para ver online
   }
 
@@ -223,7 +224,7 @@ export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
       viewUrl,
     }
   } catch (error) {
-    console.error('Error enviando email:', error)
+    logger.error('Error enviando email:', error)
 
     // Registrar error
     await prisma.quoteEmailLog.create({

@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -63,7 +64,7 @@ export async function GET(
 
     return NextResponse.json({ receipt })
   } catch (error) {
-    console.error('[GET /api/cobros/[id]]', error)
+    logger.error('[GET /api/cobros/[id]]', error)
     return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
   }
 }
@@ -105,13 +106,13 @@ export async function PUT(
 
     const receipt = await updateReceipt(id, {
       ...validation.data,
-      customerId: existing.customerId,
+      customerId: existing.customerId!,
       userId:     session.user.id,
     })
 
     return NextResponse.json({ receipt })
   } catch (error: any) {
-    console.error('[PUT /api/cobros/[id]]', error)
+    logger.error('[PUT /api/cobros/[id]]', error)
     if (error?.message) {
       return NextResponse.json({ error: error.message }, { status: 422 })
     }

@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { createPurchaseCreditNote } from '@/lib/credit-note-accounting';
+import { logger } from '@/lib/logger'
 
 export async function POST(
   request: NextRequest,
@@ -47,7 +48,7 @@ export async function POST(
 
     return NextResponse.json(result, { status: 201 });
   } catch (error: any) {
-    console.error('Error creating credit note:', error);
+    logger.error('Error creating credit note:', error);
     return NextResponse.json(
       { error: error.message || 'Error al crear nota de crédito' },
       { status: 500 }

@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupplierAccountStatement } from '@/lib/payment-accounting';
+import { logger } from '@/lib/logger'
 
 export async function GET(
   request: NextRequest,
@@ -26,7 +27,7 @@ export async function GET(
 
     return NextResponse.json(statement);
   } catch (error: any) {
-    console.error('Error fetching account statement:', error);
+    logger.error('Error fetching account statement:', error);
     return NextResponse.json(
       { error: error.message || 'Error al cargar estado de cuenta' },
       { status: 500 }

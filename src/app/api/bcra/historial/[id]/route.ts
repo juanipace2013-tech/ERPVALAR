@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 export async function GET(
   _request: NextRequest,
@@ -27,7 +28,7 @@ export async function GET(
 
     return NextResponse.json(search)
   } catch (error) {
-    console.error('Error fetching BCRA search detail:', error)
+    logger.error('Error fetching BCRA search detail:', error)
     return NextResponse.json(
       { error: 'Error al obtener detalle' },
       { status: 500 }

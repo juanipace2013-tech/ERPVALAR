@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -72,7 +73,7 @@ export async function PATCH(
       },
     })
   } catch (error) {
-    console.error('Error updating check status:', error)
+    logger.error('Error updating check status:', error)
     return NextResponse.json(
       { error: 'Error al actualizar estado del cheque' },
       { status: 500 }

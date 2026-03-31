@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { updateQuoteStatus } from '@/lib/quote-workflow';
 import { QuoteStatus } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
+import { logger } from '@/lib/logger'
 
 export async function POST(
   request: NextRequest,
@@ -63,7 +64,7 @@ export async function POST(
 
     return NextResponse.json(updatedQuote);
   } catch (error) {
-    console.error('Error updating quote status:', error);
+    logger.error('Error updating quote status:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Error al actualizar estado' },
       { status: 500 }

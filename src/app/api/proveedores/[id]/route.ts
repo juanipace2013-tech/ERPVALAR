@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -43,7 +44,7 @@ export async function GET(
 
     return NextResponse.json(supplier)
   } catch (error) {
-    console.error('Error fetching supplier:', error)
+    logger.error('Error fetching supplier:', error)
     return NextResponse.json(
       { error: 'Error al obtener proveedor' },
       { status: 500 }
@@ -139,7 +140,7 @@ export async function PUT(
 
     return NextResponse.json(updatedSupplier)
   } catch (error) {
-    console.error('Error updating supplier:', error)
+    logger.error('Error updating supplier:', error)
     return NextResponse.json(
       { error: 'Error al actualizar proveedor' },
       { status: 500 }
@@ -219,7 +220,7 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'Proveedor eliminado exitosamente' })
   } catch (error) {
-    console.error('Error deleting supplier:', error)
+    logger.error('Error deleting supplier:', error)
     return NextResponse.json(
       { error: 'Error al eliminar proveedor' },
       { status: 500 }

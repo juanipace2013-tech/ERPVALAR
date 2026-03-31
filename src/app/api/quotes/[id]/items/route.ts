@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -20,7 +21,7 @@ export async function POST(
     const { id: quoteId } = await params
     const body = await request.json()
 
-    console.log('📥 Agregando item a cotización:', quoteId, body)
+    logger.info('📥 Agregando item a cotización:', quoteId, body)
 
     // Verificar que la cotización existe
     const quote = await prisma.quote.findUnique({
@@ -101,7 +102,7 @@ export async function POST(
       })
 
       await recalculateQuoteTotals(quoteId)
-      console.log('✅ Item manual agregado:', item.id)
+      logger.info('✅ Item manual agregado:', item.id)
       return NextResponse.json(item, { status: 201 })
     }
 
@@ -211,11 +212,11 @@ export async function POST(
 
     await recalculateQuoteTotals(quoteId)
 
-    console.log('✅ Item agregado:', item.id)
+    logger.info('✅ Item agregado:', item.id)
 
     return NextResponse.json(item, { status: 201 })
   } catch (error) {
-    console.error('❌ Error al agregar item:', error)
+    logger.error('❌ Error al agregar item:', error)
     return NextResponse.json(
       {
         error: 'Error al agregar item',

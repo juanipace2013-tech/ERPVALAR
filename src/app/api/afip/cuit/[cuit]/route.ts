@@ -1,5 +1,6 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
+import { logger } from '@/lib/logger'
 
 interface AFIPData {
   cuit: string
@@ -31,7 +32,7 @@ async function consultarAFIP(cuit: string): Promise<AFIPData | null> {
       throw new Error('CUIT inválido')
     }
 
-    console.log(`[AFIP] Consultando CUIT real: ${cuitLimpio}`)
+    logger.info(`[AFIP] Consultando CUIT real: ${cuitLimpio}`)
 
     // Intentar consulta a servicio público de AFIP
     // Usamos el servicio de consulta pública que está disponible sin autenticación
@@ -68,7 +69,7 @@ async function consultarAFIP(cuit: string): Promise<AFIPData | null> {
       const esCuitPersona = ['20', '23', '24', '27'].includes(tipoPersona)
 
       if (!esCuitEmpresa && !esCuitPersona) {
-        console.log(`[AFIP] CUIT con tipo desconocido: ${tipoPersona}`)
+        logger.info(`[AFIP] CUIT con tipo desconocido: ${tipoPersona}`)
         return null
       }
 
@@ -76,23 +77,23 @@ async function consultarAFIP(cuit: string): Promise<AFIPData | null> {
       const datosReales = await consultarAFIPPublico(cuitLimpio)
 
       if (datosReales) {
-        console.log(`[AFIP] Datos obtenidos del servicio público`)
+        logger.info(`[AFIP] Datos obtenidos del servicio público`)
         return datosReales
       }
 
       // Si no pudimos obtener datos reales, retornar null
       // Esto forzará un error 404 al usuario indicando que debe usar otra opción
-      console.log(`[AFIP] No se pudieron obtener datos del servicio público`)
-      console.log(`[AFIP] El servicio público de AFIP podría estar restringido`)
-      console.log(`[AFIP] Opciones: 1) Configurar Web Services oficiales, 2) Usar API de terceros`)
+      logger.info(`[AFIP] No se pudieron obtener datos del servicio público`)
+      logger.info(`[AFIP] El servicio público de AFIP podría estar restringido`)
+      logger.info(`[AFIP] Opciones: 1) Configurar Web Services oficiales, 2) Usar API de terceros`)
 
       return null
     } catch (fetchError) {
-      console.error('[AFIP] Error en consulta pública:', fetchError)
+      logger.error('[AFIP] Error en consulta pública:', fetchError)
       throw fetchError
     }
   } catch (error) {
-    console.error('[AFIP] Error al consultar:', error)
+    logger.error('[AFIP] Error al consultar:', error)
     return null
   }
 }
@@ -115,7 +116,7 @@ async function consultarAFIPPublico(cuit: string): Promise<AFIPData | null> {
     })
 
     if (!response.ok) {
-      console.log(`[AFIP] Respuesta del servicio público: ${response.status}`)
+      logger.info(`[AFIP] Respuesta del servicio público: ${response.status}`)
       return null
     }
 
@@ -146,7 +147,7 @@ async function consultarAFIPPublico(cuit: string): Promise<AFIPData | null> {
 
     return null
   } catch (error) {
-    console.log(`[AFIP] No se pudo consultar servicio público:`, error instanceof Error ? error.message : 'Error desconocido')
+    logger.info(`[AFIP] No se pudo consultar servicio público:`, error instanceof Error ? error.message : 'Error desconocido')
     return null
   }
 }
@@ -244,7 +245,7 @@ export async function GET(
       rawData: datosAFIP, // Datos originales para referencia
     })
   } catch (error) {
-    console.error('[AFIP] Error en endpoint:', error)
+    logger.error('[AFIP] Error en endpoint:', error)
     return NextResponse.json(
       {
         error: 'Error al consultar AFIP',

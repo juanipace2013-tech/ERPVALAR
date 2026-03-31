@@ -9,7 +9,6 @@ interface RemitoEmailData {
   deliveryNumber: string
   customerName: string
   date: string
-  itemCount: number
   deliveryAddress?: string
   companyName: string
   message?: string
@@ -141,20 +140,11 @@ export function generateRemitoEmailHTML(data: RemitoEmailData): string {
                 </tr>
                 <!-- Row: Fecha -->
                 <tr>
-                  <td style="padding: 14px 20px; font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #6b7280; border-bottom: 1px solid #e5e7eb;">
+                  <td style="padding: 14px 20px; font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #6b7280;${data.deliveryAddress ? ' border-bottom: 1px solid #e5e7eb;' : ''}">
                     Fecha
                   </td>
-                  <td style="padding: 14px 20px; font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #1f2937; font-weight: 600; border-bottom: 1px solid #e5e7eb; text-align: right;">
-                    ${data.date}
-                  </td>
-                </tr>
-                <!-- Row: Items -->
-                <tr>
-                  <td style="padding: 14px 20px; font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #6b7280;${data.deliveryAddress ? ' border-bottom: 1px solid #e5e7eb;' : ''}">
-                    Cantidad de items
-                  </td>
                   <td style="padding: 14px 20px; font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #1f2937; font-weight: 600; text-align: right;${data.deliveryAddress ? ' border-bottom: 1px solid #e5e7eb;' : ''}">
-                    ${data.itemCount}
+                    ${data.date}
                   </td>
                 </tr>
                 <!-- Row: Dirección (optional) -->
@@ -249,7 +239,6 @@ ${data.message ? `Mensaje:\n${data.message}\n` : ''}
 Detalles:
 - Remito N°: ${data.deliveryNumber}
 - Fecha: ${data.date}
-- Cantidad de items: ${data.itemCount}
 ${data.deliveryAddress ? `- Dirección de entrega: ${data.deliveryAddress}` : ''}
 ${data.trackingNumber ? `- N° de tracking: ${data.trackingNumber}` : ''}
 

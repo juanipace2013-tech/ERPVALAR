@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { generateDeliveryNumber } from '@/lib/quote-workflow';
 import { logAudit } from '@/lib/audit';
 import { normalizeCuit, buildCuitWhereClause } from '@/lib/cuit-utils';
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -95,7 +96,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ deliveryNotes, totalCount, page, pageSize });
   } catch (error) {
-    console.error('Error fetching delivery notes:', error);
+    logger.error('Error fetching delivery notes:', error);
     return NextResponse.json(
       { error: 'Error al cargar remitos' },
       { status: 500 }
@@ -263,7 +264,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(deliveryNote, { status: 201 });
   } catch (error) {
-    console.error('Error creating delivery note:', error);
+    logger.error('Error creating delivery note:', error);
     return NextResponse.json(
       { error: 'Error al crear remito' },
       { status: 500 }

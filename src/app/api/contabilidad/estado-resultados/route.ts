@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -129,7 +130,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Error fetching estado de resultados:', error)
+    logger.error('Error fetching estado de resultados:', error)
     return NextResponse.json(
       { error: 'Error al obtener estado de resultados' },
       { status: 500 }

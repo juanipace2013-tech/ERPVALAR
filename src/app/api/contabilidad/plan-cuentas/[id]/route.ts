@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { logger } from '@/lib/logger'
 
 interface RouteParams {
   params: Promise<{
@@ -37,7 +38,7 @@ export async function PATCH(
 
     return NextResponse.json({ success: true, account });
   } catch (error) {
-    console.error('Error updating account:', error);
+    logger.error('Error updating account:', error);
     return NextResponse.json({ error: 'Error al actualizar cuenta' }, { status: 500 });
   }
 }
@@ -95,7 +96,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, message: 'Cuenta eliminada' });
   } catch (error) {
-    console.error('Error deleting account:', error);
+    logger.error('Error deleting account:', error);
     return NextResponse.json({ error: 'Error al eliminar cuenta' }, { status: 500 });
   }
 }

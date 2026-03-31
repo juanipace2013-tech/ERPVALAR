@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -176,7 +177,7 @@ export async function POST(request: NextRequest) {
             },
           })
         } catch (error) {
-          console.error('Error creating customer:', error)
+          logger.error('Error creating customer:', error)
           errors.push({
             row: result.row,
             customer: result.customer,
@@ -197,7 +198,7 @@ export async function POST(request: NextRequest) {
       errorDetails: errors,
     })
   } catch (error) {
-    console.error('Error importing customers:', error)
+    logger.error('Error importing customers:', error)
     return NextResponse.json(
       { error: 'Error al importar clientes' },
       { status: 500 }
@@ -272,7 +273,7 @@ export async function GET(_request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Error generating template:', error)
+    logger.error('Error generating template:', error)
     return NextResponse.json(
       { error: 'Error al generar plantilla' },
       { status: 500 }

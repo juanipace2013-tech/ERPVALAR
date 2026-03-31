@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getLocalDateString } from '@/lib/utils'
 import ExcelJS from 'exceljs'
+import { logger } from '@/lib/logger'
 
 const HEADER_FILL: ExcelJS.FillPattern = {
   type: 'pattern',
@@ -257,7 +258,7 @@ export async function GET(request: NextRequest) {
     const buffer = await workbook.xlsx.writeBuffer()
 
     const today = getLocalDateString().replace(/-/g, '')
-    return new NextResponse(buffer as Buffer, {
+    return new NextResponse(buffer as unknown as BodyInit, {
       headers: {
         'Content-Type':
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -265,7 +266,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Error generating rejections report:', error)
+    logger.error('Error generating rejections report:', error)
     return NextResponse.json(
       { error: 'Error al generar reporte de rechazos' },
       { status: 500 }

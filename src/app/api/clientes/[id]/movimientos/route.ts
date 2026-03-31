@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -126,7 +127,7 @@ export async function GET(
       stats,
     })
   } catch (error) {
-    console.error('Error fetching customer movements:', error)
+    logger.error('Error fetching customer movements:', error)
     return NextResponse.json(
       { error: 'Error al obtener movimientos' },
       { status: 500 }

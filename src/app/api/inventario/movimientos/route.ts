@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 /**
  * API Endpoint: /api/inventario/movimientos
  * Handles CRUD operations for stock movements
@@ -54,7 +55,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.error('Error fetching stock movements:', error);
+    logger.error('Error fetching stock movements:', error);
     return NextResponse.json(
       { error: 'Error al obtener movimientos de stock' },
       { status: 500 }
@@ -118,7 +119,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    console.error('Error creating stock movement:', error);
+    logger.error('Error creating stock movement:', error);
     return NextResponse.json(
       { error: 'Error al crear movimiento de stock' },
       { status: 500 }

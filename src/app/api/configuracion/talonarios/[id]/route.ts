@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -55,7 +56,7 @@ export async function PUT(
       )
     }
 
-    console.error('Error updating talonario:', error)
+    logger.error('Error updating talonario:', error)
     return NextResponse.json(
       { error: 'Error al actualizar talonario' },
       { status: 500 }
@@ -85,7 +86,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting talonario:', error)
+    logger.error('Error deleting talonario:', error)
     return NextResponse.json(
       { error: 'Error al eliminar talonario' },
       { status: 500 }

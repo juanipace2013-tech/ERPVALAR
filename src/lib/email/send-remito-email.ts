@@ -13,6 +13,7 @@ import { sendMail, getEmailConfig } from './microsoft-graph'
 import { generateRemitoEmailHTML, generateRemitoEmailText } from './templates/remito-email'
 import { generateRemitoPDF, type RemitoPDFData } from '@/lib/pdf/remito-generator'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 interface SendRemitoEmailOptions {
   deliveryNoteId: string
@@ -46,9 +47,15 @@ export async function sendRemitoEmail(options: SendRemitoEmailOptions) {
     throw new Error('Remito no encontrado')
   }
 
-  // Formatear fecha
-  const formattedDate = new Date(dn.date).toLocaleDateString('es-AR', {
-    day: '2-digit',
+  if (!dn.customer) {
+    throw new Error('Remito sin cliente asociado')
+  }
+
+  const customer = dn.customer
+
+  // Fecha actual (cuando se envía el mail)
+  const formattedDate = new Date().toLocaleDateString('es-AR', {
+    day: 'numeric',
     month: 'long',
     year: 'numeric',
   })
@@ -61,9 +68,8 @@ export async function sendRemitoEmail(options: SendRemitoEmailOptions) {
   // Datos para el template
   const emailData = {
     deliveryNumber: dn.deliveryNumber,
-    customerName: dn.customer.businessName || dn.customer.name,
+    customerName: customer.businessName || customer.name,
     date: formattedDate,
-    itemCount: dn.items.length,
     deliveryAddress,
     companyName: 'Val Arg',
     message,
@@ -76,7 +82,7 @@ export async function sendRemitoEmail(options: SendRemitoEmailOptions) {
   // ── Generar o leer el adjunto PDF ─────────────────────────────────────────
   let pdfAttachment: { filename: string; contentBase64: string; contentType: string } | undefined
 
-  const customerLabel = (dn.customer.businessName || dn.customer.name)
+  const customerLabel = (customer.businessName || customer.name)
     .replace(/[/\\:*?"<>|]/g, '-')
     .trim()
 
@@ -103,12 +109,12 @@ export async function sendRemitoEmail(options: SendRemitoEmailOptions) {
           contentType,
         }
 
-        console.log(`[Mail] Usando remito firmado: ${signedName} (${signedBuffer.length} bytes)`)
+        logger.info(`[Mail] Usando remito firmado: ${signedName} (${signedBuffer.length} bytes)`)
       } else {
-        console.warn(`[Mail] signedDocUrl existe pero archivo no encontrado: ${signedPath}`)
+        logger.warn(`[Mail] signedDocUrl existe pero archivo no encontrado: ${signedPath}`)
       }
     } catch (signedError) {
-      console.error('[Mail] Error leyendo remito firmado:', signedError)
+      logger.error('[Mail] Error leyendo remito firmado:', signedError)
       // Fallback: generar PDF del sistema
     }
   }
@@ -140,18 +146,18 @@ export async function sendRemitoEmail(options: SendRemitoEmailOptions) {
         deliveryNumber: dn.deliveryNumber,
         date: new Date(dn.date),
         customer: {
-          name: dn.customer.name,
-          businessName: dn.customer.businessName || undefined,
-          cuit: dn.customer.cuit,
-          taxCondition: dn.customer.taxCondition || undefined,
-          address: dn.customer.address || undefined,
-          city: dn.customer.city || undefined,
-          province: dn.customer.province || undefined,
+          name: customer.name,
+          businessName: customer.businessName || undefined,
+          cuit: customer.cuit,
+          taxCondition: customer.taxCondition || undefined,
+          address: customer.address || undefined,
+          city: customer.city || undefined,
+          province: customer.province || undefined,
         },
         items: dn.items.map((item) => ({
           sku: item.sku || item.product?.sku || '',
           description: item.description || item.product?.name || '',
-          quantity: item.quantity,
+          quantity: Number(item.quantity),
           unit: item.unit || item.product?.unit || 'UN',
         })),
         deliveryAddress: dn.deliveryAddress || undefined,
@@ -176,9 +182,9 @@ export async function sendRemitoEmail(options: SendRemitoEmailOptions) {
         contentType: 'application/pdf',
       }
 
-      console.log(`[Mail] PDF remito generado: ${pdfAttachment.filename} (${buffer.length} bytes)`)
+      logger.info(`[Mail] PDF remito generado: ${pdfAttachment.filename} (${buffer.length} bytes)`)
     } catch (pdfError) {
-      console.error('[Mail] Error generando PDF de remito:', pdfError)
+      logger.error('[Mail] Error generando PDF de remito:', pdfError)
       throw new Error('Error al generar el PDF del remito para adjuntar')
     }
   }
@@ -196,7 +202,7 @@ export async function sendRemitoEmail(options: SendRemitoEmailOptions) {
       cc: ccEmails,
     })
 
-    console.log(`[Mail] Remito ${dn.deliveryNumber} enviado a ${recipientEmail}`)
+    logger.info(`[Mail] Remito ${dn.deliveryNumber} enviado a ${recipientEmail}`)
 
     return {
       success: true,
@@ -204,7 +210,7 @@ export async function sendRemitoEmail(options: SendRemitoEmailOptions) {
       usedSignedDoc: !!dn.signedDocUrl,
     }
   } catch (error) {
-    console.error('Error enviando email de remito:', error)
+    logger.error('Error enviando email de remito:', error)
     throw new Error(`Error al enviar email: ${error instanceof Error ? error.message : 'Error desconocido'}`)
   }
 }

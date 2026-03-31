@@ -9,6 +9,7 @@
  */
 
 import { ConfidentialClientApplication } from '@azure/msal-node'
+import { logger } from '@/lib/logger'
 
 // ── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -116,7 +117,7 @@ export async function sendMail(options: SendMailOptions): Promise<{ success: boo
   // Enviar via Graph API
   const graphUrl = `https://graph.microsoft.com/v1.0/users/${MAIL_FROM}/sendMail`
 
-  console.log(`[Mail] Enviando email a ${Array.isArray(to) ? to.join(', ') : to} desde ${MAIL_FROM}`)
+  logger.info(`[Mail] Enviando email a ${Array.isArray(to) ? to.join(', ') : to} desde ${MAIL_FROM}`)
 
   const response = await fetch(graphUrl, {
     method: 'POST',
@@ -129,11 +130,11 @@ export async function sendMail(options: SendMailOptions): Promise<{ success: boo
 
   if (!response.ok) {
     const errorText = await response.text()
-    console.error(`[Mail] Error ${response.status}:`, errorText)
+    logger.error(`[Mail] Error ${response.status}:`, errorText)
     throw new Error(`Error al enviar email via Graph API: ${response.status} - ${errorText}`)
   }
 
-  console.log(`[Mail] Email enviado exitosamente a ${Array.isArray(to) ? to.join(', ') : to}`)
+  logger.info(`[Mail] Email enviado exitosamente a ${Array.isArray(to) ? to.join(', ') : to}`)
 
   return { success: true }
 }

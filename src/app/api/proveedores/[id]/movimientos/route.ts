@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -58,7 +59,8 @@ export async function GET(
     })
 
     // Combinar y ordenar movimientos
-    const movements: Array<{ type: string; amount: number; date: Date; reference?: string; notes?: string }> = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const movements: Array<Record<string, any>> = []
 
     // Agregar órdenes de compra (débito - lo que debemos)
     for (const order of purchaseOrders) {
@@ -144,7 +146,7 @@ export async function GET(
       stats,
     })
   } catch (error) {
-    console.error('Error fetching supplier movements:', error)
+    logger.error('Error fetching supplier movements:', error)
     return NextResponse.json(
       { error: 'Error al obtener movimientos' },
       { status: 500 }

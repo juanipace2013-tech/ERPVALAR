@@ -2,6 +2,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { readFile, stat } from 'fs/promises'
 import path from 'path'
+import { logger } from '@/lib/logger'
 
 // Map file extensions to MIME types
 const MIME_TYPES: Record<string, string> = {
@@ -66,7 +67,7 @@ export async function GET(
       },
     })
   } catch (error) {
-    console.error('Error serving file:', error)
+    logger.error('Error serving file:', error)
     return NextResponse.json({ error: 'Error al servir archivo' }, { status: 500 })
   }
 }

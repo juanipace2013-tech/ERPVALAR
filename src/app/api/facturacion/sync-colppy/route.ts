@@ -16,6 +16,7 @@ import { prisma } from '@/lib/prisma'
 import { getLocalDateString } from '@/lib/utils'
 import { logAudit } from '@/lib/audit'
 import { colppyLogin as colppyLoginCentral, colppyLogout, getColppyConfig, md5Hash, callColppyAPI, ColppySession } from '@/lib/colppy'
+import { logger } from '@/lib/logger'
 
 const PAGE_SIZE = 500
 
@@ -41,7 +42,7 @@ async function callColppyWithRetry(
     return await callColppyAPI<Record<string, unknown>>(payload, 120000)
   } catch (firstError: unknown) {
     const msg = firstError instanceof Error ? firstError.message : ''
-    console.warn(`[Colppy] Primer intento falló: ${msg.substring(0, 200)}. Re-autenticando...`)
+    logger.warn(`[Colppy] Primer intento falló: ${msg.substring(0, 200)}. Re-autenticando...`)
 
     // Re-login
     const { claveSesion } = await getNewSession()
@@ -56,7 +57,7 @@ async function callColppyWithRetry(
 
 async function localColppyLogin(): Promise<string> {
   const session = await colppyLoginCentral()
-  console.log(`[Sync Colppy] Login OK, sesión: ${session.claveSesion.substring(0, 8)}...`)
+  logger.info(`[Sync Colppy] Login OK, sesión: ${session.claveSesion.substring(0, 8)}...`)
   return session.claveSesion
 }
 
@@ -163,7 +164,7 @@ async function fetchAllColppyClients(claveSesion: string, passwordMD5: string): 
     ) as { result?: { estado?: number }; response?: { success?: boolean; data?: Record<string, unknown>[] } }
 
     if (response.result?.estado !== 0 || !response.response?.success) {
-      console.warn('[Sync Colppy] Respuesta de clientes no exitosa:', response.result)
+      logger.warn('[Sync Colppy] Respuesta de clientes no exitosa:', response.result)
       return []
     }
 
@@ -181,7 +182,7 @@ async function fetchAllColppyClients(claveSesion: string, passwordMD5: string): 
     }))
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Unknown'
-    console.error(`[Sync Colppy] Error cargando clientes: ${msg.substring(0, 300)}`)
+    logger.error(`[Sync Colppy] Error cargando clientes: ${msg.substring(0, 300)}`)
     return []
   }
 }
@@ -238,7 +239,7 @@ async function fetchAllColppyFacturas(
       if (response.result?.estado !== 0 || !response.response?.success) {
         const errorMsg = response.result?.mensaje || 'Error al obtener facturas de Colppy'
         if (allFacturas.length > 0) {
-          console.warn(`[Sync Colppy] Error en página ${Math.floor(start / PAGE_SIZE) + 1}: ${errorMsg}. Devolviendo ${allFacturas.length} facturas parciales.`)
+          logger.warn(`[Sync Colppy] Error en página ${Math.floor(start / PAGE_SIZE) + 1}: ${errorMsg}. Devolviendo ${allFacturas.length} facturas parciales.`)
           return { facturas: allFacturas, partial: true, error: errorMsg }
         }
         throw new Error(errorMsg)
@@ -247,7 +248,7 @@ async function fetchAllColppyFacturas(
       const pageData = response.response?.data || []
       allFacturas.push(...pageData)
 
-      console.log(`[Sync Colppy] Página ${Math.floor(start / PAGE_SIZE) + 1}: ${pageData.length} facturas (total acumulado: ${allFacturas.length})`)
+      logger.info(`[Sync Colppy] Página ${Math.floor(start / PAGE_SIZE) + 1}: ${pageData.length} facturas (total acumulado: ${allFacturas.length})`)
 
       if (pageData.length < PAGE_SIZE) {
         hasMore = false
@@ -259,7 +260,7 @@ async function fetchAllColppyFacturas(
     } catch (pageError: unknown) {
       const msg = pageError instanceof Error ? pageError.message : 'Error desconocido'
       if (allFacturas.length > 0) {
-        console.warn(`[Sync Colppy] Error en página ${Math.floor(start / PAGE_SIZE) + 1}: ${msg}. Devolviendo ${allFacturas.length} facturas parciales.`)
+        logger.warn(`[Sync Colppy] Error en página ${Math.floor(start / PAGE_SIZE) + 1}: ${msg}. Devolviendo ${allFacturas.length} facturas parciales.`)
         return { facturas: allFacturas, partial: true, error: msg }
       }
       throw pageError
@@ -317,7 +318,7 @@ export async function POST(request: NextRequest) {
     const dateFromStr = getLocalDateString(dateFrom)
     const dateToStr = getLocalDateString(dateTo)
 
-    console.log(`[Sync Colppy] Sincronizando facturas desde ${dateFromStr} hasta ${dateToStr}...`)
+    logger.info(`[Sync Colppy] Sincronizando facturas desde ${dateFromStr} hasta ${dateToStr}...`)
 
     // 1. Login a Colppy
     const claveSesion = await localColppyLogin()
@@ -327,15 +328,15 @@ export async function POST(request: NextRequest) {
     const fetchResult = await fetchAllColppyFacturas(claveSesion, passwordMD5, dateFromStr, dateToStr)
     const colppyFacturas = fetchResult.facturas
     const fetchPartial = fetchResult.partial
-    console.log(`[Sync Colppy] Total: ${colppyFacturas.length} facturas obtenidas de Colppy${fetchPartial ? ' (PARCIAL - sesión expirada)' : ''}`)
+    logger.info(`[Sync Colppy] Total: ${colppyFacturas.length} facturas obtenidas de Colppy${fetchPartial ? ' (PARCIAL - sesión expirada)' : ''}`)
 
     // Log raw de la primera factura para debug de campos
     if (colppyFacturas.length > 0) {
-      console.log('[Sync Colppy] RAW primera factura:', JSON.stringify(colppyFacturas[0], null, 2))
+      logger.info('[Sync Colppy] RAW primera factura:', JSON.stringify(colppyFacturas[0], null, 2))
       // Log de una factura USD si existe
       const usdSample = colppyFacturas.find((f) => String(f.idMoneda) === '0')
       if (usdSample) {
-        console.log('[Sync Colppy] RAW factura USD ejemplo:', JSON.stringify(usdSample, null, 2))
+        logger.info('[Sync Colppy] RAW factura USD ejemplo:', JSON.stringify(usdSample, null, 2))
       }
     }
 
@@ -351,12 +352,12 @@ export async function POST(request: NextRequest) {
       if (c.colppyId) customerByColppyId.set(c.colppyId, c.id)
       if (c.cuit) customerByCuit.set(c.cuit.replace(/\D/g, ''), c.id)
     }
-    console.log(`[Sync Colppy] Clientes locales: ${customers.length} total, ${customerByColppyId.size} con colppyId, ${customerByCuit.size} con CUIT`)
+    logger.info(`[Sync Colppy] Clientes locales: ${customers.length} total, ${customerByColppyId.size} con colppyId, ${customerByCuit.size} con CUIT`)
 
     // Cargar clientes de Colppy para matching por CUIT y auto-creación
     const colppyClients = await fetchAllColppyClients(claveSesion, passwordMD5)
     const colppyClientMap = new Map(colppyClients.map((c) => [c.idCliente, c]))
-    console.log(`[Sync Colppy] Clientes Colppy cargados: ${colppyClients.length}`)
+    logger.info(`[Sync Colppy] Clientes Colppy cargados: ${colppyClients.length}`)
 
     // Obtener un usuario del sistema para asignar como fallback
     const systemUser = await prisma.user.findFirst({ select: { id: true } })
@@ -398,7 +399,7 @@ export async function POST(request: NextRequest) {
         },
       })
       if (deletedREC.count > 0) {
-        console.log(`[Sync Colppy] Eliminados ${deletedREC.count} recibos (REC) de syncs anteriores`)
+        logger.info(`[Sync Colppy] Eliminados ${deletedREC.count} recibos (REC) de syncs anteriores`)
       }
 
       // Eliminar borradores: nroFactura con números muy altos (ej: 83957509)
@@ -411,10 +412,10 @@ export async function POST(request: NextRequest) {
         },
       })
       if (deletedDrafts.count > 0) {
-        console.log(`[Sync Colppy] Eliminados ${deletedDrafts.count} borradores de syncs anteriores`)
+        logger.info(`[Sync Colppy] Eliminados ${deletedDrafts.count} borradores de syncs anteriores`)
       }
     } catch (err) {
-      console.warn('[Sync Colppy] No se pudieron eliminar registros antiguos:', err instanceof Error ? err.message : err)
+      logger.warn('[Sync Colppy] No se pudieron eliminar registros antiguos:', err instanceof Error ? err.message : err)
     }
 
     // 5. Procesar cada factura
@@ -437,7 +438,7 @@ export async function POST(request: NextRequest) {
         if (fecha) usdRatesByDate.set(fecha, rate)
       }
     }
-    console.log(`[Sync Colppy] TCs USD recolectados de ${usdRatesByDate.size} fechas distintas`)
+    logger.info(`[Sync Colppy] TCs USD recolectados de ${usdRatesByDate.size} fechas distintas`)
 
     // Helper: buscar TC más cercano de facturas USD del mismo período
     function findClosestUsdRate(dateStr: string): number {
@@ -560,7 +561,7 @@ export async function POST(request: NextRequest) {
       const _rateDebug = String(f.rate || 'null')
       const _monedaDebug = String(f.idMoneda || 'null')
       if (_totalDebug < 0 || CREDIT_NOTE_TIPOS.has(tipoComp) || DEBIT_NOTE_TIPOS.has(tipoComp)) {
-        console.log(`[Sync Debug] ${String(f.nroFactura)} idTipoComprobante:${tipoComp} (${_labelDebug}) totalFactura:${_totalDebug} idMoneda:${_monedaDebug} rate:${_rateDebug} → ${CREDIT_NOTE_TIPOS.has(tipoComp) ? 'CREDIT_NOTE' : DEBIT_NOTE_TIPOS.has(tipoComp) ? 'DEBIT_NOTE' : 'SALE'}`)
+        logger.info(`[Sync Debug] ${String(f.nroFactura)} idTipoComprobante:${tipoComp} (${_labelDebug}) totalFactura:${_totalDebug} idMoneda:${_monedaDebug} rate:${_rateDebug} → ${CREDIT_NOTE_TIPOS.has(tipoComp) ? 'CREDIT_NOTE' : DEBIT_NOTE_TIPOS.has(tipoComp) ? 'DEBIT_NOTE' : 'SALE'}`)
       }
 
       // ================================================================
@@ -619,7 +620,7 @@ export async function POST(request: NextRequest) {
       // REGLA DE NEGOCIO: NDV (Notas de Débito) SIEMPRE son en ARS
       // Son por diferencia de cambio y nunca en USD, sin importar lo que diga rate/idMoneda
       if (esNotaDebito && monedaCode === 'USD') {
-        console.log(`[Sync] NDV ${String(f.nroFactura)} forzada a ARS (era USD con rate=${rawRate}). Total ARS: ${totalFacturaARS}`)
+        logger.info(`[Sync] NDV ${String(f.nroFactura)} forzada a ARS (era USD con rate=${rawRate}). Total ARS: ${totalFacturaARS}`)
         monedaCode = 'ARS'
         total = totalFacturaARS
         aplicado = aplicadoARS
@@ -739,10 +740,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log(`[Sync Colppy] Resultado: ${created} creadas (${linkedToQuote} vinculadas a cotización), ${updated} actualizadas, ${skipped} omitidas, ${errors.length} errores`)
-    console.log(`[Sync Colppy] Clientes: ${customersCreated} creados, ${customersLinkedByCuit} vinculados por CUIT`)
+    logger.info(`[Sync Colppy] Resultado: ${created} creadas (${linkedToQuote} vinculadas a cotización), ${updated} actualizadas, ${skipped} omitidas, ${errors.length} errores`)
+    logger.info(`[Sync Colppy] Clientes: ${customersCreated} creados, ${customersLinkedByCuit} vinculados por CUIT`)
     if (Object.keys(skipReasons).length > 0) {
-      console.log('[Sync Colppy] Razones de omisión:', JSON.stringify(skipReasons))
+      logger.info('[Sync Colppy] Razones de omisión:', JSON.stringify(skipReasons))
     }
 
     // Registrar auditoría
@@ -780,7 +781,7 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Error en sync Colppy:', error)
+    logger.error('Error en sync Colppy:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Error al sincronizar desde Colppy' },
       { status: 500 }

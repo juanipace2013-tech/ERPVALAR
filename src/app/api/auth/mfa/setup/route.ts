@@ -3,6 +3,7 @@ import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import * as OTPAuth from 'otpauth'
 import QRCode from 'qrcode'
+import { logger } from '@/lib/logger'
 
 // POST: Generar secreto TOTP y QR code para activar 2FA
 export async function POST() {
@@ -60,7 +61,7 @@ export async function POST() {
       secret: secret.base32,
     })
   } catch (error) {
-    console.error('Error en MFA setup:', error)
+    logger.error('Error en MFA setup:', error)
     return NextResponse.json(
       { error: 'Error al configurar 2FA' },
       { status: 500 }

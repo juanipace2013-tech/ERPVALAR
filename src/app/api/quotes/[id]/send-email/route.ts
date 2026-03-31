@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { sendQuoteEmail } from '@/lib/email/send-quote-email';
 import { updateQuoteStatus } from '@/lib/quote-workflow';
 import { prisma } from '@/lib/prisma';
+import { logger } from '@/lib/logger'
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -63,6 +64,14 @@ export async function POST(
       );
     }
 
+    // Validar que la cotización no esté vencida
+    if (quote.validUntil && new Date(quote.validUntil) < new Date()) {
+      return NextResponse.json(
+        { error: 'La cotización está vencida. Actualizá la fecha de validez antes de enviar.' },
+        { status: 400 }
+      );
+    }
+
     // Cambiar estado a SENT si está en DRAFT
     if (quote.status === 'DRAFT') {
       await updateQuoteStatus(id, 'SENT', session.user.id);
@@ -80,7 +89,6 @@ export async function POST(
     });
 
     return NextResponse.json({
-      success: true,
       message: emails.length === 1
         ? 'Email enviado correctamente'
         : `Email enviado a ${emails.length} destinatarios`,
@@ -88,7 +96,7 @@ export async function POST(
     });
 
   } catch (error) {
-    console.error('Error enviando email de cotización:', error);
+    logger.error('Error enviando email de cotización:', error);
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : 'Error al enviar email',

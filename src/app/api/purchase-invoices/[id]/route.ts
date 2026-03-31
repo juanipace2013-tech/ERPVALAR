@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { logger } from '@/lib/logger'
 
 export async function GET(
   request: NextRequest,
@@ -52,7 +53,7 @@ export async function GET(
 
     return NextResponse.json(purchaseInvoice);
   } catch (error) {
-    console.error('Error fetching purchase invoice:', error);
+    logger.error('Error fetching purchase invoice:', error);
     return NextResponse.json(
       { error: 'Error al cargar factura de compra' },
       { status: 500 }
@@ -94,7 +95,7 @@ export async function PUT(
 
     return NextResponse.json(purchaseInvoice);
   } catch (error) {
-    console.error('Error updating purchase invoice:', error);
+    logger.error('Error updating purchase invoice:', error);
     return NextResponse.json(
       { error: 'Error al actualizar factura de compra' },
       { status: 500 }
@@ -128,7 +129,7 @@ export async function DELETE(
 
     // Advertencia en log si fue sincronizada con Colppy (se elimina solo del ERP)
     if (invoice.colppyInvoiceId) {
-      console.log(`[DELETE] Factura ${invoice.invoiceNumber} sincronizada con Colppy (ID: ${invoice.colppyInvoiceId}). Se elimina solo del ERP.`)
+      logger.info(`[DELETE] Factura ${invoice.invoiceNumber} sincronizada con Colppy (ID: ${invoice.colppyInvoiceId}). Se elimina solo del ERP.`)
     }
 
     // No permitir eliminar si tiene pagos asociados
@@ -146,7 +147,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error deleting purchase invoice:', error);
+    logger.error('Error deleting purchase invoice:', error);
     return NextResponse.json(
       { error: 'Error al eliminar factura de compra' },
       { status: 500 }

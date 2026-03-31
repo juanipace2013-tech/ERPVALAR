@@ -2,6 +2,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 const caiConfigSchema = z.object({
   pointOfSale: z.number().int().positive(),
@@ -26,7 +27,7 @@ export async function GET() {
 
     return NextResponse.json(configs)
   } catch (error) {
-    console.error('Error fetching CAI configs:', error)
+    logger.error('Error fetching CAI configs:', error)
     return NextResponse.json({ error: 'Error al obtener configuraciones de CAI' }, { status: 500 })
   }
 }
@@ -73,7 +74,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: 'Datos inválidos', details: error.issues }, { status: 400 })
     }
-    console.error('Error creating CAI config:', error)
+    logger.error('Error creating CAI config:', error)
     return NextResponse.json({ error: 'Error al crear configuración de CAI' }, { status: 500 })
   }
 }

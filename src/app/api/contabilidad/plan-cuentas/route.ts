@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { logger } from '@/lib/logger'
 
 export async function GET() {
   try {
@@ -24,7 +25,7 @@ export async function GET() {
     const tree = buildTree(null);
     return NextResponse.json(tree);
   } catch (error) {
-    console.error('Error fetching chart of accounts:', error);
+    logger.error('Error fetching chart of accounts:', error);
     return NextResponse.json(
       { error: 'Error al cargar el plan de cuentas' },
       { status: 500 }
@@ -87,7 +88,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(account, { status: 201 });
   } catch (error) {
-    console.error('Error creating account:', error);
+    logger.error('Error creating account:', error);
     return NextResponse.json(
       { error: 'Error al crear la cuenta' },
       { status: 500 }

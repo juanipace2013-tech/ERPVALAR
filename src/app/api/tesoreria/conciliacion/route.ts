@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -58,7 +59,7 @@ export async function POST(request: NextRequest) {
       bankStatementBalance,
     })
   } catch (error) {
-    console.error('Error reconciling transactions:', error)
+    logger.error('Error reconciling transactions:', error)
     return NextResponse.json(
       { error: 'Error al conciliar transacciones' },
       { status: 500 }

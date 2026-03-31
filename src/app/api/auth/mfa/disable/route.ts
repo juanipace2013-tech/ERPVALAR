@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
+import { logger } from '@/lib/logger'
 
 // POST: Desactivar 2FA (requiere contraseña para confirmar)
 export async function POST(request: NextRequest) {
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error desactivando MFA:', error)
+    logger.error('Error desactivando MFA:', error)
     return NextResponse.json(
       { error: 'Error al desactivar 2FA' },
       { status: 500 }

@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { approvePurchaseInvoice } from '@/lib/purchase-accounting';
+import { logger } from '@/lib/logger'
 
 export async function POST(
   request: NextRequest,
@@ -19,7 +20,7 @@ export async function POST(
 
     return NextResponse.json(approvedInvoice);
   } catch (error: any) {
-    console.error('Error approving purchase invoice:', error);
+    logger.error('Error approving purchase invoice:', error);
     return NextResponse.json(
       { error: error.message || 'Error al aprobar factura de compra' },
       { status: 500 }

@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import * as crypto from 'crypto';
+import { logger } from '@/lib/logger';
 import { getMultiplierForClient } from '@/lib/client-multipliers';
 import { auth } from '@/auth';
 
@@ -112,7 +113,7 @@ async function loadAllCustomers(): Promise<CachedCustomer[]> {
     return customerCache;
   }
 
-  console.log('[Colppy] Cargando todos los clientes...');
+  logger.info('[Colppy] Cargando todos los clientes...');
   const startTime = Date.now();
 
   const claveSesion = await getSession();
@@ -162,7 +163,7 @@ async function loadAllCustomers(): Promise<CachedCustomer[]> {
 
   cacheTimestamp = Date.now();
   const elapsed = Date.now() - startTime;
-  console.log(`[Colppy] ${customerCache.length} clientes cargados en ${elapsed}ms`);
+  logger.info(`[Colppy] ${customerCache.length} clientes cargados en ${elapsed}ms`);
 
   return customerCache;
 }
@@ -197,9 +198,9 @@ function mapCustomers(data: any[]): CachedCustomer[] {
 
   // === DIAGNÓSTICO: Log del primer cliente para descubrir campos reales ===
   if (data && data.length > 0) {
-    console.log('=== COLPPY CUSTOMER RAW FIELDS (primer cliente) ===');
-    console.log(JSON.stringify(data[0], null, 2));
-    console.log('=== FIN RAW FIELDS ===');
+    logger.info('=== COLPPY CUSTOMER RAW FIELDS (primer cliente) ===');
+    logger.info(JSON.stringify(data[0], null, 2));
+    logger.info('=== FIN RAW FIELDS ===');
   }
 
   return (data || []).map((c: any) => {
@@ -311,7 +312,7 @@ export async function GET(request: NextRequest) {
       cached: true,
     });
   } catch (error: any) {
-    console.error('Error buscando clientes:', error);
+    logger.error('Error buscando clientes:', error);
     return NextResponse.json(
       {
         error: error.message || 'Error al buscar clientes',
@@ -334,7 +335,7 @@ export async function POST() {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
 
-    console.log('[Colppy] Refrescando cache de clientes manualmente...');
+    logger.info('[Colppy] Refrescando cache de clientes manualmente...');
 
     // Invalidar cache
     cacheTimestamp = 0;
@@ -349,7 +350,7 @@ export async function POST() {
       total: customers.length,
     });
   } catch (error: any) {
-    console.error('Error refrescando cache:', error);
+    logger.error('Error refrescando cache:', error);
     return NextResponse.json(
       { error: error.message || 'Error al refrescar cache' },
       { status: 500 }

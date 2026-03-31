@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { writeFile, mkdir, unlink } from 'fs/promises'
 import path from 'path'
+import { logger } from '@/lib/logger'
 
 const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads', 'cotizaciones-oc')
 const MAX_SIZE = 10 * 1024 * 1024 // 10MB
@@ -105,7 +106,7 @@ export async function POST(
 
     return NextResponse.json(updated)
   } catch (error) {
-    console.error('Error uploading purchase order:', error)
+    logger.error('Error uploading purchase order:', error)
     return NextResponse.json(
       { error: 'Error al subir el archivo' },
       { status: 500 }
@@ -170,7 +171,7 @@ export async function PATCH(
 
     return NextResponse.json(updated)
   } catch (error) {
-    console.error('Error updating purchase order:', error)
+    logger.error('Error updating purchase order:', error)
     return NextResponse.json(
       { error: 'Error al actualizar la orden de compra' },
       { status: 500 }
@@ -225,7 +226,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting purchase order:', error)
+    logger.error('Error deleting purchase order:', error)
     return NextResponse.json(
       { error: 'Error al eliminar la orden de compra' },
       { status: 500 }

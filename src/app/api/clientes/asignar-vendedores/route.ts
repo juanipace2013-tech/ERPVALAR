@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 // Permitir body grande y timeout extendido para archivos con muchas filas
 export const maxDuration = 60 // seconds (Vercel/serverless)
@@ -146,7 +147,7 @@ export async function POST(request: NextRequest) {
       errores,
     })
   } catch (error: any) {
-    console.error('Error bulk assigning salespersons:', error)
+    logger.error('Error bulk assigning salespersons:', error)
     return NextResponse.json(
       { error: error.message || 'Error al asignar vendedores' },
       { status: 500 }

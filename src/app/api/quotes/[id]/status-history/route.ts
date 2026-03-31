@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { logger } from '@/lib/logger'
 
 export async function GET(
   request: NextRequest,
@@ -21,7 +22,7 @@ export async function GET(
 
     return NextResponse.json(history);
   } catch (error) {
-    console.error('Error fetching status history:', error);
+    logger.error('Error fetching status history:', error);
     return NextResponse.json(
       { error: 'Error al obtener historial' },
       { status: 500 }

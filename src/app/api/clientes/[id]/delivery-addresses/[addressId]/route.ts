@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 // PUT /api/clientes/[id]/delivery-addresses/[addressId]
 export async function PUT(
@@ -54,7 +55,7 @@ export async function PUT(
 
     return NextResponse.json({ address })
   } catch (error) {
-    console.error('Error updating delivery address:', error)
+    logger.error('Error updating delivery address:', error)
     return NextResponse.json(
       { error: 'Error al actualizar dirección de entrega' },
       { status: 500 }
@@ -89,7 +90,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting delivery address:', error)
+    logger.error('Error deleting delivery address:', error)
     return NextResponse.json(
       { error: 'Error al eliminar dirección de entrega' },
       { status: 500 }

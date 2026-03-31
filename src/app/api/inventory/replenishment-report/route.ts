@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import ExcelJS from 'exceljs'
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -168,7 +169,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error: unknown) {
-    console.error('Error in replenishment report:', error)
+    logger.error('Error in replenishment report:', error)
     const message = error instanceof Error ? error.message : 'Error en reporte de reposición'
     return NextResponse.json({ error: message }, { status: 500 })
   }

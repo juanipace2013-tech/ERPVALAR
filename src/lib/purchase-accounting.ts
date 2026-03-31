@@ -167,7 +167,7 @@ export async function generatePurchaseInvoiceJournalEntry(invoiceId: string) {
 
   // Actualizar saldos de las cuentas
   for (const line of entry.lines) {
-    if (line.debit > 0) {
+    if (Number(line.debit) > 0) {
       await prisma.chartOfAccount.update({
         where: { id: line.accountId },
         data: {
@@ -177,7 +177,7 @@ export async function generatePurchaseInvoiceJournalEntry(invoiceId: string) {
         },
       });
     }
-    if (line.credit > 0) {
+    if (Number(line.credit) > 0) {
       await prisma.chartOfAccount.update({
         where: { id: line.accountId },
         data: {

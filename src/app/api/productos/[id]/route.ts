@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -39,7 +40,7 @@ export async function GET(
 
     return NextResponse.json(product)
   } catch (error) {
-    console.error('Error fetching product:', error)
+    logger.error('Error fetching product:', error)
     return NextResponse.json(
       { error: 'Error al obtener producto' },
       { status: 500 }
@@ -193,7 +194,7 @@ export async function PUT(
       )
     }
 
-    console.error('Error updating product:', error)
+    logger.error('Error updating product:', error)
     return NextResponse.json(
       { error: 'Error al actualizar producto' },
       { status: 500 }
@@ -269,7 +270,7 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'Producto eliminado exitosamente' })
   } catch (error) {
-    console.error('Error deleting product:', error)
+    logger.error('Error deleting product:', error)
     return NextResponse.json(
       { error: 'Error al eliminar producto' },
       { status: 500 }

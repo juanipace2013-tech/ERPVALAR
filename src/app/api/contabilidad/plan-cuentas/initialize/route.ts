@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -74,7 +75,7 @@ export async function POST(request: NextRequest) {
 
           createdAccounts.set(account.code, created.id)
         } catch (error) {
-          console.error(`Error creando cuenta ${account.code} - ${account.name}:`, error)
+          logger.error(`Error creando cuenta ${account.code} - ${account.name}:`, error)
         }
       }
     }
@@ -97,7 +98,7 @@ export async function POST(request: NextRequest) {
       message: `Plan de cuentas creado exitosamente: ${totalCreated} cuentas`,
     })
   } catch (error) {
-    console.error('Error initializing chart of accounts:', error)
+    logger.error('Error initializing chart of accounts:', error)
     return NextResponse.json(
       { error: 'Error al inicializar plan de cuentas' },
       { status: 500 }

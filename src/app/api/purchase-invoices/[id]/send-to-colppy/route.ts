@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 import {
   colppyLogin,
   colppyLogout,
@@ -105,26 +106,26 @@ export async function POST(
     }
 
     // === DEBUG: Datos completos de la factura ===
-    console.log('=== INVOICE DATA ===')
-    console.log('id:', invoice.id)
-    console.log('invoiceNumber:', invoice.invoiceNumber)
-    console.log('netAmount:', String(invoice.netAmount))
-    console.log('taxAmount:', String(invoice.taxAmount))
-    console.log('notTaxedAmount:', String(invoice.notTaxedAmount))
-    console.log('exemptAmount:', String(invoice.exemptAmount))
-    console.log('perceptionsAmount:', String(invoice.perceptionsAmount))
-    console.log('total:', String(invoice.total))
-    console.log('taxes:', JSON.stringify(invoice.taxes, null, 2))
-    console.log('perceptions:', JSON.stringify(invoice.perceptions, null, 2))
-    console.log('items count:', invoice.items.length)
-    console.log('items:', JSON.stringify(invoice.items.map(i => ({
+    logger.info('=== INVOICE DATA ===')
+    logger.info('id:', invoice.id)
+    logger.info('invoiceNumber:', invoice.invoiceNumber)
+    logger.info('netAmount:', String(invoice.netAmount))
+    logger.info('taxAmount:', String(invoice.taxAmount))
+    logger.info('notTaxedAmount:', String(invoice.notTaxedAmount))
+    logger.info('exemptAmount:', String(invoice.exemptAmount))
+    logger.info('perceptionsAmount:', String(invoice.perceptionsAmount))
+    logger.info('total:', String(invoice.total))
+    logger.info('taxes:', JSON.stringify(invoice.taxes, null, 2))
+    logger.info('perceptions:', JSON.stringify(invoice.perceptions, null, 2))
+    logger.info('items count:', invoice.items.length)
+    logger.info('items:', JSON.stringify(invoice.items.map(i => ({
       desc: i.description?.substring(0, 40),
       qty: String(i.quantity),
       unitPrice: String(i.unitPrice),
       taxRate: String(i.taxRate),
       subtotal: String(i.subtotal),
     })), null, 2))
-    console.log('=== FIN INVOICE DATA ===')
+    logger.info('=== FIN INVOICE DATA ===')
 
     // Verificar que no fue ya enviada
     if (invoice.colppyInvoiceId) {
@@ -150,7 +151,7 @@ export async function POST(
         return await fn(colppySession!)
       } catch (error: any) {
         if (error instanceof ColppySessionExpiredError) {
-          console.log('[Colppy] Sesión expirada, re-autenticando...')
+          logger.info('[Colppy] Sesión expirada, re-autenticando...')
           colppySession = await colppyLogin()
           return await fn(colppySession)
         }
@@ -176,7 +177,7 @@ export async function POST(
         )
       }
 
-      console.log(`[Colppy] Proveedor encontrado: ${supplier.razonSocial} (ID: ${supplier.idProveedor})`)
+      logger.info(`[Colppy] Proveedor encontrado: ${supplier.razonSocial} (ID: ${supplier.idProveedor})`)
 
       // 4. Armar el payload de Colppy
 
@@ -207,10 +208,10 @@ export async function POST(
         const dias = match ? parseInt(match[1]) : 0
         fechaPagoDate = new Date(invoice.invoiceDate)
         fechaPagoDate.setDate(fechaPagoDate.getDate() + dias)
-        console.log(`[Colppy FC] fechaPago calculada: invoiceDate + ${dias} días (terms: "${paymentTermsSource}")`)
+        logger.info(`[Colppy FC] fechaPago calculada: invoiceDate + ${dias} días (terms: "${paymentTermsSource}")`)
       }
       const fechaPago = fmtDate(fechaPagoDate)
-      console.log(`[Colppy FC] paymentTerms DB: "${rawPaymentTerms}" → normalizado: "${idCondicionPago}"`)
+      logger.info(`[Colppy FC] paymentTerms DB: "${rawPaymentTerms}" → normalizado: "${idCondicionPago}"`)
 
       // Tipo de comprobante: FA=1 (Factura), NC=3 (Nota Crédito), ND=2 (Nota Débito)
       const tipoComprobanteMap: Record<string, string> = {
@@ -242,10 +243,10 @@ export async function POST(
         try {
           const idItem = await withRetry((s) => getColppyItemId(s, colppyCode))
           idItemCache[colppyCode] = idItem !== '0' ? idItem : ''
-          console.log(`[Colppy FC] Item "${colppyCode}" → idItem=${idItemCache[colppyCode] || '(no encontrado)'}`)
+          logger.info(`[Colppy FC] Item "${colppyCode}" → idItem=${idItemCache[colppyCode] || '(no encontrado)'}`)
           return idItemCache[colppyCode]
         } catch (err: any) {
-          console.warn(`[Colppy FC] Error buscando item "${colppyCode}":`, err.message)
+          logger.warn(`[Colppy FC] Error buscando item "${colppyCode}":`, err.message)
           idItemCache[colppyCode] = ''
           return ''
         }
@@ -288,7 +289,7 @@ export async function POST(
         }
       }))
 
-      console.log('[Colppy FC] === ITEMS PAYLOAD ===', JSON.stringify(itemsFactura.map(i => ({
+      logger.info('[Colppy FC] === ITEMS PAYLOAD ===', JSON.stringify(itemsFactura.map(i => ({
         codigo: i.codigo, Desc: i.Descripcion?.substring(0, 30), Qty: i.Cantidad,
         PUnit: i.ImporteUnitario, porcDesc: i.porcDesc, Total: i.importeTotal,
       })), null, 2))
@@ -323,12 +324,12 @@ export async function POST(
           else if (rate === 10.5) iva105Cents += amountCents
           else if (rate === 27) iva27Cents += amountCents
         }
-        console.log(`[Colppy FC] IVA desde taxes table: 21%=${iva21Cents} 10.5%=${iva105Cents} 27%=${iva27Cents}`)
+        logger.info(`[Colppy FC] IVA desde taxes table: 21%=${iva21Cents} 10.5%=${iva105Cents} 27%=${iva27Cents}`)
       }
 
       // Si la tabla taxes dio 0 o está vacía, calcular desde items
       if (iva21Cents + iva105Cents + iva27Cents === 0 && dbTaxAmountCents > 0) {
-        console.log(`[Colppy FC] ⚠️ taxes table sin datos útiles, calculando IVA desde items (dbTaxAmount=${dbTaxAmountCents})`)
+        logger.info(`[Colppy FC] ⚠️ taxes table sin datos útiles, calculando IVA desde items (dbTaxAmount=${dbTaxAmountCents})`)
         for (const item of invoice.items) {
           const qty = Number(item.quantity)
           const unitPriceCents = r2(Number(item.unitPrice))
@@ -339,24 +340,24 @@ export async function POST(
           else if (taxRate === 10.5) iva105Cents += itemIvaCents
           else if (taxRate === 27) iva27Cents += itemIvaCents
         }
-        console.log(`[Colppy FC] IVA desde items: 21%=${iva21Cents} 10.5%=${iva105Cents} 27%=${iva27Cents}`)
+        logger.info(`[Colppy FC] IVA desde items: 21%=${iva21Cents} 10.5%=${iva105Cents} 27%=${iva27Cents}`)
       }
 
       // Última línea de defensa: si sigue en 0 pero la DB tiene IVA, usar DB como IVA21
       const totalIvaCalcCents = iva21Cents + iva105Cents + iva27Cents
       if (totalIvaCalcCents === 0 && dbTaxAmountCents > 0) {
-        console.log(`[Colppy FC] ⚠️ IVA sigue en 0, usando dbTaxAmount=${dbTaxAmountCents} como IVA21`)
+        logger.info(`[Colppy FC] ⚠️ IVA sigue en 0, usando dbTaxAmount=${dbTaxAmountCents} como IVA21`)
         iva21Cents = dbTaxAmountCents
       } else if (Math.abs(totalIvaCalcCents - dbTaxAmountCents) > 100) {
         // Diferencia > $1: algo está muy mal, usar DB
-        console.log(`[Colppy FC] ⚠️ IVA calc=${totalIvaCalcCents} vs DB=${dbTaxAmountCents} (diff>${Math.abs(totalIvaCalcCents - dbTaxAmountCents)}), usando DB`)
+        logger.info(`[Colppy FC] ⚠️ IVA calc=${totalIvaCalcCents} vs DB=${dbTaxAmountCents} (diff>${Math.abs(totalIvaCalcCents - dbTaxAmountCents)}), usando DB`)
         iva21Cents = dbTaxAmountCents
         iva105Cents = 0
         iva27Cents = 0
       }
 
       const totalIvaCents = iva21Cents + iva105Cents + iva27Cents
-      console.log(`[Colppy FC] IVA FINAL: 21%=${iva21Cents} 10.5%=${iva105Cents} 27%=${iva27Cents} total=${totalIvaCents} (dbTaxAmount=${dbTaxAmountCents})`)
+      logger.info(`[Colppy FC] IVA FINAL: 21%=${iva21Cents} 10.5%=${iva105Cents} 27%=${iva27Cents} total=${totalIvaCents} (dbTaxAmount=${dbTaxAmountCents})`)
 
       // Percepciones
       // Mapeo completo: aliases comunes → nombre EXACTO de Colppy (tildes y mayúsculas importan)
@@ -403,7 +404,7 @@ export async function POST(
         )
         if (key) return JURISDICCION_MAP[key]
         // No encontrado
-        console.warn(`[Colppy FC] ⚠️ Jurisdicción IIBB no mapeada: "${trimmed}" — se envía tal cual`)
+        logger.warn(`[Colppy FC] ⚠️ Jurisdicción IIBB no mapeada: "${trimmed}" — se envía tal cual`)
         return trimmed
       }
 
@@ -425,9 +426,9 @@ export async function POST(
       // Ordenar por monto descendente para logging claro
       const iibbEntries = Object.entries(iibbByJurisdiction).sort((a, b) => b[1] - a[1])
 
-      console.log(`[Colppy FC] IIBB: total=${percIibbCents} | jurisdicciones=${iibbEntries.length}`)
+      logger.info(`[Colppy FC] IIBB: total=${percIibbCents} | jurisdicciones=${iibbEntries.length}`)
       for (const [jur, cents] of iibbEntries) {
-        console.log(`[Colppy FC]   → ${jur}: ${cents} cents ($${c2d(cents)})`)
+        logger.info(`[Colppy FC]   → ${jur}: ${cents} cents ($${c2d(cents)})`)
       }
 
       // Armar array percsufridas para Colppy (multi-jurisdicción)
@@ -442,9 +443,9 @@ export async function POST(
 
       // === BALANCE CHECK ===
       const dbTotal = Number(invoice.total)
-      console.log(`[Colppy FC] === TOTALES (centavos) ===`)
-      console.log(`[Colppy FC] netoGravado=${netoGravadoCents} netoNoGravado=${netoNoGravadoCents} totalIVA=${totalIvaCents} (21%=${iva21Cents} 10.5%=${iva105Cents} 27%=${iva27Cents}) percIVA=${percIvaCents} percIIBB=${percIibbCents}`)
-      console.log(`[Colppy FC] totalFactura=${totalFacturaCents} (${c2d(totalFacturaCents)}) | DB total=${dbTotal} | diff=${(totalFacturaCents/100 - dbTotal).toFixed(2)}`)
+      logger.info(`[Colppy FC] === TOTALES (centavos) ===`)
+      logger.info(`[Colppy FC] netoGravado=${netoGravadoCents} netoNoGravado=${netoNoGravadoCents} totalIVA=${totalIvaCents} (21%=${iva21Cents} 10.5%=${iva105Cents} 27%=${iva27Cents}) percIVA=${percIvaCents} percIIBB=${percIibbCents}`)
+      logger.info(`[Colppy FC] totalFactura=${totalFacturaCents} (${c2d(totalFacturaCents)}) | DB total=${dbTotal} | diff=${(totalFacturaCents/100 - dbTotal).toFixed(2)}`)
 
       // 5. Enviar a Colppy
       const colppyParams = {
@@ -475,7 +476,7 @@ export async function POST(
         itemsFactura,
       }
 
-      console.log(`[Colppy FC] PARAMS:`, JSON.stringify(colppyParams, null, 2))
+      logger.info(`[Colppy FC] PARAMS:`, JSON.stringify(colppyParams, null, 2))
 
       const result = await withRetry((s) =>
         colppyCreatePurchaseInvoice(s, colppyParams)
@@ -490,7 +491,7 @@ export async function POST(
         },
       })
 
-      console.log(`[Colppy] Factura de compra ${invoice.invoiceNumber} enviada como borrador. ID Colppy: ${result.idFactura}`)
+      logger.info(`[Colppy] Factura de compra ${invoice.invoiceNumber} enviada como borrador. ID Colppy: ${result.idFactura}`)
 
       // Mensaje con info de percepciones IIBB
       let message = `Factura ${invoice.invoiceNumber} creada como BORRADOR en Colppy.`
@@ -512,7 +513,7 @@ export async function POST(
       }
     }
   } catch (error: any) {
-    console.error('Error enviando factura de compra a Colppy:', error)
+    logger.error('Error enviando factura de compra a Colppy:', error)
     return NextResponse.json(
       { error: error.message || 'Error al enviar factura a Colppy' },
       { status: 500 }

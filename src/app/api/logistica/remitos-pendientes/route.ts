@@ -1,6 +1,7 @@
 import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 export async function GET() {
   try {
@@ -62,7 +63,7 @@ export async function GET() {
 
     return NextResponse.json(remitos)
   } catch (error) {
-    console.error('Error fetching pending remitos:', error)
+    logger.error('Error fetching pending remitos:', error)
     return NextResponse.json(
       { error: 'Error al obtener remitos pendientes' },
       { status: 500 }

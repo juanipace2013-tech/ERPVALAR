@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { headers } from 'next/headers'
+import { logger } from '@/lib/logger'
 
 interface AuditLogParams {
   userId: string
@@ -34,7 +35,7 @@ export function logAudit(params: AuditLogParams) {
         },
       })
       .catch((error) => {
-        console.error('[Audit] Error al registrar log:', error)
+        logger.error('[Audit] Error al registrar log:', error)
       })
   })
 }

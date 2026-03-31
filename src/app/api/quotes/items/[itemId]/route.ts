@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -20,7 +21,7 @@ export async function PATCH(
     const { itemId } = await params
     const body = await request.json()
 
-    console.log('📝 Editando item:', itemId, body)
+    logger.info('📝 Editando item:', itemId, body)
 
     // Verificar que el item existe
     const existingItem = await prisma.quoteItem.findUnique({
@@ -169,11 +170,11 @@ export async function PATCH(
     // Recalcular totales
     await recalculateQuoteTotals(quoteId)
 
-    console.log('✅ Item actualizado:', updatedItem.id)
+    logger.info('✅ Item actualizado:', updatedItem.id)
 
     return NextResponse.json(updatedItem)
   } catch (error) {
-    console.error('❌ Error al editar item:', error)
+    logger.error('❌ Error al editar item:', error)
     return NextResponse.json(
       {
         error: 'Error al editar item',
@@ -223,7 +224,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting item:', error)
+    logger.error('Error deleting item:', error)
     return NextResponse.json(
       { error: 'Error al eliminar item' },
       { status: 500 }

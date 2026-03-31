@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -100,7 +101,7 @@ export async function GET(_request: NextRequest) {
 
     return NextResponse.json(settings)
   } catch (error) {
-    console.error('Error fetching company settings:', error)
+    logger.error('Error fetching company settings:', error)
     return NextResponse.json(
       { error: 'Error al obtener configuración' },
       { status: 500 }
@@ -147,7 +148,7 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    console.error('Error updating company settings:', error)
+    logger.error('Error updating company settings:', error)
     return NextResponse.json(
       { error: 'Error al actualizar configuración' },
       { status: 500 }

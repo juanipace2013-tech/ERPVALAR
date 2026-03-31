@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -63,7 +64,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ purchaseInvoices, totalCount, page, pageSize });
   } catch (error) {
-    console.error('Error fetching purchase invoices:', error);
+    logger.error('Error fetching purchase invoices:', error);
     return NextResponse.json(
       { error: 'Error al cargar facturas de compra' },
       { status: 500 }
@@ -251,7 +252,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (autoLinkedCount > 0) {
-      console.log(`[FC Auto-link] ${autoLinkedCount}/${purchaseInvoice.items.length} items auto-vinculados`)
+      logger.info(`[FC Auto-link] ${autoLinkedCount}/${purchaseInvoice.items.length} items auto-vinculados`)
     }
 
     // Re-fetch with updated links
@@ -269,7 +270,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(finalInvoice, { status: 201 });
   } catch (error) {
-    console.error('Error creating purchase invoice:', error);
+    logger.error('Error creating purchase invoice:', error);
     return NextResponse.json(
       { error: 'Error al crear factura de compra' },
       { status: 500 }

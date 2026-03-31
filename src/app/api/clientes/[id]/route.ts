@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -90,7 +91,7 @@ export async function GET(
 
     return NextResponse.json(customer)
   } catch (error) {
-    console.error('Error fetching customer:', error)
+    logger.error('Error fetching customer:', error)
     return NextResponse.json(
       { error: 'Error al obtener cliente' },
       { status: 500 }
@@ -226,7 +227,7 @@ export async function PUT(
       )
     }
 
-    console.error('Error updating customer:', error)
+    logger.error('Error updating customer:', error)
     return NextResponse.json(
       { error: 'Error al actualizar cliente' },
       { status: 500 }
@@ -295,7 +296,7 @@ export async function PATCH(
 
     return NextResponse.json(customer)
   } catch (error) {
-    console.error('Error patching customer:', error)
+    logger.error('Error patching customer:', error)
     return NextResponse.json(
       { error: 'Error al actualizar cliente' },
       { status: 500 }
@@ -372,7 +373,7 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'Cliente eliminado exitosamente' })
   } catch (error) {
-    console.error('Error deleting customer:', error)
+    logger.error('Error deleting customer:', error)
     return NextResponse.json(
       { error: 'Error al eliminar cliente' },
       { status: 500 }

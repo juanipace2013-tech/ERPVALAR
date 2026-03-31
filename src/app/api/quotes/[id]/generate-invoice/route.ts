@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { generateInvoiceFromQuote } from '@/lib/quote-workflow';
+import { logger } from '@/lib/logger'
 
 export async function POST(
   request: NextRequest,
@@ -28,7 +29,7 @@ export async function POST(
 
     return NextResponse.json(invoice, { status: 201 });
   } catch (error) {
-    console.error('Error generating invoice:', error);
+    logger.error('Error generating invoice:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Error al generar factura' },
       { status: 500 }

@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -129,7 +130,7 @@ export async function GET(
 
     return NextResponse.json(quote)
   } catch (error) {
-    console.error('Error fetching quote:', error)
+    logger.error('Error fetching quote:', error)
     return NextResponse.json(
       { error: 'Error al obtener cotización' },
       { status: 500 }
@@ -290,7 +291,7 @@ export async function PUT(
 
     return NextResponse.json(updatedQuote)
   } catch (error) {
-    console.error('Error updating quote:', error)
+    logger.error('Error updating quote:', error)
     return NextResponse.json(
       { error: 'Error al actualizar cotización' },
       { status: 500 }
@@ -320,7 +321,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting quote:', error)
+    logger.error('Error deleting quote:', error)
     return NextResponse.json(
       { error: 'Error al eliminar cotización' },
       { status: 500 }

@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -25,7 +26,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting chequera:', error)
+    logger.error('Error deleting chequera:', error)
     return NextResponse.json(
       { error: 'Error al eliminar chequera' },
       { status: 500 }

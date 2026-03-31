@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyPublicToken } from '@/lib/email/send-quote-email';
 import { updateQuoteStatus } from '@/lib/quote-workflow';
+import { logger } from '@/lib/logger'
 
 /**
  * POST - Aceptar cotización usando token público
@@ -42,7 +43,7 @@ export async function POST(
     });
 
   } catch (error) {
-    console.error('Error aceptando cotización:', error);
+    logger.error('Error aceptando cotización:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Error al aceptar cotización' },
       { status: 500 }

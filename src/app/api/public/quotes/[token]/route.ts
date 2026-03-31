@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyPublicToken } from '@/lib/email/send-quote-email';
+import { logger } from '@/lib/logger'
 
 /**
  * GET - Obtener cotización usando token público
@@ -31,7 +32,7 @@ export async function GET(
 
     return NextResponse.json(serializedQuote);
   } catch (error) {
-    console.error('Error obteniendo cotización pública:', error);
+    logger.error('Error obteniendo cotización pública:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Error al obtener cotización' },
       { status: error instanceof Error && error.message === 'Token inválido' ? 404 : 500 }

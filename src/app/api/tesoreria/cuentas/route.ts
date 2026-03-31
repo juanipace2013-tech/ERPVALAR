@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ accounts })
   } catch (error) {
-    console.error('[GET /api/tesoreria/cuentas]', error)
+    logger.error('[GET /api/tesoreria/cuentas]', error)
     return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
   }
 }
@@ -97,7 +98,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ account }, { status: 201 })
   } catch (error) {
-    console.error('[POST /api/tesoreria/cuentas]', error)
+    logger.error('[POST /api/tesoreria/cuentas]', error)
     return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
   }
 }

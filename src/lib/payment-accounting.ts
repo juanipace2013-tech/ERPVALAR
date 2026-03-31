@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import type { PaymentMethod } from '@prisma/client';
 
 /**
  * Registra un pago a una factura de compra y genera el asiento contable
@@ -48,7 +49,7 @@ export async function registerPurchasePayment(data: {
         purchaseInvoiceId,
         amount,
         paymentDate,
-        paymentMethod,
+        paymentMethod: paymentMethod as PaymentMethod,
         reference,
         notes,
       },
@@ -241,7 +242,7 @@ export async function registerSupplierPayment(data: {
         supplierId,
         amount,
         paymentDate,
-        method: paymentMethod,
+        method: paymentMethod as PaymentMethod,
         reference,
         notes,
         purchaseOrderId,

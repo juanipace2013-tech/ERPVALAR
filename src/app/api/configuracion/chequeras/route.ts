@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -35,7 +36,7 @@ export async function GET(_request: NextRequest) {
 
     return NextResponse.json(chequeras)
   } catch (error) {
-    console.error('Error fetching chequeras:', error)
+    logger.error('Error fetching chequeras:', error)
     return NextResponse.json(
       { error: 'Error al obtener chequeras' },
       { status: 500 }
@@ -72,7 +73,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.error('Error creating chequera:', error)
+    logger.error('Error creating chequera:', error)
     return NextResponse.json(
       { error: 'Error al crear chequera' },
       { status: 500 }

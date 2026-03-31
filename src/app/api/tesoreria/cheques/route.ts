@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -63,7 +64,7 @@ export async function GET(request: NextRequest) {
       total: checks.length,
     })
   } catch (error) {
-    console.error('Error fetching checks:', error)
+    logger.error('Error fetching checks:', error)
     return NextResponse.json(
       { error: 'Error al obtener cheques' },
       { status: 500 }

@@ -19,23 +19,25 @@ function isDeliveryImmediate(deliveryTime: string | null): boolean {
 /**
  * Determina si un item está listo para facturar.
  *
- * Un item está listo si CUALQUIERA de estas condiciones se cumple:
- * 1. El producto tiene stock real suficiente (stockQuantity >= remainingQuantity)
- * 2. El vendedor lo marcó como "Inmediato" en la cotización (deliveryTime)
- *
- * Ambas señales son válidas: el stock real confirma disponibilidad,
- * pero el vendedor puede saber que hay stock aunque no esté cargado en el sistema.
+ * Reglas:
+ * 1. Si el producto tiene trackInventory=true → exigir stock real >= remainingQuantity
+ *    (deliveryTime NO puede overridear la falta de stock real)
+ * 2. Si el producto NO trackea inventario o no está vinculado → usar deliveryTime como señal
+ * 3. Si hay stock real suficiente → listo siempre
  */
 function isItemReady(
   stockQuantity: number | null | undefined,
   remainingQuantity: number,
-  deliveryTime: string | null
+  deliveryTime: string | null,
+  trackInventory: boolean
 ): boolean {
-  // Si el vendedor marcó como inmediato → listo
+  // Si el producto trackea inventario → exigir stock real
+  if (trackInventory) {
+    return stockQuantity != null && stockQuantity >= remainingQuantity
+  }
+  // Producto sin tracking de inventario: confiar en deliveryTime o stock
   if (isDeliveryImmediate(deliveryTime)) return true
-  // Si el producto tiene stock real suficiente → listo
   if (stockQuantity != null && stockQuantity >= remainingQuantity) return true
-  // No hay stock y no es inmediato → no listo
   return false
 }
 
@@ -91,7 +93,7 @@ export async function GET(request: NextRequest) {
         items: {
           where: { isAlternative: false },
           include: {
-            product: { select: { sku: true, name: true, stockQuantity: true } },
+            product: { select: { sku: true, name: true, stockQuantity: true, trackInventory: true } },
             invoiceItems: {
               include: {
                 invoice: { select: { status: true, notes: true, createdAt: true } },
@@ -119,6 +121,7 @@ export async function GET(request: NextRequest) {
       isAlternative: boolean
       sentToColppy: boolean
       stockQuantity: number | null
+      stockShortage: number | null // cantidad faltante (null = sin problema)
     }
 
     interface BoardCardType {
@@ -158,6 +161,16 @@ export async function GET(request: NextRequest) {
         )
 
         const stockQty = item.product?.stockQuantity ?? null
+        const trackInventory = item.product?.trackInventory ?? false
+        const safeRemaining = Math.max(remainingQuantity, 0)
+        const ready = isItemReady(stockQty, safeRemaining, item.deliveryTime, trackInventory)
+
+        // Calcular shortage: cuánto falta para cubrir el pedido
+        let stockShortage: number | null = null
+        if (!ready && trackInventory && safeRemaining > 0) {
+          const available = stockQty != null ? Math.max(stockQty, 0) : 0
+          stockShortage = safeRemaining - available
+        }
 
         return {
           id: item.id,
@@ -170,11 +183,11 @@ export async function GET(request: NextRequest) {
           unitPrice: Number(item.unitPrice),
           totalPrice: Number(item.totalPrice),
           deliveryTime: item.deliveryTime,
-          // Clasificar por stock REAL, no por deliveryTime
-          isInStock: isItemReady(stockQty, Math.max(remainingQuantity, 0), item.deliveryTime),
+          isInStock: ready,
           isAlternative: item.isAlternative,
           sentToColppy,
           stockQuantity: stockQty,
+          stockShortage,
         }
       })
 

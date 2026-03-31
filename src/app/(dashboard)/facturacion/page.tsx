@@ -79,6 +79,7 @@ interface BoardItem {
   isAlternative: boolean
   sentToColppy: boolean
   stockQuantity: number | null
+  stockShortage: number | null
 }
 
 interface BoardCard {
@@ -1064,6 +1065,23 @@ function QuoteCard({
             <span>{formatDate(quote.date)}</span>
           </div>
 
+          {(() => {
+            const shortageItems = quote.items.filter(
+              (i) => i.stockShortage != null && i.stockShortage > 0 && i.remainingQuantity > 0
+            )
+            if (shortageItems.length === 0) return null
+            return (
+              <div className="text-[10px] text-red-600 bg-red-50 rounded px-1.5 py-1 mt-0.5 space-y-0.5">
+                {shortageItems.slice(0, 2).map((i) => (
+                  <p key={i.id}>⚠ {i.productSku || i.description}: faltan {i.stockShortage} un.</p>
+                ))}
+                {shortageItems.length > 2 && (
+                  <p>...y {shortageItems.length - 2} más</p>
+                )}
+              </div>
+            )
+          })()}
+
           {quote.farthestDelivery !== 'Inmediato' && (
             <div className="flex items-center gap-1 text-xs text-orange-600">
               <Clock className="h-3 w-3" />
@@ -1135,7 +1153,9 @@ function QuoteCard({
                     <p className="truncate font-medium">{item.description}</p>
                     {!item.isInStock && !isFullyInvoiced && !item.sentToColppy && (
                       <p className="text-[10px] text-red-500">
-                        {item.stockQuantity != null
+                        {item.stockShortage != null
+                          ? `⚠ Faltan ${item.stockShortage} un. (stock: ${item.stockQuantity ?? 0})`
+                          : item.stockQuantity != null
                           ? `Stock: ${item.stockQuantity} / Necesita: ${item.remainingQuantity}`
                           : item.deliveryTime || 'Sin stock'}
                       </p>

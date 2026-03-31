@@ -131,6 +131,9 @@ export async function PUT(
           deliveryAddress: body.deliveryAddress ?? undefined,
           deliveryCity: body.deliveryCity ?? undefined,
           deliveryProvince: body.deliveryProvince ?? undefined,
+          deliveryPostalCode: body.deliveryPostalCode ?? undefined,
+          deliveryContactName: body.deliveryContactName ?? undefined,
+          deliveryContactPhone: body.deliveryContactPhone ?? undefined,
         },
         include: {
           customer: true,

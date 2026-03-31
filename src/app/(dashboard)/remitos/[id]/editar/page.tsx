@@ -58,6 +58,8 @@ interface DeliveryNote {
   deliveryCity: string | null
   deliveryProvince: string | null
   deliveryPostalCode: string | null
+  deliveryContactName: string | null
+  deliveryContactPhone: string | null
   customer: {
     id: string
     name: string
@@ -105,6 +107,8 @@ export default function EditarRemitoPage() {
   const [deliveryCity, setDeliveryCity] = useState('')
   const [deliveryProvince, setDeliveryProvince] = useState('')
   const [deliveryPostalCode, setDeliveryPostalCode] = useState('')
+  const [deliveryContactName, setDeliveryContactName] = useState('')
+  const [deliveryContactPhone, setDeliveryContactPhone] = useState('')
   const [items, setItems] = useState<DeliveryNoteItem[]>([])
 
   // Búsqueda de productos
@@ -147,6 +151,8 @@ export default function EditarRemitoPage() {
       setDeliveryCity(data.deliveryCity || '')
       setDeliveryProvince(data.deliveryProvince || '')
       setDeliveryPostalCode(data.deliveryPostalCode || '')
+      setDeliveryContactName(data.deliveryContactName || '')
+      setDeliveryContactPhone(data.deliveryContactPhone || '')
       setItems(
         data.items.map((item) => ({
           id: item.id,
@@ -191,6 +197,8 @@ export default function EditarRemitoPage() {
           deliveryCity: deliveryCity || null,
           deliveryProvince: deliveryProvince || null,
           deliveryPostalCode: deliveryPostalCode || null,
+          deliveryContactName: deliveryContactName || null,
+          deliveryContactPhone: deliveryContactPhone || null,
           items: items.map((item) => ({
             productId: item.productId,
             sku: item.sku,
@@ -416,6 +424,8 @@ export default function EditarRemitoPage() {
                 setDeliveryCity(addr.deliveryCity || '')
                 setDeliveryProvince(addr.deliveryProvince || '')
                 setDeliveryPostalCode(addr.deliveryPostalCode || '')
+                setDeliveryContactName(addr.deliveryContactName || '')
+                setDeliveryContactPhone(addr.deliveryContactPhone || '')
               }}
             />
           )}

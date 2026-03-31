@@ -109,15 +109,11 @@ function drawLabel(
   const addressLines = doc.splitTextToSize(address, contentWidth - 6)
   y += 8 + (addressLines.length * 5) + 6
 
-  // CONTACTO
+  // CONTACTO — solo de DeliveryAddress, nunca del cliente Colppy
   const contactParts: string[] = []
   if (data.deliveryContactName) contactParts.push(data.deliveryContactName)
-  if (data.deliveryContactPhone) contactParts.push(`Tel: ${data.deliveryContactPhone}`)
-  if (contactParts.length === 0) {
-    if (data.customer.phone) contactParts.push(data.customer.phone)
-    else if (data.customer.mobile) contactParts.push(data.customer.mobile)
-  }
-  const contactInfo = contactParts.join(' — ')
+  if (data.deliveryContactPhone) contactParts.push(data.deliveryContactPhone)
+  const contactInfo = contactParts.join(' - ')
   if (contactInfo) {
     drawField(doc, 'CONTACTO', contactInfo, margin, y, contentWidth, 11)
     y += 14

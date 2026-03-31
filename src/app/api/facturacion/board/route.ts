@@ -20,24 +20,22 @@ function isDeliveryImmediate(deliveryTime: string | null): boolean {
  * Determina si un item está listo para facturar.
  *
  * Reglas:
- * 1. Si el producto tiene trackInventory=true → exigir stock real >= remainingQuantity
- *    (deliveryTime NO puede overridear la falta de stock real)
- * 2. Si el producto NO trackea inventario o no está vinculado → usar deliveryTime como señal
- * 3. Si hay stock real suficiente → listo siempre
+ * 1. Si hay producto vinculado con stockQuantity conocido → exigir stock >= remaining
+ *    (el stock real siempre tiene prioridad sobre deliveryTime)
+ * 2. Sin producto vinculado (item manual) → usar deliveryTime como señal
  */
 function isItemReady(
   stockQuantity: number | null | undefined,
   remainingQuantity: number,
   deliveryTime: string | null,
-  trackInventory: boolean
+  hasProduct: boolean
 ): boolean {
-  // Si el producto trackea inventario → exigir stock real
-  if (trackInventory) {
-    return stockQuantity != null && stockQuantity >= remainingQuantity
+  // Producto vinculado con stock conocido → comparar stock real vs cantidad
+  if (hasProduct && stockQuantity != null) {
+    return stockQuantity >= remainingQuantity
   }
-  // Producto sin tracking de inventario: confiar en deliveryTime o stock
+  // Item manual sin producto → confiar en deliveryTime
   if (isDeliveryImmediate(deliveryTime)) return true
-  if (stockQuantity != null && stockQuantity >= remainingQuantity) return true
   return false
 }
 
@@ -161,15 +159,14 @@ export async function GET(request: NextRequest) {
         )
 
         const stockQty = item.product?.stockQuantity ?? null
-        const trackInventory = item.product?.trackInventory ?? false
+        const hasProduct = item.product != null
         const safeRemaining = Math.max(remainingQuantity, 0)
-        const ready = isItemReady(stockQty, safeRemaining, item.deliveryTime, trackInventory)
+        const ready = isItemReady(stockQty, safeRemaining, item.deliveryTime, hasProduct)
 
         // Calcular shortage: cuánto falta para cubrir el pedido
         let stockShortage: number | null = null
-        if (!ready && trackInventory && safeRemaining > 0) {
-          const available = stockQty != null ? Math.max(stockQty, 0) : 0
-          stockShortage = safeRemaining - available
+        if (!ready && hasProduct && stockQty != null && safeRemaining > 0) {
+          stockShortage = safeRemaining - Math.max(stockQty, 0)
         }
 
         return {

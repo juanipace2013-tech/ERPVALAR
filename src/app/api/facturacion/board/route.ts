@@ -92,6 +92,11 @@ export async function GET(request: NextRequest) {
           where: { isAlternative: false },
           include: {
             product: { select: { sku: true, name: true, stockQuantity: true, trackInventory: true } },
+            additionals: {
+              include: {
+                product: { select: { sku: true, name: true, stockQuantity: true } },
+              },
+            },
             invoiceItems: {
               include: {
                 invoice: { select: { status: true, notes: true, createdAt: true } },
@@ -104,6 +109,14 @@ export async function GET(request: NextRequest) {
     })
 
     // Procesar cada cotización
+    interface AdditionalStockInfo {
+      sku: string | null
+      name: string | null
+      stockQuantity: number | null
+      hasStock: boolean // true si stock >= remainingQuantity del item padre
+      shortage: number | null // cuánto falta (null si no falta)
+    }
+
     interface ProcessedItem {
       id: string
       itemNumber: number
@@ -119,7 +132,8 @@ export async function GET(request: NextRequest) {
       isAlternative: boolean
       sentToColppy: boolean
       stockQuantity: number | null
-      stockShortage: number | null // cantidad faltante (null = sin problema)
+      stockShortage: number | null // cantidad faltante del principal (null = sin problema)
+      additionals: AdditionalStockInfo[] // info de stock de adicionales
     }
 
     interface BoardCardType {
@@ -161,13 +175,33 @@ export async function GET(request: NextRequest) {
         const stockQty = item.product?.stockQuantity ?? null
         const hasProduct = item.product != null
         const safeRemaining = Math.max(remainingQuantity, 0)
-        const ready = isItemReady(stockQty, safeRemaining, item.deliveryTime, hasProduct)
+        const mainReady = isItemReady(stockQty, safeRemaining, item.deliveryTime, hasProduct)
 
-        // Calcular shortage: cuánto falta para cubrir el pedido
+        // Calcular shortage del principal
         let stockShortage: number | null = null
-        if (!ready && hasProduct && stockQty != null && safeRemaining > 0) {
+        if (!mainReady && hasProduct && stockQty != null && safeRemaining > 0) {
           stockShortage = safeRemaining - Math.max(stockQty, 0)
         }
+
+        // Verificar stock de adicionales
+        const additionalsInfo: AdditionalStockInfo[] = (item.additionals || []).map((add) => {
+          const addStock = add.product?.stockQuantity ?? null
+          const addHasStock = addStock != null && addStock >= safeRemaining
+          const addShortage = (add.product != null && addStock != null && !addHasStock && safeRemaining > 0)
+            ? safeRemaining - Math.max(addStock, 0)
+            : null
+          return {
+            sku: add.product?.sku || null,
+            name: add.product?.name || add.description || null,
+            stockQuantity: addStock,
+            hasStock: addHasStock,
+            shortage: addShortage,
+          }
+        })
+
+        // Item listo solo si principal + todos los adicionales tienen stock
+        const allAdditionalsReady = additionalsInfo.every((a) => a.hasStock)
+        const ready = mainReady && allAdditionalsReady
 
         return {
           id: item.id,
@@ -185,6 +219,7 @@ export async function GET(request: NextRequest) {
           sentToColppy,
           stockQuantity: stockQty,
           stockShortage,
+          additionals: additionalsInfo,
         }
       })
 

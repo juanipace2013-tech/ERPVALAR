@@ -64,6 +64,14 @@ function getTCBadgeClass(type: string): string {
 
 // ─── Types ───────────────────────────────────────────
 
+interface AdditionalStockInfo {
+  sku: string | null
+  name: string | null
+  stockQuantity: number | null
+  hasStock: boolean
+  shortage: number | null
+}
+
 interface BoardItem {
   id: string
   itemNumber: number
@@ -80,6 +88,7 @@ interface BoardItem {
   sentToColppy: boolean
   stockQuantity: number | null
   stockShortage: number | null
+  additionals: AdditionalStockInfo[]
 }
 
 interface BoardCard {
@@ -1066,17 +1075,26 @@ function QuoteCard({
           </div>
 
           {(() => {
-            const shortageItems = quote.items.filter(
-              (i) => i.stockShortage != null && i.stockShortage > 0 && i.remainingQuantity > 0
-            )
-            if (shortageItems.length === 0) return null
+            const warnings: Array<{ key: string; text: string }> = []
+            for (const i of quote.items) {
+              if (i.remainingQuantity <= 0) continue
+              if (i.stockShortage != null && i.stockShortage > 0) {
+                warnings.push({ key: `${i.id}-main`, text: `⚠ ${i.productSku || i.description}: faltan ${i.stockShortage} un.` })
+              }
+              for (const a of (i.additionals || [])) {
+                if (a.shortage != null && a.shortage > 0) {
+                  warnings.push({ key: `${i.id}-${a.sku}`, text: `⚠ ${a.sku || a.name || 'Adicional'}: ${a.stockQuantity === 0 || a.stockQuantity == null ? 'sin stock' : `faltan ${a.shortage} un.`}` })
+                }
+              }
+            }
+            if (warnings.length === 0) return null
             return (
               <div className="text-[10px] text-red-600 bg-red-50 rounded px-1.5 py-1 mt-0.5 space-y-0.5">
-                {shortageItems.slice(0, 2).map((i) => (
-                  <p key={i.id}>⚠ {i.productSku || i.description}: faltan {i.stockShortage} un.</p>
+                {warnings.slice(0, 3).map((w) => (
+                  <p key={w.key}>{w.text}</p>
                 ))}
-                {shortageItems.length > 2 && (
-                  <p>...y {shortageItems.length - 2} más</p>
+                {warnings.length > 3 && (
+                  <p>...y {warnings.length - 3} más</p>
                 )}
               </div>
             )
@@ -1150,15 +1168,34 @@ function QuoteCard({
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <p className="truncate font-medium">{item.description}</p>
+                    <p className="truncate font-medium">
+                      {item.productSku && (
+                        <span className="font-mono text-gray-500">
+                          {[item.productSku, ...item.additionals.filter(a => a.sku).map(a => a.sku)].join(' + ')}{' '}
+                        </span>
+                      )}
+                      {item.description}
+                    </p>
                     {!item.isInStock && !isFullyInvoiced && !item.sentToColppy && (
-                      <p className="text-[10px] text-red-500">
-                        {item.stockShortage != null
-                          ? `⚠ Faltan ${item.stockShortage} un. (stock: ${item.stockQuantity ?? 0})`
-                          : item.stockQuantity != null
-                          ? `Stock: ${item.stockQuantity} / Necesita: ${item.remainingQuantity}`
-                          : item.deliveryTime || 'Sin stock'}
-                      </p>
+                      <div className="space-y-0.5">
+                        {item.stockShortage != null && (
+                          <p className="text-[10px] text-red-500">
+                            ⚠ {item.productSku || 'Principal'}: faltan {item.stockShortage} un. (stock: {item.stockQuantity ?? 0})
+                          </p>
+                        )}
+                        {item.additionals.filter(a => a.shortage != null && a.shortage > 0).map((a, idx) => (
+                          <p key={idx} className="text-[10px] text-red-500">
+                            ⚠ {a.sku || a.name || 'Adicional'}: {a.stockQuantity === 0 || a.stockQuantity == null ? 'sin stock' : `faltan ${a.shortage} un. (stock: ${a.stockQuantity})`}
+                          </p>
+                        ))}
+                        {item.stockShortage == null && item.additionals.every(a => !a.shortage) && (
+                          <p className="text-[10px] text-red-500">
+                            {item.stockQuantity != null
+                              ? `Stock: ${item.stockQuantity} / Necesita: ${item.remainingQuantity}`
+                              : item.deliveryTime || 'Sin stock'}
+                          </p>
+                        )}
+                      </div>
                     )}
                     {item.invoicedQuantity > 0 && !isFullyInvoiced && (
                       <p className="text-[10px] text-blue-500">

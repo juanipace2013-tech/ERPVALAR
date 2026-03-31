@@ -190,6 +190,9 @@ model Customer {
   defaultTransportAddress  String?   // Ej: "Sucursal Retiro"
   defaultTransportSchedule String?   // Ej: "L a V 8:00 a 17:00"
 
+  // Tipo de cambio preferido
+  exchangeRateType         String?   // Ej: "TC Billete SIN IVA", "TC Divisa", "TC MEP"
+
   // Metadatos
   notes           String?        @db.Text
   createdAt       DateTime       @default(now())

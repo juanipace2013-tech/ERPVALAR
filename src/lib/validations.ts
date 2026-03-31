@@ -70,6 +70,9 @@ export const customerSchema = z.object({
   defaultTransportAddress: z.string().optional(),
   defaultTransportSchedule: z.string().optional(),
 
+  // Tipo de cambio
+  exchangeRateType: z.string().optional(),
+
   // Notas
   notes: z.string().optional(),
 })

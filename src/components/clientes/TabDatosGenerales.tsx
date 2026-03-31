@@ -95,12 +95,30 @@ interface ColppyCustomer {
   defaultTransportName: string
   defaultTransportAddress: string
   defaultTransportSchedule: string
+  exchangeRateType?: string | null
 }
 
 interface Props {
   customer: ColppyCustomer
   cuit: string
   onCustomerUpdate?: (updated: Partial<ColppyCustomer>) => void
+}
+
+const TC_OPTIONS = [
+  'TC Billete SIN IVA',
+  'TC Billete CON IVA',
+  'TC Divisa',
+  'TC MEP',
+]
+
+const TC_BADGE_COLORS: Record<string, string> = {
+  'TC Billete SIN IVA': 'bg-amber-100 text-amber-800 border-amber-300',
+  'TC Billete CON IVA': 'bg-yellow-100 text-yellow-800 border-yellow-300',
+  'TC Divisa': 'bg-blue-100 text-blue-800 border-blue-300',
+  'TC MEP': 'bg-purple-100 text-purple-800 border-purple-300',
+}
+function getTCBadgeClass(type: string): string {
+  return TC_BADGE_COLORS[type] || 'bg-orange-100 text-orange-800 border-orange-300'
 }
 
 function InfoRow({ icon: Icon, label, value }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string }) {
@@ -174,6 +192,13 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
   })
   const [savingTransport, setSavingTransport] = useState(false)
 
+  // TC type state
+  const [exchangeRateType, setExchangeRateType] = useState<string | null>(null)
+  const [isEditingTC, setIsEditingTC] = useState(false)
+  const [tcSelectValue, setTcSelectValue] = useState<string>('none')
+  const [tcCustomValue, setTcCustomValue] = useState('')
+  const [savingTC, setSavingTC] = useState(false)
+
   // Delivery addresses state
   const [localCustomerId, setLocalCustomerId] = useState<string | null>(null)
   const [deliveryAddresses, setDeliveryAddresses] = useState<DeliveryAddress[]>([])
@@ -222,6 +247,8 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
       if (customerData?.found && customerData.customer?.id) {
         setLocalCustomerId(customerData.customer.id)
         fetchDeliveryAddresses(customerData.customer.id)
+        const tc = customerData.customer.exchangeRateType || null
+        setExchangeRateType(tc)
       }
       if (usersData?.users) {
         setUsers(usersData.users)
@@ -330,6 +357,53 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
       toast.error('Error al guardar transporte')
     } finally {
       setSavingTransport(false)
+    }
+  }
+
+  // ─── TC type handlers ─────────────────────────────────────────────────────
+
+  const startEditingTC = () => {
+    const current = exchangeRateType || customer.exchangeRateType || null
+    if (current && TC_OPTIONS.includes(current)) {
+      setTcSelectValue(current)
+      setTcCustomValue('')
+    } else if (current) {
+      setTcSelectValue('Otro')
+      setTcCustomValue(current)
+    } else {
+      setTcSelectValue('none')
+      setTcCustomValue('')
+    }
+    setIsEditingTC(true)
+  }
+
+  const handleSaveTC = async () => {
+    if (!localCustomerId) {
+      toast.error('Cliente no encontrado en la base de datos local')
+      return
+    }
+    const value = tcSelectValue === 'none'
+      ? null
+      : tcSelectValue === 'Otro'
+      ? (tcCustomValue.trim() || null)
+      : tcSelectValue
+
+    setSavingTC(true)
+    try {
+      const res = await fetch(`/api/clientes/${localCustomerId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ exchangeRateType: value }),
+      })
+      if (!res.ok) throw new Error()
+      setExchangeRateType(value)
+      setIsEditingTC(false)
+      toast.success('Tipo de cambio actualizado')
+      onCustomerUpdate?.({ exchangeRateType: value })
+    } catch {
+      toast.error('Error al guardar tipo de cambio')
+    } finally {
+      setSavingTC(false)
     }
   }
 
@@ -680,6 +754,100 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
               <p className="text-xs text-gray-400 mt-3">
                 Se usará como valor por defecto en remitos de este cliente
               </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Tipo de Cambio */}
+      {localCustomerId && (
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-gray-400 uppercase tracking-wider">Tipo de Cambio</p>
+              </div>
+              {!isEditingTC && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={startEditingTC}
+                  className="h-7 text-xs"
+                >
+                  <Pencil className="h-3.5 w-3.5 mr-1" />
+                  {(exchangeRateType || customer.exchangeRateType) ? 'Editar' : 'Agregar'}
+                </Button>
+              )}
+              {isEditingTC && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setIsEditingTC(false)}
+                    disabled={savingTC}
+                    className="h-7 text-xs"
+                  >
+                    <X className="h-3.5 w-3.5 mr-1" />
+                    Cancelar
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleSaveTC}
+                    disabled={savingTC}
+                    className="h-7 text-xs bg-blue-600 hover:bg-blue-700"
+                  >
+                    {savingTC ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+                    Guardar
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {isEditingTC ? (
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-xs text-gray-500">Tipo de Cambio Preferido</Label>
+                  <Select value={tcSelectValue} onValueChange={setTcSelectValue}>
+                    <SelectTrigger className="h-8 text-sm mt-1">
+                      <SelectValue placeholder="Sin especificar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Sin especificar</SelectItem>
+                      {TC_OPTIONS.map((opt) => (
+                        <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                      ))}
+                      <SelectItem value="Otro">Otro (texto libre)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {tcSelectValue === 'Otro' && (
+                  <div>
+                    <Label className="text-xs text-gray-500">Especificar tipo</Label>
+                    <Input
+                      value={tcCustomValue}
+                      onChange={(e) => setTcCustomValue(e.target.value)}
+                      placeholder="Ej: TC BNA, TC Oficial..."
+                      className="h-8 text-sm mt-1"
+                    />
+                  </div>
+                )}
+              </div>
+            ) : (
+              (() => {
+                const tc = exchangeRateType ?? customer.exchangeRateType ?? null
+                return tc ? (
+                  <div className="flex items-center gap-2">
+                    <span className={`text-sm font-semibold px-3 py-1 rounded-full border ${getTCBadgeClass(tc)}`}>
+                      {tc}
+                    </span>
+                    <p className="text-xs text-gray-400">Se mostrará en cotizaciones y facturación</p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500 text-center py-2">
+                    Sin tipo de cambio asignado — Se usará el TC vigente en el momento de facturar
+                  </p>
+                )
+              })()
             )}
           </CardContent>
         </Card>

@@ -38,6 +38,7 @@ interface ColppyCustomer {
   defaultTransportName: string
   defaultTransportAddress: string
   defaultTransportSchedule: string
+  exchangeRateType?: string | null
 }
 
 interface Props {

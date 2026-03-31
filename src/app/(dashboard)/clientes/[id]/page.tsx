@@ -7,6 +7,16 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, Loader2, Users, AlertCircle } from 'lucide-react'
 import { formatCUIT, formatNumber } from '@/lib/utils'
+
+const TC_BADGE_COLORS: Record<string, string> = {
+  'TC Billete SIN IVA': 'bg-amber-100 text-amber-800 border border-amber-300',
+  'TC Billete CON IVA': 'bg-yellow-100 text-yellow-800 border border-yellow-300',
+  'TC Divisa': 'bg-blue-100 text-blue-800 border border-blue-300',
+  'TC MEP': 'bg-purple-100 text-purple-800 border border-purple-300',
+}
+function getTCBadgeClass(type: string): string {
+  return TC_BADGE_COLORS[type] || 'bg-orange-100 text-orange-800 border border-orange-300'
+}
 import ClienteDetailTabs from '@/components/clientes/ClienteDetailTabs'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
@@ -33,6 +43,7 @@ interface ColppyCustomer {
   defaultTransportName: string
   defaultTransportAddress: string
   defaultTransportSchedule: string
+  exchangeRateType?: string | null
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -84,6 +95,7 @@ export default function ClienteDetailPage() {
       defaultTransportName: localData.defaultTransportName || '',
       defaultTransportAddress: localData.defaultTransportAddress || '',
       defaultTransportSchedule: localData.defaultTransportSchedule || '',
+      exchangeRateType: localData.exchangeRateType || null,
     }
   }
 
@@ -144,6 +156,7 @@ export default function ClienteDetailPage() {
                 defaultTransportName: localCustomer.defaultTransportName || match.defaultTransportName || '',
                 defaultTransportAddress: localCustomer.defaultTransportAddress || match.defaultTransportAddress || '',
                 defaultTransportSchedule: localCustomer.defaultTransportSchedule || match.defaultTransportSchedule || '',
+                exchangeRateType: localCustomer.exchangeRateType || null,
               })
             } else {
               setCustomer(match)
@@ -173,6 +186,7 @@ export default function ClienteDetailPage() {
               defaultTransportName: localCustomer.defaultTransportName || colppyMatch.defaultTransportName || '',
               defaultTransportAddress: localCustomer.defaultTransportAddress || colppyMatch.defaultTransportAddress || '',
               defaultTransportSchedule: localCustomer.defaultTransportSchedule || colppyMatch.defaultTransportSchedule || '',
+              exchangeRateType: localCustomer.exchangeRateType || null,
             })
           } else {
             setCustomer(colppyMatch)
@@ -206,6 +220,7 @@ export default function ClienteDetailPage() {
               defaultTransportName: localData.defaultTransportName || colppyMatch.defaultTransportName || '',
               defaultTransportAddress: localData.defaultTransportAddress || colppyMatch.defaultTransportAddress || '',
               defaultTransportSchedule: localData.defaultTransportSchedule || colppyMatch.defaultTransportSchedule || '',
+              exchangeRateType: localData.exchangeRateType || null,
             })
             return
           }
@@ -298,7 +313,7 @@ export default function ClienteDetailPage() {
                 {customer.businessName && customer.name !== customer.businessName && (
                   <p className="text-sm text-gray-500">{customer.name}</p>
                 )}
-                <div className="flex items-center gap-3 mt-1">
+                <div className="flex items-center gap-3 mt-1 flex-wrap">
                   <span className="font-mono text-sm text-gray-600">
                     {customer.cuit ? formatCUIT(customer.cuit) : 'Sin CUIT'}
                   </span>
@@ -309,6 +324,11 @@ export default function ClienteDetailPage() {
                     <Badge variant="outline" className="text-xs">
                       {customer.paymentTerms}
                     </Badge>
+                  )}
+                  {customer.exchangeRateType && (
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${getTCBadgeClass(customer.exchangeRateType)}`}>
+                      {customer.exchangeRateType}
+                    </span>
                   )}
                 </div>
               </div>

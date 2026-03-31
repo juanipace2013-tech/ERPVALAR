@@ -174,6 +174,7 @@ export async function PUT(
         defaultTransportName: validatedData.defaultTransportName,
         defaultTransportAddress: validatedData.defaultTransportAddress,
         defaultTransportSchedule: validatedData.defaultTransportSchedule,
+        exchangeRateType: validatedData.exchangeRateType || null,
       },
       include: {
         salesPerson: {
@@ -267,6 +268,7 @@ export async function PATCH(
       'phone', 'mobile', 'email',
       'paymentTerms', 'salesPersonId', 'priceMultiplier',
       'defaultTransportName', 'defaultTransportAddress', 'defaultTransportSchedule',
+      'exchangeRateType',
       'notes',
     ] as const
 

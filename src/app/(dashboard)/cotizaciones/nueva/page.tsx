@@ -19,6 +19,16 @@ import { toast } from 'sonner'
 import { formatNumber, getLocalDateString } from '@/lib/utils'
 import { ColppyCustomerSearch, type ColppyCustomer } from '@/components/ColppyCustomerSearch'
 
+const TC_BADGE_COLORS: Record<string, string> = {
+  'TC Billete SIN IVA': 'bg-amber-100 text-amber-800 border-amber-300',
+  'TC Billete CON IVA': 'bg-yellow-100 text-yellow-800 border-yellow-300',
+  'TC Divisa': 'bg-blue-100 text-blue-800 border-blue-300',
+  'TC MEP': 'bg-purple-100 text-purple-800 border-purple-300',
+}
+function getTCBadgeClass(type: string): string {
+  return TC_BADGE_COLORS[type] || 'bg-orange-100 text-orange-800 border-orange-300'
+}
+
 interface Product {
   id: string
   sku: string
@@ -43,6 +53,7 @@ export default function NuevaCotizacionPage() {
   const [salesPersonId, setSalesPersonId] = useState<string | null>(null)
   const [salesPersonPreloaded, setSalesPersonPreloaded] = useState(false)
   const [users, setUsers] = useState<{ id: string; name: string }[]>([])
+  const [customerTCType, setCustomerTCType] = useState<string | null>(null)
 
   // Calcular fecha de vigencia: hoy + 5 días
   const getDefaultValidUntil = () => {
@@ -133,7 +144,7 @@ export default function NuevaCotizacionPage() {
         terms: `Condición de pago: ${condicionTexto}. Precios válidos por 5 días corridos desde la fecha de emisión.`,
       }))
 
-      // Pre-cargar vendedor asignado del cliente
+      // Pre-cargar vendedor asignado y TC del cliente
       try {
         const cleanCuit = customer.cuit?.replace(/\D/g, '')
         if (cleanCuit && cleanCuit.length === 11) {
@@ -147,6 +158,7 @@ export default function NuevaCotizacionPage() {
               setSalesPersonId(null)
               setSalesPersonPreloaded(false)
             }
+            setCustomerTCType(data.customer?.exchangeRateType || null)
           }
         }
       } catch {
@@ -160,6 +172,7 @@ export default function NuevaCotizacionPage() {
       }))
       setSalesPersonId(null)
       setSalesPersonPreloaded(false)
+      setCustomerTCType(null)
     }
   }
 
@@ -273,16 +286,23 @@ export default function NuevaCotizacionPage() {
                 {selectedCustomer && (
                   <div className="space-y-2">
                     <Label className="text-blue-900">Multiplicador del Cliente</Label>
-                    <p className={`font-mono font-semibold text-lg ${
-                      selectedCustomer.priceMultiplier > 1 ? 'text-amber-600' : 'text-gray-700'
-                    }`}>
-                      {formatNumber(selectedCustomer.priceMultiplier)}x
-                      {selectedCustomer.priceMultiplier > 1 && (
-                        <span className="text-sm ml-2">
-                          (+{((selectedCustomer.priceMultiplier - 1) * 100).toFixed(0)}%)
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <p className={`font-mono font-semibold text-lg ${
+                        selectedCustomer.priceMultiplier > 1 ? 'text-amber-600' : 'text-gray-700'
+                      }`}>
+                        {formatNumber(selectedCustomer.priceMultiplier)}x
+                        {selectedCustomer.priceMultiplier > 1 && (
+                          <span className="text-sm ml-2">
+                            (+{((selectedCustomer.priceMultiplier - 1) * 100).toFixed(0)}%)
+                          </span>
+                        )}
+                      </p>
+                      {customerTCType && (
+                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${getTCBadgeClass(customerTCType)}`}>
+                          {customerTCType}
                         </span>
                       )}
-                    </p>
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       Se precargará en la cotización. Editable luego.
                     </p>

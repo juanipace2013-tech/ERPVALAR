@@ -49,6 +49,19 @@ import {
 } from '@/components/quotes/SendToColppyDialog'
 import { refreshInventoryCache } from '@/hooks/useColppyStock'
 
+// ─── Helpers ─────────────────────────────────────────
+
+const TC_BADGE_COLORS: Record<string, string> = {
+  'TC Billete SIN IVA': 'bg-amber-100 text-amber-800 border-amber-300',
+  'TC Billete CON IVA': 'bg-yellow-100 text-yellow-800 border-yellow-300',
+  'TC Divisa': 'bg-blue-100 text-blue-800 border-blue-300',
+  'TC MEP': 'bg-purple-100 text-purple-800 border-purple-300',
+}
+
+function getTCBadgeClass(type: string): string {
+  return TC_BADGE_COLORS[type] || 'bg-orange-100 text-orange-800 border-orange-300'
+}
+
 // ─── Types ───────────────────────────────────────────
 
 interface BoardItem {
@@ -77,6 +90,7 @@ interface BoardCard {
     cuit: string
     taxCondition: string | null
     paymentTerms: number | null
+    exchangeRateType: string | null
   }
   salesPerson: { id: string; name: string }
   currency: 'USD' | 'ARS'
@@ -1034,7 +1048,14 @@ function QuoteCard({
 
         <div className="ml-5.5 space-y-1">
           <p className="text-sm font-medium text-gray-800 truncate">{quote.customer.name}</p>
-          <p className="text-xs text-gray-500 font-mono">{formatCUIT(quote.customer.cuit)}</p>
+          <div className="flex items-center gap-2">
+            <p className="text-xs text-gray-500 font-mono">{formatCUIT(quote.customer.cuit)}</p>
+            {quote.customer.exchangeRateType && (
+              <span className={`text-xs font-medium px-1.5 py-0.5 rounded border ${getTCBadgeClass(quote.customer.exchangeRateType)}`}>
+                {quote.customer.exchangeRateType}
+              </span>
+            )}
+          </div>
 
           <div className="flex items-center justify-between text-xs text-gray-500 pt-1">
             <span>

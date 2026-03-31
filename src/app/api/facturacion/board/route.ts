@@ -83,7 +83,7 @@ export async function GET(request: NextRequest) {
       },
       include: {
         customer: {
-          select: { id: true, name: true, cuit: true, taxCondition: true, paymentTerms: true },
+          select: { id: true, name: true, cuit: true, taxCondition: true, paymentTerms: true, exchangeRateType: true },
         },
         salesPerson: {
           select: { id: true, name: true },

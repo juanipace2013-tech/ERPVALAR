@@ -601,6 +601,8 @@ export async function colppyCreateInvoice(
     idCondicionPago: string; // "Contado", "a 7 Dias", "a 30 Dias", etc.
     moneda: string; // "Dolar estadounidense"
     tipoCambio: string; // Tipo de cambio (ej: "1400")
+    currency?: string; // "USD" o "ARS" — para campos idCurrency/idMoneda/rate
+    exchangeRate?: number | null; // TC de la cotización para facturas en USD
     netoGravado: string;
     netoNoGravado: string;
     exento: string;
@@ -664,6 +666,19 @@ export async function colppyCreateInvoice(
       idCondicionPago: invoice.idCondicionPago,
       moneda: invoice.moneda,
       tipoCambio: invoice.tipoCambio,
+      // Campos de moneda extranjera (requeridos por Colppy para USD)
+      idCurrency: invoice.currency === 'USD' ? '1' : '0',
+      idMoneda: invoice.currency === 'USD' ? '1' : '0',
+      rate: invoice.currency === 'USD' ? String(invoice.exchangeRate || 1) : '1',
+      valorCambio: '1',
+      not_api: invoice.currency === 'USD' ? '1' : '0',
+      isFront: '0',
+      // Campos adicionales de factura
+      cbu: '',
+      is_fce: '0',
+      transmision_fce: '',
+      codigoActividad: '',
+      codigoOperacion: '',
       netoGravado: invoice.netoGravado,
       netoNoGravado: invoice.netoNoGravado,
       exento: invoice.exento,
@@ -681,6 +696,7 @@ export async function colppyCreateInvoice(
   };
 
   logger.info('=== PAYLOAD FACTURA COLPPY ===');
+  logger.info(`[Colppy Factura] Moneda: currency=${invoice.currency}, idCurrency=${payload.parameters.idCurrency}, idMoneda=${payload.parameters.idMoneda}, rate=${payload.parameters.rate}, not_api=${payload.parameters.not_api}`);
   logger.info(JSON.stringify(payload, null, 2));
   logger.info('=== FIN PAYLOAD ===');
 
@@ -1293,6 +1309,8 @@ export async function sendQuoteToColppy(
         idCondicionPago: idCondicionPago,
         moneda: quote.currency === 'USD' ? 'Dolar estadounidense' : 'Peso argentino',
         tipoCambio: quote.currency === 'USD' ? String(exchangeRate) : '1',
+        currency: quote.currency,
+        exchangeRate: quote.exchangeRate,
         netoGravado: String(Number(netoGravado).toFixed(2)),
         netoNoGravado: '0',
         exento: '0',

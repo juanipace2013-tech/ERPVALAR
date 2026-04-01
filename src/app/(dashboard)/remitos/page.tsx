@@ -41,7 +41,7 @@ import {
   Plus,
   CheckCircle2,
   Pencil,
-  Trash2,
+  Ban,
   Copy,
   ChevronLeft,
   ChevronRight,
@@ -91,7 +91,7 @@ const statusLabels: Record<string, string> = {
   READY: 'Listo',
   DISPATCHED: 'Despachado',
   DELIVERED: 'Entregado',
-  CANCELLED: 'Cancelado',
+  CANCELLED: 'Anulado',
 }
 
 const statusColors: Record<string, string> = {
@@ -221,23 +221,27 @@ export default function RemitosPage() {
     })
   }, [filteredDeliveryNotes, sortColumn, sortDirection])
 
-  const handleDelete = async (dn: DeliveryNote) => {
+  const handleVoid = async (dn: DeliveryNote) => {
     const confirmed = window.confirm(
-      `¿Estás seguro de eliminar el remito ${dn.deliveryNumber}?\n\nEsta acción no se puede deshacer.`
+      `¿Estás seguro de anular el remito ${dn.deliveryNumber}?\n\nEsta acción no se puede deshacer. El remito quedará registrado como ANULADO.`
     )
     if (!confirmed) return
 
     try {
-      const response = await fetch(`/api/delivery-notes/${dn.id}`, { method: 'DELETE' })
+      const response = await fetch(`/api/delivery-notes/${dn.id}/change-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'CANCELLED' }),
+      })
       if (!response.ok) {
         const err = await response.json()
-        throw new Error(err.error || 'Error al eliminar')
+        throw new Error(err.error || 'Error al anular')
       }
-      toast.success('Remito eliminado correctamente')
+      toast.success('Remito anulado correctamente')
       fetchDeliveryNotes()
     } catch (error) {
-      console.error('Error deleting delivery note:', error)
-      toast.error(error instanceof Error ? error.message : 'Error al eliminar el remito')
+      console.error('Error voiding delivery note:', error)
+      toast.error(error instanceof Error ? error.message : 'Error al anular el remito')
     }
   }
 
@@ -295,7 +299,7 @@ export default function RemitosPage() {
                   <SelectItem value="READY">Listo</SelectItem>
                   <SelectItem value="DISPATCHED">Despachado</SelectItem>
                   <SelectItem value="DELIVERED">Entregado</SelectItem>
-                  <SelectItem value="CANCELLED">Cancelado</SelectItem>
+                  <SelectItem value="CANCELLED">Anulado</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -428,10 +432,10 @@ export default function RemitosPage() {
                   {sortedDeliveryNotes.map((dn) => (
                     <TableRow
                       key={dn.id}
-                      className="cursor-pointer hover:bg-gray-50"
+                      className={`cursor-pointer hover:bg-gray-50 ${dn.status === 'CANCELLED' ? 'opacity-60' : ''}`}
                       onClick={() => router.push(`/remitos/${dn.id}`)}
                     >
-                      <TableCell className="font-mono font-semibold">
+                      <TableCell className={`font-mono font-semibold ${dn.status === 'CANCELLED' ? 'line-through text-gray-500' : ''}`}>
                         {dn.deliveryNumber}
                       </TableCell>
                       <TableCell>{formatDate(dn.date)}</TableCell>
@@ -543,19 +547,18 @@ export default function RemitosPage() {
                                   Generar Factura
                                 </DropdownMenuItem>
                               )}
-                            {['PENDING', 'PREPARING', 'READY'].includes(dn.status) &&
-                              (dn.invoices || []).length === 0 && (
+                            {dn.status !== 'CANCELLED' && (
                                 <>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem
                                     className="text-red-600 focus:text-red-700"
                                     onClick={(e) => {
                                       e.stopPropagation()
-                                      handleDelete(dn)
+                                      handleVoid(dn)
                                     }}
                                   >
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                    Eliminar
+                                    <Ban className="mr-2 h-4 w-4" />
+                                    Anular
                                   </DropdownMenuItem>
                                 </>
                               )}

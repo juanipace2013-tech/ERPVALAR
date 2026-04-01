@@ -35,6 +35,7 @@ export interface RemitoPDFData {
   totalAmountARS?: number | null
   notes?: string | null
   cai?: CaiPDFData | null
+  isVoided?: boolean
 }
 
 // ── Constantes de página ──────────────────────────────────────────────────────
@@ -76,6 +77,24 @@ function fmtARS(n: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })
+}
+
+// ── Marca de agua ANULADO ────────────────────────────────────────────────────
+function drawVoidedWatermark(doc: jsPDF) {
+  doc.saveGraphicsState()
+  // @ts-expect-error jsPDF GState
+  doc.setGState(new doc.GState({ opacity: 0.25 }))
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(72)
+  doc.setTextColor(220, 38, 38) // red-600
+  // Diagonal text across the page
+  const centerX = PAGE_W / 2
+  const centerY = PAGE_H / 2
+  doc.text('ANULADO', centerX, centerY, {
+    align: 'center',
+    angle: 45,
+  })
+  doc.restoreGraphicsState()
 }
 
 // ── Dibujar una copia del remito ──────────────────────────────────────────────
@@ -483,6 +502,11 @@ function drawRemitoCopy(doc: jsPDF, data: RemitoPDFData, copyLabel: string, logo
     footerY + 3,
     { align: 'center' }
   )
+
+  // Marca de agua ANULADO si el remito está anulado
+  if (data.isVoided) {
+    drawVoidedWatermark(doc)
+  }
 }
 
 // ── Función principal ─────────────────────────────────────────────────────────

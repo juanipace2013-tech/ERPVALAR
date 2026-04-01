@@ -48,7 +48,7 @@ export async function POST(
     // Registrar auditoría
     const statusLabels: Record<string, string> = {
       PENDING: 'Pendiente', PREPARING: 'En preparación', READY: 'Listo',
-      DISPATCHED: 'Despachado', DELIVERED: 'Entregado', CANCELLED: 'Anulado',
+      DISPATCHED: 'Despachado', DELIVERED: 'Entregado', CANCELLED: 'ANULADO',
     };
     logAudit({
       userId: session.user.id,

@@ -45,7 +45,7 @@ import {
   ExternalLink,
   RefreshCw,
   Pencil,
-  Trash2,
+  Ban,
   Mail,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -144,7 +144,7 @@ const statusLabels: Record<string, string> = {
   READY: 'Listo',
   DISPATCHED: 'Despachado',
   DELIVERED: 'Entregado',
-  CANCELLED: 'Cancelado',
+  CANCELLED: 'Anulado',
 }
 
 const statusColors: Record<string, string> = {
@@ -153,7 +153,7 @@ const statusColors: Record<string, string> = {
   READY: 'bg-blue-100 text-blue-800',
   DISPATCHED: 'bg-purple-100 text-purple-800',
   DELIVERED: 'bg-green-100 text-green-800',
-  CANCELLED: 'bg-red-100 text-red-800',
+  CANCELLED: 'bg-red-100 text-red-800 line-through',
 }
 
 export default function DeliveryNoteDetailPage() {
@@ -183,6 +183,7 @@ export default function DeliveryNoteDetailPage() {
 
   const [showSendEmailDialog, setShowSendEmailDialog] = useState(false)
   const [showDuplicateDialog, setShowDuplicateDialog] = useState(false)
+  const [showVoidDialog, setShowVoidDialog] = useState(false)
 
   useEffect(() => {
     fetchDeliveryNote()
@@ -367,6 +368,7 @@ export default function DeliveryNoteDetailPage() {
           : null,
         notes: deliveryNote.notes,
         cai: caiData,
+        isVoided: deliveryNote.status === 'CANCELLED',
       }
       const blob = await generateRemitoPDF(pdfData)
       const url = URL.createObjectURL(blob)
@@ -456,25 +458,25 @@ export default function DeliveryNoteDetailPage() {
     }
   }
 
-  const handleDelete = async () => {
+  const confirmVoid = async () => {
     if (!deliveryNote) return
-    const confirmed = window.confirm(
-      `¿Estás seguro de eliminar el remito ${deliveryNote.deliveryNumber}?\n\nEsta acción no se puede deshacer.`
-    )
-    if (!confirmed) return
-
     try {
       setActionLoading(true)
-      const response = await fetch(`/api/delivery-notes/${id}`, { method: 'DELETE' })
+      const response = await fetch(`/api/delivery-notes/${id}/change-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'CANCELLED' }),
+      })
       if (!response.ok) {
         const err = await response.json()
-        throw new Error(err.error || 'Error al eliminar')
+        throw new Error(err.error || 'Error al anular remito')
       }
-      toast.success('Remito eliminado correctamente')
-      router.push('/remitos')
+      toast.success('Remito anulado correctamente')
+      setShowVoidDialog(false)
+      fetchDeliveryNote()
     } catch (error) {
-      console.error('Error deleting delivery note:', error)
-      toast.error(error instanceof Error ? error.message : 'Error al eliminar el remito')
+      console.error('Error voiding delivery note:', error)
+      toast.error(error instanceof Error ? error.message : 'Error al anular el remito')
     } finally {
       setActionLoading(false)
     }
@@ -672,16 +674,15 @@ export default function DeliveryNoteDetailPage() {
               </Button>
             )}
 
-            {['PENDING', 'PREPARING', 'READY'].includes(deliveryNote.status) &&
-              deliveryNote.invoices.length === 0 && (
+            {deliveryNote.status !== 'CANCELLED' && (
                 <Button
                   variant="outline"
                   className="border-red-300 text-red-700 hover:bg-red-50"
-                  onClick={handleDelete}
+                  onClick={() => setShowVoidDialog(true)}
                   disabled={actionLoading}
                 >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Eliminar
+                  <Ban className="h-4 w-4 mr-2" />
+                  Anular Remito
                 </Button>
               )}
 
@@ -1175,6 +1176,42 @@ export default function DeliveryNoteDetailPage() {
           }}
         />
       )}
+
+      {/* Modal de confirmación para anular remito */}
+      <Dialog open={showVoidDialog} onOpenChange={setShowVoidDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-700">
+              <Ban className="h-5 w-5" />
+              Anular Remito
+            </DialogTitle>
+            <DialogDescription>
+              ¿Estás seguro de anular el remito{' '}
+              <span className="font-semibold font-mono">{deliveryNote?.deliveryNumber}</span>?
+              <br /><br />
+              Esta acción no se puede deshacer. El remito quedará registrado como{' '}
+              <span className="font-semibold text-red-600">ANULADO</span>.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowVoidDialog(false)} disabled={actionLoading}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmVoid}
+              disabled={actionLoading}
+            >
+              {actionLoading ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Ban className="h-4 w-4 mr-2" />
+              )}
+              Sí, Anular Remito
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -182,6 +182,14 @@ export async function DELETE(
       return NextResponse.json({ error: 'Remito no encontrado' }, { status: 404 })
     }
 
+    // No permitir eliminar remitos con CAI asignado (PV 0006) — solo se pueden anular
+    if (existing.caiNumber) {
+      return NextResponse.json(
+        { error: 'No se puede eliminar un remito con CAI asignado. Use la opción "Anular Remito" en su lugar.' },
+        { status: 400 }
+      )
+    }
+
     // Solo permitir eliminar en estados tempranos
     const allowedStatuses = ['PENDING', 'PREPARING', 'READY']
     if (!allowedStatuses.includes(existing.status)) {

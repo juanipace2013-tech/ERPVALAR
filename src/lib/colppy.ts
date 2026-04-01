@@ -1291,6 +1291,16 @@ export async function sendQuoteToColppy(
       const totalIVA = netoGravado * 0.21;
       const totalFactura = netoGravado + totalIVA;
 
+      // DEBUG TEMPORAL — ver valores en producción (console.error siempre aparece en logs)
+      console.error('[COLPPY-DEBUG] totalFactura:', totalFactura, 'netoGravado:', netoGravado, 'totalIVA:', totalIVA, 'currency:', quote.currency);
+      console.error('[COLPPY-DEBUG] items precios:', itemsConIVA.map((it, i) => ({
+        i,
+        desc: it.descripcion?.substring(0, 30),
+        precioUnitario: it.precioUnitario,
+        cantidad: it.cantidad,
+        iva: it.iva,
+      })));
+
       logger.info(`[Colppy Factura] fechaFactura="${fechaFactura}", fechaVto="${fechaVto}"`);
       logger.info(`[Colppy Factura] itemsFactura Descripcion:`, itemsFactura.map((i, idx) => ({
         idx,

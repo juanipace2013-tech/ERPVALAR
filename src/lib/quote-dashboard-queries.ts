@@ -258,29 +258,34 @@ export async function getCotizacionesRecientes(): Promise<CotizacionReciente[]> 
 }
 
 /**
- * Obtener cotizaciones por vencer (próximos 2 días)
+ * Cotizaciones que requieren seguimiento:
+ *  - SENT que vencen en los próximos 5 días
+ *  - SENT que vencieron en los últimos 30 días (sin respuesta)
+ * Orden: primero las que vencen pronto, luego las vencidas (más recientes primero).
+ * Máximo 15 resultados.
  */
 export async function getCotizacionesPorVencer(): Promise<CotizacionPorVencer[]> {
   const hoy = new Date()
-  const mas2Dias = addDays(hoy, 2)
+  const mas5Dias = addDays(hoy, 5)
+  const hace30Dias = addDays(hoy, -30)
 
   const cotizaciones = await prisma.quote.findMany({
     where: {
       status: 'SENT',
       validUntil: {
-        gte: hoy,
-        lte: mas2Dias
-      }
+        gte: hace30Dias,
+        lte: mas5Dias,
+      },
     },
     include: {
-      customer: true
+      customer: true,
     },
     orderBy: {
-      validUntil: 'asc'
-    }
+      validUntil: 'asc',
+    },
   })
 
-  return cotizaciones.map(q => {
+  const mapped = cotizaciones.map(q => {
     const vence = new Date(q.validUntil!)
     const diffTime = vence.getTime() - hoy.getTime()
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
@@ -291,9 +296,15 @@ export async function getCotizacionesPorVencer(): Promise<CotizacionPorVencer[]>
       cliente: q.customer.name,
       totalUSD: Number(q.total || 0),
       vence,
-      diasRestantes: diffDays
+      diasRestantes: diffDays,
     }
   })
+
+  // Separar: por vencer (>=0) primero asc, luego vencidas (<0) desc (más recientes primero)
+  const porVencer = mapped.filter(c => c.diasRestantes >= 0).sort((a, b) => a.diasRestantes - b.diasRestantes)
+  const vencidas = mapped.filter(c => c.diasRestantes < 0).sort((a, b) => b.diasRestantes - a.diasRestantes)
+
+  return [...porVencer, ...vencidas].slice(0, 15)
 }
 
 /**

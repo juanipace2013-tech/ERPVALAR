@@ -511,52 +511,84 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
           </CardContent>
         </Card>
 
-        {/* Cotizaciones por vencer */}
+        {/* Cotizaciones que requieren seguimiento */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-              <Calendar className="h-5 w-5 text-orange-600" />
-              Cotizaciones por vencer (próximos 2 días)
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <Calendar className="h-5 w-5 text-orange-600" />
+                Cotizaciones — Seguimiento
+              </CardTitle>
+              {cotizacionesPorVencer.length >= 15 && (
+                <Link
+                  href="/cotizaciones?status=SENT"
+                  className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                  Ver todas →
+                </Link>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
               {cotizacionesPorVencer.length === 0 ? (
                 <p className="text-sm text-gray-500 text-center py-8">
-                  No hay cotizaciones por vencer
+                  No hay cotizaciones que requieran seguimiento
                 </p>
               ) : (
-                cotizacionesPorVencer.map((cotizacion) => (
-                  <Link
-                    key={cotizacion.id}
-                    href={`/cotizaciones/${cotizacion.id}/ver`}
-                    className="block"
-                  >
-                    <div className="flex items-center justify-between p-3 rounded-lg border border-orange-200 bg-orange-50 hover:border-orange-300 hover:bg-orange-100 transition-all">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <p className="text-sm font-medium text-gray-900">
-                            {cotizacion.numero}
+                cotizacionesPorVencer.map((cotizacion) => {
+                  const dias = cotizacion.diasRestantes
+                  // Badge text
+                  const badgeText = dias < 0
+                    ? `Vencida hace ${Math.abs(dias)} día${Math.abs(dias) !== 1 ? 's' : ''}`
+                    : dias === 0
+                      ? 'Vence hoy'
+                      : `Vence en ${dias} día${dias !== 1 ? 's' : ''}`
+                  // Badge color
+                  const badgeClass = dias < 0
+                    ? 'bg-red-100 text-red-800 border-red-200'
+                    : dias <= 2
+                      ? 'bg-orange-100 text-orange-800 border-orange-200'
+                      : 'bg-yellow-100 text-yellow-800 border-yellow-200'
+                  // Row border color
+                  const rowBorder = dias < 0
+                    ? 'border-red-200 bg-red-50 hover:border-red-300 hover:bg-red-100'
+                    : dias <= 2
+                      ? 'border-orange-200 bg-orange-50 hover:border-orange-300 hover:bg-orange-100'
+                      : 'border-yellow-200 bg-yellow-50 hover:border-yellow-300 hover:bg-yellow-100'
+
+                  return (
+                    <Link
+                      key={cotizacion.id}
+                      href={`/cotizaciones/${cotizacion.id}/ver`}
+                      className="block"
+                    >
+                      <div className={`flex items-center justify-between p-3 rounded-lg border transition-all ${rowBorder}`}>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className="text-sm font-medium text-gray-900">
+                              {cotizacion.numero}
+                            </p>
+                            <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${badgeClass}`}>
+                              {badgeText}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-gray-600 truncate">
+                            {cotizacion.cliente}
                           </p>
-                          <Badge variant="destructive" className="text-xs">
-                            {cotizacion.diasRestantes} día{cotizacion.diasRestantes !== 1 ? 's' : ''}
-                          </Badge>
+                          <p className="text-xs text-gray-500">
+                            Vence: {formatDate(cotizacion.vence)}
+                          </p>
                         </div>
-                        <p className="text-xs text-gray-600 truncate">
-                          {cotizacion.cliente}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          Vence: {formatDate(cotizacion.vence)}
-                        </p>
+                        <div className="text-right ml-3">
+                          <p className="text-sm font-semibold text-gray-900">
+                            {formatCurrency(cotizacion.totalUSD)}
+                          </p>
+                        </div>
                       </div>
-                      <div className="text-right ml-3">
-                        <p className="text-sm font-semibold text-gray-900">
-                          {formatCurrency(cotizacion.totalUSD)}
-                        </p>
-                      </div>
-                    </div>
-                  </Link>
-                ))
+                    </Link>
+                  )
+                })
               )}
             </div>
           </CardContent>

@@ -669,9 +669,9 @@ export async function colppyCreateInvoice(
       // Campos de moneda extranjera (requeridos por Colppy para USD)
       idCurrency: invoice.currency === 'USD' ? '1' : '0',
       idMoneda: invoice.currency === 'USD' ? '1' : '0',
-      rate: invoice.currency === 'USD' ? String(invoice.exchangeRate || 1) : '1',
+      rate: invoice.currency === 'USD' ? String(Number(invoice.exchangeRate) || 1) : '1',
       valorCambio: '1',
-      not_api: invoice.currency === 'USD' ? '1' : '0',
+      not_api: '0',
       isFront: '0',
       // Campos adicionales de factura
       cbu: '',
@@ -679,18 +679,18 @@ export async function colppyCreateInvoice(
       transmision_fce: '',
       codigoActividad: '',
       codigoOperacion: '',
-      netoGravado: invoice.netoGravado,
+      netoGravado: String(Math.round(Number(invoice.netoGravado) * 100) / 100),
       netoNoGravado: invoice.netoNoGravado,
       exento: invoice.exento,
-      totalIVA: invoice.totalIVA,
-      IVA21: invoice.IVA21,
+      totalIVA: String(Math.round(Number(invoice.totalIVA) * 100) / 100),
+      IVA21: String(Math.round(Number(invoice.IVA21) * 100) / 100),
       IVA105: invoice.IVA105,
       IVA27: invoice.IVA27,
       noGravado: invoice.noGravado,
       percepIVA: invoice.percepIVA,
       percepIIBB: invoice.percepIIBB,
       impInterno: invoice.impInterno,
-      totalFactura: invoice.totalFactura,
+      totalFactura: String(Math.round(Number(invoice.totalFactura) * 100) / 100),
       itemsFactura: invoice.items,
     },
   };
@@ -1288,8 +1288,10 @@ export async function sendQuoteToColppy(
         };
       });
 
-      const totalIVA = netoGravado * 0.21;
-      const totalFactura = netoGravado + totalIVA;
+      // Redondear a 2 decimales para evitar floating point issues
+      netoGravado = Math.round(netoGravado * 100) / 100;
+      const totalIVA = Math.round(netoGravado * 0.21 * 100) / 100;
+      const totalFactura = Math.round((netoGravado + totalIVA) * 100) / 100;
 
       // DEBUG TEMPORAL — ver valores en producción (console.error siempre aparece en logs)
       console.error('[COLPPY-DEBUG] totalFactura:', totalFactura, 'netoGravado:', netoGravado, 'totalIVA:', totalIVA, 'currency:', quote.currency);

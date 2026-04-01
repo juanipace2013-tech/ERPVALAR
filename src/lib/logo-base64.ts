@@ -23,13 +23,19 @@ async function loadLogoAsync(): Promise<string> {
     }
   }
 
-  // Client-side o fallback: cargar via URL publica
+  // Client-side o fallback: cargar via URL publica con FileReader
   try {
-    const res = await fetch('/logo-valarg.png')
-    const buf = await res.arrayBuffer()
-    const base64 = btoa(String.fromCharCode(...new Uint8Array(buf)))
-    cachedLogo = `data:image/png;base64,${base64}`
-    return cachedLogo
+    const response = await fetch('/logo-valarg.png')
+    const blob = await response.blob()
+    return new Promise<string>((resolve) => {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        cachedLogo = reader.result as string
+        resolve(cachedLogo)
+      }
+      reader.onerror = () => resolve('')
+      reader.readAsDataURL(blob)
+    })
   } catch {
     return ''
   }

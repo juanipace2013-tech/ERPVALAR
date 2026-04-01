@@ -211,6 +211,7 @@ export async function generateDeliveryNoteFromQuote(
     deliveryPostalCode?: string;
     carrier?: string;
     transportAddress?: string;
+    deliveryType?: string;
     purchaseOrder?: string;
     customerInvoiceNumber?: string;
     bultos?: string;
@@ -303,6 +304,7 @@ export async function generateDeliveryNoteFromQuote(
         deliveryPostalCode: data?.deliveryPostalCode || quote.customer.postalCode || null,
         carrier: data?.carrier || quote.customer.defaultTransportName || null,
         transportAddress: data?.transportAddress || quote.customer.defaultTransportAddress || null,
+        deliveryType: data?.deliveryType || 'Retira en sucursal',
         purchaseOrder: data?.purchaseOrder || null,
         customerInvoiceNumber: data?.customerInvoiceNumber || null,
         bultos: data?.bultos || null,

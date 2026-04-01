@@ -1175,6 +1175,9 @@ model DeliveryNote {
   // Estado
   status            DeliveryNoteStatus @default(PENDING)
 
+  // Tipo de entrega
+  deliveryType      String?            @default("Retira en sucursal") // "Retira en sucursal", "Entrega en planta", o texto libre
+
   // Transporte
   carrier           String?            // Transportista
   transportAddress  String?            // Dirección del transporte

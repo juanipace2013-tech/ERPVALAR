@@ -28,6 +28,7 @@ export interface RemitoPDFData {
   }>
   carrier?: string | null
   transportAddress?: string | null
+  deliveryType?: string | null
   purchaseOrder?: string | null
   customerInvoiceNumber?: string | null
   bultos?: string | null
@@ -224,11 +225,10 @@ function drawRemitoCopy(doc: jsPDF, data: RemitoPDFData, copyLabel: string, logo
   doc.setFont('helvetica', 'bold')
   doc.text('Entrega:', cx, cy)
   doc.setFont('helvetica', 'normal')
-  doc.text(
-    (data.carrier ? `Transporte: ${data.carrier}` : 'Retira en sucursal').substring(0, 55),
-    cx + 22,
-    cy
-  )
+  const entregaText = data.carrier
+    ? `Transporte: ${data.carrier}`
+    : (data.deliveryType || 'Retira en sucursal')
+  doc.text(entregaText.substring(0, 55), cx + 22, cy)
 
   // Columna derecha: IVA, CUIT, O.C.
   const rx2 = clientDivX + 4

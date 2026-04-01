@@ -207,6 +207,8 @@ export default function NuevoRemitoPage() {
   const [carrier, setCarrier] = useState('')
   const [transportAddress, setTransportAddress] = useState('')
   const [customerTransportSchedule, setCustomerTransportSchedule] = useState('')
+  const [deliveryType, setDeliveryType] = useState('Retira en sucursal')
+  const [deliveryTypeCustom, setDeliveryTypeCustom] = useState('')
   const [purchaseOrder, setPurchaseOrder] = useState('')
   const [customerInvoiceNumber, setCustomerInvoiceNumber] = useState('')
   const [invoiceRef, setInvoiceRef] = useState('')
@@ -502,6 +504,9 @@ export default function NuevoRemitoPage() {
         body: JSON.stringify({
           carrier: carrier || undefined,
           transportAddress: transportAddress || undefined,
+          deliveryType: carrier
+            ? undefined
+            : (deliveryType === 'Otro' ? deliveryTypeCustom || 'Retira en sucursal' : deliveryType),
           purchaseOrder: purchaseOrder || undefined,
           customerInvoiceNumber: customerInvoiceNumber || undefined,
           bultos: bultos || undefined,
@@ -565,6 +570,9 @@ export default function NuevoRemitoPage() {
           date: remitoDate,
           carrier: carrier || undefined,
           transportAddress: transportAddress || undefined,
+          deliveryType: carrier
+            ? undefined
+            : (deliveryType === 'Otro' ? deliveryTypeCustom || 'Retira en sucursal' : deliveryType),
           purchaseOrder: purchaseOrder || undefined,
           customerInvoiceNumber: customerInvoiceNumber || undefined,
           invoiceRef: invoiceRef || undefined,
@@ -817,6 +825,29 @@ export default function NuevoRemitoPage() {
                   </p>
                 )}
               </div>
+              {!carrier && (
+                <div className="space-y-2">
+                  <Label htmlFor="q-deliveryType">Tipo de Entrega</Label>
+                  <Select value={deliveryType} onValueChange={setDeliveryType}>
+                    <SelectTrigger id="q-deliveryType">
+                      <SelectValue placeholder="Seleccionar tipo de entrega" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Retira en sucursal">Retira en sucursal</SelectItem>
+                      <SelectItem value="Entrega en planta">Entrega en planta</SelectItem>
+                      <SelectItem value="Otro">Otro</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {deliveryType === 'Otro' && (
+                    <Input
+                      className="mt-2"
+                      value={deliveryTypeCustom}
+                      onChange={(e) => setDeliveryTypeCustom(e.target.value)}
+                      placeholder="Especificar tipo de entrega..."
+                    />
+                  )}
+                </div>
+              )}
               <div className="space-y-2 col-span-2">
                 <Label htmlFor="notes">Observaciones</Label>
                 <Textarea
@@ -978,6 +1009,29 @@ export default function NuevoRemitoPage() {
                   </p>
                 )}
               </div>
+              {!carrier && (
+                <div className="space-y-2">
+                  <Label htmlFor="d-deliveryType">Tipo de Entrega</Label>
+                  <Select value={deliveryType} onValueChange={setDeliveryType}>
+                    <SelectTrigger id="d-deliveryType">
+                      <SelectValue placeholder="Seleccionar tipo de entrega" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Retira en sucursal">Retira en sucursal</SelectItem>
+                      <SelectItem value="Entrega en planta">Entrega en planta</SelectItem>
+                      <SelectItem value="Otro">Otro</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {deliveryType === 'Otro' && (
+                    <Input
+                      className="mt-2"
+                      value={deliveryTypeCustom}
+                      onChange={(e) => setDeliveryTypeCustom(e.target.value)}
+                      placeholder="Especificar tipo de entrega..."
+                    />
+                  )}
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="d-purchaseOrder">
                   O.C. / Pedido Nº{' '}

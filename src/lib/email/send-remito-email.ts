@@ -164,6 +164,7 @@ export async function sendRemitoEmail(options: SendRemitoEmailOptions) {
         deliveryCity: dn.deliveryCity || undefined,
         deliveryProvince: dn.deliveryProvince || undefined,
         carrier: dn.carrier || undefined,
+        deliveryType: dn.deliveryType || undefined,
         purchaseOrder: dn.purchaseOrder || undefined,
         notes: dn.notes || undefined,
         bultos: dn.bultos || undefined,

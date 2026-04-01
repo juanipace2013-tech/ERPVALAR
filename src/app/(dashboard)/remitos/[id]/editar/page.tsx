@@ -19,6 +19,13 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { getLocalDateString } from '@/lib/utils'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   ArrowLeft,
   Loader2,
   Save,
@@ -48,6 +55,7 @@ interface DeliveryNote {
   status: string
   carrier: string | null
   transportAddress: string | null
+  deliveryType: string | null
   purchaseOrder: string | null
   customerInvoiceNumber: string | null
   totalAmountARS: string | number | null
@@ -97,6 +105,8 @@ export default function EditarRemitoPage() {
   const [date, setDate] = useState('')
   const [carrier, setCarrier] = useState('')
   const [transportAddress, setTransportAddress] = useState('')
+  const [deliveryType, setDeliveryType] = useState('Retira en sucursal')
+  const [deliveryTypeCustom, setDeliveryTypeCustom] = useState('')
   const [purchaseOrder, setPurchaseOrder] = useState('')
   const [customerInvoiceNumber, setCustomerInvoiceNumber] = useState('')
   const [bultos, setBultos] = useState('')
@@ -139,6 +149,15 @@ export default function EditarRemitoPage() {
       setDate(data.date ? getLocalDateString(new Date(data.date)) : '')
       setCarrier(data.carrier || '')
       setTransportAddress(data.transportAddress || '')
+      // Inicializar tipo de entrega
+      const dt = data.deliveryType || 'Retira en sucursal'
+      if (dt === 'Retira en sucursal' || dt === 'Entrega en planta') {
+        setDeliveryType(dt)
+        setDeliveryTypeCustom('')
+      } else {
+        setDeliveryType('Otro')
+        setDeliveryTypeCustom(dt)
+      }
       setPurchaseOrder(data.purchaseOrder || '')
       setCustomerInvoiceNumber(data.customerInvoiceNumber || '')
       setBultos(data.bultos != null ? String(data.bultos) : '')
@@ -187,6 +206,9 @@ export default function EditarRemitoPage() {
           date,
           carrier: carrier || null,
           transportAddress: transportAddress || null,
+          deliveryType: carrier
+            ? null
+            : (deliveryType === 'Otro' ? deliveryTypeCustom || 'Retira en sucursal' : deliveryType),
           purchaseOrder: purchaseOrder || null,
           customerInvoiceNumber: customerInvoiceNumber || null,
           bultos: bultos || null,
@@ -365,6 +387,29 @@ export default function EditarRemitoPage() {
                 </p>
               )}
             </div>
+            {!carrier && (
+              <div>
+                <Label>Tipo de Entrega</Label>
+                <Select value={deliveryType} onValueChange={setDeliveryType}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar tipo de entrega" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Retira en sucursal">Retira en sucursal</SelectItem>
+                    <SelectItem value="Entrega en planta">Entrega en planta</SelectItem>
+                    <SelectItem value="Otro">Otro</SelectItem>
+                  </SelectContent>
+                </Select>
+                {deliveryType === 'Otro' && (
+                  <Input
+                    className="mt-2"
+                    value={deliveryTypeCustom}
+                    onChange={(e) => setDeliveryTypeCustom(e.target.value)}
+                    placeholder="Especificar tipo de entrega..."
+                  />
+                )}
+              </div>
+            )}
             <div>
               <Label>OC del Cliente</Label>
               <Input

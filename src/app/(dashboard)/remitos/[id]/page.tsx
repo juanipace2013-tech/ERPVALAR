@@ -358,6 +358,7 @@ export default function DeliveryNoteDetailPage() {
         })),
         carrier: deliveryNote.carrier,
         transportAddress: deliveryNote.transportAddress,
+        deliveryType: deliveryNote.deliveryType,
         purchaseOrder: deliveryNote.purchaseOrder,
         customerInvoiceNumber: deliveryNote.customerInvoiceNumber,
         bultos: deliveryNote.bultos,

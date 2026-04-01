@@ -120,6 +120,7 @@ export async function PUT(
           date: body.date ? new Date(body.date) : undefined,
           carrier: body.carrier ?? undefined,
           transportAddress: body.transportAddress ?? undefined,
+          deliveryType: body.deliveryType !== undefined ? (body.deliveryType || 'Retira en sucursal') : undefined,
           purchaseOrder: body.purchaseOrder ?? undefined,
           customerInvoiceNumber: body.customerInvoiceNumber ?? undefined,
           bultos: body.bultos !== undefined ? (body.bultos || null) : undefined,

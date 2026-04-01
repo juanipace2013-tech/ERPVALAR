@@ -172,7 +172,7 @@ export async function sendRemitoEmail(options: SendRemitoEmailOptions) {
         cai: caiData,
       }
 
-      const pdfBlob = generateRemitoPDF(pdfData)
+      const pdfBlob = await generateRemitoPDF(pdfData)
       const pdfArrayBuffer = await pdfBlob.arrayBuffer()
       const buffer = Buffer.from(pdfArrayBuffer)
 

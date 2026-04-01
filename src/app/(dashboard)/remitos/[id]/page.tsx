@@ -367,7 +367,7 @@ export default function DeliveryNoteDetailPage() {
         notes: deliveryNote.notes,
         cai: caiData,
       }
-      const blob = generateRemitoPDF(pdfData)
+      const blob = await generateRemitoPDF(pdfData)
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url

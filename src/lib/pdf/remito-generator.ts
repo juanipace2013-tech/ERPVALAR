@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { LOGO_BASE64 } from '@/lib/logo-base64'
+import { getLogo } from '@/lib/logo-base64'
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
 export interface CaiPDFData {
@@ -78,7 +78,7 @@ function fmtARS(n: number): string {
 }
 
 // ── Dibujar una copia del remito ──────────────────────────────────────────────
-function drawRemitoCopy(doc: jsPDF, data: RemitoPDFData, copyLabel: string) {
+function drawRemitoCopy(doc: jsPDF, data: RemitoPDFData, copyLabel: string, logoBase64: string) {
   let y = 10
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -103,10 +103,17 @@ function drawRemitoCopy(doc: jsPDF, data: RemitoPDFData, copyLabel: string) {
   doc.line(rightX, headerY, rightX, headerY + headerH)
 
   // ── Columna izquierda: Logo + datos empresa ──
-  try {
-    doc.addImage(LOGO_BASE64, 'PNG', ML + 4, headerY + 3, 38, 11)
-  } catch {
-    // Si falla el logo, texto fallback
+  if (logoBase64) {
+    try {
+      doc.addImage(logoBase64, 'PNG', ML + 4, headerY + 3, 38, 11)
+    } catch {
+      // Si falla el logo, texto fallback
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(14)
+      doc.setTextColor(...DARK)
+      doc.text('VAL ARG S.R.L.', ML + 4, headerY + 11)
+    }
+  } else {
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(14)
     doc.setTextColor(...DARK)
@@ -479,14 +486,16 @@ function drawRemitoCopy(doc: jsPDF, data: RemitoPDFData, copyLabel: string) {
 }
 
 // ── Función principal ─────────────────────────────────────────────────────────
-export function generateRemitoPDF(data: RemitoPDFData): Blob {
+export async function generateRemitoPDF(data: RemitoPDFData): Promise<Blob> {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+
+  const logoBase64 = await getLogo()
 
   const copies: string[] = ['ORIGINAL', 'DUPLICADO', 'TRIPLICADO']
 
   copies.forEach((label, idx) => {
     if (idx > 0) doc.addPage()
-    drawRemitoCopy(doc, data, label)
+    drawRemitoCopy(doc, data, label, logoBase64)
   })
 
   return doc.output('blob')

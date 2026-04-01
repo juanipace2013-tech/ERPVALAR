@@ -603,32 +603,30 @@ export async function colppyCreateInvoice(
     tipoCambio: string; // Tipo de cambio (ej: "1400")
     currency?: string; // "USD" o "ARS" — para campos idCurrency/idMoneda/rate
     exchangeRate?: number | null; // TC de la cotización para facturas en USD
-    netoGravado: number | string;
-    netoNoGravado: number | string;
-    exento: number | string;
-    totalIVA: number | string;
-    IVA21: number | string;
-    IVA105: number | string;
-    IVA27: number | string;
-    noGravado: number | string;
-    percepIVA: number | string;
-    percepIIBB: number | string;
-    impInterno: number | string;
-    totalFactura: number | string;
+    netoGravado: number;
+    netoNoGravado: number;
+    totalIVA: number;
+    totalFactura: number;
     items: Array<{
-      idItem: string; // idItem de Colppy o "0" para servicios
-      tipoItem: 'P' | 'S'; // P=Producto, S=Servicio
+      idItem: number;
+      minimo?: string;
+      tipoItem?: string;
+      codigo?: string;
       Descripcion: string;
-      ImporteUnitario?: number | string;
-      importeUnitario?: number | string;
-      importeTotal: number | string;
-      importeIva: number | string;
-      IVA: number | string; // 21.00
+      ImporteUnitario?: number;
+      importeUnitario?: number;
+      importeTotal: number;
+      importeIva: number;
+      IVA: number;
       Cantidad: string;
-      unidadMedida?: string; // "Un", "m", "kg", etc.
-      Comentario?: string; // Comentario del item
+      unidadMedida?: string;
+      Comentario?: string;
       porcDesc?: string;
       idPlanCuenta?: string;
+      ccosto1?: string;
+      ccosto2?: string;
+      almacen?: string;
+      editable?: boolean;
     }>;
   }
 ): Promise<{ idFactura: string; numeroFactura: string }> {
@@ -679,18 +677,16 @@ export async function colppyCreateInvoice(
       transmision_fce: '',
       codigoActividad: '',
       codigoOperacion: '',
-      netoGravado: String(Math.round(Number(invoice.netoGravado) * 100) / 100),
-      netoNoGravado: String(Math.round(Number(invoice.netoNoGravado) * 100) / 100),
-      exento: String(invoice.exento || '0'),
-      totalIVA: String(Math.round(Number(invoice.totalIVA) * 100) / 100),
-      IVA21: String(Math.round(Number(invoice.IVA21) * 100) / 100),
-      IVA105: String(Math.round(Number(invoice.IVA105) * 100) / 100),
-      IVA27: String(Math.round(Number(invoice.IVA27) * 100) / 100),
-      noGravado: String(invoice.noGravado || '0'),
-      percepIVA: String(invoice.percepIVA || '0'),
-      percepIIBB: String(invoice.percepIIBB || '0'),
-      impInterno: String(invoice.impInterno || '0'),
-      totalFactura: String(Math.round(Number(invoice.totalFactura) * 100) / 100),
+      netoGravado: Math.round(Number(invoice.netoGravado) * 100) / 100,
+      netoNoGravado: Math.round(Number(invoice.netoNoGravado) * 100) / 100,
+      totalIVA: Math.round(Number(invoice.totalIVA) * 100) / 100,
+      IVA21: '',
+      IVA105: '',
+      IVA27: '',
+      percepcionIVA: 0,
+      percepcionIIBB: 0,
+      totalFactura: Math.round(Number(invoice.totalFactura) * 100) / 100,
+      labelfe: '',
       itemsFactura: invoice.items,
     },
   };
@@ -1276,8 +1272,10 @@ export async function sendQuoteToColppy(
         netoGravado += importeTotal;
 
         return {
-          idItem: colppyItemIds[prepItem.productSku] || '0',
-          tipoItem: 'P' as 'P', // P para productos
+          idItem: Number(colppyItemIds[prepItem.productSku]) || 0,
+          minimo: '',
+          tipoItem: '',
+          codigo: '',
           Descripcion: item.descripcion,
           ImporteUnitario: Math.round(importeUnitario * 100) / 100,
           importeTotal: Math.round(importeTotal * 100) / 100,
@@ -1288,6 +1286,10 @@ export async function sendQuoteToColppy(
           Comentario: prepItem.comentario || `Cotización ${quote.quoteNumber}`,
           porcDesc: '0',
           idPlanCuenta: 'Ventas',
+          ccosto1: '',
+          ccosto2: '',
+          almacen: '',
+          editable: false,
         };
       });
 
@@ -1327,16 +1329,8 @@ export async function sendQuoteToColppy(
         currency: quote.currency,
         exchangeRate: quote.exchangeRate,
         netoGravado: Math.round(netoGravado * 100) / 100,
-        netoNoGravado: '0',
-        exento: '0',
+        netoNoGravado: 0,
         totalIVA: Math.round(totalIVA * 100) / 100,
-        IVA21: Math.round(totalIVA * 100) / 100,
-        IVA105: '0',
-        IVA27: '0',
-        noGravado: '0',
-        percepIVA: '0',
-        percepIIBB: '0',
-        impInterno: '0',
         totalFactura: Math.round(totalFactura * 100) / 100,
         items: itemsFactura,
       }));

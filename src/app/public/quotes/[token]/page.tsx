@@ -318,6 +318,7 @@ export default function PublicQuotePage() {
                         <TableHead className="text-right">Cantidad</TableHead>
                         <TableHead className="text-right">P. Unitario</TableHead>
                         <TableHead className="text-right">Total</TableHead>
+                        <TableHead className="text-center">Plazo de Entrega</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -329,7 +330,7 @@ export default function PublicQuotePage() {
                               <div>
                                 <p className="font-medium">{item.product?.name || item.description}</p>
                                 <p className="text-sm text-gray-500">
-                                  SKU: {item.product?.sku}
+                                  SKU: {item.product?.sku || item.manualSku || '-'}
                                 </p>
                               </div>
                             </TableCell>
@@ -341,6 +342,9 @@ export default function PublicQuotePage() {
                             </TableCell>
                             <TableCell className="text-right font-semibold">
                               {formatCurrency(item.totalPrice)}
+                            </TableCell>
+                            <TableCell className="text-center text-sm text-gray-600">
+                              {item.deliveryTime || 'Consultar'}
                             </TableCell>
                           </TableRow>
                         ))}

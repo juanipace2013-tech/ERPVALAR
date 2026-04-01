@@ -77,16 +77,32 @@ export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
       })
     : 'No especificada'
 
+  // Preparar items para el email (solo principales, sin alternativas)
+  const fmtPrice = (n: number) =>
+    `${currencySymbol} ${n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+  const emailItems = quote.items
+    .filter((item) => !item.isAlternative)
+    .map((item) => ({
+      description: item.product?.name || item.description || 'Item',
+      quantity: item.quantity,
+      unitPrice: fmtPrice(Number(item.unitPrice)),
+      totalPrice: fmtPrice(Number(item.totalPrice)),
+      deliveryTime: item.deliveryTime || 'Consultar',
+    }))
+
   const emailData = {
     quoteNumber: quote.quoteNumber,
     customerName: quote.customer.name,
     total: formattedTotal,
+    currency: currencySymbol,
     validUntil: formattedValidUntil,
     viewUrl,
     acceptUrl,
     rejectUrl,
     companyName: 'Val Arg',
     message,
+    items: emailItems,
   }
 
   // Generar HTML y texto plano

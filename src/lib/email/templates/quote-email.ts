@@ -5,10 +5,19 @@
 
 import { VALARG_LOGO_BASE64 } from './logo-base64'
 
+interface QuoteEmailItem {
+  description: string
+  quantity: number
+  unitPrice: string
+  totalPrice: string
+  deliveryTime: string
+}
+
 interface QuoteEmailData {
   quoteNumber: string
   customerName: string
   total: string
+  currency: string
   validUntil: string
   viewUrl: string
   acceptUrl: string
@@ -18,6 +27,7 @@ interface QuoteEmailData {
   salesPersonName?: string
   salesPersonEmail?: string
   salesPersonPhone?: string
+  items?: QuoteEmailItem[]
 }
 
 export function generateQuoteEmailHTML(data: QuoteEmailData): string {
@@ -102,6 +112,31 @@ export function generateQuoteEmailHTML(data: QuoteEmailData): string {
 
           <!-- ═══ SELLER MESSAGE (optional) ═══ -->
           ${messageBlock}
+
+          <!-- ═══ ITEMS TABLE ═══ -->
+          ${data.items && data.items.length > 0 ? `
+          <tr>
+            <td style="padding: 0 40px 20px 40px;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family: Arial, Helvetica, sans-serif; font-size: 13px; border-radius: 8px; overflow: hidden; border: 1px solid #e5e7eb;">
+                <tr style="background-color: #1a365d;">
+                  <td style="padding: 10px 12px; color: #ffffff; font-weight: 600; font-size: 12px;">Producto</td>
+                  <td style="padding: 10px 8px; color: #ffffff; font-weight: 600; font-size: 12px; text-align: center; width: 50px;">Cant.</td>
+                  <td style="padding: 10px 8px; color: #ffffff; font-weight: 600; font-size: 12px; text-align: right; width: 90px;">P. Unit.</td>
+                  <td style="padding: 10px 8px; color: #ffffff; font-weight: 600; font-size: 12px; text-align: right; width: 90px;">Total</td>
+                  <td style="padding: 10px 8px; color: #ffffff; font-weight: 600; font-size: 12px; text-align: center; width: 90px;">Plazo</td>
+                </tr>
+                ${data.items.map((item, i) => `
+                <tr style="background-color: ${i % 2 === 0 ? '#ffffff' : '#f9fafb'};">
+                  <td style="padding: 8px 12px; color: #1f2937; border-top: 1px solid #e5e7eb;">${item.description}</td>
+                  <td style="padding: 8px 8px; color: #4b5563; text-align: center; border-top: 1px solid #e5e7eb;">${item.quantity}</td>
+                  <td style="padding: 8px 8px; color: #4b5563; text-align: right; border-top: 1px solid #e5e7eb;">${item.unitPrice}</td>
+                  <td style="padding: 8px 8px; color: #1f2937; font-weight: 600; text-align: right; border-top: 1px solid #e5e7eb;">${item.totalPrice}</td>
+                  <td style="padding: 8px 8px; color: #4b5563; text-align: center; border-top: 1px solid #e5e7eb;">${item.deliveryTime}</td>
+                </tr>`).join('')}
+              </table>
+            </td>
+          </tr>
+          ` : ''}
 
           <!-- ═══ QUOTE DETAILS TABLE ═══ -->
           <tr>

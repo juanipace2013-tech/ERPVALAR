@@ -603,27 +603,27 @@ export async function colppyCreateInvoice(
     tipoCambio: string; // Tipo de cambio (ej: "1400")
     currency?: string; // "USD" o "ARS" — para campos idCurrency/idMoneda/rate
     exchangeRate?: number | null; // TC de la cotización para facturas en USD
-    netoGravado: string;
-    netoNoGravado: string;
-    exento: string;
-    totalIVA: string;
-    IVA21: string;
-    IVA105: string;
-    IVA27: string;
-    noGravado: string;
-    percepIVA: string;
-    percepIIBB: string;
-    impInterno: string;
-    totalFactura: string;
+    netoGravado: number | string;
+    netoNoGravado: number | string;
+    exento: number | string;
+    totalIVA: number | string;
+    IVA21: number | string;
+    IVA105: number | string;
+    IVA27: number | string;
+    noGravado: number | string;
+    percepIVA: number | string;
+    percepIIBB: number | string;
+    impInterno: number | string;
+    totalFactura: number | string;
     items: Array<{
       idItem: string; // idItem de Colppy o "0" para servicios
       tipoItem: 'P' | 'S'; // P=Producto, S=Servicio
       Descripcion: string;
-      ImporteUnitario?: string;
-      importeUnitario?: string;
-      importeTotal: string;
-      importeIva: string;
-      IVA: string; // "21.00"
+      ImporteUnitario?: number | string;
+      importeUnitario?: number | string;
+      importeTotal: number | string;
+      importeIva: number | string;
+      IVA: number | string; // 21.00
       Cantidad: string;
       unidadMedida?: string; // "Un", "m", "kg", etc.
       Comentario?: string; // Comentario del item
@@ -1029,7 +1029,7 @@ export function buildSplitItem(
     logger.info(`[buildSplitItem] Adicional ${idx}: product?.name="${add.product?.name}", description="${add.description}", sku="${add.product?.sku}" → name="${name}"`);
     return {
       name,
-      unitPrice: Number((addPrices[idx] * scaleFactor).toFixed(2)),
+      unitPrice: Math.round(addPrices[idx] * scaleFactor * 100) / 100,
       sku: add.product?.sku || '',
     };
   });
@@ -1040,7 +1040,7 @@ export function buildSplitItem(
     productName,
     productSku,
     quantity,
-    unitPrice: Number((mainPrice * scaleFactor).toFixed(2)),
+    unitPrice: Math.round(mainPrice * scaleFactor * 100) / 100,
     iva,
     comentario,
     deliveryTime: originalItem.deliveryTime || undefined,
@@ -1276,10 +1276,10 @@ export async function sendQuoteToColppy(
           idItem: colppyItemIds[prepItem.productSku] || '0',
           tipoItem: 'P' as 'P', // P para productos
           Descripcion: item.descripcion,
-          ImporteUnitario: String(Number(importeUnitario).toFixed(2)),
-          importeTotal: String(Number(importeTotal).toFixed(2)),
-          importeIva: String(Number(importeIva).toFixed(2)),
-          IVA: String(Number(prepItem.ivaPercent).toFixed(2)),
+          ImporteUnitario: Math.round(importeUnitario * 100) / 100,
+          importeTotal: Math.round(importeTotal * 100) / 100,
+          importeIva: Math.round(importeIva * 100) / 100,
+          IVA: Math.round(prepItem.ivaPercent * 100) / 100,
           Cantidad: String(cantidad),
           unidadMedida: 'Un',
           Comentario: prepItem.comentario || `Cotización ${quote.quoteNumber}`,
@@ -1323,18 +1323,18 @@ export async function sendQuoteToColppy(
         tipoCambio: quote.currency === 'USD' ? String(exchangeRate) : '1',
         currency: quote.currency,
         exchangeRate: quote.exchangeRate,
-        netoGravado: String(Number(netoGravado).toFixed(2)),
+        netoGravado: Math.round(netoGravado * 100) / 100,
         netoNoGravado: '0',
         exento: '0',
-        totalIVA: String(Number(totalIVA).toFixed(2)),
-        IVA21: String(Number(totalIVA).toFixed(2)),
+        totalIVA: Math.round(totalIVA * 100) / 100,
+        IVA21: Math.round(totalIVA * 100) / 100,
         IVA105: '0',
         IVA27: '0',
         noGravado: '0',
         percepIVA: '0',
         percepIIBB: '0',
         impInterno: '0',
-        totalFactura: String(Number(totalFactura).toFixed(2)),
+        totalFactura: Math.round(totalFactura * 100) / 100,
         items: itemsFactura,
       }));
 

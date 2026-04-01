@@ -718,9 +718,6 @@ export async function colppyCreateInvoice(
   logger.info(JSON.stringify(payload, null, 2));
   logger.info('=== FIN PAYLOAD ===');
 
-  // DEBUG: payload completo a stderr para ver en logs de producción
-  console.error('[COLPPY-PAYLOAD]', JSON.stringify(payload.parameters, null, 2));
-
   try {
     const response = await callColppyAPI<any>(payload);
 
@@ -1319,16 +1316,6 @@ export async function sendQuoteToColppy(
       netoGravado = Math.round(netoGravado * 100) / 100;
       const totalIVA = Math.round(netoGravado * 0.21 * 100) / 100;
       const totalFactura = Math.round((netoGravado + totalIVA) * 100) / 100;
-
-      // DEBUG TEMPORAL — ver valores en producción (console.error siempre aparece en logs)
-      console.error('[COLPPY-DEBUG] totalFactura:', totalFactura, 'netoGravado:', netoGravado, 'totalIVA:', totalIVA, 'currency:', quote.currency);
-      console.error('[COLPPY-DEBUG] items precios:', itemsConIVA.map((it, i) => ({
-        i,
-        desc: it.descripcion?.substring(0, 30),
-        precioUnitario: it.precioUnitario,
-        cantidad: it.cantidad,
-        iva: it.iva,
-      })));
 
       logger.info(`[Colppy Factura] fechaFactura="${fechaFactura}", fechaVto="${fechaVto}"`);
       logger.info(`[Colppy Factura] itemsFactura Descripcion:`, itemsFactura.map((i, idx) => ({

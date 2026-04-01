@@ -1386,32 +1386,30 @@ export default function QuoteDetailPage() {
 
                 <div className="overflow-y-auto flex-1 pr-1 space-y-6">
                   {/* Mode toggle */}
-                  {!itemFormData.isAlternative && (
-                    <div className="flex rounded-lg border border-gray-200 overflow-hidden">
-                      <button
-                        type="button"
-                        className={`flex-1 py-2 text-sm font-medium transition-colors ${
-                          !itemFormData.isManual
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-white text-gray-600 hover:bg-gray-50'
-                        }`}
-                        onClick={() => setItemFormData({ ...itemFormData, isManual: false })}
-                      >
-                        Buscar en Catálogo
-                      </button>
-                      <button
-                        type="button"
-                        className={`flex-1 py-2 text-sm font-medium transition-colors ${
-                          itemFormData.isManual
-                            ? 'bg-purple-600 text-white'
-                            : 'bg-white text-gray-600 hover:bg-gray-50'
-                        }`}
-                        onClick={() => setItemFormData({ ...itemFormData, isManual: true, productId: '' })}
-                      >
-                        Item Manual
-                      </button>
-                    </div>
-                  )}
+                  <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+                    <button
+                      type="button"
+                      className={`flex-1 py-2 text-sm font-medium transition-colors ${
+                        !itemFormData.isManual
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white text-gray-600 hover:bg-gray-50'
+                      }`}
+                      onClick={() => setItemFormData({ ...itemFormData, isManual: false })}
+                    >
+                      Buscar en Catálogo
+                    </button>
+                    <button
+                      type="button"
+                      className={`flex-1 py-2 text-sm font-medium transition-colors ${
+                        itemFormData.isManual
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-white text-gray-600 hover:bg-gray-50'
+                      }`}
+                      onClick={() => setItemFormData({ ...itemFormData, isManual: true, productId: '' })}
+                    >
+                      Item Manual
+                    </button>
+                  </div>
 
                   {/* ── MANUAL ITEM FORM ── */}
                   {itemFormData.isManual && (

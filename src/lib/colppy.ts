@@ -671,7 +671,7 @@ export async function colppyCreateInvoice(
       idMoneda: invoice.currency === 'USD' ? '1' : '0',
       rate: invoice.currency === 'USD' ? String(Number(invoice.exchangeRate) || 1) : '1',
       valorCambio: '1',
-      not_api: '0',
+      not_api: '1',
       isFront: '0',
       // Campos adicionales de factura
       cbu: '',
@@ -699,6 +699,9 @@ export async function colppyCreateInvoice(
   logger.info(`[Colppy Factura] Moneda: currency=${invoice.currency}, idCurrency=${payload.parameters.idCurrency}, idMoneda=${payload.parameters.idMoneda}, rate=${payload.parameters.rate}, not_api=${payload.parameters.not_api}`);
   logger.info(JSON.stringify(payload, null, 2));
   logger.info('=== FIN PAYLOAD ===');
+
+  // DEBUG: payload completo a stderr para ver en logs de producción
+  console.error('[COLPPY-PAYLOAD]', JSON.stringify(payload.parameters, null, 2));
 
   try {
     const response = await callColppyAPI<any>(payload);

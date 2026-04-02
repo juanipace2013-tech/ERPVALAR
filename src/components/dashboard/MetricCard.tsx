@@ -22,12 +22,12 @@ export function MetricCard({
   trend,
 }: MetricCardProps) {
   return (
-    <Card className="hover:shadow-lg transition-all duration-300 border-blue-100 bg-gradient-to-br from-white to-blue-50/30">
+    <Card className="hover:shadow-lg transition-all duration-300 border-blue-100 bg-gradient-to-br from-white to-blue-50/30 dark:from-[oklch(0.22_0.04_240)] dark:to-card">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium text-gray-700">
           {title}
         </CardTitle>
-        <div className="p-2 bg-white rounded-lg shadow-sm">
+        <div className="p-2 bg-white dark:bg-white/10 rounded-lg shadow-sm">
           <Icon className={`h-5 w-5 ${iconColor}`} />
         </div>
       </CardHeader>

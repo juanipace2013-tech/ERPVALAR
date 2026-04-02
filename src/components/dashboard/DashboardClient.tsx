@@ -31,6 +31,7 @@ import {
 } from 'recharts'
 import { formatNumber } from '@/lib/utils'
 import { CaiAlertBanner } from './CaiAlertBanner'
+import { useTheme } from 'next-themes'
 
 interface DashboardClientProps {
   userName: string
@@ -57,6 +58,17 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
     tipoCambio,
     rankingVendedores
   } = data
+
+  const { theme } = useTheme()
+  const isDark = theme === 'dark'
+
+  const chartColors = {
+    grid: isDark ? '#374151' : '#e5e7eb',
+    tick: isDark ? '#9ca3af' : '#6b7280',
+    axis: isDark ? '#4b5563' : '#d1d5db',
+    tooltipBg: isDark ? '#1f2937' : '#fff',
+    tooltipBorder: isDark ? '#374151' : '#e5e7eb',
+  }
 
   const formatCurrency = (num: number) => {
     return new Intl.NumberFormat('es-AR', {
@@ -112,7 +124,7 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
       {/* FILA 1: 4 TARJETAS KPI */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {/* KPI 1: Cotizaciones del mes */}
-        <Card className="border-blue-200 bg-gradient-to-br from-blue-50 to-white">
+        <Card className="border-blue-200 bg-gradient-to-br from-blue-50 to-white dark:from-blue-950/40 dark:to-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-700">
               Cotizaciones del mes
@@ -144,7 +156,7 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
         </Card>
 
         {/* KPI 2: Tasa de conversión */}
-        <Card className="border-green-200 bg-gradient-to-br from-green-50 to-white">
+        <Card className="border-green-200 bg-gradient-to-br from-green-50 to-white dark:from-green-950/40 dark:to-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-700">
               Tasa de conversión
@@ -162,7 +174,7 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
         </Card>
 
         {/* KPI 3: Cotizaciones pendientes */}
-        <Card className="border-orange-200 bg-gradient-to-br from-orange-50 to-white">
+        <Card className="border-orange-200 bg-gradient-to-br from-orange-50 to-white dark:from-orange-950/40 dark:to-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-700">
               Cotizaciones pendientes
@@ -187,7 +199,7 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
         </Card>
 
         {/* KPI 4: Productos en stock */}
-        <Card className="border-purple-200 bg-gradient-to-br from-purple-50 to-white">
+        <Card className="border-purple-200 bg-gradient-to-br from-purple-50 to-white dark:from-purple-950/40 dark:to-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-700">
               Productos en stock
@@ -217,21 +229,22 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={cotizacionesPorMes}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
                 <XAxis
                   dataKey="mes"
-                  tick={{ fill: '#6b7280', fontSize: 12 }}
-                  axisLine={{ stroke: '#d1d5db' }}
+                  tick={{ fill: chartColors.tick, fontSize: 12 }}
+                  axisLine={{ stroke: chartColors.axis }}
                 />
                 <YAxis
-                  tick={{ fill: '#6b7280', fontSize: 12 }}
-                  axisLine={{ stroke: '#d1d5db' }}
+                  tick={{ fill: chartColors.tick, fontSize: 12 }}
+                  axisLine={{ stroke: chartColors.axis }}
                 />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: '#fff',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '6px'
+                    backgroundColor: chartColors.tooltipBg,
+                    border: `1px solid ${chartColors.tooltipBorder}`,
+                    borderRadius: '6px',
+                    color: isDark ? '#e5e7eb' : undefined
                   }}
                 />
                 <Legend
@@ -619,23 +632,24 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
                 {tipoCambio.ultimos.length > 0 && (
                   <ResponsiveContainer width="100%" height={200}>
                     <LineChart data={tipoCambio.ultimos}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                      <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
                       <XAxis
                         dataKey="fecha"
-                        tick={{ fill: '#6b7280', fontSize: 11 }}
-                        axisLine={{ stroke: '#d1d5db' }}
+                        tick={{ fill: chartColors.tick, fontSize: 11 }}
+                        axisLine={{ stroke: chartColors.axis }}
                       />
                       <YAxis
-                        tick={{ fill: '#6b7280', fontSize: 11 }}
-                        axisLine={{ stroke: '#d1d5db' }}
+                        tick={{ fill: chartColors.tick, fontSize: 11 }}
+                        axisLine={{ stroke: chartColors.axis }}
                         domain={['dataMin - 50', 'dataMax + 50']}
                       />
                       <Tooltip
                         contentStyle={{
-                          backgroundColor: '#fff',
-                          border: '1px solid #e5e7eb',
+                          backgroundColor: chartColors.tooltipBg,
+                          border: `1px solid ${chartColors.tooltipBorder}`,
                           borderRadius: '6px',
-                          fontSize: '12px'
+                          fontSize: '12px',
+                          color: isDark ? '#e5e7eb' : undefined
                         }}
                         formatter={(value: number) => [`$${formatNumber(value)}`, 'Tipo de cambio']}
                       />

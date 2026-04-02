@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -57,6 +57,7 @@ interface Quote {
 export default function PublicQuotePage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const token = params?.token as string
 
   const [quote, setQuote] = useState<Quote | null>(null)
@@ -66,10 +67,24 @@ export default function PublicQuotePage() {
   const [showRejectDialog, setShowRejectDialog] = useState(false)
   const [response, setResponse] = useState('')
   const [rejectionReason, setRejectionReason] = useState('')
+  const [actionHandled, setActionHandled] = useState(false)
 
   useEffect(() => {
     fetchQuote()
   }, [token])
+
+  // Abrir modal automáticamente si viene ?action=accept o ?action=reject desde el email
+  useEffect(() => {
+    if (!quote || actionHandled) return
+    const action = searchParams.get('action')
+    if (action === 'accept' && quote.status === 'SENT') {
+      setShowAcceptDialog(true)
+      setActionHandled(true)
+    } else if (action === 'reject' && quote.status === 'SENT') {
+      setShowRejectDialog(true)
+      setActionHandled(true)
+    }
+  }, [quote, searchParams, actionHandled])
 
   const fetchQuote = async () => {
     try {

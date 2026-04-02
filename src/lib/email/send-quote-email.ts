@@ -59,8 +59,8 @@ export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
   // URLs públicas
   const { appUrl } = getEmailConfig()
   const viewUrl = `${appUrl}/public/quotes/${publicToken}`
-  const acceptUrl = `${appUrl}/public/quotes/${publicToken}/accept`
-  const rejectUrl = `${appUrl}/public/quotes/${publicToken}/reject`
+  const acceptUrl = `${appUrl}/public/quotes/${publicToken}?action=accept`
+  const rejectUrl = `${appUrl}/public/quotes/${publicToken}?action=reject`
 
   // Formatear datos para el template
   const currencySymbol = quote.currency === 'USD' ? 'USD' : 'ARS'

@@ -126,12 +126,28 @@ export async function POST(
       );
     }
 
-    // 7. Validar exchangeRate si currency = USD
-    if (quote.currency === 'USD' && !quote.exchangeRate) {
-      return NextResponse.json(
-        { error: 'La cotización en USD debe tener un tipo de cambio definido' },
-        { status: 400 }
-      );
+    // 7. Obtener el último tipo de cambio del ERP (para USD)
+    let currentExchangeRate = quote.exchangeRate ? Number(quote.exchangeRate) : null;
+    let exchangeRateDate: Date | null = null;
+
+    if (quote.currency === 'USD') {
+      const latestRate = await prisma.exchangeRate.findFirst({
+        where: { fromCurrency: 'USD', toCurrency: 'ARS' },
+        orderBy: { validFrom: 'desc' },
+      });
+
+      if (latestRate) {
+        currentExchangeRate = Number(latestRate.rate);
+        exchangeRateDate = latestRate.validFrom;
+        logger.info(`[Send to Colppy] Usando TC del ERP: ${currentExchangeRate} (del ${latestRate.validFrom.toISOString()}), TC cotización: ${quote.exchangeRate}`);
+      } else if (!quote.exchangeRate) {
+        return NextResponse.json(
+          { error: 'No hay tipo de cambio disponible. Cargue uno en la sección Tipo de Cambio.' },
+          { status: 400 }
+        );
+      } else {
+        logger.warn(`[Send to Colppy] No se encontró TC en el ERP, usando TC de la cotización: ${quote.exchangeRate}`);
+      }
     }
 
     // 8. Preparar datos para Colppy
@@ -163,7 +179,7 @@ export async function POST(
       id: quote.id,
       quoteNumber: quote.quoteNumber,
       currency: quote.currency,
-      exchangeRate: quote.exchangeRate ? Number(quote.exchangeRate) : null,
+      exchangeRate: currentExchangeRate,
       customer: {
         name: quote.customer.name,
         cuit: quote.customer.cuit,
@@ -258,6 +274,8 @@ export async function POST(
       remitoNumber: result.remitoNumber,
       facturaId: result.facturaId,
       facturaNumber: result.facturaNumber,
+      exchangeRateUsed: currentExchangeRate,
+      exchangeRateDate: exchangeRateDate?.toISOString() || null,
     });
   } catch (error: any) {
     logger.error('Error en POST /api/quotes/[id]/send-to-colppy:', error);

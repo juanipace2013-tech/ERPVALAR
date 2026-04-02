@@ -30,7 +30,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Send, Package, FileSpreadsheet, CheckCircle2, Loader2, AlertTriangle, Edit } from 'lucide-react';
+import { Send, Package, FileSpreadsheet, CheckCircle2, Loader2, AlertTriangle, Edit, RefreshCw } from 'lucide-react';
 
 // ============================================================================
 // TIPOS (exportados para reutilización)
@@ -115,6 +115,10 @@ export function SendToColppyDialog({
   const [puntoVenta, setPuntoVenta] = useState('0003');
   const [descripcionFactura, setDescripcionFactura] = useState('');
 
+  // Tipo de cambio actual del ERP
+  const [latestRate, setLatestRate] = useState<{ rate: number; date: string } | null>(null);
+  const [loadingRate, setLoadingRate] = useState(false);
+
   // Mapeo de días a texto de condición de pago
   const condicionMap: Record<string, string> = {
     '0': 'Contado',
@@ -126,6 +130,25 @@ export function SendToColppyDialog({
     '90': 'a 90 Dias',
     '120': 'a 120 Dias',
   };
+
+  // Obtener último tipo de cambio del ERP al abrir el dialog
+  useEffect(() => {
+    if (open && quote.currency === 'USD') {
+      setLoadingRate(true);
+      fetch('/api/tipo-cambio?from=USD&to=ARS')
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.length > 0) {
+            setLatestRate({
+              rate: Number(data[0].rate),
+              date: data[0].validFrom,
+            });
+          }
+        })
+        .catch(() => {})
+        .finally(() => setLoadingRate(false));
+    }
+  }, [open, quote.currency]);
 
   // Inicializar datos cuando se abre el dialog
   useEffect(() => {
@@ -310,12 +333,23 @@ export function SendToColppyDialog({
               </div>
             </div>
             <div className="space-y-2">
-              {quote.currency === 'USD' && quote.exchangeRate && (
+              {quote.currency === 'USD' && (
                 <div className="flex justify-between">
                   <span className="font-medium text-blue-900">Tipo de cambio:</span>
                   <span className="text-blue-700">
-                    $ {quote.exchangeRate.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                    {loadingRate ? (
+                      <span className="flex items-center gap-1"><RefreshCw className="h-3 w-3 animate-spin" /> Cargando...</span>
+                    ) : latestRate ? (
+                      <>$ {latestRate.rate.toLocaleString('es-AR', { minimumFractionDigits: 2 })} <span className="text-xs text-blue-500">(del {new Date(latestRate.date).toLocaleDateString('es-AR')})</span></>
+                    ) : quote.exchangeRate ? (
+                      <>$ {quote.exchangeRate.toLocaleString('es-AR', { minimumFractionDigits: 2 })} <span className="text-xs text-blue-500">(cotización)</span></>
+                    ) : 'N/A'}
                   </span>
+                </div>
+              )}
+              {quote.currency === 'USD' && latestRate && quote.exchangeRate && latestRate.rate !== quote.exchangeRate && (
+                <div className="rounded border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs text-amber-800">
+                  TC actualizado: $ {quote.exchangeRate.toLocaleString('es-AR', { minimumFractionDigits: 2 })} (cotización) → $ {latestRate.rate.toLocaleString('es-AR', { minimumFractionDigits: 2 })} (actual)
                 </div>
               )}
               <div className="flex justify-between">

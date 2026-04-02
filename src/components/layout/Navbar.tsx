@@ -21,6 +21,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { ThemeToggle } from '@/components/layout/ThemeToggle'
 
 export function Navbar() {
   const { data: session } = useSession()
@@ -40,7 +41,7 @@ export function Navbar() {
   }
 
   return (
-    <header className="border-b border-blue-200 bg-gradient-to-r from-blue-600 to-blue-700 shadow-md">
+    <header className="border-b border-blue-200 dark:border-gray-700 bg-gradient-to-r from-blue-600 to-blue-700 dark:from-gray-800 dark:to-gray-900 shadow-md">
       <div className="flex h-16 items-center justify-between px-6">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-3">
@@ -61,6 +62,8 @@ export function Navbar() {
         <div className="flex items-center gap-4">
           {session?.user && (
             <>
+              <ThemeToggle />
+
               {/* Indicador 2FA */}
               <TooltipProvider>
                 <Tooltip>
@@ -91,7 +94,7 @@ export function Navbar() {
                 <p className="text-sm font-medium text-white">
                   {session.user.name}
                 </p>
-                <p className="text-xs text-blue-100">
+                <p className="text-xs text-blue-100 dark:text-gray-400">
                   {ROLE_LABELS[session.user.role]}
                 </p>
               </div>
@@ -111,7 +114,7 @@ export function Navbar() {
                   <DropdownMenuLabel>
                     <div className="flex flex-col space-y-1">
                       <p className="text-sm font-medium">{session.user.name}</p>
-                      <p className="text-xs text-gray-600">{session.user.email}</p>
+                      <p className="text-xs text-gray-600 dark:text-gray-400">{session.user.email}</p>
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />

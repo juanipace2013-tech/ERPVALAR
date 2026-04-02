@@ -174,7 +174,7 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="w-64 shrink-0 border-r border-blue-200 bg-white/80 backdrop-blur-sm shadow-sm overflow-y-auto">
+    <aside className="w-64 shrink-0 border-r border-blue-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm shadow-sm overflow-y-auto">
       <nav className="space-y-1 p-4">
         {visibleItems.map((item) => {
           const Icon = item.icon
@@ -200,8 +200,8 @@ export function Sidebar() {
                     className={cn(
                       'w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200',
                       isParentActive
-                        ? 'bg-blue-50 text-blue-700'
-                        : 'text-gray-700 hover:bg-blue-50 hover:text-blue-700'
+                        ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                        : 'text-gray-700 hover:bg-blue-50 hover:text-blue-700 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-blue-300'
                     )}
                   >
                     <Icon className="h-5 w-5" />
@@ -220,8 +220,8 @@ export function Sidebar() {
                           className={cn(
                             'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200',
                             isActive
-                              ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md'
-                              : 'text-gray-600 hover:bg-blue-50 hover:text-blue-700'
+                              ? 'bg-gradient-to-r from-blue-600 to-blue-700 dark:from-blue-700 dark:to-blue-800 text-white shadow-md'
+                              : 'text-gray-600 hover:bg-blue-50 hover:text-blue-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-blue-300'
                           )}
                         >
                           <Users className="h-4 w-4" />
@@ -239,8 +239,8 @@ export function Sidebar() {
                             className={cn(
                               'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200',
                               isSubActive
-                                ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md'
-                                : 'text-gray-600 hover:bg-blue-50 hover:text-blue-700'
+                                ? 'bg-gradient-to-r from-blue-600 to-blue-700 dark:from-blue-700 dark:to-blue-800 text-white shadow-md'
+                                : 'text-gray-600 hover:bg-blue-50 hover:text-blue-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-blue-300'
                             )}
                           >
                             <SubIcon className="h-4 w-4" />
@@ -257,8 +257,8 @@ export function Sidebar() {
                   className={cn(
                     'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200',
                     isActive
-                      ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md'
-                      : 'text-gray-700 hover:bg-blue-50 hover:text-blue-700'
+                      ? 'bg-gradient-to-r from-blue-600 to-blue-700 dark:from-blue-700 dark:to-blue-800 text-white shadow-md'
+                      : 'text-gray-700 hover:bg-blue-50 hover:text-blue-700 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-blue-300'
                   )}
                 >
                   <Icon className="h-5 w-5" />

@@ -46,6 +46,15 @@ export async function POST(
     let targetCustomerId = original.customerId;
     let targetSupplierId = original.supplierId;
     let recipientName = original.customer?.name || original.supplier?.name || '';
+    let recipientChanged = false;
+
+    // Datos de dirección del nuevo destinatario (se actualizan si cambia)
+    let deliveryAddress = original.deliveryAddress;
+    let deliveryCity = original.deliveryCity;
+    let deliveryProvince = original.deliveryProvince;
+    let deliveryPostalCode = original.deliveryPostalCode;
+    let deliveryContactName = original.deliveryContactName;
+    let deliveryContactPhone = original.deliveryContactPhone;
 
     if (body.recipientId && body.recipientType) {
       if (body.recipientType === 'CUSTOMER') {
@@ -61,6 +70,14 @@ export async function POST(
         targetCustomerId = customer.id;
         targetSupplierId = null;
         recipientName = customer.name;
+        recipientChanged = true;
+        // Actualizar dirección de entrega con datos del nuevo cliente
+        deliveryAddress = customer.address || null;
+        deliveryCity = customer.city || null;
+        deliveryProvince = customer.province || null;
+        deliveryPostalCode = customer.postalCode || null;
+        deliveryContactName = customer.businessName || customer.name;
+        deliveryContactPhone = customer.phone || customer.mobile || null;
       } else if (body.recipientType === 'SUPPLIER') {
         const supplier = await prisma.supplier.findUnique({
           where: { id: body.recipientId },
@@ -74,6 +91,14 @@ export async function POST(
         targetSupplierId = supplier.id;
         targetCustomerId = null;
         recipientName = supplier.name;
+        recipientChanged = true;
+        // Actualizar dirección de entrega con datos del nuevo proveedor
+        deliveryAddress = supplier.address || null;
+        deliveryCity = supplier.city || null;
+        deliveryProvince = supplier.province || null;
+        deliveryPostalCode = supplier.postalCode || null;
+        deliveryContactName = supplier.legalName || supplier.name;
+        deliveryContactPhone = supplier.phone || supplier.mobile || null;
       }
     }
 
@@ -89,18 +114,20 @@ export async function POST(
         supplierId: targetSupplierId,
         date: new Date(),
         status: 'PENDING',
-        // Copiar datos de transporte y observaciones
-        carrier: original.carrier,
-        transportAddress: original.transportAddress,
-        purchaseOrder: original.purchaseOrder,
+        // Copiar datos de transporte y observaciones (limpiar transporte si cambió destinatario)
+        carrier: recipientChanged ? null : original.carrier,
+        transportAddress: recipientChanged ? null : original.transportAddress,
+        purchaseOrder: recipientChanged ? null : original.purchaseOrder,
         bultos: original.bultos,
         notes: original.notes,
         internalNotes: original.internalNotes,
-        // Copiar dirección de entrega (si cambió destinatario, se puede editar luego)
-        deliveryAddress: original.deliveryAddress,
-        deliveryCity: original.deliveryCity,
-        deliveryProvince: original.deliveryProvince,
-        deliveryPostalCode: original.deliveryPostalCode,
+        // Dirección de entrega: del nuevo destinatario si cambió, o del original
+        deliveryAddress,
+        deliveryCity,
+        deliveryProvince,
+        deliveryPostalCode,
+        deliveryContactName,
+        deliveryContactPhone,
         // Copiar items
         items: {
           create: original.items.map((item) => ({

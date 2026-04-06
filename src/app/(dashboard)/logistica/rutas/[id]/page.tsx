@@ -77,7 +77,8 @@ interface DeliveryStop {
     id: string
     deliveryNumber: string
     status: string
-    customer: { name: string }
+    customer: { name: string } | null
+    supplier: { name: string } | null
   } | null
 }
 

@@ -353,7 +353,7 @@ export default function NuevaRutaPage() {
           deliveryNoteId: stop.deliveryNoteId || null,
           deliveryNumber: stop.deliveryNote?.deliveryNumber || null,
           type: stop.type || 'DELIVERY',
-          customerName: stop.customerName || stop.deliveryNote?.customer?.name || '',
+          customerName: stop.customerName || stop.deliveryNote?.customer?.name || stop.deliveryNote?.supplier?.name || 'Sin destinatario',
           transportType: stop.transportType || 'OWN',
           transportName: stop.transportName || '',
           transportAddress: stop.transportAddress || '',

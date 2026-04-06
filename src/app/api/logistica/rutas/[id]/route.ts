@@ -32,6 +32,9 @@ export async function GET(
                 customer: {
                   select: { name: true },
                 },
+                supplier: {
+                  select: { name: true },
+                },
               },
             },
           },

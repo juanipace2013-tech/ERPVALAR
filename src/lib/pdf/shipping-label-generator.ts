@@ -109,6 +109,13 @@ function drawLabel(
   const addressLines = doc.splitTextToSize(address, contentWidth - 6)
   y += 8 + (addressLines.length * 5) + 6
 
+  // TELÉFONO del destinatario
+  const recipientPhone = data.customer.phone || data.customer.mobile
+  if (recipientPhone) {
+    drawField(doc, 'TEL', recipientPhone, margin, y, contentWidth, 11)
+    y += 14
+  }
+
   // CONTACTO — solo de DeliveryAddress, nunca del cliente Colppy
   const contactParts: string[] = []
   if (data.deliveryContactName) contactParts.push(data.deliveryContactName)

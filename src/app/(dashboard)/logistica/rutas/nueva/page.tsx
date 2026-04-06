@@ -67,7 +67,15 @@ interface PendingRemito {
       contactPhone: string | null
       schedule: string | null
     }>
-  }
+  } | null
+  supplier: {
+    id: string
+    name: string
+    address: string | null
+    city: string | null
+    province: string | null
+    phone: string | null
+  } | null
   items: Array<{
     description: string
     quantity: number
@@ -226,24 +234,25 @@ function buildAddressOptions(remito: PendingRemito): AddressOption[] {
   const options: AddressOption[] = []
   const seen = new Set<string>() // direcciones normalizadas ya agregadas
 
-  // 1. Dirección fiscal del cliente (siempre presente como base)
-  if (remito.customer.address) {
-    const norm = normalizeAddr(remito.customer.address)
+  // 1. Dirección fiscal del destinatario (cliente o proveedor)
+  const recipient = remito.customer || remito.supplier
+  if (recipient?.address) {
+    const norm = normalizeAddr(recipient.address)
     seen.add(norm)
     options.push({
       key: 'fiscal',
       label: 'Fiscal',
-      address: remito.customer.address,
-      city: remito.customer.city || '',
-      province: remito.customer.province || '',
+      address: recipient.address,
+      city: recipient.city || '',
+      province: recipient.province || '',
       contactName: '',
-      contactPhone: remito.customer.phone || '',
+      contactPhone: recipient.phone || '',
       schedule: '',
     })
   }
 
   // 2. Direcciones de entrega del cliente (CustomerDeliveryAddress)
-  for (const da of remito.customer.deliveryAddresses || []) {
+  for (const da of remito.customer?.deliveryAddresses || []) {
     const norm = normalizeAddr(da.address)
     if (seen.has(norm)) {
       // Enriquecer la opción existente con datos del CustomerDeliveryAddress
@@ -397,14 +406,15 @@ export default function NuevaRutaPage() {
     }
 
     // Armar opciones de dirección y seleccionar la que coincide con la dir del remito
+    const recipient = remito.customer || remito.supplier
     const addressOptions = buildAddressOptions(remito)
-    const remitoAddr = normalizeAddr(remito.deliveryAddress || remito.customer.address)
+    const remitoAddr = normalizeAddr(remito.deliveryAddress || recipient?.address)
     const selected = addressOptions.find((o) => normalizeAddr(o.address) === remitoAddr)
       || addressOptions[0]
 
-    // Dirección del cliente (destino real de la mercadería)
-    const customerAddress = selected?.address || remito.deliveryAddress || remito.customer.address || ''
-    const customerCity = selected?.city || remito.deliveryCity || remito.customer.city || ''
+    // Dirección del destinatario (destino real de la mercadería)
+    const customerAddress = selected?.address || remito.deliveryAddress || recipient?.address || ''
+    const customerCity = selected?.city || remito.deliveryCity || recipient?.city || ''
 
     // Si transporte externo → Dirección = transporte, Destino Final = cliente
     // Si transporte propio → Dirección = cliente, Destino Final = vacío
@@ -416,7 +426,7 @@ export default function NuevaRutaPage() {
       deliveryNoteId: remito.id,
       deliveryNumber: remito.deliveryNumber,
       type: 'DELIVERY',
-      customerName: remito.customer.name,
+      customerName: recipient?.name || 'Sin destinatario',
       transportType: isThirdParty ? 'THIRD_PARTY' : 'OWN',
       transportName: remito.carrier || '',
       transportAddress: transportAddr,
@@ -426,7 +436,7 @@ export default function NuevaRutaPage() {
       zone: getZoneFromCity(isThirdParty && transportAddr ? '' : customerCity),
       schedule: selected?.schedule || '',
       contactName: selected?.contactName || '',
-      contactPhone: selected?.contactPhone || remito.customer.phone || '',
+      contactPhone: selected?.contactPhone || recipient?.phone || '',
       packages: remito.bultos || '',
       finalDestination: isThirdParty ? [customerAddress, customerCity].filter(Boolean).join(', ') : '',
       trackingNumber: remito.trackingNumber || '',
@@ -652,9 +662,9 @@ export default function NuevaRutaPage() {
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-sm">{remito.deliveryNumber}</p>
-                        <p className="text-sm text-gray-700 truncate">{remito.customer.name}</p>
+                        <p className="text-sm text-gray-700 truncate">{remito.customer?.name || remito.supplier?.name || 'Sin destinatario'}</p>
                         <p className="text-xs text-gray-500 truncate">
-                          {remito.deliveryAddress || remito.customer.address || 'Sin direccion'}
+                          {remito.deliveryAddress || remito.customer?.address || remito.supplier?.address || 'Sin direccion'}
                         </p>
                         {remito.bultos && (
                           <p className="text-xs text-gray-500">{remito.bultos} bulto(s)</p>

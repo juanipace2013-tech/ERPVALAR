@@ -51,6 +51,16 @@ export async function GET() {
             },
           },
         },
+        supplier: {
+          select: {
+            id: true,
+            name: true,
+            address: true,
+            city: true,
+            province: true,
+            phone: true,
+          },
+        },
         items: {
           select: {
             description: true,

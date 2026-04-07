@@ -610,14 +610,20 @@ export default function DeliveryNoteDetailPage() {
             )}
 
             {deliveryNote.status === 'READY' && (
-              <Button onClick={() => handleChangeStatus('DISPATCHED')} disabled={actionLoading}>
-                <Truck className="h-4 w-4 mr-2" />
-                Marcar como Despachado
-              </Button>
+              <>
+                <Button onClick={() => handleChangeStatus('DISPATCHED')} disabled={actionLoading}>
+                  <Truck className="h-4 w-4 mr-2" />
+                  Marcar como Despachado
+                </Button>
+                <Button onClick={() => handleChangeStatus('DELIVERED')} disabled={actionLoading} className="bg-green-600 hover:bg-green-700 text-white">
+                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                  Marcar como Entregado
+                </Button>
+              </>
             )}
 
             {deliveryNote.status === 'DISPATCHED' && (
-              <Button onClick={() => handleChangeStatus('DELIVERED')} disabled={actionLoading}>
+              <Button onClick={() => handleChangeStatus('DELIVERED')} disabled={actionLoading} className="bg-green-600 hover:bg-green-700 text-white">
                 <CheckCircle2 className="h-4 w-4 mr-2" />
                 Marcar como Entregado
               </Button>
@@ -1027,7 +1033,9 @@ export default function DeliveryNoteDetailPage() {
               Cambiar Estado a {statusLabels[newStatus]}
             </DialogTitle>
             <DialogDescription>
-              Complete la información adicional del cambio de estado.
+              {newStatus === 'DELIVERED' && deliveryNote?.status === 'READY'
+                ? `¿Confirmar entrega directa del remito ${deliveryNote?.deliveryNumber}? Se salteará el estado Despachado.`
+                : `Complete la información adicional del cambio de estado del remito ${deliveryNote?.deliveryNumber}.`}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">

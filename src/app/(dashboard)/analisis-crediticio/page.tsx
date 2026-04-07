@@ -749,7 +749,7 @@ export default function AnalisisCrediticioPage() {
                 </div>
                 <div className="text-right space-y-1">
                   <div>
-                    <p className="text-xs text-gray-500">Deuda total</p>
+                    <p className="text-xs text-gray-500">Deuda total <span className="text-gray-400">(en miles de $)</span></p>
                     <p className="text-lg font-bold text-gray-800">
                       ${formatMonto(result.resumen.montoTotalDeuda)}
                     </p>
@@ -805,7 +805,7 @@ export default function AnalisisCrediticioPage() {
                     <TableRow>
                       <TableHead>Entidad</TableHead>
                       <TableHead>Situación</TableHead>
-                      <TableHead className="text-right">Monto ($)</TableHead>
+                      <TableHead className="text-right">Monto (miles $)</TableHead>
                       <TableHead className="text-right">Días atraso</TableHead>
                       <TableHead>Observaciones</TableHead>
                     </TableRow>

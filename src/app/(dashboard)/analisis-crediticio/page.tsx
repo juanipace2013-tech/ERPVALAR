@@ -549,7 +549,20 @@ export default function AnalisisCrediticioPage() {
               Consultar
             </Button>
           </div>
-          {error && <p className="text-red-600 text-sm mt-2">{error}</p>}
+          {error && (
+            <div className="flex items-center gap-2 mt-2">
+              <p className="text-red-600 text-sm">{error}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => buscar(cuitInput)}
+                disabled={loading}
+              >
+                <RefreshCw className="h-3 w-3 mr-1" />
+                Reintentar
+              </Button>
+            </div>
+          )}
           <p className="text-xs text-gray-400 mt-2">
             Los resultados se almacenan en caché por 1 hora. Usá &quot;Actualizar datos&quot; para forzar reconsulta.
           </p>

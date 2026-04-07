@@ -1,18 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { exec } from 'child_process'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/auth'
 import { logger } from '@/lib/logger'
 
 const BCRA_BASE = 'https://api.bcra.gob.ar/CentralDeDeudores/v1.0'
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24 horas — los datos BCRA se actualizan mensualmente
-const DELAY_BETWEEN_CALLS_MS = 2000
 const GLOBAL_COOLDOWN_MS = 10000 // mínimo 10s entre consultas nuevas al BCRA
 
 // ── Rate limit global ────────────────────────────────────────────────────────
-// Cola simple para serializar consultas al BCRA y evitar rate limiting.
-// Solo una consulta puede ejecutarse a la vez, con 10s de cooldown entre ellas.
-
 let lastBcraCallTime = 0
 let queuePromise: Promise<void> = Promise.resolve()
 
@@ -31,7 +26,6 @@ function enqueue<T>(fn: () => Promise<T>): Promise<T> {
     lastBcraCallTime = Date.now()
   })
 
-  // Actualizar la cola (se resuelve cuando fn termina, sin propagar errores a la cadena)
   queuePromise = result.then(() => {}, () => {})
 
   return result
@@ -62,44 +56,50 @@ function calcularSemaforo(
 }
 
 /**
- * Fetch al BCRA usando curl con --tlsv1.2 (async).
- * Incluye --retry 1 --retry-delay 5 para un reintento automático con backoff.
+ * Fetch al BCRA con retry y backoff exponencial.
+ * La API devuelve 503 en ~60% de requests individuales,
+ * pero con 4 intentos se logra 100% de éxito.
+ * HTTP 404 = sin datos (no es error).
  */
-function fetchBCRA(endpoint: string): Promise<any> {
-  const url = `${BCRA_BASE}/${endpoint}`
-  logger.info(`[BCRA] Fetching: ${url}`)
+async function fetchBCRAWithRetry(url: string, maxRetries = 4): Promise<any> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 10000)
+      const response = await fetch(url, {
+        headers: { 'Accept': 'application/json' },
+        signal: controller.signal,
+        cache: 'no-store',
+      })
+      clearTimeout(timeout)
 
-  return new Promise((resolve) => {
-    exec(
-      `curl -s --tlsv1.2 --max-time 30 --retry 1 --retry-delay 5 "${url}" -H "Accept: application/json"`,
-      { encoding: 'utf-8', timeout: 70000 }, // 30s + 5s retry delay + 30s retry + margen
-      (error, stdout, stderr) => {
-        if (error) {
-          logger.error(`[BCRA] Error for ${endpoint}:`, error.message)
-          resolve({ status: 500, errorMessages: ['Error al consultar BCRA'] })
-          return
-        }
-
-        const result = (stdout ?? '').trim()
-        if (!result) {
-          logger.warn(`[BCRA] Empty response for ${endpoint}`)
-          resolve({ status: 404, errorMessages: ['Respuesta vacía del BCRA'] })
-          return
-        }
-
-        try {
-          const parsed = JSON.parse(result)
-          logger.info(
-            `[BCRA] ${endpoint}: status=${parsed?.status}, hasResults=${!!parsed?.results}`
-          )
-          resolve(parsed)
-        } catch {
-          logger.error(`[BCRA] JSON parse error for ${endpoint}: ${result.slice(0, 200)}`)
-          resolve({ status: 500, errorMessages: ['Respuesta inválida del BCRA'] })
-        }
+      // 404 = sin datos, respuesta válida
+      if (response.status === 404) {
+        logger.info(`[BCRA] ${url} → 404 (sin datos)`)
+        return { status: 404, errorMessages: ['Sin información'] }
       }
-    )
-  })
+
+      if (response.status === 503 || response.status === 502) {
+        logger.info(`[BCRA] Intento ${attempt + 1}/${maxRetries} → ${response.status}, reintentando...`)
+        await sleep(1000 * Math.pow(2, attempt))
+        continue
+      }
+
+      const text = await response.text()
+      if (!text) {
+        logger.warn(`[BCRA] Respuesta vacía de ${url}`)
+        return { status: response.status, errorMessages: ['Respuesta vacía del BCRA'] }
+      }
+
+      return JSON.parse(text)
+    } catch (error: any) {
+      logger.info(`[BCRA] Intento ${attempt + 1}/${maxRetries} → Error: ${error.message}`)
+      if (attempt < maxRetries - 1) {
+        await sleep(1000 * Math.pow(2, attempt))
+      }
+    }
+  }
+  throw new Error('BCRA API no disponible después de 4 intentos')
 }
 
 // ── Route handler ───────────────────────────────────────────────────────────
@@ -135,29 +135,24 @@ export async function GET(
     logger.info(`[BCRA] Force refresh for ${cuit}`)
   }
 
-  // ── Fetch 3 endpoints secuenciales con delay (vía cola global) ──
+  // ── Fetch 3 endpoints con retry (vía cola global) ──
   let deudas: any
   let historicas: any
   let cheques: any
 
   try {
     ;({ deudas, historicas, cheques } = await enqueue(async () => {
-      const d = await fetchBCRA(`Deudas/${cuit}`)
-      await sleep(DELAY_BETWEEN_CALLS_MS)
-
-      const h = await fetchBCRA(`Deudas/Historicas/${cuit}`)
-      await sleep(DELAY_BETWEEN_CALLS_MS)
-
-      const c = await fetchBCRA(`Deudas/ChequesRechazados/${cuit}`)
-
+      const d = await fetchBCRAWithRetry(`${BCRA_BASE}/Deudas/${cuit}`)
+      const h = await fetchBCRAWithRetry(`${BCRA_BASE}/Deudas/Historicas/${cuit}`)
+      const c = await fetchBCRAWithRetry(`${BCRA_BASE}/Deudas/ChequesRechazados/${cuit}`)
       return { deudas: d, historicas: h, cheques: c }
     }))
   } catch (error) {
-    logger.error('[BCRA] Queue error:', error)
+    logger.error('[BCRA] Error después de reintentos:', error)
     return NextResponse.json(
       {
         error:
-          'El BCRA está limitando las consultas. Intentá de nuevo en unos minutos.',
+          'La API del BCRA no responde momentáneamente. Intentá de nuevo.',
       },
       { status: 503 }
     )
@@ -170,14 +165,22 @@ export async function GET(
     cheques?.status >= 400
 
   if (allFailed) {
-    logger.error(`[BCRA] Todas las llamadas fallaron para ${cuit}`)
-    return NextResponse.json(
-      {
-        error:
-          'El BCRA está limitando las consultas. Intentá de nuevo en unos minutos.',
-      },
-      { status: 503 }
-    )
+    // Si todas son 404, no es error: simplemente no hay datos
+    const all404 =
+      deudas?.status === 404 &&
+      historicas?.status === 404 &&
+      cheques?.status === 404
+
+    if (!all404) {
+      logger.error(`[BCRA] Todas las llamadas fallaron para ${cuit}`)
+      return NextResponse.json(
+        {
+          error:
+            'La API del BCRA no responde momentáneamente. Intentá de nuevo.',
+        },
+        { status: 503 }
+      )
+    }
   }
 
   // ── Deudas: extraer entidades del período más reciente ──
@@ -308,7 +311,7 @@ export async function GET(
     create: { cuit, data: result as any },
   })
 
-  // Historial (best-effort) — solo guardar si la consulta fue exitosa
+  // Historial (best-effort)
   try {
     const session = await auth()
     if (session?.user?.id) {

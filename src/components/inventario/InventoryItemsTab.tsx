@@ -15,7 +15,7 @@ import {
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from '@/components/ui/sheet'
-import { Search, Package, Check, X, Loader2 } from 'lucide-react'
+import { Search, Package, Check, X, Loader2, Download } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface Product {
@@ -74,6 +74,9 @@ export default function InventoryItemsTab() {
   const [history, setHistory] = useState<MovementHistory[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
 
+  // Export state
+  const [exporting, setExporting] = useState(false)
+
   // Inline edit state
   const [editingMinStock, setEditingMinStock] = useState<string | null>(null)
   const [editMinValue, setEditMinValue] = useState('')
@@ -109,6 +112,30 @@ export default function InventoryItemsTab() {
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleSearch()
+  }
+
+  const handleExportExcel = async () => {
+    try {
+      setExporting(true)
+      let url = '/api/inventory/export-items?'
+      if (typeFilter !== 'ALL') url += `&type=${typeFilter}`
+      if (search) url += `&search=${encodeURIComponent(search)}`
+      if (belowMinFilter) url += `&belowMin=true`
+
+      const res = await fetch(url)
+      if (!res.ok) throw new Error('Error al exportar')
+      const blob = await res.blob()
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.download = `Inventario_${new Date().toISOString().slice(0, 10)}.xlsx`
+      link.click()
+      URL.revokeObjectURL(link.href)
+      toast.success('Excel descargado')
+    } catch {
+      toast.error('Error al exportar a Excel')
+    } finally {
+      setExporting(false)
+    }
   }
 
   const openProductDrawer = async (product: Product) => {
@@ -187,6 +214,14 @@ export default function InventoryItemsTab() {
               className={belowMinFilter ? 'bg-red-600 hover:bg-red-700' : ''}
             >
               Solo bajo mínimo
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleExportExcel}
+              disabled={exporting}
+            >
+              {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+              Descargar Excel
             </Button>
             <Button onClick={handleSearch} className="bg-blue-600 hover:bg-blue-700">
               <Search className="mr-2 h-4 w-4" />

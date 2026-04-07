@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
     const supplierId = searchParams.get('supplierId') || ''
     const type = searchParams.get('type') || '' // Nuevo filtro por tipo
     const letter = searchParams.get('letter') || '' // Filtro alfabético
+    const belowMin = searchParams.get('belowMin') === 'true'
     const orderBy = searchParams.get('orderBy') || 'sku' // Campo de ordenamiento
     const order = searchParams.get('order') || 'asc' // Dirección (asc/desc)
 
@@ -63,10 +64,61 @@ export async function GET(request: NextRequest) {
       where.type = type
     }
 
+    if (belowMin) {
+      where.minStock = { gt: 0 }
+    }
+
     // Construir orderBy dinámico
     const validOrderFields = ['sku', 'name', 'brand', 'listPriceUSD', 'createdAt']
     const orderField = validOrderFields.includes(orderBy) ? orderBy : 'sku'
     const orderDirection = order === 'desc' ? 'desc' : 'asc'
+
+    const productSelect = {
+      id: true,
+      sku: true,
+      name: true,
+      brand: true,
+      type: true,
+      status: true,
+      unit: true,
+      stockQuantity: true,
+      minStock: true,
+      maxStock: true,
+      listPriceUSD: true,
+      lastCost: true,
+      averageCost: true,
+      colppyItemId: true,
+      prices: {
+        select: { id: true, priceType: true, amount: true, currency: true },
+      },
+      supplier: {
+        select: { id: true, name: true },
+      },
+    } as const
+
+    // belowMin requiere comparar stockQuantity < minStock (dos columnas),
+    // Prisma no soporta esto en where, así que traemos los de minStock > 0
+    // y filtramos en JS
+    if (belowMin) {
+      const allBelowMin = await prisma.product.findMany({
+        where,
+        orderBy: { [orderField]: orderDirection },
+        select: productSelect,
+      })
+      const filtered = allBelowMin.filter(p => p.stockQuantity < p.minStock)
+      const total = filtered.length
+      const paginated = filtered.slice(skip, skip + limit)
+
+      return NextResponse.json({
+        products: paginated,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      })
+    }
 
     // Obtener productos con paginación - select mínimo para rendimiento
     const [products, total] = await Promise.all([
@@ -74,31 +126,8 @@ export async function GET(request: NextRequest) {
         where,
         skip,
         take: limit,
-        orderBy: {
-          [orderField]: orderDirection,
-        },
-        select: {
-          id: true,
-          sku: true,
-          name: true,
-          brand: true,
-          type: true,
-          status: true,
-          unit: true,
-          stockQuantity: true,
-          minStock: true,
-          maxStock: true,
-          listPriceUSD: true,
-          lastCost: true,
-          averageCost: true,
-          colppyItemId: true,
-          prices: {
-            select: { id: true, priceType: true, amount: true, currency: true },
-          },
-          supplier: {
-            select: { id: true, name: true },
-          },
-        },
+        orderBy: { [orderField]: orderDirection },
+        select: productSelect,
       }),
       prisma.product.count({ where }),
     ])

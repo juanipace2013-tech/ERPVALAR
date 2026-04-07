@@ -90,7 +90,7 @@ export async function POST(
         isAlternative: body.isAlternative || false,
       }
       if (body.alternativeToItemId) {
-        manualData.alternativeToItem = { connect: { id: body.alternativeToItemId } }
+        manualData.alternativeToItemId = body.alternativeToItemId
       }
 
       const item = await prisma.quoteItem.create({
@@ -190,7 +190,7 @@ export async function POST(
         totalPrice,
         deliveryTime: body.deliveryTime || 'Inmediato',
         isAlternative: body.isAlternative || false,
-        ...(body.alternativeToItemId ? { alternativeToItem: { connect: { id: body.alternativeToItemId } } } : {}),
+        ...(body.alternativeToItemId ? { alternativeToItemId: body.alternativeToItemId } : {}),
         additionals: body.additionals
           ? {
               create: body.additionals.map((add: { productId?: string | null; description?: string; listPrice: number }, index: number) => ({

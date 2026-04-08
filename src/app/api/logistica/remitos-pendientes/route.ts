@@ -68,7 +68,10 @@ export async function GET() {
           },
         },
       },
-      orderBy: { date: 'asc' },
+      orderBy: [
+        { customer: { name: 'asc' } },
+        { date: 'asc' },
+      ],
     })
 
     return NextResponse.json(remitos)

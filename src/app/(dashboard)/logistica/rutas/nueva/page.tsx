@@ -35,6 +35,7 @@ import {
   ChevronUp,
   ChevronDown,
   Truck,
+  Search,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getLocalDateString } from '@/lib/utils'
@@ -568,10 +569,24 @@ export default function NuevaRutaPage() {
     }
   }
 
-  // Filter out already-added remitos (but in edit mode, show those assigned to this route as pending too)
-  const availableRemitos = pendingRemitos.filter(
-    (r) => !stops.some((s) => s.deliveryNoteId === r.id)
-  )
+  // Search state for pending remitos
+  const [remitoSearch, setRemitoSearch] = useState('')
+
+  // Filter out already-added remitos, then apply search + sort alphabetically
+  const availableRemitos = pendingRemitos
+    .filter((r) => !stops.some((s) => s.deliveryNoteId === r.id))
+    .filter((r) => {
+      if (!remitoSearch.trim()) return true
+      const term = remitoSearch.toLowerCase()
+      const customerName = (r.customer?.name || r.supplier?.name || '').toLowerCase()
+      const number = (r.deliveryNumber || '').toLowerCase()
+      return customerName.includes(term) || number.includes(term)
+    })
+    .sort((a, b) => {
+      const nameA = (a.customer?.name || a.supplier?.name || '').toLowerCase()
+      const nameB = (b.customer?.name || b.supplier?.name || '').toLowerCase()
+      return nameA.localeCompare(nameB)
+    })
 
   if (loadingRoute) {
     return (
@@ -646,7 +661,17 @@ export default function NuevaRutaPage() {
                 <Badge variant="outline" className="ml-auto">{availableRemitos.length}</Badge>
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2 max-h-[600px] overflow-y-auto">
+            <CardContent className="space-y-2">
+              <div className="relative mb-2">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar por remito o cliente..."
+                  value={remitoSearch}
+                  onChange={(e) => setRemitoSearch(e.target.value)}
+                  className="pl-9 h-9 text-sm"
+                />
+              </div>
+              <div className="space-y-2 max-h-[550px] overflow-y-auto">
               {loadingRemitos ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
@@ -682,6 +707,7 @@ export default function NuevaRutaPage() {
                   </div>
                 ))
               )}
+              </div>
             </CardContent>
           </Card>
         </div>

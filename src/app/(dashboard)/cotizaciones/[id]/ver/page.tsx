@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
+import { QuoteSeguimientos } from '@/components/quotes/QuoteSeguimientos'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -1360,6 +1361,9 @@ export default function QuoteViewPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* Seguimientos */}
+          <QuoteSeguimientos quoteId={id} />
         </div>
 
         {/* Sidebar */}

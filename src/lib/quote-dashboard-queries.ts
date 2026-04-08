@@ -473,3 +473,30 @@ export async function getTipoCambioActual() {
     }))
   }
 }
+
+/**
+ * Obtener conteo de cotizaciones vencidas sin seguimiento reciente
+ */
+export async function getCotizacionesSinSeguimiento() {
+  const hace7dias = new Date()
+  hace7dias.setDate(hace7dias.getDate() - 7)
+
+  // Cotizaciones vencidas hace +7 días en estados activos sin seguimiento reciente
+  const sinSeguimiento = await prisma.quote.findMany({
+    where: {
+      validUntil: { lt: hace7dias },
+      status: { in: ['SENT', 'EXPIRED'] },
+      AND: [
+        {
+          OR: [
+            { seguimientos: { none: {} } },
+            { seguimientos: { every: { fecha: { lt: hace7dias } } } },
+          ],
+        },
+      ],
+    },
+    select: { id: true },
+  })
+
+  return { cantidad: sinSeguimiento.length }
+}

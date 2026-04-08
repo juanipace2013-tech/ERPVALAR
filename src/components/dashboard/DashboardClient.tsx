@@ -15,7 +15,8 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Award,
-  Trophy
+  Trophy,
+  AlertTriangle
 } from 'lucide-react'
 import {
   BarChart,
@@ -44,6 +45,7 @@ interface DashboardClientProps {
     productosMasCotizados: any[]
     tipoCambio: any
     rankingVendedores: any[]
+    sinSeguimiento: { cantidad: number }
   }
 }
 
@@ -56,7 +58,8 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
     cotizacionesPorVencer,
     productosMasCotizados,
     tipoCambio,
-    rankingVendedores
+    rankingVendedores,
+    sinSeguimiento
   } = data
 
   const { theme } = useTheme()
@@ -216,6 +219,28 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Alerta: cotizaciones sin seguimiento */}
+      {sinSeguimiento.cantidad > 0 && (
+        <Link href="/cotizaciones?seguimiento=requiere_atencion">
+          <Card className="border-red-300 bg-gradient-to-r from-red-50 to-orange-50 hover:from-red-100 hover:to-orange-100 transition-colors cursor-pointer dark:from-red-950/40 dark:to-orange-950/40">
+            <CardContent className="p-4 flex items-center gap-4">
+              <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="h-5 w-5 text-red-600" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-red-800">
+                  {sinSeguimiento.cantidad} cotización{sinSeguimiento.cantidad !== 1 ? 'es' : ''} vencida{sinSeguimiento.cantidad !== 1 ? 's' : ''} sin seguimiento reciente
+                </p>
+                <p className="text-xs text-red-600">
+                  Vencidas hace más de 7 días sin contacto registrado. Click para ver listado.
+                </p>
+              </div>
+              <ArrowUpRight className="h-5 w-5 text-red-400 flex-shrink-0" />
+            </CardContent>
+          </Card>
+        </Link>
+      )}
 
       {/* FILA 2: GRÁFICO + TOP CLIENTES */}
       <div className="grid gap-4 lg:grid-cols-5">

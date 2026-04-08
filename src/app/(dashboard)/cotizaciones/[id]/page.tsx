@@ -33,6 +33,7 @@ import { toast } from 'sonner'
 import { formatNumber, getLocalDateString } from '@/lib/utils'
 import { useColppyStock, refreshInventoryCache } from '@/hooks/useColppyStock'
 import { StockBadge, StockWarning } from '@/components/StockBadge'
+import { QuoteSeguimientos } from '@/components/quotes/QuoteSeguimientos'
 
 interface Product {
   id: string
@@ -2371,6 +2372,9 @@ export default function QuoteDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Seguimientos */}
+      <QuoteSeguimientos quoteId={quoteId} />
 
       {/* Terms and Notes */}
       {(quote.terms || quote.notes) && (

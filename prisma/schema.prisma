@@ -984,6 +984,7 @@ model Quote {
   statusHistory   QuoteStatusHistory[]
   publicToken     QuotePublicToken?  // Token para acceso público
   emailLogs       QuoteEmailLog[]    // Log de emails enviados
+  seguimientos    QuoteSeguimiento[] // Seguimientos de contacto
 
   @@index([customerId])
   @@index([opportunityId])
@@ -1131,6 +1132,21 @@ model QuoteEmailLog {
   @@index([status])
   @@index([createdAt])
   @@map("quote_email_logs")
+}
+
+// Seguimientos de cotizaciones (llamadas, emails, WhatsApp, etc.)
+model QuoteSeguimiento {
+  id        String   @id @default(cuid())
+  quoteId   String
+  quote     Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  fecha     DateTime @default(now())
+  usuario   String   // nombre de quien registra (Germán, Paula, Juan, Santiago)
+  tipo      String   // "llamada", "email", "whatsapp", "reunión", "otro"
+  nota      String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([quoteId])
+  @@map("quote_seguimientos")
 }
 
 // ========================================

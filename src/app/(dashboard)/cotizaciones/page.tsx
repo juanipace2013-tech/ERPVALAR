@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
@@ -48,6 +48,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  AlertTriangle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getLocalDateString } from '@/lib/utils'
@@ -76,6 +77,8 @@ interface Quote {
   purchaseOrderUrl: string | null
   rejectionReason: string | null
   statusUpdatedAt: string | null
+  seguimientos: { id: string; fecha: string }[]
+  _count: { seguimientos: number }
 }
 
 interface User {
@@ -107,13 +110,15 @@ const statusColors: Record<string, string> = {
 
 export default function CotizacionesPage() {
   const router = useRouter()
+  const searchParamsHook = useSearchParams()
   const [quotes, setQuotes] = useState<Quote[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('ACTIVE')
+  const [statusFilter, setStatusFilter] = useState<string>(searchParamsHook.get('status') || 'ACTIVE')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [salesPersonId, setSalesPersonId] = useState<string>('ALL')
+  const [seguimientoFilter, setSeguimientoFilter] = useState<string>(searchParamsHook.get('seguimiento') || 'ALL')
   const [salesPersons, setSalesPersons] = useState<User[]>([])
 
   // Sorting
@@ -152,6 +157,7 @@ export default function CotizacionesPage() {
       if (dateFrom) params.append('dateFrom', dateFrom)
       if (dateTo) params.append('dateTo', dateTo)
       if (salesPersonId !== 'ALL') params.append('salesPersonId', salesPersonId)
+      if (seguimientoFilter !== 'ALL') params.append('seguimiento', seguimientoFilter)
       params.append('page', String(page - 1))
       params.append('pageSize', String(PAGE_SIZE))
 
@@ -171,7 +177,7 @@ export default function CotizacionesPage() {
     } finally {
       setLoading(false)
     }
-  }, [statusFilter, search, dateFrom, dateTo, salesPersonId, page])
+  }, [statusFilter, search, dateFrom, dateTo, salesPersonId, seguimientoFilter, page])
 
   useEffect(() => {
     fetchQuotes()
@@ -184,7 +190,7 @@ export default function CotizacionesPage() {
   // Reset page when filters change
   useEffect(() => {
     setPage(1)
-  }, [statusFilter, search, dateFrom, dateTo, salesPersonId])
+  }, [statusFilter, search, dateFrom, dateTo, salesPersonId, seguimientoFilter])
 
   const handleClearFilters = () => {
     setSearch('')
@@ -192,6 +198,7 @@ export default function CotizacionesPage() {
     setDateFrom('')
     setDateTo('')
     setSalesPersonId('ALL')
+    setSeguimientoFilter('ALL')
     setPage(1)
   }
 
@@ -200,7 +207,8 @@ export default function CotizacionesPage() {
     (statusFilter !== 'ACTIVE' && statusFilter !== 'ALL') ||
     dateFrom !== '' ||
     dateTo !== '' ||
-    salesPersonId !== 'ALL'
+    salesPersonId !== 'ALL' ||
+    seguimientoFilter !== 'ALL'
 
   const handleDownloadPDF = async (quoteId: string, quoteNumber: string, customerName: string) => {
     try {
@@ -429,7 +437,7 @@ export default function CotizacionesPage() {
       {/* Filters */}
       <Card className="border-blue-200">
         <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-4">
             {/* Búsqueda por texto */}
             <div className="relative xl:col-span-2">
               <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
@@ -495,6 +503,20 @@ export default function CotizacionesPage() {
                   <SelectItem value="EXPIRED">Vencida</SelectItem>
                   <SelectItem value="CANCELLED">Anulada</SelectItem>
                   <SelectItem value="CONVERTED">Facturada</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {/* Seguimiento */}
+            <div>
+              <Select value={seguimientoFilter} onValueChange={setSeguimientoFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seguimiento" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Todos (seguimiento)</SelectItem>
+                  <SelectItem value="sin">Sin seguimiento</SelectItem>
+                  <SelectItem value="requiere_atencion">Requiere atención</SelectItem>
+                  <SelectItem value="reciente">Con seguimiento reciente</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -639,9 +661,44 @@ export default function CotizacionesPage() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <Badge className={statusColors[quote.status]}>
-                          {statusLabels[quote.status]}
-                        </Badge>
+                        <div className="flex flex-col gap-1">
+                          <Badge className={statusColors[quote.status]}>
+                            {statusLabels[quote.status]}
+                          </Badge>
+                          {(() => {
+                            if (!quote.validUntil) return null
+                            const hace7dias = new Date()
+                            hace7dias.setDate(hace7dias.getDate() - 7)
+                            const vencimiento = new Date(quote.validUntil)
+                            const vencidaHace7 = vencimiento < hace7dias
+                            if (!vencidaHace7) return null
+                            if (['ACCEPTED', 'CONVERTED', 'CANCELLED'].includes(quote.status)) return null
+
+                            const lastSeg = quote.seguimientos?.[0]
+                            const sinSeguimientoPostVenc = !lastSeg || new Date(lastSeg.fecha) < vencimiento
+
+                            if (sinSeguimientoPostVenc) {
+                              return (
+                                <span className="flex items-center gap-1 text-[10px] text-red-600 font-medium" title="Sin seguimiento post-vencimiento">
+                                  <AlertTriangle className="h-3 w-3" />
+                                  Sin seguimiento
+                                </span>
+                              )
+                            }
+
+                            const lastSegDate = new Date(lastSeg.fecha)
+                            if (lastSegDate < hace7dias) {
+                              const diffDays = Math.floor((Date.now() - lastSegDate.getTime()) / (1000 * 60 * 60 * 24))
+                              return (
+                                <span className="flex items-center gap-1 text-[10px] text-orange-600 font-medium" title="Último seguimiento antiguo">
+                                  <AlertTriangle className="h-3 w-3" />
+                                  Seg. hace {diffDays}d
+                                </span>
+                              )
+                            }
+                            return null
+                          })()}
+                        </div>
                       </TableCell>
                       <TableCell className="text-center">
                         {quote.purchaseOrderUrl ? (

@@ -27,6 +27,8 @@ export async function GET(request: NextRequest) {
     const customerCuit = searchParams.get('customerCuit')
     const excludeStatus = searchParams.get('excludeStatus')
 
+    const seguimientoFilter = searchParams.get('seguimiento')
+
     const where: Record<string, unknown> = {}
 
     if (status && status !== 'ALL') {
@@ -57,6 +59,30 @@ export async function GET(request: NextRequest) {
       where.salesPersonId = salesPersonId
     }
 
+    // Filtros de seguimiento
+    if (seguimientoFilter) {
+      const hace7dias = new Date()
+      hace7dias.setDate(hace7dias.getDate() - 7)
+
+      if (seguimientoFilter === 'sin') {
+        where.seguimientos = { none: {} }
+      } else if (seguimientoFilter === 'reciente') {
+        where.seguimientos = { some: { fecha: { gte: hace7dias } } }
+      } else if (seguimientoFilter === 'requiere_atencion') {
+        // Vencidas hace +7 días Y sin seguimiento reciente
+        where.validUntil = { lt: hace7dias }
+        where.status = { in: ['SENT', 'EXPIRED'] }
+        where.AND = [
+          {
+            OR: [
+              { seguimientos: { none: {} } },
+              { seguimientos: { every: { fecha: { lt: hace7dias } } } },
+            ],
+          },
+        ]
+      }
+    }
+
     if (customerCuit) {
       where.customer = { cuit: customerCuit }
     }
@@ -79,6 +105,11 @@ export async function GET(request: NextRequest) {
           validUntil: true,
           tenderNumber: true,
           colppySyncedAt: true,
+          purchaseOrderUrl: true,
+          rejectionReason: true,
+          statusUpdatedAt: true,
+          bonification: true,
+          subtotal: true,
           customer: {
             select: {
               id: true,
@@ -90,6 +121,14 @@ export async function GET(request: NextRequest) {
               id: true,
               name: true,
             },
+          },
+          seguimientos: {
+            select: { id: true, fecha: true },
+            orderBy: { fecha: 'desc' as const },
+            take: 1,
+          },
+          _count: {
+            select: { seguimientos: true },
           },
           ...(customerCuit ? {
             items: {

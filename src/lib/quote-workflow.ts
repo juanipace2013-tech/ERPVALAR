@@ -145,56 +145,73 @@ export async function generateDeliveryNumber(): Promise<{ deliveryNumber: string
   // Intentar usar CAI activo (si la tabla existe y hay config)
   try {
     if (prisma.caiConfig) {
-      const caiConfig = await prisma.caiConfig.findFirst({
-        where: { active: true },
-        orderBy: { createdAt: 'desc' },
-      });
+      // Atomic increment con Serializable isolation para evitar race conditions
+      const result = await prisma.$transaction(async (tx) => {
+        const caiConfig = await tx.caiConfig.findFirst({
+          where: { active: true },
+          orderBy: { createdAt: 'desc' },
+        });
 
-      if (caiConfig) {
+        if (!caiConfig) return null;
+
         const now = new Date();
         const notExpired = now <= caiConfig.caiExpirationDate;
         const nextNumber = caiConfig.lastUsedNumber + 1;
         const hasRange = nextNumber <= caiConfig.endNumber;
 
-        if (notExpired && hasRange) {
-          // Incrementar atómicamente
-          await prisma.caiConfig.update({
-            where: { id: caiConfig.id },
-            data: { lastUsedNumber: nextNumber },
-          });
+        if (!notExpired || !hasRange) return null;
 
-          const pv = String(caiConfig.pointOfSale).padStart(4, '0');
-          const num = String(nextNumber).padStart(8, '0');
-          return {
-            deliveryNumber: `RE ${pv}-${num}`,
-            caiNumber: caiConfig.caiNumber,
-          };
+        // Incrementar con atomic UPDATE + condición para evitar doble incremento
+        const updated = await tx.$executeRaw`
+          UPDATE cai_configs
+          SET "lastUsedNumber" = "lastUsedNumber" + 1
+          WHERE id = ${caiConfig.id} AND "lastUsedNumber" = ${caiConfig.lastUsedNumber}
+        `;
+
+        if (updated === 0) {
+          // Otro proceso ya incrementó → reintentar leyendo el nuevo valor
+          throw new Error('CAI_CONCURRENT_UPDATE');
         }
-      }
+
+        const pv = String(caiConfig.pointOfSale).padStart(4, '0');
+        const num = String(nextNumber).padStart(8, '0');
+        return {
+          deliveryNumber: `RE ${pv}-${num}`,
+          caiNumber: caiConfig.caiNumber,
+        };
+      }, { isolationLevel: 'Serializable' });
+
+      if (result) return result;
     }
   } catch (error) {
+    // Si es un retry por concurrencia, reintentar una vez
+    if (error instanceof Error && error.message === 'CAI_CONCURRENT_UPDATE') {
+      logger.warn('CAI concurrent update detected, retrying...');
+      return generateDeliveryNumber();
+    }
     // Si caiConfig no existe en el Prisma client o la tabla no existe,
     // continuar con fallback PV 0002 sin romper
     logger.warn('CAI config not available, falling back to PV 0002:', error instanceof Error ? error.message : error);
   }
 
-  // Fallback: PV 0002 (legacy / contingencia) — wrapped in transaction to prevent race conditions
+  // Fallback: PV 0002 (legacy / contingencia)
+  // Serializable transaction + locking para evitar race conditions
   const deliveryNumber = await prisma.$transaction(async (tx) => {
-    const lastDeliveryNote = await tx.deliveryNote.findFirst({
-      where: { deliveryNumber: { startsWith: 'RE 0002' } },
-      orderBy: { createdAt: 'desc' },
-      select: { deliveryNumber: true },
-    });
+    // FOR UPDATE lockea la fila para que otro proceso no lea el mismo número
+    const result = await tx.$queryRaw<{ max_num: number }[]>`
+      SELECT COALESCE(
+        MAX(CAST(SUBSTRING("deliveryNumber" FROM '(\d+)$') AS INTEGER)),
+        ${DELIVERY_NUMBER_MIN}
+      ) as max_num
+      FROM delivery_notes
+      WHERE "deliveryNumber" LIKE 'RE 0002%'
+      FOR UPDATE
+    `;
 
-    let lastNumber = 0;
-    if (lastDeliveryNote) {
-      const match = lastDeliveryNote.deliveryNumber.match(/(\d+)$/);
-      lastNumber = match ? parseInt(match[1]) : 0;
-    }
-
-    const number = Math.max(lastNumber, DELIVERY_NUMBER_MIN) + 1;
+    const lastNumber = result[0]?.max_num || DELIVERY_NUMBER_MIN;
+    const number = lastNumber + 1;
     return `RE 0002-${String(number).padStart(8, '0')}`;
-  });
+  }, { isolationLevel: 'Serializable' });
 
   return { deliveryNumber, caiNumber: null };
 }
@@ -371,27 +388,25 @@ export async function generateInvoiceNumber(
   pointOfSale: string,
   invoiceType: 'A' | 'B' | 'C' | 'E'
 ): Promise<string> {
-  const lastInvoice = await prisma.invoice.findFirst({
-    where: {
-      invoiceType,
-      invoiceNumber: {
-        startsWith: pointOfSale
-      }
-    },
-    orderBy: { invoiceNumber: 'desc' },
-    select: { invoiceNumber: true }
-  });
+  // Serializable transaction + FOR UPDATE para evitar race conditions
+  const invoiceNumber = await prisma.$transaction(async (tx) => {
+    const prefix = `${pointOfSale}-%`;
+    const result = await tx.$queryRaw<{ max_num: number }[]>`
+      SELECT COALESCE(
+        MAX(CAST(SPLIT_PART("invoiceNumber", '-', 2) AS INTEGER)),
+        0
+      ) as max_num
+      FROM invoices
+      WHERE "invoiceType" = ${invoiceType}
+        AND "invoiceNumber" LIKE ${prefix}
+      FOR UPDATE
+    `;
 
-  let nextNumber = 1;
+    const nextNumber = (result[0]?.max_num || 0) + 1;
+    return `${pointOfSale}-${String(nextNumber).padStart(8, '0')}`;
+  }, { isolationLevel: 'Serializable' });
 
-  if (lastInvoice) {
-    const parts = lastInvoice.invoiceNumber.split('-');
-    if (parts.length === 2) {
-      nextNumber = parseInt(parts[1]) + 1;
-    }
-  }
-
-  return `${pointOfSale}-${String(nextNumber).padStart(8, '0')}`;
+  return invoiceNumber;
 }
 
 /**

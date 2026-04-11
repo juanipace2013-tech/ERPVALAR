@@ -186,7 +186,8 @@ export async function GET(request: NextRequest) {
         // Verificar stock de adicionales
         const additionalsInfo: AdditionalStockInfo[] = (item.additionals || []).map((add) => {
           const addStock = add.product?.stockQuantity ?? null
-          const addHasStock = addStock != null && addStock >= safeRemaining
+          const addHasProduct = add.product != null
+          const addHasStock = addHasProduct ? (addStock != null && addStock >= safeRemaining) : true
           const addShortage = (add.product != null && addStock != null && !addHasStock && safeRemaining > 0)
             ? safeRemaining - Math.max(addStock, 0)
             : null

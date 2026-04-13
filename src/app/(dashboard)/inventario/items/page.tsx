@@ -6,8 +6,10 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Plus, Package,
-  ShoppingCart, RefreshCw, Link2, LayoutDashboard, AlertTriangle,
+  ShoppingCart, RefreshCw, Link2, LayoutDashboard, AlertTriangle, Loader2,
 } from 'lucide-react'
+import { toast } from 'sonner'
+import { refreshInventoryCache } from '@/hooks/useColppyStock'
 import dynamic from 'next/dynamic'
 
 // Lazy load heavy components
@@ -33,6 +35,24 @@ const ReplenishmentTab = dynamic(() => import('@/components/inventario/Replenish
 export default function ItemsInventarioPage() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [unlinkedCount, setUnlinkedCount] = useState<number | null>(null)
+  const [refreshingStock, setRefreshingStock] = useState(false)
+
+  const handleRefreshStock = async () => {
+    try {
+      setRefreshingStock(true)
+      const result = await refreshInventoryCache()
+      if (result.success) {
+        toast.success(`Stock actualizado: ${result.total} productos sincronizados desde Colppy`)
+      } else {
+        toast.error('Error al actualizar stock desde Colppy')
+      }
+    } catch (error) {
+      console.error('Error refreshing stock:', error)
+      toast.error('Error al actualizar stock desde Colppy')
+    } finally {
+      setRefreshingStock(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -45,6 +65,18 @@ export default function ItemsInventarioPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={handleRefreshStock}
+            disabled={refreshingStock}
+          >
+            {refreshingStock ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 h-4 w-4" />
+            )}
+            {refreshingStock ? 'Sincronizando...' : 'Actualizar Stock'}
+          </Button>
           <Link href="/inventario/items/nuevo">
             <Button className="bg-blue-600 hover:bg-blue-700">
               <Plus className="mr-2 h-4 w-4" />

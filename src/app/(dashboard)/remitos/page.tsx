@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -105,10 +105,11 @@ const statusColors: Record<string, string> = {
 
 export default function RemitosPage() {
   const router = useRouter()
+  const searchParamsHook = useSearchParams()
   const [deliveryNotes, setDeliveryNotes] = useState<DeliveryNote[]>([])
   const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [searchTerm, setSearchTerm] = useState(searchParamsHook.get('search') || '')
+  const [statusFilter, setStatusFilter] = useState<string>(searchParamsHook.get('status') || 'all')
   const [sortColumn, setSortColumn] = useState<string>('deliveryNumber')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [showDuplicateDialog, setShowDuplicateDialog] = useState(false)
@@ -152,6 +153,15 @@ export default function RemitosPage() {
   useEffect(() => {
     fetchDeliveryNotes()
   }, [fetchDeliveryNotes])
+
+  // Persistir filtros en URL (query params) para que se conserven al volver con el botón atrás
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (searchTerm) params.set('search', searchTerm)
+    if (statusFilter !== 'all') params.set('status', statusFilter)
+    const qs = params.toString()
+    router.replace(qs ? `/remitos?${qs}` : '/remitos', { scroll: false })
+  }, [searchTerm, statusFilter, router])
 
   const handleSearch = () => {
     setPage(1)

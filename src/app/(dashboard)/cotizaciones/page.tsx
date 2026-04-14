@@ -113,11 +113,11 @@ export default function CotizacionesPage() {
   const searchParamsHook = useSearchParams()
   const [quotes, setQuotes] = useState<Quote[]>([])
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(searchParamsHook.get('search') || '')
   const [statusFilter, setStatusFilter] = useState<string>(searchParamsHook.get('status') || 'ACTIVE')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
-  const [salesPersonId, setSalesPersonId] = useState<string>('ALL')
+  const [dateFrom, setDateFrom] = useState(searchParamsHook.get('dateFrom') || '')
+  const [dateTo, setDateTo] = useState(searchParamsHook.get('dateTo') || '')
+  const [salesPersonId, setSalesPersonId] = useState<string>(searchParamsHook.get('vendedor') || 'ALL')
   const [seguimientoFilter, setSeguimientoFilter] = useState<string>(searchParamsHook.get('seguimiento') || 'ALL')
   const [salesPersons, setSalesPersons] = useState<User[]>([])
 
@@ -182,6 +182,19 @@ export default function CotizacionesPage() {
   useEffect(() => {
     fetchQuotes()
   }, [fetchQuotes])
+
+  // Persistir filtros en URL (query params) para que se conserven al volver con el botón atrás
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (search) params.set('search', search)
+    if (statusFilter !== 'ACTIVE') params.set('status', statusFilter)
+    if (dateFrom) params.set('dateFrom', dateFrom)
+    if (dateTo) params.set('dateTo', dateTo)
+    if (salesPersonId !== 'ALL') params.set('vendedor', salesPersonId)
+    if (seguimientoFilter !== 'ALL') params.set('seguimiento', seguimientoFilter)
+    const qs = params.toString()
+    router.replace(qs ? `/cotizaciones?${qs}` : '/cotizaciones', { scroll: false })
+  }, [search, statusFilter, dateFrom, dateTo, salesPersonId, seguimientoFilter, router])
 
   const handleSearch = () => {
     fetchQuotes()

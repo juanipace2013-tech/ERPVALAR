@@ -270,6 +270,7 @@ export async function PATCH(
       'defaultTransportName', 'defaultTransportAddress', 'defaultTransportSchedule',
       'exchangeRateType',
       'notes',
+      'taxCondition',
     ] as const
 
     const updateData: Record<string, any> = {}

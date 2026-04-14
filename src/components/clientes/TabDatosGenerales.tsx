@@ -42,6 +42,7 @@ import {
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { CONDICIONES_IVA } from '@/lib/constants'
 
 interface DeliveryAddress {
   id: string
@@ -180,6 +181,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
     mobile: '',
     email: '',
     priceMultiplier: 1,
+    taxCondition: '',
   })
   const [savingEdit, setSavingEdit] = useState(false)
 
@@ -270,6 +272,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
       mobile: customer.mobile || '',
       email: customer.email || '',
       priceMultiplier: customer.priceMultiplier || 1,
+      taxCondition: customer.taxCondition || '',
     })
     setIsEditing(true)
   }
@@ -295,6 +298,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
           mobile: editForm.mobile,
           email: editForm.email || null,
           priceMultiplier: Number(editForm.priceMultiplier) || 1,
+          taxCondition: editForm.taxCondition,
         }),
       })
       if (!res.ok) {
@@ -310,6 +314,10 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
         mobile: editForm.mobile,
         email: editForm.email,
         priceMultiplier: Number(editForm.priceMultiplier) || 1,
+        taxCondition: editForm.taxCondition,
+        taxConditionDisplay:
+          CONDICIONES_IVA.find((c) => c.value === editForm.taxCondition)?.label ||
+          editForm.taxCondition,
       })
     } catch (e: any) {
       toast.error(e.message || 'Error al guardar cambios')
@@ -566,9 +574,35 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
               <InfoRow icon={Building2} label="Nombre Fantasía" value={customer.name} />
             )}
 
-            {/* CUIT y Condición IVA — NO editables */}
+            {/* CUIT — NO editable */}
             <InfoRow icon={Hash} label="CUIT" value={customer.cuit ? formatCUIT(customer.cuit) : '—'} />
-            <InfoRow icon={CreditCard} label="Condición IVA" value={customer.taxConditionDisplay} />
+
+            {/* Condición IVA — editable */}
+            {isEditing ? (
+              <div className="flex items-start gap-3 py-2">
+                <CreditCard className="h-4 w-4 text-gray-400 mt-2.5 shrink-0" />
+                <div className="flex-1">
+                  <p className="text-xs text-gray-500 mb-1">Condición IVA</p>
+                  <Select
+                    value={editForm.taxCondition}
+                    onValueChange={(v) => setEditForm({ ...editForm, taxCondition: v })}
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="Seleccionar condición IVA" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CONDICIONES_IVA.map((c) => (
+                        <SelectItem key={c.value} value={c.value}>
+                          {c.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            ) : (
+              <InfoRow icon={CreditCard} label="Condición IVA" value={customer.taxConditionDisplay} />
+            )}
 
             {/* Dirección — editable */}
             {isEditing ? (

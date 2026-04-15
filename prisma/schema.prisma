@@ -208,6 +208,7 @@ model Customer {
   receipts        Receipt[]
   customerReceipts CustomerReceipt[] @relation("CustomerReceipts")
   deliveryAddresses CustomerDeliveryAddress[]
+  googleAdsLeads   GoogleAdsLead[]
 
   @@index([cuit])
   @@index([name])
@@ -2489,4 +2490,41 @@ model CaiConfig {
   updatedAt         DateTime @updatedAt
 
   @@map("cai_configs")
+}
+
+// ========================================
+// GOOGLE ADS LEAD FORM EXTENSIONS
+// ========================================
+
+model GoogleAdsLead {
+  id           String    @id @default(cuid())
+
+  // Identificadores de Google Ads
+  leadId       String?   // lead_id del payload (puede venir vacío)
+  gclId        String?   // google_click_id
+  campaignId   String?   // campaign_id
+
+  // Datos del lead
+  fullName     String?
+  email        String?
+  phone        String?
+  companyName  String?
+  message      String?   @db.Text
+
+  // Payload completo para debugging / reprocesamiento
+  rawPayload   Json
+
+  // Vinculación opcional a Customer existente
+  customerId   String?
+  customer     Customer? @relation(fields: [customerId], references: [id])
+
+  processedAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([email])
+  @@index([phone])
+  @@index([campaignId])
+  @@index([customerId])
+  @@index([createdAt])
+  @@map("google_ads_leads")
 }

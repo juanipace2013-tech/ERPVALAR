@@ -39,6 +39,7 @@ import {
   Clock,
   Pencil,
   Download,
+  Eye,
   ShieldCheck,
   Undo2,
   Ban,
@@ -677,6 +678,14 @@ export default function QuoteViewPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => window.open(`/api/cotizaciones/${id}/pdf?inline=true`, '_blank')}
+          >
+            <Eye className="h-4 w-4 mr-2" />
+            Ver PDF
+          </Button>
           <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={pdfLoading}>
             {pdfLoading ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />

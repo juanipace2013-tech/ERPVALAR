@@ -156,10 +156,15 @@ export async function GET(
     const pdfBlob = await generateQuotePDF(pdfData)
     const buffer = Buffer.from(await pdfBlob.arrayBuffer())
 
+    // ?inline=true → mostrar en pestaña; por defecto descarga como attachment.
+    const inline = request.nextUrl.searchParams.get('inline') === 'true'
+    const disposition = inline ? 'inline' : 'attachment'
+    const safeName = (quote.customer.businessName || quote.customer.name).replace(/[/\\:*?"<>|]/g, '-').trim()
+
     return new NextResponse(buffer, {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="Cotizacion-${quote.quoteNumber} ${(quote.customer.businessName || quote.customer.name).replace(/[/\\:*?"<>|]/g, '-').trim()}.pdf"`,
+        'Content-Disposition': `${disposition}; filename="Cotizacion-${quote.quoteNumber} ${safeName}.pdf"`,
       },
     })
   } catch (error) {

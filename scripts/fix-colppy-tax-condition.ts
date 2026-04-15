@@ -126,9 +126,11 @@ async function main() {
     }
     console.log(`   (${colppyByCuit.size} con CUIT válido indexables)`)
 
-    // 2. Clientes locales con CUIT (no importa si tienen colppyId o no — matchemos por CUIT)
+    // 2. Clientes locales con CUIT (cuit es String NOT NULL en el schema, pero
+    // puede ser '' — filtramos los vacíos. Luego normalizeCuit descarta los
+    // que no tengan 11 dígitos).
     const localCustomers = await prisma.customer.findMany({
-      where: { NOT: { cuit: null } },
+      where: { cuit: { not: '' } },
       select: { id: true, name: true, cuit: true, taxCondition: true, colppyId: true },
     })
     console.log(`📂 ${localCustomers.length} clientes locales con CUIT\n`)

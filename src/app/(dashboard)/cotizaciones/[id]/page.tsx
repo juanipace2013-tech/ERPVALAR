@@ -2308,6 +2308,20 @@ export default function QuoteDetailPage() {
                     </div>
                   )
                 })}
+              <div className="flex justify-end pt-4 border-t">
+                <Button
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700"
+                  onClick={() => {
+                    resetItemForm()
+                    setShowItemDialog(true)
+                  }}
+                  disabled={!isEditable}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Agregar Item
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>

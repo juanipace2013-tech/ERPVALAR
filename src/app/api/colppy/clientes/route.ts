@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as crypto from 'crypto';
 import { logger } from '@/lib/logger';
 import { getMultiplierForClient } from '@/lib/client-multipliers';
+import { mapColppyTaxCondition } from '@/lib/colppy-tax-map';
 import { auth } from '@/auth';
 
 // ============================================================================
@@ -169,31 +170,7 @@ async function loadAllCustomers(): Promise<CachedCustomer[]> {
 }
 
 function mapCustomers(data: any[]): CachedCustomer[] {
-  // Mapeo verificado empíricamente contra la API de Colppy (abril 2026).
-  // IMPORTANTE: este mapeo debe coincidir con el de /api/clientes/sync-colppy
-  // y scripts/fix-colppy-tax-condition.ts — cualquier divergencia reintroduce
-  // el bug de clientes que aparecen con condición IVA equivocada.
-  //   '1' = Responsable Inscripto
-  //   '2' = Exento
-  //   '3' = Consumidor Final
-  //   '4' = Monotributo
-  //   '6' = Responsable No Inscripto (legacy)
-  const condicionIvaMap: Record<string, string> = {
-    '1': 'RESPONSABLE_INSCRIPTO',
-    '2': 'EXENTO',
-    '3': 'CONSUMIDOR_FINAL',
-    '4': 'MONOTRIBUTO',
-    '6': 'RESPONSABLE_NO_INSCRIPTO',
-  };
-
-  const condicionIvaDisplay: Record<string, string> = {
-    '1': 'Resp. Inscripto',
-    '2': 'Exento',
-    '3': 'Consumidor Final',
-    '4': 'Monotributo',
-    '6': 'Resp. No Inscripto',
-  };
-
+  // Mapeo de condición IVA: ver src/lib/colppy-tax-map.ts
   const paymentTermsMap: Record<string, string> = {
     '0': 'Contado',
     '7': 'a 7 Días',
@@ -230,15 +207,10 @@ function mapCustomers(data: any[]): CachedCustomer[] {
       || '0'
     );
 
-    const rawCondIva = String(c.idCondicionIva ?? '');
-    const mappedTaxCondition = condicionIvaMap[rawCondIva];
-    const mappedTaxConditionDisplay = condicionIvaDisplay[rawCondIva];
-    if (!mappedTaxCondition) {
-      logger.warn(
-        `[Colppy] idCondicionIva desconocido: "${rawCondIva}" ` +
-          `(CUIT ${cuit}, cliente ${name}) — fallback a CONSUMIDOR_FINAL`
-      );
-    }
+    const { taxCondition, display: taxConditionDisplay } = mapColppyTaxCondition(
+      c.idCondicionIva,
+      `CUIT ${cuit}, cliente ${name}`
+    );
 
     return {
       id: c.idCliente,
@@ -246,10 +218,8 @@ function mapCustomers(data: any[]): CachedCustomer[] {
       name,
       businessName,
       cuit,
-      // Fallback seguro: CONSUMIDOR_FINAL emite Factura B. Usar Factura A para
-      // un cliente que no lo es tiene costo fiscal mayor que al revés.
-      taxCondition: mappedTaxCondition || 'CONSUMIDOR_FINAL',
-      taxConditionDisplay: mappedTaxConditionDisplay || 'Consumidor Final',
+      taxCondition,
+      taxConditionDisplay,
       address: c.DirPostal || '',
       city: c.DirPostalCiudad || '',
       province: c.DirPostalProvincia || '',

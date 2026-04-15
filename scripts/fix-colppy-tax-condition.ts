@@ -15,6 +15,7 @@
 import 'dotenv/config'
 import * as crypto from 'crypto'
 import { PrismaClient } from '@prisma/client'
+import { COLPPY_TAX_CONDITION_MAP } from '../src/lib/colppy-tax-map'
 
 const prisma = new PrismaClient()
 
@@ -25,14 +26,8 @@ const COLPPY_ID_EMPRESA = process.env.COLPPY_ID_EMPRESA || ''
 
 const DRY_RUN = process.argv.includes('--dry-run')
 
-// Mismo mapeo que el fix de route.ts
-const TAX_CONDITION_MAP: Record<string, string> = {
-  '1': 'RESPONSABLE_INSCRIPTO',
-  '2': 'EXENTO',
-  '3': 'CONSUMIDOR_FINAL',
-  '4': 'MONOTRIBUTO',
-  '6': 'RESPONSABLE_NO_INSCRIPTO',
-}
+// Mapeo compartido con todos los endpoints de Colppy — ver src/lib/colppy-tax-map.ts
+const TAX_CONDITION_MAP = COLPPY_TAX_CONDITION_MAP
 
 function md5(t: string): string {
   return crypto.createHash('md5').update(t).digest('hex')

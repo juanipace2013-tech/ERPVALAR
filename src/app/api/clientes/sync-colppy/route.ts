@@ -2,6 +2,7 @@ import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { colppyLogin, colppyLogout, getColppyConfig, md5Hash, callColppyAPI, ColppySession } from '@/lib/colppy'
+import { mapColppyTaxCondition } from '@/lib/colppy-tax-map'
 import { logger } from '@/lib/logger'
 
 // Sync corre en background, el endpoint responde inmediatamente
@@ -27,21 +28,7 @@ async function fetchAllColppyCustomers(session: ColppySession): Promise<any[]> {
   return response.response.data || []
 }
 
-// Mapeo de condición IVA de Colppy a enum de Prisma
-// Verificado empíricamente contra la API de Colppy (abril 2026):
-//   '1' = Responsable Inscripto (la gran mayoría de clientes B2B)
-//   '2' = Exento (organismos públicos, mutuales, asociaciones)
-//   '3' = Consumidor Final (consorcios, particulares sin facturación A)
-//   '4' = Monotributo (particulares con CUIT personal)
-//   '6' = Responsable No Inscripto (legacy, casi sin uso)
-// IMPORTANTE: no existen en Colppy los IDs '5' ni '7+' para esta cuenta.
-const TAX_CONDITION_MAP: Record<string, string> = {
-  '1': 'RESPONSABLE_INSCRIPTO',
-  '2': 'EXENTO',
-  '3': 'CONSUMIDOR_FINAL',
-  '4': 'MONOTRIBUTO',
-  '6': 'RESPONSABLE_NO_INSCRIPTO',
-}
+// Mapeo de condición IVA: ver src/lib/colppy-tax-map.ts (fuente única de verdad)
 
 /**
  * POST /api/clientes/sync-colppy
@@ -113,19 +100,10 @@ async function syncColppyClients() {
 
         const name = (c.NombreFantasia || c.RazonSocial || '').trim()
         const businessName = (c.RazonSocial || '').trim()
-        const rawCondIva = String(c.idCondicionIva ?? '')
-        const mappedTaxCondition = TAX_CONDITION_MAP[rawCondIva]
-        if (!mappedTaxCondition) {
-          // ID desconocido: logueamos para revisión manual.
-          // Fallback seguro = CONSUMIDOR_FINAL (emite Factura B, menor riesgo
-          // fiscal si está mal asignado vs. RESPONSABLE_INSCRIPTO).
-          logger.warn(
-            `[Sync Colppy] idCondicionIva desconocido: "${rawCondIva}" ` +
-              `(CUIT ${c.CUIT}, cliente ${c.NombreFantasia || c.RazonSocial}) — ` +
-              `se asigna CONSUMIDOR_FINAL por defecto, revisar manualmente.`
-          )
-        }
-        const taxCondition = mappedTaxCondition || 'CONSUMIDOR_FINAL'
+        const { taxCondition } = mapColppyTaxCondition(
+          c.idCondicionIva,
+          `CUIT ${c.CUIT}, cliente ${c.NombreFantasia || c.RazonSocial}`
+        )
         const colppyId = String(c.idCliente || '')
         const email = (c.Email || '').trim() || null
         const phone = (c.Telefono || '').trim() || null

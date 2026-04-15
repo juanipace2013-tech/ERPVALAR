@@ -16,6 +16,7 @@ import { prisma } from '@/lib/prisma'
 import { getLocalDateString } from '@/lib/utils'
 import { logAudit } from '@/lib/audit'
 import { colppyLogin as colppyLoginCentral, colppyLogout, getColppyConfig, md5Hash, callColppyAPI, ColppySession } from '@/lib/colppy'
+import { mapColppyTaxCondition } from '@/lib/colppy-tax-map'
 import { logger } from '@/lib/logger'
 
 const PAGE_SIZE = 500
@@ -114,16 +115,7 @@ function mapPaymentStatus(idEstadoFactura: string, total: number, aplicado: numb
   return 'UNPAID'
 }
 
-// Mapeo de condición IVA Colppy a TaxCondition del schema.
-// Verificado empíricamente contra Colppy (abril 2026) — DEBE coincidir con
-// /api/clientes/sync-colppy, /api/colppy/clientes y scripts/fix-colppy-tax-condition.
-const condicionIvaMap: Record<string, string> = {
-  '1': 'RESPONSABLE_INSCRIPTO',
-  '2': 'EXENTO',
-  '3': 'CONSUMIDOR_FINAL',
-  '4': 'MONOTRIBUTO',
-  '6': 'RESPONSABLE_NO_INSCRIPTO',
-}
+// Mapeo de condición IVA: ver src/lib/colppy-tax-map.ts (fuente única de verdad)
 
 interface ColppyClient {
   idCliente: string
@@ -178,8 +170,7 @@ async function fetchAllColppyClients(claveSesion: string, passwordMD5: string): 
       cuit: String(c.CUIT || ''),
       name: String(c.NombreFantasia || c.RazonSocial || ''),
       businessName: String(c.RazonSocial || ''),
-      // Fallback a CONSUMIDOR_FINAL (menor riesgo fiscal que RI) si el ID no está mapeado.
-      taxCondition: condicionIvaMap[String(c.idCondicionIva || '')] || 'CONSUMIDOR_FINAL',
+      taxCondition: mapColppyTaxCondition(c.idCondicionIva, `CUIT ${c.CUIT}`).taxCondition,
       email: String(c.Email || ''),
       phone: String(c.Telefono || ''),
       address: String(c.DirPostal || ''),

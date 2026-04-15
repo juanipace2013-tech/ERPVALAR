@@ -696,11 +696,13 @@ export async function colppyCreateInvoice(
       totalIVA: Math.round(Number(invoice.totalIVA) * 100) / 100,
       // Colppy usa estos campos para poblar los totales en la UI. Si van
       // como string vacío, el form no recalcula hasta que se toca un ítem
-      // y se apreta TAB. Mandamos el monto del IVA 21% y 0 (número) en el
-      // resto.
-      IVA21: Math.round(Number(invoice.totalIVA) * 100) / 100,
-      IVA105: 0,
-      IVA27: 0,
+      // y se apreta TAB. Pero el endpoint valida que sean strings: si
+      // mandamos números, responde "El formato del parametro IVA21 es
+      // incorrecto, se esperaba una cadena". Por eso IVA21 va como string
+      // con el monto, y IVA105/IVA27 quedan como string vacío.
+      IVA21: String(Math.round(Number(invoice.totalIVA) * 100) / 100),
+      IVA105: '',
+      IVA27: '',
       percepcionIVA: 0,
       percepcionIIBB: 0,
       totalFactura: Math.round(Number(invoice.totalFactura) * 100) / 100,

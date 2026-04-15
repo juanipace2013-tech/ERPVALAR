@@ -57,12 +57,6 @@ const navItems: NavItem[] = [
     roles: ['ADMIN', 'GERENTE', 'VENDEDOR', 'CONTADOR'],
   },
   {
-    title: 'Leads',
-    href: '/leads',
-    icon: Sparkles,
-    roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
-  },
-  {
     title: 'Cotizaciones',
     href: '/cotizaciones',
     icon: FileText,
@@ -156,6 +150,12 @@ const navItems: NavItem[] = [
     href: '/analisis-crediticio',
     icon: ShieldCheck,
     roles: ['ADMIN', 'GERENTE', 'VENDEDOR', 'CONTADOR'],
+  },
+  {
+    title: 'Leads',
+    href: '/leads',
+    icon: Sparkles,
+    roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
   },
 ]
 

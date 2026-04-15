@@ -694,9 +694,13 @@ export async function colppyCreateInvoice(
       netoGravado: Math.round(Number(invoice.netoGravado) * 100) / 100,
       netoNoGravado: Math.round(Number(invoice.netoNoGravado) * 100) / 100,
       totalIVA: Math.round(Number(invoice.totalIVA) * 100) / 100,
-      IVA21: '',
-      IVA105: '',
-      IVA27: '',
+      // Colppy usa estos campos para poblar los totales en la UI. Si van
+      // como string vacío, el form no recalcula hasta que se toca un ítem
+      // y se apreta TAB. Mandamos el monto del IVA 21% y 0 (número) en el
+      // resto.
+      IVA21: Math.round(Number(invoice.totalIVA) * 100) / 100,
+      IVA105: 0,
+      IVA27: 0,
       percepcionIVA: 0,
       percepcionIIBB: 0,
       totalFactura: Math.round(Number(invoice.totalFactura) * 100) / 100,
@@ -1216,15 +1220,18 @@ export async function sendQuoteToColppy(
       let iva = 0;
 
       if (tipoFactura === 'A') {
-        // Factura A: Colppy espera neto + IVA discriminado.
+        // Factura A: ImporteUnitario = neto. Si la cotización viene con IVA
+        // incluido, lo sacamos dividiendo por 1.21.
         if (pricesIncludeTax) {
           precioUnitario = precioUnitario / 1.21;
         }
         iva = precioUnitario * 0.21;
       } else {
-        // Factura B: ImporteUnitario va tal cual (Colppy discrimina internamente).
-        // No tocamos el precio, y no discriminamos IVA en la línea.
-        iva = 0;
+        // Factura B: ImporteUnitario se manda con IVA incluido (precio final).
+        // Pero el IVA discriminado sí se calcula (gross / 1.21 * 0.21) para
+        // que Colppy no tenga que recalcular los totales al abrir la factura.
+        const neto = precioUnitario / 1.21;
+        iva = neto * 0.21;
       }
 
       return {
@@ -1314,14 +1321,21 @@ export async function sendQuoteToColppy(
       const itemsFactura = itemsConIVA.map((item, index) => {
         const prepItem = preparedItems[index]; // Índices alineados: preparedItems → itemsConIVA
 
-        // Convertir a números (pueden venir como strings de los inputs)
+        // Convertir a números (pueden venir como strings de los inputs).
+        // Factura A: importeUnitario es NETO, se suma tal cual al netoGravado.
+        // Factura B: importeUnitario es GROSS (con IVA); el neto que va al
+        // netoGravado root es importeUnitario / 1.21.
         const cantidad = Number(item.cantidad);
-        const importeUnitario = Number(item.precioUnitario); // Ya está sin IVA para factura A, o neto para B
-        const ivaRate = Number(item.iva);
+        const importeUnitario = Number(item.precioUnitario);
+        const ivaPorUnidad = Number(item.iva);
         const importeTotal = importeUnitario * cantidad;
-        const importeIva = ivaRate * cantidad;
+        const importeIva = ivaPorUnidad * cantidad;
 
-        netoGravado += importeTotal;
+        const netoLinea =
+          tipoFactura === 'A'
+            ? importeTotal
+            : (importeUnitario / 1.21) * cantidad;
+        netoGravado += netoLinea;
 
         return {
           idItem: Number(colppyItemIds[prepItem.productSku]) || 0,
@@ -1346,13 +1360,11 @@ export async function sendQuoteToColppy(
       });
 
       // Redondear a 2 decimales para evitar floating point issues.
-      // Factura A → neto + IVA 21%; Factura B → importeUnitario ya es final y
-      // Colppy calcula el IVA internamente, así que acá no lo sumamos aparte.
+      // En ambos tipos el netoGravado (raíz) representa el neto real; el IVA
+      // 21% se discrimina aparte. Así Colppy recibe todos los totales
+      // consistentes y no necesita "apretar TAB" para recalcular.
       netoGravado = Math.round(netoGravado * 100) / 100;
-      const totalIVA =
-        tipoFactura === 'A'
-          ? Math.round(netoGravado * 0.21 * 100) / 100
-          : 0;
+      const totalIVA = Math.round(netoGravado * 0.21 * 100) / 100;
       const totalFactura = Math.round((netoGravado + totalIVA) * 100) / 100;
 
       logger.info(`[Colppy Factura] fechaFactura="${fechaFactura}", fechaVto="${fechaVto}"`);

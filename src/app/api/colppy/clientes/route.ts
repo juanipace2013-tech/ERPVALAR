@@ -169,19 +169,28 @@ async function loadAllCustomers(): Promise<CachedCustomer[]> {
 }
 
 function mapCustomers(data: any[]): CachedCustomer[] {
+  // Mapeo verificado empíricamente contra la API de Colppy (abril 2026).
+  // IMPORTANTE: este mapeo debe coincidir con el de /api/clientes/sync-colppy
+  // y scripts/fix-colppy-tax-condition.ts — cualquier divergencia reintroduce
+  // el bug de clientes que aparecen con condición IVA equivocada.
+  //   '1' = Responsable Inscripto
+  //   '2' = Exento
+  //   '3' = Consumidor Final
+  //   '4' = Monotributo
+  //   '6' = Responsable No Inscripto (legacy)
   const condicionIvaMap: Record<string, string> = {
     '1': 'RESPONSABLE_INSCRIPTO',
-    '2': 'MONOTRIBUTO',
-    '4': 'EXENTO',
-    '5': 'CONSUMIDOR_FINAL',
+    '2': 'EXENTO',
+    '3': 'CONSUMIDOR_FINAL',
+    '4': 'MONOTRIBUTO',
     '6': 'RESPONSABLE_NO_INSCRIPTO',
   };
 
   const condicionIvaDisplay: Record<string, string> = {
     '1': 'Resp. Inscripto',
-    '2': 'Monotributo',
-    '4': 'Exento',
-    '5': 'Consumidor Final',
+    '2': 'Exento',
+    '3': 'Consumidor Final',
+    '4': 'Monotributo',
     '6': 'Resp. No Inscripto',
   };
 
@@ -221,14 +230,26 @@ function mapCustomers(data: any[]): CachedCustomer[] {
       || '0'
     );
 
+    const rawCondIva = String(c.idCondicionIva ?? '');
+    const mappedTaxCondition = condicionIvaMap[rawCondIva];
+    const mappedTaxConditionDisplay = condicionIvaDisplay[rawCondIva];
+    if (!mappedTaxCondition) {
+      logger.warn(
+        `[Colppy] idCondicionIva desconocido: "${rawCondIva}" ` +
+          `(CUIT ${cuit}, cliente ${name}) — fallback a CONSUMIDOR_FINAL`
+      );
+    }
+
     return {
       id: c.idCliente,
       colppyId: c.idCliente,
       name,
       businessName,
       cuit,
-      taxCondition: condicionIvaMap[c.idCondicionIva] || 'RESPONSABLE_INSCRIPTO',
-      taxConditionDisplay: condicionIvaDisplay[c.idCondicionIva] || 'Resp. Inscripto',
+      // Fallback seguro: CONSUMIDOR_FINAL emite Factura B. Usar Factura A para
+      // un cliente que no lo es tiene costo fiscal mayor que al revés.
+      taxCondition: mappedTaxCondition || 'CONSUMIDOR_FINAL',
+      taxConditionDisplay: mappedTaxConditionDisplay || 'Consumidor Final',
       address: c.DirPostal || '',
       city: c.DirPostalCiudad || '',
       province: c.DirPostalProvincia || '',

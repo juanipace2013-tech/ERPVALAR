@@ -114,10 +114,15 @@ function mapPaymentStatus(idEstadoFactura: string, total: number, aplicado: numb
   return 'UNPAID'
 }
 
-// Mapeo de condición IVA Colppy a TaxCondition del schema
+// Mapeo de condición IVA Colppy a TaxCondition del schema.
+// Verificado empíricamente contra Colppy (abril 2026) — DEBE coincidir con
+// /api/clientes/sync-colppy, /api/colppy/clientes y scripts/fix-colppy-tax-condition.
 const condicionIvaMap: Record<string, string> = {
-  '1': 'RESPONSABLE_INSCRIPTO', '2': 'MONOTRIBUTO', '4': 'EXENTO',
-  '5': 'CONSUMIDOR_FINAL', '6': 'RESPONSABLE_NO_INSCRIPTO',
+  '1': 'RESPONSABLE_INSCRIPTO',
+  '2': 'EXENTO',
+  '3': 'CONSUMIDOR_FINAL',
+  '4': 'MONOTRIBUTO',
+  '6': 'RESPONSABLE_NO_INSCRIPTO',
 }
 
 interface ColppyClient {
@@ -173,7 +178,8 @@ async function fetchAllColppyClients(claveSesion: string, passwordMD5: string): 
       cuit: String(c.CUIT || ''),
       name: String(c.NombreFantasia || c.RazonSocial || ''),
       businessName: String(c.RazonSocial || ''),
-      taxCondition: condicionIvaMap[String(c.idCondicionIva || '1')] || 'RESPONSABLE_INSCRIPTO',
+      // Fallback a CONSUMIDOR_FINAL (menor riesgo fiscal que RI) si el ID no está mapeado.
+      taxCondition: condicionIvaMap[String(c.idCondicionIva || '')] || 'CONSUMIDOR_FINAL',
       email: String(c.Email || ''),
       phone: String(c.Telefono || ''),
       address: String(c.DirPostal || ''),

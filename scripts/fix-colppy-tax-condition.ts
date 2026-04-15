@@ -128,7 +128,7 @@ async function main() {
 
     // 2. Clientes locales con CUIT (no importa si tienen colppyId o no — matchemos por CUIT)
     const localCustomers = await prisma.customer.findMany({
-      where: { cuit: { not: null } },
+      where: { NOT: { cuit: null } },
       select: { id: true, name: true, cuit: true, taxCondition: true, colppyId: true },
     })
     console.log(`📂 ${localCustomers.length} clientes locales con CUIT\n`)

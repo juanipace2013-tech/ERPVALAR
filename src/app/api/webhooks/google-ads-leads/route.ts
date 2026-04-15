@@ -16,6 +16,57 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { sendMail, getEmailConfig } from '@/lib/email/microsoft-graph'
+
+const NOTIFY_EMAIL = 'stejedor@val-ar.com.ar'
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+async function sendLeadNotification(lead: {
+  id: string
+  fullName: string | null
+  email: string | null
+  phone: string | null
+  companyName: string | null
+  message: string | null
+  campaignId: string | null
+}) {
+  const { appUrl } = getEmailConfig()
+  const url = `${appUrl}/leads/${lead.id}`
+  const row = (label: string, value: string | null) =>
+    `<tr><td style="padding:4px 8px;color:#666;">${label}</td><td style="padding:4px 8px;"><strong>${value ? escapeHtml(value) : '—'}</strong></td></tr>`
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;">
+      <h2 style="color:#1d4ed8;">Nuevo lead de Google Ads</h2>
+      <table style="border-collapse:collapse;font-size:14px;">
+        ${row('Nombre', lead.fullName)}
+        ${row('Email', lead.email)}
+        ${row('Teléfono', lead.phone)}
+        ${row('Empresa', lead.companyName)}
+        ${row('Campaña', lead.campaignId)}
+        ${row('Mensaje', lead.message)}
+      </table>
+      <p style="margin-top:16px;">
+        <a href="${url}" style="background:#1d4ed8;color:#fff;padding:10px 16px;text-decoration:none;border-radius:6px;">
+          Ver lead en el ERP
+        </a>
+      </p>
+    </div>
+  `
+
+  await sendMail({
+    to: NOTIFY_EMAIL,
+    subject: `[Lead Google Ads] ${lead.fullName || lead.email || 'sin nombre'}`,
+    html,
+  })
+}
 
 interface UserColumnData {
   column_name?: string
@@ -122,6 +173,11 @@ export async function POST(req: NextRequest) {
     logger.info(
       `[google-ads-leads] Lead recibido id=${lead.id} email=${email ?? '-'} customer=${customerId ?? 'none'}`
     )
+
+    // Notificación por email — no bloquea ni rompe la respuesta al webhook.
+    sendLeadNotification(lead).catch((err) => {
+      logger.error('[google-ads-leads] Error enviando notificación email:', err?.message || err)
+    })
 
     return NextResponse.json({ status: 'ok', id: lead.id })
   } catch (error: any) {

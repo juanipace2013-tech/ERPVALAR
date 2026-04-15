@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -61,6 +61,7 @@ const PROVINCIAS = [
 
 export default function NewCustomerPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [loading, setLoading] = useState(false)
   const [loadingAFIP, setLoadingAFIP] = useState(false)
   const [users, setUsers] = useState<User[]>([])
@@ -92,6 +93,24 @@ export default function NewCustomerPage() {
 
   useEffect(() => {
     fetchUsers()
+  }, [])
+
+  // Pre-llenar desde query params (p. ej. al venir desde un Lead de Google Ads)
+  useEffect(() => {
+    const name = searchParams.get('name')
+    const email = searchParams.get('email')
+    const phone = searchParams.get('phone')
+    const businessName = searchParams.get('businessName')
+    if (name || email || phone || businessName) {
+      setFormData((prev) => ({
+        ...prev,
+        name: name || prev.name,
+        email: email || prev.email,
+        phone: phone || prev.phone,
+        businessName: businessName || prev.businessName,
+      }))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const fetchUsers = async () => {

@@ -2,6 +2,7 @@ import { auth } from '@/auth'
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { DashboardClient } from '@/components/dashboard/DashboardClient'
+import { NewLeadsCard } from '@/components/dashboard/NewLeadsCard'
 import {
   getQuoteDashboardMetrics,
   getCotizacionesPorMes,
@@ -57,10 +58,15 @@ async function DashboardContent() {
   }
 
   return (
-    <DashboardClient
-      userName={session.user?.name || 'Usuario'}
-      data={data}
-    />
+    <>
+      <div className="container mx-auto px-6 pt-6">
+        <NewLeadsCard />
+      </div>
+      <DashboardClient
+        userName={session.user?.name || 'Usuario'}
+        data={data}
+      />
+    </>
   )
 }
 

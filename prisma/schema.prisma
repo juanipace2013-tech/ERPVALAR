@@ -2518,13 +2518,19 @@ model GoogleAdsLead {
   customerId   String?
   customer     Customer? @relation(fields: [customerId], references: [id])
 
+  // Gestión de seguimiento
+  status       String    @default("NUEVO") // NUEVO, CONTACTADO, COTIZADO, CONVERTIDO, DESCARTADO
+  internalNotes String?  @db.Text
+
   processedAt  DateTime?
   createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@index([email])
   @@index([phone])
   @@index([campaignId])
   @@index([customerId])
   @@index([createdAt])
+  @@index([status])
   @@map("google_ads_leads")
 }

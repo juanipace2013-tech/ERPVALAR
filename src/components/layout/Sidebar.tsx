@@ -25,6 +25,7 @@ import {
   Map,
   ArrowDownToLine,
   Building2,
+  Sparkles,
 } from 'lucide-react'
 
 interface SubNavItem {
@@ -54,6 +55,12 @@ const navItems: NavItem[] = [
     href: '/clientes',
     icon: Users,
     roles: ['ADMIN', 'GERENTE', 'VENDEDOR', 'CONTADOR'],
+  },
+  {
+    title: 'Leads',
+    href: '/leads',
+    icon: Sparkles,
+    roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
   },
   {
     title: 'Cotizaciones',

@@ -93,7 +93,7 @@ export async function POST(
         isAlternative: body.isAlternative || false,
       }
       if (body.alternativeToItemId) {
-        manualData.alternativeToItemId = body.alternativeToItemId
+        manualData.alternativeToItem = { connect: { id: body.alternativeToItemId } }
       }
 
       const item = await prisma.quoteItem.create({

@@ -1268,7 +1268,7 @@ export async function sendQuoteToColppy(
       // Calcular días de vencimiento desde la condición de pago
       // Soporta tanto texto ("a 30 Dias") como numérico ("30")
       const condicionPagoMap: Record<string, number> = {
-        'Contado': 0,       // Misma fecha que la factura
+        'Contado': 7,       // +7 días para que no aparezca vencida al emitir
         'a 7 Dias': 7,
         'a 15 Dias': 15,
         'a 30 Dias': 30,
@@ -1277,7 +1277,7 @@ export async function sendQuoteToColppy(
         'a 90 Dias': 90,
         'a 120 Dias': 120,
         // Fallback con claves numéricas por si llega el ID en vez del texto
-        '0': 0,
+        '0': 7,
         '7': 7,
         '15': 15,
         '30': 30,

@@ -37,6 +37,7 @@ import {
   Upload,
   Database,
   Clock,
+  Download,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber, formatCUIT, formatDateAR } from '@/lib/utils'
@@ -358,6 +359,15 @@ export default function ClientesPage() {
           <Button variant="outline" onClick={() => setShowImportModal(true)}>
             <Upload className="h-4 w-4 mr-2" />
             Importar Asignaciones
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              window.location.href = '/api/clientes/export-google-ads'
+            }}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Exportar Google Ads
           </Button>
           <Button variant="outline" onClick={fetchCustomers} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />

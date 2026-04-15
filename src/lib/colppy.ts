@@ -691,32 +691,32 @@ export async function colppyCreateInvoice(
       transmision_fce: '',
       codigoActividad: '',
       codigoOperacion: '',
-      netoGravado: Math.round(Number(invoice.netoGravado) * 100) / 100,
-      netoNoGravado: Math.round(Number(invoice.netoNoGravado) * 100) / 100,
-      totalIVA: Math.round(Number(invoice.totalIVA) * 100) / 100,
-      // Colppy usa estos campos para poblar los totales en la UI. Si van
-      // como string vacío, el form no recalcula hasta que se toca un ítem
-      // y se apreta TAB. Pero el endpoint valida que sean strings: si
-      // mandamos números, responde "El formato del parametro IVA21 es
-      // incorrecto, se esperaba una cadena". Por eso IVA21 va como string
-      // con el monto, y IVA105/IVA27 quedan como string vacío.
-      IVA21: String(Math.round(Number(invoice.totalIVA) * 100) / 100),
+      // Colppy valida tipos strictos: todos los totales en la raíz y en
+      // totalesiva deben ser STRING con 2 decimales. Si llega un número,
+      // el campo se interpreta como "vacío" (por eso netoGravado terminaba
+      // en 0.00 en la UI aunque totalIVA sí se veía bien).
+      netoGravado: (Math.round(Number(invoice.netoGravado) * 100) / 100).toFixed(2),
+      netoNoGravado: (Math.round(Number(invoice.netoNoGravado) * 100) / 100).toFixed(2),
+      totalIVA: (Math.round(Number(invoice.totalIVA) * 100) / 100).toFixed(2),
+      IVA21: (Math.round(Number(invoice.totalIVA) * 100) / 100).toFixed(2),
       IVA105: '',
       IVA27: '',
-      percepcionIVA: 0,
-      percepcionIIBB: 0,
-      totalFactura: Math.round(Number(invoice.totalFactura) * 100) / 100,
+      percepcionIVA: '0.00',
+      percepcionIIBB: '0.00',
+      totalFactura: (Math.round(Number(invoice.totalFactura) * 100) / 100).toFixed(2),
       labelfe: '',
       totalesiva: [
-        { alicuotaIva: '0', importeIva: 0, baseImpIva: 0 },
-        { alicuotaIva: '2.5', importeIva: 0, baseImpIva: 0 },
-        { alicuotaIva: '5', importeIva: 0, baseImpIva: 0 },
-        { alicuotaIva: '10.5', importeIva: 0, baseImpIva: 0 },
-        { alicuotaIva: '17.1', importeIva: 0, baseImpIva: 0 },
-        { alicuotaIva: '21',
-          importeIva: Math.round(Number(invoice.totalIVA) * 100) / 100,
-          baseImpIva: Math.round(Number(invoice.netoGravado) * 100) / 100 },
-        { alicuotaIva: '27', importeIva: 0, baseImpIva: 0 },
+        { alicuotaIva: '0',    importeIva: '0.00', baseImpIva: '0.00' },
+        { alicuotaIva: '2.5',  importeIva: '0.00', baseImpIva: '0.00' },
+        { alicuotaIva: '5',    importeIva: '0.00', baseImpIva: '0.00' },
+        { alicuotaIva: '10.5', importeIva: '0.00', baseImpIva: '0.00' },
+        { alicuotaIva: '17.1', importeIva: '0.00', baseImpIva: '0.00' },
+        {
+          alicuotaIva: '21',
+          importeIva: (Math.round(Number(invoice.totalIVA) * 100) / 100).toFixed(2),
+          baseImpIva: (Math.round(Number(invoice.netoGravado) * 100) / 100).toFixed(2),
+        },
+        { alicuotaIva: '27',   importeIva: '0.00', baseImpIva: '0.00' },
       ],
       itemsFactura: invoice.items,
     },
@@ -724,6 +724,7 @@ export async function colppyCreateInvoice(
 
   logger.info('=== PAYLOAD FACTURA COLPPY ===');
   logger.info(`[Colppy Factura] Moneda: currency=${invoice.currency}, idCurrency=${payload.parameters.idCurrency}, idMoneda=${payload.parameters.idMoneda}, rate=${payload.parameters.rate}, not_api=${payload.parameters.not_api}`);
+  logger.info(`[Colppy Factura] Totales: netoGravado=${payload.parameters.netoGravado}, totalIVA=${payload.parameters.totalIVA}, IVA21=${payload.parameters.IVA21}, totalFactura=${payload.parameters.totalFactura}`);
   logger.info(JSON.stringify(payload, null, 2));
   logger.info('=== FIN PAYLOAD ===');
 

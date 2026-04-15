@@ -664,7 +664,10 @@ export async function colppyCreateInvoice(
       nroFactura2: nroFactura2,
       fechaFactura: invoice.fechaFactura,
       fechaVto: invoice.fechaVto,
-      fechaPago: invoice.fechaFactura,
+      // Colppy interpreta fechaPago como la fecha de vencimiento. Si acá
+      // mandamos fechaFactura, el vencimiento termina siendo el mismo día
+      // de emisión, ignorando la condición de pago del cliente.
+      fechaPago: invoice.fechaVto,
       idCondicionPago: invoice.idCondicionPago,
       orderId: '',
       nroRepeticion: '1',
@@ -1265,7 +1268,7 @@ export async function sendQuoteToColppy(
       // Calcular días de vencimiento desde la condición de pago
       // Soporta tanto texto ("a 30 Dias") como numérico ("30")
       const condicionPagoMap: Record<string, number> = {
-        'Contado': 5,       // +5 días para dar tiempo al cliente
+        'Contado': 0,       // Misma fecha que la factura
         'a 7 Dias': 7,
         'a 15 Dias': 15,
         'a 30 Dias': 30,
@@ -1274,7 +1277,7 @@ export async function sendQuoteToColppy(
         'a 90 Dias': 90,
         'a 120 Dias': 120,
         // Fallback con claves numéricas por si llega el ID en vez del texto
-        '0': 5,
+        '0': 0,
         '7': 7,
         '15': 15,
         '30': 30,
@@ -1284,10 +1287,11 @@ export async function sendQuoteToColppy(
         '120': 120,
       };
 
-      // Usar ?? en vez de || para que 0 no sea tratado como falsy
-      const diasVto = (condicionPagoMap[idCondicionPago]
-        ?? parseInt(customer.idCondicionPago || '0'))
-        || 5; // fallback mínimo de 5 días
+      // ?? para que 0 (Contado) no se trate como falsy y caiga al fallback.
+      const parsedCustomerDays = parseInt(customer.idCondicionPago || '')
+      const diasVto =
+        condicionPagoMap[idCondicionPago] ??
+        (Number.isFinite(parsedCustomerDays) ? parsedCustomerDays : 0)
 
       logger.info(`[Colppy Factura] condicionPago="${idCondicionPago}", diasVto=${diasVto}, customer.idCondicionPago="${customer.idCondicionPago}"`);
 

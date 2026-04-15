@@ -180,6 +180,7 @@ export async function POST(
       quoteNumber: quote.quoteNumber,
       currency: quote.currency,
       exchangeRate: currentExchangeRate,
+      pricesIncludeTax: quote.pricesIncludeTax,
       customer: {
         name: quote.customer.name,
         cuit: quote.customer.cuit,

@@ -262,12 +262,18 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Obtener multiplicador del cliente para precargar en la cotización
+    // Obtener multiplicador + condición IVA del cliente para precargar en la cotización
     const customerForMultiplier = await prisma.customer.findUnique({
       where: { id: customerId },
-      select: { priceMultiplier: true },
+      select: { priceMultiplier: true, taxCondition: true },
     })
     const customerMultiplier = customerForMultiplier ? Number(customerForMultiplier.priceMultiplier) : 1.0
+    // Clientes que NO son Responsable Inscripto reciben Factura B: los precios
+    // de la cotización deben incluir IVA 21% (regla fiscal AR). Default true
+    // para CF / Monotributo / Exento / NO_RESPONSABLE / RNI; false para RI.
+    const defaultPricesIncludeTax =
+      customerForMultiplier?.taxCondition !== undefined &&
+      customerForMultiplier.taxCondition !== 'RESPONSABLE_INSCRIPTO'
 
     // Generar número + crear cotización en transacción para evitar race conditions
     const quote = await prisma.$transaction(async (tx) => {
@@ -310,6 +316,8 @@ export async function POST(request: NextRequest) {
           notes: body.notes,
           tenderNumber: body.tenderNumber || null,
           status: 'DRAFT',
+          pricesIncludeTax:
+            body.pricesIncludeTax !== undefined ? body.pricesIncludeTax : defaultPricesIncludeTax,
         },
         include: {
           customer: true,

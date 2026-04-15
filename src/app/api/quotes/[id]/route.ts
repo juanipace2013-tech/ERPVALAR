@@ -155,8 +155,18 @@ export async function PUT(
     const { id } = await params
     const body = await request.json()
 
+    // Estado previo — necesario para detectar transición de pricesIncludeTax
+    const existingQuote = await prisma.quote.findUnique({
+      where: { id },
+      select: { pricesIncludeTax: true },
+    })
+    const oldPricesIncludeTax = existingQuote?.pricesIncludeTax ?? false
+
     // Verificar si el multiplicador cambió para recalcular items
     const multiplierChanged = body.multiplier !== undefined
+    // Verificar si el flag de IVA-incluido cambió (valor distinto al actual)
+    const pricesIncludeTaxChanged =
+      body.pricesIncludeTax !== undefined && body.pricesIncludeTax !== oldPricesIncludeTax
 
     const updateData: Record<string, unknown> = {}
     if (body.status !== undefined) updateData.status = body.status
@@ -167,6 +177,7 @@ export async function PUT(
     if (body.multiplier !== undefined) updateData.multiplier = body.multiplier
     if (body.bonification !== undefined) updateData.bonification = body.bonification
     if (body.tenderNumber !== undefined) updateData.tenderNumber = body.tenderNumber || null
+    if (body.pricesIncludeTax !== undefined) updateData.pricesIncludeTax = body.pricesIncludeTax
 
     const quote = await prisma.quote.update({
       where: { id },
@@ -199,6 +210,9 @@ export async function PUT(
     // Si el multiplicador cambió, recalcular todos los items
     if (multiplierChanged && quote.items.length > 0) {
       const newMultiplier = Number(quote.multiplier)
+      // Si la cotización está en modo IVA-incluido, preservamos ese estado al
+      // recalcular: el precio neto se escala por 1.21 para que siga incluyendo IVA.
+      const ivaFactor = quote.pricesIncludeTax ? 1.21 : 1
 
       for (const item of quote.items) {
         // Items con multiplierOverride mantienen su multiplicador personalizado
@@ -214,7 +228,7 @@ export async function PUT(
         const subtotalWithAdditionals = listPrice + additionalsPrices
         const brandDiscount = Number(item.brandDiscount)
         const afterDiscount = subtotalWithAdditionals * (1 - brandDiscount)
-        const unitPrice = afterDiscount * effectiveMultiplier
+        const unitPrice = afterDiscount * effectiveMultiplier * ivaFactor
         const totalPrice = unitPrice * item.quantity
 
         await prisma.quoteItem.update({
@@ -246,6 +260,32 @@ export async function PUT(
           data: { priceMultiplier: newMultiplier },
         })
       }
+    }
+
+    // Si cambió el flag pricesIncludeTax (y no hubo recalculo por multiplicador),
+    // escalar todos los items por 1.21 (activar IVA-incluido) o 1/1.21 (desactivar).
+    // Esto permite toggle reversible sin perder precisión si no se vuelven a tocar.
+    if (pricesIncludeTaxChanged && !multiplierChanged && quote.items.length > 0) {
+      const factor = quote.pricesIncludeTax ? 1.21 : 1 / 1.21
+      for (const item of quote.items) {
+        await prisma.quoteItem.update({
+          where: { id: item.id },
+          data: {
+            unitPrice: Number(item.unitPrice) * factor,
+            totalPrice: Number(item.totalPrice) * factor,
+          },
+        })
+      }
+      const mainItems = await prisma.quoteItem.findMany({
+        where: { quoteId: id, isAlternative: false },
+      })
+      const subtotal = mainItems.reduce((sum, item) => sum + Number(item.totalPrice), 0)
+      const bonif = Number(quote.bonification) || 0
+      const total = subtotal * (1 - bonif / 100)
+      await prisma.quote.update({
+        where: { id },
+        data: { subtotal, total },
+      })
     }
 
     // Si la bonificación cambió (sin cambio de multiplicador), recalcular total

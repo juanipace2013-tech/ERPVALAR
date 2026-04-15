@@ -135,6 +135,7 @@ export async function POST(
         bonification: originalQuote.bonification,
         subtotal: originalQuote.subtotal,
         total: originalQuote.total,
+        pricesIncludeTax: originalQuote.pricesIncludeTax,
         validUntil: originalQuote.validUntil,
         terms: originalQuote.terms,
         notes: originalQuote.notes,

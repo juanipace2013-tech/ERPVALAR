@@ -561,15 +561,28 @@ export async function generateInvoiceFromQuote(
   // Generar número de factura
   const invoiceNumber = await generateInvoiceNumber(pointOfSale, invoiceType);
 
-  // Calcular totales
-  const subtotal = quote.items
+  // Calcular totales.
+  // Si la cotización tiene pricesIncludeTax, los totalPrice YA incluyen IVA
+  // → el total final es la suma directa, el subtotal neto sale de /1.21.
+  // Si no, los totalPrice son netos y se suma 21% aparte (comportamiento legacy,
+  // y el correcto para Factura A / Responsable Inscripto).
+  const taxRate = 0.21;
+  const sumTotals = quote.items
     .filter(item => !item.isAlternative)
     .reduce((sum, item) => sum + Number(item.totalPrice), 0);
 
-  // IVA 21% aplica tanto a factura A como B (en B se incluye en el precio, en A se discrimina)
-  const taxRate = 0.21;
-  const taxAmount = subtotal * taxRate;
-  const total = subtotal + taxAmount;
+  let subtotal: number;
+  let taxAmount: number;
+  let total: number;
+  if (quote.pricesIncludeTax) {
+    total = sumTotals;
+    subtotal = total / (1 + taxRate);
+    taxAmount = total - subtotal;
+  } else {
+    subtotal = sumTotals;
+    taxAmount = subtotal * taxRate;
+    total = subtotal + taxAmount;
+  }
 
   // Crear factura en transacción
   const invoice = await prisma.$transaction(async (tx) => {
@@ -598,17 +611,24 @@ export async function generateInvoiceFromQuote(
           create: quote.items
             .filter(item => !item.isAlternative)
             .map(item => {
-              const itemSubtotal = Number(item.totalPrice);
+              // Los renglones de factura se guardan NETOS. Si la cotización
+              // estaba en modo IVA-incluido, dividimos por 1.21 para obtener
+              // el neto y que coincida con el subtotal/taxAmount calculados
+              // más arriba.
+              const rawUnit = Number(item.unitPrice);
+              const rawTotal = Number(item.totalPrice);
+              const netUnit = quote.pricesIncludeTax ? rawUnit / (1 + taxRate) : rawUnit;
+              const netSubtotal = quote.pricesIncludeTax ? rawTotal / (1 + taxRate) : rawTotal;
 
               return {
                 productId: item.productId,
                 quoteItemId: item.id,
                 description: item.description || item.product?.name,
                 quantity: item.quantity,
-                unitPrice: Number(item.unitPrice),
+                unitPrice: netUnit,
                 discount: 0,
                 taxRate: taxRate * 100,
-                subtotal: itemSubtotal
+                subtotal: netSubtotal
               };
             })
         }

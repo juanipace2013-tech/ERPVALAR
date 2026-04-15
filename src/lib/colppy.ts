@@ -1081,6 +1081,10 @@ export async function sendQuoteToColppy(
     quoteNumber: string;
     currency: string;
     exchangeRate: number | null;
+    // Si true, los unitPrice de los items YA incluyen IVA 21% (Factura B).
+    // Si false, son netos y se suma IVA aparte (Factura A).
+    // Cuando está indefinido caemos al comportamiento legacy basado en taxCondition.
+    pricesIncludeTax?: boolean;
     customer: {
       name: string;
       cuit: string;
@@ -1181,19 +1185,26 @@ export async function sendQuoteToColppy(
     const tipoFactura: 'A' | 'B' =
       quote.customer.taxCondition === 'RESPONSABLE_INSCRIPTO' ? 'A' : 'B';
 
-    // 5. Preparar items con IVA
+    // 5. Preparar items con IVA.
+    //    La SOURCE OF TRUTH ahora es quote.pricesIncludeTax: si está en true los
+    //    unitPrice guardados en la cotización ya incluyen IVA, así que hay que
+    //    obtener el neto dividiendo por 1.21 antes de enviarlo a Colppy (que
+    //    siempre recibe netos + porcentaje IVA). Si es false, se suma IVA aparte.
+    //    Legacy: si el flag viene undefined (cotizaciones muy viejas), caemos al
+    //    comportamiento previo basado en taxCondition — precios netos si Factura
+    //    A, precios con IVA si Factura B.
+    const pricesIncludeTax =
+      typeof quote.pricesIncludeTax === 'boolean'
+        ? quote.pricesIncludeTax
+        : tipoFactura === 'B';
     const itemsConIVA = preparedItems.map((item) => {
       let precioUnitario = item.precioUnitario;
-      let iva = 0;
-
-      if (tipoFactura === 'A') {
-        // Factura A: precio sin IVA, se suma 21%
-        iva = precioUnitario * 0.21;
-      } else {
-        // Factura B: precio incluye IVA, neto = precio / 1.21
+      if (pricesIncludeTax) {
+        // Los precios incluyen IVA → obtener neto para Colppy.
         precioUnitario = precioUnitario / 1.21;
-        iva = precioUnitario * 0.21;
       }
+      // Colppy siempre factura neto + IVA% → informamos el 21% del neto.
+      const iva = precioUnitario * 0.21;
 
       return {
         ...item,

@@ -71,7 +71,10 @@ export async function POST(
         ? Number(body.multiplierOverride)
         : null
       const customerMultiplier = multiplierOverride ?? (Number(quote.multiplier) || 1)
-      const manualUnitPrice = manualPrice * customerMultiplier
+      // Si la cotización está en modo IVA-incluido (Factura B), el unitPrice final
+      // debe incluir el 21% de IVA para que cuadre con el total que factura AFIP.
+      const ivaFactor = quote.pricesIncludeTax ? 1.21 : 1
+      const manualUnitPrice = manualPrice * customerMultiplier * ivaFactor
 
       const manualData: any = {
         quote: { connect: { id: quoteId } },
@@ -171,7 +174,9 @@ export async function POST(
       ? Number(body.multiplierOverride)
       : null
     const customerMultiplier = catMultiplierOverride ?? Number(quote.multiplier)
-    const unitPrice = afterDiscount * customerMultiplier
+    // Cotizaciones con pricesIncludeTax escalan 1.21 para facturar con IVA incluido.
+    const catIvaFactor = quote.pricesIncludeTax ? 1.21 : 1
+    const unitPrice = afterDiscount * customerMultiplier * catIvaFactor
     const quantity = body.quantity || 1
     const totalPrice = unitPrice * quantity
 

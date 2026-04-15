@@ -183,6 +183,7 @@ export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
       purchaseOrderNumber: quote.purchaseOrderNumber || undefined,
       purchaseOrderDate: quote.purchaseOrderDate || undefined,
       tenderNumber: quote.tenderNumber || undefined,
+      pricesIncludeTax: quote.pricesIncludeTax,
     }
 
     const pdfBlob = await generateQuotePDF(pdfData)

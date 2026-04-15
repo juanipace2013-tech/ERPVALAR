@@ -87,6 +87,7 @@ interface Quote {
     name: string
     businessName: string | null
     priceMultiplier: number
+    taxCondition?: string
   }
   salesPersonId: string
   salesPerson: {
@@ -105,6 +106,7 @@ interface Quote {
   subtotal: number
   bonification: number
   total: number
+  pricesIncludeTax: boolean
   items: QuoteItem[]
 }
 
@@ -193,6 +195,10 @@ export default function QuoteDetailPage() {
   const [bonificationValue, setBonificationValue] = useState('')
   const [bonificationLoading, setBonificationLoading] = useState(false)
   const [showEditBonification, setShowEditBonification] = useState(false)
+
+  // IVA incluido (Factura B para CF / Monotributo / Exento)
+  const [pricesIncludeTaxLoading, setPricesIncludeTaxLoading] = useState(false)
+  const [showIvaConfirm, setShowIvaConfirm] = useState<null | { target: boolean }>(null)
 
   // Additional product search (per-index) — legacy, kept for compatibility
   const [additionalSearchTerms, setAdditionalSearchTerms] = useState<Record<number, string>>({})
@@ -529,6 +535,35 @@ export default function QuoteDetailPage() {
       toast.error('Error al actualizar bonificación')
     } finally {
       setBonificationLoading(false)
+    }
+  }
+
+  const handleTogglePricesIncludeTax = async (newValue: boolean) => {
+    if (!quote) return
+    // Si hay items, pedimos confirmación porque se van a reescalar precios por 1.21.
+    if (quote.items.length > 0 && !showIvaConfirm) {
+      setShowIvaConfirm({ target: newValue })
+      return
+    }
+    try {
+      setPricesIncludeTaxLoading(true)
+      const response = await fetch(`/api/quotes/${quoteId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pricesIncludeTax: newValue }),
+      })
+      if (!response.ok) throw new Error()
+      toast.success(
+        newValue
+          ? 'Precios ahora INCLUYEN IVA 21% (Factura B)'
+          : 'Precios ahora SIN IVA (se suma aparte, Factura A)'
+      )
+      setShowIvaConfirm(null)
+      await fetchQuoteData()
+    } catch {
+      toast.error('Error al cambiar el modo de IVA')
+    } finally {
+      setPricesIncludeTaxLoading(false)
     }
   }
 
@@ -2368,9 +2403,144 @@ export default function QuoteDetailPage() {
                 </div>
               </div>
             </div>
+
+            {/* IVA incluido (Factura B) */}
+            <div className="flex justify-between items-center text-sm border-t pt-2 mt-2">
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground">Modo IVA:</span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                    quote.pricesIncludeTax
+                      ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                      : 'bg-blue-100 text-blue-800 border border-blue-300'
+                  }`}
+                >
+                  {quote.pricesIncludeTax
+                    ? 'IVA incluido (Factura B)'
+                    : 'IVA aparte (Factura A)'}
+                </span>
+                {quote.customer.taxCondition &&
+                  quote.customer.taxCondition !== 'RESPONSABLE_INSCRIPTO' &&
+                  !quote.pricesIncludeTax && (
+                    <span
+                      className="text-xs text-red-600"
+                      title="Cliente no RI: AFIP exige IVA incluido en Factura B"
+                    >
+                      ⚠ debería incluir IVA
+                    </span>
+                  )}
+              </div>
+              {isEditable && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleTogglePricesIncludeTax(!quote.pricesIncludeTax)}
+                  disabled={pricesIncludeTaxLoading}
+                  className="h-7 text-xs"
+                >
+                  {pricesIncludeTaxLoading ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : quote.pricesIncludeTax ? (
+                    'Quitar IVA incluido'
+                  ) : (
+                    'Incluir IVA en precios'
+                  )}
+                </Button>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
+
+      {/* Modal confirmación toggle pricesIncludeTax */}
+      <Dialog
+        open={!!showIvaConfirm}
+        onOpenChange={(open) => !open && setShowIvaConfirm(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {showIvaConfirm?.target
+                ? '¿Incluir IVA 21% en todos los precios?'
+                : '¿Quitar IVA incluido de todos los precios?'}
+            </DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-2 pt-2 text-sm">
+                {showIvaConfirm?.target ? (
+                  <>
+                    <p>
+                      Se van a <strong>multiplicar por 1.21</strong> los precios
+                      unitarios y totales de todos los ítems (
+                      {quote?.items.length ?? 0}). Esto se usa para clientes de
+                      Factura B (Consumidor Final, Monotributo, Exento).
+                    </p>
+                    <p className="text-amber-700">
+                      El total de la cotización va a <strong>aumentar ~21%</strong>.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p>
+                      Se van a <strong>dividir por 1.21</strong> los precios
+                      unitarios y totales de todos los ítems (
+                      {quote?.items.length ?? 0}). Úsalo solo para clientes
+                      Responsable Inscripto (Factura A con IVA discriminado).
+                    </p>
+                    <p className="text-amber-700">
+                      El total de la cotización va a <strong>bajar ~17%</strong>.
+                    </p>
+                  </>
+                )}
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setShowIvaConfirm(null)}
+              disabled={pricesIncludeTaxLoading}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                if (showIvaConfirm) {
+                  const target = showIvaConfirm.target
+                  setShowIvaConfirm(null)
+                  // Llamada directa al fetch; bypass del guardia de confirmación
+                  ;(async () => {
+                    try {
+                      setPricesIncludeTaxLoading(true)
+                      const res = await fetch(`/api/quotes/${quoteId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ pricesIncludeTax: target }),
+                      })
+                      if (!res.ok) throw new Error()
+                      toast.success(
+                        target
+                          ? 'Precios ahora INCLUYEN IVA 21% (Factura B)'
+                          : 'Precios ahora SIN IVA (Factura A)'
+                      )
+                      await fetchQuoteData()
+                    } catch {
+                      toast.error('Error al cambiar el modo de IVA')
+                    } finally {
+                      setPricesIncludeTaxLoading(false)
+                    }
+                  })()
+                }
+              }}
+              disabled={pricesIncludeTaxLoading}
+            >
+              {pricesIncludeTaxLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : null}
+              Confirmar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Terms and Notes */}
       {(quote.terms || quote.notes) && (

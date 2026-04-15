@@ -70,6 +70,7 @@ interface Quote {
   subtotal: number
   bonification: number
   total: number
+  pricesIncludeTax: boolean
   terms: string | null
   notes: string | null
   internalNotes: string | null
@@ -1212,6 +1213,15 @@ export default function QuoteViewPage() {
                     </span>
                   </div>
                 )}
+                <div
+                  className={`text-xs mt-2 pt-2 border-t ${
+                    quote.pricesIncludeTax ? 'text-amber-700' : 'text-gray-500'
+                  }`}
+                >
+                  {quote.pricesIncludeTax
+                    ? 'Los precios INCLUYEN IVA (21%) — Factura B'
+                    : 'Los precios NO incluyen IVA (21%) — Factura A'}
+                </div>
               </div>
             </CardContent>
           </Card>

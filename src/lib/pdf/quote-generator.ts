@@ -37,6 +37,9 @@ interface QuotePDFData {
   purchaseOrderNumber?: string
   purchaseOrderDate?: Date
   tenderNumber?: string
+  // Si true, los unitPrice de los items YA incluyen IVA 21% (Factura B).
+  // Afecta la leyenda de condiciones comerciales del PDF.
+  pricesIncludeTax?: boolean
 }
 
 const PAGE_WIDTH = 210
@@ -372,8 +375,11 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
 
+  const ivaLegend = data.pricesIncludeTax
+    ? 'Los precios INCLUYEN IVA (21%) y están expresados en dólares americanos cotización BNA billete vendedor.'
+    : 'Los precios No incluyen IVA (21%) y estan expresados en dólares americanos cotización BNA billete vendedor.'
   const conditions = [
-    'Los precios No incluyen IVA (21%) y estan expresados en dólares americanos cotización BNA billete vendedor.',
+    ivaLegend,
     `Validez de la oferta: ${data.validityDays} días.`,
     'Lugar de entrega: 14 de Julio 175 - Paternal. CABA',
     `Condición de pago: ${data.paymentTerms}`,

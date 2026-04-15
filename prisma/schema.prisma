@@ -961,6 +961,12 @@ model Quote {
   bonification    Decimal      @default(0) @db.Decimal(5, 2) // Bonificación en %
   total           Decimal      @default(0) @db.Decimal(15, 2)
 
+  // IVA: si true, los unitPrice de los ítems INCLUYEN el IVA 21% (caso Factura B:
+  // Consumidor Final / Monotributo / Exento). Si false, los precios son netos y
+  // el IVA se suma aparte (caso Factura A: Responsable Inscripto).
+  // Default false para no alterar el comportamiento de cotizaciones históricas.
+  pricesIncludeTax Boolean     @default(false)
+
   validUntil      DateTime?
   terms           String?      @db.Text  // Condiciones de pago
   notes           String?      @db.Text  // Notas visibles en PDF

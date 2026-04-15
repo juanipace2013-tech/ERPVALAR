@@ -57,7 +57,9 @@ export async function PATCH(
         ? Number(body.manualUnitPrice)
         : Number(existingItem.listPrice)
       const customerMultiplier = multiplierOverride ?? (Number(existingItem.quote.multiplier) || 1)
-      const unitPrice = manualPrice * customerMultiplier
+      // Mantener estado IVA-incluido de la cotización al recalcular el item.
+      const ivaFactor = existingItem.quote.pricesIncludeTax ? 1.21 : 1
+      const unitPrice = manualPrice * customerMultiplier * ivaFactor
       const quantity = body.quantity !== undefined ? body.quantity : existingItem.quantity
 
       updatedItem = await prisma.quoteItem.update({
@@ -130,7 +132,8 @@ export async function PATCH(
       const subtotalWithAdditionals = listPrice + additionalsPrices
       const afterDiscount = subtotalWithAdditionals * (1 - brandDiscount)
       const customerMultiplier = multiplierOverride ?? Number(existingItem.quote.multiplier)
-      const unitPrice = afterDiscount * customerMultiplier
+      const catIvaFactor = existingItem.quote.pricesIncludeTax ? 1.21 : 1
+      const unitPrice = afterDiscount * customerMultiplier * catIvaFactor
       const quantity = body.quantity !== undefined ? body.quantity : existingItem.quantity
       const totalPrice = unitPrice * quantity
 

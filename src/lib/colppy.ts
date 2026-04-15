@@ -1185,26 +1185,44 @@ export async function sendQuoteToColppy(
     const tipoFactura: 'A' | 'B' =
       quote.customer.taxCondition === 'RESPONSABLE_INSCRIPTO' ? 'A' : 'B';
 
-    // 5. Preparar items con IVA.
-    //    La SOURCE OF TRUTH ahora es quote.pricesIncludeTax: si está en true los
-    //    unitPrice guardados en la cotización ya incluyen IVA, así que hay que
-    //    obtener el neto dividiendo por 1.21 antes de enviarlo a Colppy (que
-    //    siempre recibe netos + porcentaje IVA). Si es false, se suma IVA aparte.
-    //    Legacy: si el flag viene undefined (cotizaciones muy viejas), caemos al
-    //    comportamiento previo basado en taxCondition — precios netos si Factura
-    //    A, precios con IVA si Factura B.
+    // 5. Preparar items con IVA según tipo de factura.
+    //
+    //    Factura A (Responsable Inscripto):
+    //      - ImporteUnitario es el NETO (sin IVA). Se discrimina el IVA 21%
+    //        aparte en importeIva/totalIVA.
+    //      - Si la cotización tiene pricesIncludeTax=true, los unitPrice guardados
+    //        ya traen IVA → hay que dividir por 1.21 para obtener el neto.
+    //
+    //    Factura B (Consumidor Final / Monotributo / Exento):
+    //      - ImporteUnitario es el precio FINAL (con IVA incluido). Colppy se
+    //        encarga internamente de la discriminación del IVA para ARCA.
+    //      - Por lo tanto, NUNCA dividimos por 1.21 para Factura B: el precio se
+    //        manda tal cual. Si pricesIncludeTax=false (precio neto), se manda
+    //        igual como ImporteUnitario y Colppy le suma el IVA; si es true,
+    //        también se manda tal cual (ya es el final).
+    //
+    //    Nota: el antiguo bug de sub-facturación venía de dividir por 1.21 en
+    //    Factura B, lo que bajaba el total final.
     const pricesIncludeTax =
       typeof quote.pricesIncludeTax === 'boolean'
         ? quote.pricesIncludeTax
         : tipoFactura === 'B';
+
     const itemsConIVA = preparedItems.map((item) => {
       let precioUnitario = item.precioUnitario;
-      if (pricesIncludeTax) {
-        // Los precios incluyen IVA → obtener neto para Colppy.
-        precioUnitario = precioUnitario / 1.21;
+      let iva = 0;
+
+      if (tipoFactura === 'A') {
+        // Factura A: Colppy espera neto + IVA discriminado.
+        if (pricesIncludeTax) {
+          precioUnitario = precioUnitario / 1.21;
+        }
+        iva = precioUnitario * 0.21;
+      } else {
+        // Factura B: ImporteUnitario va tal cual (Colppy discrimina internamente).
+        // No tocamos el precio, y no discriminamos IVA en la línea.
+        iva = 0;
       }
-      // Colppy siempre factura neto + IVA% → informamos el 21% del neto.
-      const iva = precioUnitario * 0.21;
 
       return {
         ...item,
@@ -1323,9 +1341,14 @@ export async function sendQuoteToColppy(
         };
       });
 
-      // Redondear a 2 decimales para evitar floating point issues
+      // Redondear a 2 decimales para evitar floating point issues.
+      // Factura A → neto + IVA 21%; Factura B → importeUnitario ya es final y
+      // Colppy calcula el IVA internamente, así que acá no lo sumamos aparte.
       netoGravado = Math.round(netoGravado * 100) / 100;
-      const totalIVA = Math.round(netoGravado * 0.21 * 100) / 100;
+      const totalIVA =
+        tipoFactura === 'A'
+          ? Math.round(netoGravado * 0.21 * 100) / 100
+          : 0;
       const totalFactura = Math.round((netoGravado + totalIVA) * 100) / 100;
 
       logger.info(`[Colppy Factura] fechaFactura="${fechaFactura}", fechaVto="${fechaVto}"`);

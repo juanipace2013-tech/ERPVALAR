@@ -709,17 +709,24 @@ export async function colppyCreateInvoice(
       fechaFin: '',
       moneda: invoice.moneda,
       tipoCambio: invoice.tipoCambio,
-      // Campos de moneda extranjera (requeridos por Colppy para USD)
-      // PRUEBA F1 (descartada, no resolvió): eliminado valorCambio.
-      // PRUEBA F2 (descartada: Colppy respondió "El campo rate es
-      // obligatorio para facturas en moneda extranjera" → rate se
-      // restaura).
-      rate: invoice.currency === 'USD' ? String(Number(invoice.exchangeRate) || 1) : '1',
-      // PRUEBA F3 (descartada, no resolvió): eliminado idMoneda.
-      // PRUEBA F4: restaurar idMoneda y eliminar idCurrency (probar el
-      // duplicado al revés). Quizás Colppy espera idMoneda como el
-      // campo canónico y idCurrency es el que confunde el recálculo.
+      // Campos de moneda extranjera (requeridos por Colppy para USD).
+      // Historial de pruebas para aislar el bug "netoGravado=0.00 en UI
+      // de Colppy" (introducido en commit 668c5f0):
+      //   F1 (descartada, no resolvió): eliminar valorCambio ('1' hardcoded).
+      //     → No rompió nada, se deja eliminado.
+      //   F2 (descartada): eliminar rate. Colppy respondió que rate es
+      //     obligatorio para facturas en moneda extranjera → restaurado.
+      //   F3 (descartada, no resolvió): eliminar idMoneda (duplicado).
+      //     → restaurado.
+      //   F4 (descartada): eliminar idCurrency. Colppy interpretó la
+      //     factura como ARS en lugar de USD → restaurado.
+      // Conclusión parcial: rate / idCurrency / idMoneda son todos
+      // necesarios. El bug debe estar en OTRO campo introducido en 668c5f0
+      // (cbu, is_fce, transmision_fce, codigoActividad, codigoOperacion,
+      // isFront) — pendiente de probar.
+      idCurrency: invoice.currency === 'USD' ? '1' : '0',
       idMoneda: invoice.currency === 'USD' ? '1' : '0',
+      rate: invoice.currency === 'USD' ? String(Number(invoice.exchangeRate) || 1) : '1',
       // PRUEBA opción C: eliminar not_api completamente + isFront='1'.
       // not_api='0' no funcionó; puede que Colppy ignore not_api y se
       // guíe por isFront para decidir si respeta los totales mandados o

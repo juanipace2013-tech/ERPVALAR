@@ -426,7 +426,7 @@ function drawRemitoCopy(doc: jsPDF, data: RemitoPDFData, copyLabel: string, logo
   // ══════════════════════════════════════════════════════════════════════════
   const firmaY = Math.max(y + 8, PAGE_H - 68)
 
-  // Línea firma izquierda (Entrega)
+  // Línea firma izquierda (Firma y Aclaración)
   const firmaIzqCenter = ML + USABLE_W * 0.25
   doc.setDrawColor(...BLACK)
   doc.setLineWidth(0.3)
@@ -434,14 +434,14 @@ function drawRemitoCopy(doc: jsPDF, data: RemitoPDFData, copyLabel: string, logo
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7)
   doc.setTextColor(...GRAY)
-  doc.text('Firma y Aclaración (Entrega)', firmaIzqCenter, firmaY + 4, {
+  doc.text('Firma y Aclaración', firmaIzqCenter, firmaY + 4, {
     align: 'center',
   })
 
-  // Línea firma derecha (Recepción)
+  // Línea firma derecha (Fecha de Entrega)
   const firmaDerCenter = ML + USABLE_W * 0.75
   doc.line(firmaDerCenter - 35, firmaY, firmaDerCenter + 35, firmaY)
-  doc.text('Firma y Aclaración (Recepción)', firmaDerCenter, firmaY + 4, {
+  doc.text('Fecha de Entrega', firmaDerCenter, firmaY + 4, {
     align: 'center',
   })
 

@@ -616,22 +616,21 @@ export async function colppyCreateInvoice(
     totalIVA: number;
     totalFactura: number;
     items: Array<{
+      // Estructura alineada al ejemplo oficial del soporte de Colppy:
+      // numéricos como number, subtotal en vez de importeTotal/importeIva,
+      // IVA=0 (el IVA real va discriminado en totalesiva raíz).
       idItem: number;
       minimo?: string;
       tipoItem?: string;
       codigo?: string;
       Descripcion: string;
-      // Los campos numéricos van como string "X.XX" para que Colppy no los
-      // trate como "vacío" (mismo criterio que colppyCreatePurchaseInvoice).
-      ImporteUnitario?: string | number;
-      importeUnitario?: string | number;
-      importeTotal: string | number;
-      importeIva: string | number;
-      IVA: string | number;
-      Cantidad: string;
+      ImporteUnitario: number;
+      subtotal: number;
+      IVA: number;
+      Cantidad: number;
       unidadMedida?: string;
       Comentario?: string;
-      porcDesc?: string;
+      porcDesc?: number;
       idPlanCuenta?: string;
       ccosto1?: string;
       ccosto2?: string;
@@ -656,8 +655,8 @@ export async function colppyCreateInvoice(
       Descripcion: invoice.items[0].Descripcion,
       ImporteUnitario: invoice.items[0].ImporteUnitario,
       ImporteUnitarioType: typeof invoice.items[0].ImporteUnitario,
-      importeTotal: invoice.items[0].importeTotal,
-      importeTotalType: typeof invoice.items[0].importeTotal,
+      subtotal: invoice.items[0].subtotal,
+      subtotalType: typeof invoice.items[0].subtotal,
       Cantidad: invoice.items[0].Cantidad,
     } : null,
   }));
@@ -710,67 +709,52 @@ export async function colppyCreateInvoice(
       moneda: invoice.moneda,
       tipoCambio: invoice.tipoCambio,
       // Campos de moneda extranjera (requeridos por Colppy para USD).
-      // Historial de pruebas para aislar el bug "netoGravado=0.00 en UI
-      // de Colppy" (introducido en commit 668c5f0):
-      //   F1 (descartada, no resolvió): eliminar valorCambio ('1' hardcoded).
-      //     → No rompió nada, se deja eliminado.
-      //   F2 (descartada): eliminar rate. Colppy respondió que rate es
-      //     obligatorio para facturas en moneda extranjera → restaurado.
-      //   F3 (descartada, no resolvió): eliminar idMoneda (duplicado).
-      //     → restaurado.
-      //   F4 (descartada): eliminar idCurrency. Colppy interpretó la
-      //     factura como ARS en lugar de USD → restaurado.
-      // Conclusión parcial: rate / idCurrency / idMoneda son todos
-      // necesarios. El bug debe estar en OTRO campo introducido en 668c5f0
-      // (cbu, is_fce, transmision_fce, codigoActividad, codigoOperacion,
-      // isFront) — pendiente de probar.
+      // El bug "netoGravado=0.00 en UI" apareció en 668c5f0 al introducir
+      // estos campos. Pruebas F1-F6 eliminando campos individuales no
+      // resolvieron. El ejemplo oficial del soporte de Colppy muestra
+      // diferencias fundamentales (tipos number vs string, subtotal en
+      // items, extra_data en raíz, IVA=0 en items, etc.) — se alinea
+      // con él.
       idCurrency: invoice.currency === 'USD' ? '1' : '0',
       idMoneda: invoice.currency === 'USD' ? '1' : '0',
       rate: invoice.currency === 'USD' ? String(Number(invoice.exchangeRate) || 1) : '1',
-      // PRUEBA opción C (descartada, no resolvió): not_api eliminado +
-      // isFront='1'. Ambos valores de isFront ('0' y '1') ya fueron
-      // probados sin éxito.
-      // PRUEBA F6: eliminar "isFront" completamente del payload (ni '0'
-      // ni '1'). Hipótesis: Colppy usa la presencia del campo — no su
-      // valor — para decidir si está en "modo UI" (recalcula desde
-      // items) o "modo API" (respeta totales mandados).
-      // isFront eliminado (campo introducido en commit 668c5f0).
+      valorCambio: '1',
+      isFront: '0',
       price_list_id: '',
-      // PRUEBA F5: eliminar bloque FCE/MiPyME completo (cbu, is_fce,
-      // transmision_fce, codigoActividad, codigoOperacion). Todos eran
-      // string vacío o '0'. Hipótesis: Colppy los interpreta como
-      // indicio de Factura de Crédito Electrónica MiPyME y fuerza
-      // recálculo desde items, ignorando netoGravado/totalIVA.
-      // Campos eliminados (introducidos en commit 668c5f0 — pendiente
-      // restaurar si Colppy los rechaza como obligatorios):
-      // cbu: '', is_fce: '0', transmision_fce: '',
-      // codigoActividad: '', codigoOperacion: ''.
-      // Colppy valida tipos strictos: todos los totales en la raíz y en
-      // totalesiva deben ser STRING con 2 decimales. Si llega un número,
-      // el campo se interpreta como "vacío" (por eso netoGravado terminaba
-      // en 0.00 en la UI aunque totalIVA sí se veía bien).
-      netoGravado: (Math.round(Number(invoice.netoGravado) * 100) / 100).toFixed(2),
-      netoNoGravado: (Math.round(Number(invoice.netoNoGravado) * 100) / 100).toFixed(2),
-      totalIVA: (Math.round(Number(invoice.totalIVA) * 100) / 100).toFixed(2),
-      IVA21: (Math.round(Number(invoice.totalIVA) * 100) / 100).toFixed(2),
+      // Campos adicionales de factura
+      cbu: '',
+      is_fce: '0',
+      transmision_fce: '',
+      codigoActividad: '',
+      codigoOperacion: '',
+      extra_data: '',
+      // Totales en la RAÍZ como NUMBER (según ejemplo oficial de Colppy).
+      // Cambio vs versión anterior: antes íban como string "X.XX" — ahora
+      // number crudo redondeado a 2 decimales.
+      netoGravado: Math.round(Number(invoice.netoGravado) * 100) / 100,
+      netoNoGravado: Math.round(Number(invoice.netoNoGravado) * 100) / 100,
+      totalIVA: Math.round(Number(invoice.totalIVA) * 100) / 100,
+      // IVA21/IVA105/IVA27 van como string vacío según ejemplo oficial
+      // (no como valor discriminado; el detalle va en totalesiva).
+      IVA21: '',
       IVA105: '',
       IVA27: '',
-      percepcionIVA: '0.00',
-      percepcionIIBB: '0.00',
-      totalFactura: (Math.round(Number(invoice.totalFactura) * 100) / 100).toFixed(2),
+      percepcionIVA: 0,
+      percepcionIIBB: 0,
+      totalFactura: Math.round(Number(invoice.totalFactura) * 100) / 100,
       labelfe: '',
       totalesiva: [
-        { alicuotaIva: '0',    importeIva: '0.00', baseImpIva: '0.00' },
-        { alicuotaIva: '2.5',  importeIva: '0.00', baseImpIva: '0.00' },
-        { alicuotaIva: '5',    importeIva: '0.00', baseImpIva: '0.00' },
-        { alicuotaIva: '10.5', importeIva: '0.00', baseImpIva: '0.00' },
-        { alicuotaIva: '17.1', importeIva: '0.00', baseImpIva: '0.00' },
+        { alicuotaIva: '0',    importeIva: 0, baseImpIva: 0 },
+        { alicuotaIva: '2.5',  importeIva: 0, baseImpIva: 0 },
+        { alicuotaIva: '5',    importeIva: 0, baseImpIva: 0 },
+        { alicuotaIva: '10.5', importeIva: 0, baseImpIva: 0 },
+        { alicuotaIva: '17.1', importeIva: 0, baseImpIva: 0 },
         {
           alicuotaIva: '21',
-          importeIva: (Math.round(Number(invoice.totalIVA) * 100) / 100).toFixed(2),
-          baseImpIva: (Math.round(Number(invoice.netoGravado) * 100) / 100).toFixed(2),
+          importeIva: Math.round(Number(invoice.totalIVA) * 100) / 100,
+          baseImpIva: Math.round(Number(invoice.netoGravado) * 100) / 100,
         },
-        { alicuotaIva: '27',   importeIva: '0.00', baseImpIva: '0.00' },
+        { alicuotaIva: '27',   importeIva: 0, baseImpIva: 0 },
       ],
       itemsFactura: invoice.items,
     },
@@ -785,8 +769,7 @@ export async function colppyCreateInvoice(
   console.log(`[Colppy Factura] totalesiva[21%]: baseImpIva=${JSON.stringify(iva21Row.baseImpIva)} (typeof=${typeof iva21Row.baseImpIva}), importeIva=${JSON.stringify(iva21Row.importeIva)} (typeof=${typeof iva21Row.importeIva})`);
   console.log(`[Colppy Factura] itemsFactura tipos (primer item):`, payload.parameters.itemsFactura[0] ? {
     ImporteUnitario: `${JSON.stringify(payload.parameters.itemsFactura[0].ImporteUnitario)} (${typeof payload.parameters.itemsFactura[0].ImporteUnitario})`,
-    importeTotal: `${JSON.stringify(payload.parameters.itemsFactura[0].importeTotal)} (${typeof payload.parameters.itemsFactura[0].importeTotal})`,
-    importeIva: `${JSON.stringify(payload.parameters.itemsFactura[0].importeIva)} (${typeof payload.parameters.itemsFactura[0].importeIva})`,
+    subtotal: `${JSON.stringify(payload.parameters.itemsFactura[0].subtotal)} (${typeof payload.parameters.itemsFactura[0].subtotal})`,
     IVA: `${JSON.stringify(payload.parameters.itemsFactura[0].IVA)} (${typeof payload.parameters.itemsFactura[0].IVA})`,
     Cantidad: `${JSON.stringify(payload.parameters.itemsFactura[0].Cantidad)} (${typeof payload.parameters.itemsFactura[0].Cantidad})`,
   } : 'NO HAY ITEMS');
@@ -1442,24 +1425,26 @@ export async function sendQuoteToColppy(
 
         console.log(`[Colppy Factura] item[${index}] SKU=${prepItem.productSku} cant=${cantidad} pUnit=${importeUnitario} impTotal=${importeTotal} netoLinea=${netoLinea.toFixed(2)} → netoGravadoAcum=${netoGravado.toFixed(2)}`);
 
+        // Estructura según ejemplo oficial del soporte de Colppy:
+        // - Todos los numéricos como NUMBER (no string).
+        // - IVA=0 en el item; el IVA real va discriminado en totalesiva raíz.
+        // - subtotal = importeUnitario*cantidad (mismo valor que la línea sin IVA).
+        // - unidadMedida vacío ''.
+        // - Sin importeTotal ni importeIva (no aparecen en el ejemplo).
+        const subtotalLinea = Math.round(importeTotal * 100) / 100;
         return {
           idItem: Number(colppyItemIds[prepItem.productSku]) || 0,
           minimo: '',
           tipoItem: '',
           codigo: '',
           Descripcion: item.descripcion,
-          // Todos los campos numéricos del item van como STRING con 2 decimales
-          // (misma convención que colppyCreatePurchaseInvoice, que SÍ funciona).
-          // Si van como número, Colppy los trata como "vacío" y recalcula mal
-          // el netoGravado raíz (queda 0.00 hasta apretar TAB).
-          ImporteUnitario: (Math.round(importeUnitario * 100) / 100).toFixed(2),
-          importeTotal: (Math.round(importeTotal * 100) / 100).toFixed(2),
-          importeIva: (Math.round(importeIva * 100) / 100).toFixed(2),
-          IVA: (Math.round(prepItem.ivaPercent * 100) / 100).toFixed(2),
-          Cantidad: String(cantidad),
-          unidadMedida: 'Un',
+          ImporteUnitario: Math.round(importeUnitario * 100) / 100,
+          subtotal: subtotalLinea,
+          IVA: 0,
+          Cantidad: cantidad,
+          unidadMedida: '',
           Comentario: prepItem.comentario || `Cotización ${quote.quoteNumber}`,
-          porcDesc: '0',
+          porcDesc: 0,
           idPlanCuenta: 'Ventas',
           ccosto1: '',
           ccosto2: '',

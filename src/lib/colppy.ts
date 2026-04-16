@@ -714,7 +714,11 @@ export async function colppyCreateInvoice(
       idMoneda: invoice.currency === 'USD' ? '1' : '0',
       rate: invoice.currency === 'USD' ? String(Number(invoice.exchangeRate) || 1) : '1',
       valorCambio: '1',
-      not_api: '1',
+      // PRUEBA (no commiteado): not_api='1' podría hacer que Colppy trate
+      // el request como si viniera de la UI web y recalcule los totales
+      // desde los items (resultado: netoGravado=0.00 hasta apretar TAB).
+      // Probamos con '0' para que respete los totales que mandamos.
+      not_api: '0',
       isFront: '0',
       price_list_id: '',
       // Campos adicionales de factura

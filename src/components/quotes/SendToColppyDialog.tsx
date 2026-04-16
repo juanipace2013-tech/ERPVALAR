@@ -21,7 +21,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Select,
   SelectContent,
@@ -30,7 +29,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Send, Package, FileSpreadsheet, CheckCircle2, Loader2, AlertTriangle, Edit, RefreshCw } from 'lucide-react';
+import { Send, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
 
 // ============================================================================
 // TIPOS (exportados para reutilización)
@@ -106,7 +105,9 @@ export function SendToColppyDialog({
   onSend,
   subtitle,
 }: SendToColppyDialogProps) {
-  const [selectedAction, setSelectedAction] = useState<ColppyAction>('remito-factura');
+  // Siempre se envía como Factura Cuenta Corriente (única opción soportada
+  // desde el dialog tras el ajuste de UX de abril 2026).
+  const selectedAction: ColppyAction = 'factura-cuenta-corriente';
   const [sending, setSending] = useState(false);
 
   // Estados editables
@@ -500,74 +501,6 @@ export function SendToColppyDialog({
               </span>
             </div>
           </div>
-        </div>
-
-        {/* Opciones de envío */}
-        <div className="space-y-3">
-          <Label className="text-base font-semibold">Selecciona una opción:</Label>
-          <RadioGroup value={selectedAction} onValueChange={(value) => setSelectedAction(value as ColppyAction)}>
-            {/* Opción 1: Remito + Factura (Recomendado) */}
-            <div className="flex items-start space-x-3 rounded-lg border border-blue-300 bg-blue-50 p-4">
-              <RadioGroupItem value="remito-factura" id="remito-factura" className="mt-1" />
-              <div className="flex-1">
-                <Label
-                  htmlFor="remito-factura"
-                  className="flex items-center gap-2 text-sm font-semibold cursor-pointer text-blue-900"
-                >
-                  <CheckCircle2 className="h-4 w-4 text-blue-600" />
-                  Remito + Factura (Recomendado)
-                </Label>
-                <p className="text-xs text-blue-700 mt-1">
-                  Crea tanto el remito de entrega como la factura en Colppy
-                </p>
-              </div>
-            </div>
-
-            {/* Opción 2: Solo Remito */}
-            <div className="flex items-start space-x-3 rounded-lg border border-gray-200 p-4 hover:bg-gray-50">
-              <RadioGroupItem value="remito" id="remito" className="mt-1" />
-              <div className="flex-1">
-                <Label htmlFor="remito" className="flex items-center gap-2 text-sm font-semibold cursor-pointer">
-                  <Package className="h-4 w-4 text-gray-600" />
-                  Solo Remito
-                </Label>
-                <p className="text-xs text-gray-600 mt-1">
-                  Crea únicamente el remito de entrega (sin factura)
-                </p>
-              </div>
-            </div>
-
-            {/* Opción 3: Solo Factura (Cuenta Corriente) */}
-            <div className="flex items-start space-x-3 rounded-lg border border-gray-200 p-4 hover:bg-gray-50">
-              <RadioGroupItem value="factura-cuenta-corriente" id="factura-cuenta-corriente" className="mt-1" />
-              <div className="flex-1">
-                <Label
-                  htmlFor="factura-cuenta-corriente"
-                  className="flex items-center gap-2 text-sm font-semibold cursor-pointer"
-                >
-                  <FileSpreadsheet className="h-4 w-4 text-gray-600" />
-                  Solo Factura (Cuenta Corriente)
-                </Label>
-                <p className="text-xs text-gray-600 mt-1">
-                  Crea únicamente la factura a cuenta corriente (sin remito)
-                </p>
-              </div>
-            </div>
-
-            {/* Opción 4: Solo Factura (Contado) */}
-            <div className="flex items-start space-x-3 rounded-lg border border-gray-200 p-4 hover:bg-gray-50">
-              <RadioGroupItem value="factura-contado" id="factura-contado" className="mt-1" />
-              <div className="flex-1">
-                <Label htmlFor="factura-contado" className="flex items-center gap-2 text-sm font-semibold cursor-pointer">
-                  <FileSpreadsheet className="h-4 w-4 text-gray-600" />
-                  Solo Factura (Contado)
-                </Label>
-                <p className="text-xs text-gray-600 mt-1">
-                  Crea únicamente la factura de contado (sin remito)
-                </p>
-              </div>
-            </div>
-          </RadioGroup>
         </div>
 
         {/* Advertencia */}

@@ -713,7 +713,12 @@ export async function colppyCreateInvoice(
       idCurrency: invoice.currency === 'USD' ? '1' : '0',
       idMoneda: invoice.currency === 'USD' ? '1' : '0',
       rate: invoice.currency === 'USD' ? String(Number(invoice.exchangeRate) || 1) : '1',
-      valorCambio: '1',
+      // PRUEBA opción F1: eliminar valorCambio (hardcodeado a '1' siempre).
+      // El bug de netoGravado=0.00 apareció exactamente en commit 668c5f0
+      // que introdujo los campos USD al payload. valorCambio es el más
+      // sospechoso porque es hardcodeado — puede estar confundiendo a
+      // Colppy para recalcular los totales desde items ignorando los
+      // netos mandados.
       // PRUEBA opción C: eliminar not_api completamente + isFront='1'.
       // not_api='0' no funcionó; puede que Colppy ignore not_api y se
       // guíe por isFront para decidir si respeta los totales mandados o

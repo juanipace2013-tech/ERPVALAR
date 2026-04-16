@@ -727,11 +727,14 @@ export async function colppyCreateInvoice(
       idCurrency: invoice.currency === 'USD' ? '1' : '0',
       idMoneda: invoice.currency === 'USD' ? '1' : '0',
       rate: invoice.currency === 'USD' ? String(Number(invoice.exchangeRate) || 1) : '1',
-      // PRUEBA opción C: eliminar not_api completamente + isFront='1'.
-      // not_api='0' no funcionó; puede que Colppy ignore not_api y se
-      // guíe por isFront para decidir si respeta los totales mandados o
-      // los recalcula desde items.
-      isFront: '1',
+      // PRUEBA opción C (descartada, no resolvió): not_api eliminado +
+      // isFront='1'. Ambos valores de isFront ('0' y '1') ya fueron
+      // probados sin éxito.
+      // PRUEBA F6: eliminar "isFront" completamente del payload (ni '0'
+      // ni '1'). Hipótesis: Colppy usa la presencia del campo — no su
+      // valor — para decidir si está en "modo UI" (recalcula desde
+      // items) o "modo API" (respeta totales mandados).
+      // isFront eliminado (campo introducido en commit 668c5f0).
       price_list_id: '',
       // PRUEBA F5: eliminar bloque FCE/MiPyME completo (cbu, is_fce,
       // transmision_fce, codigoActividad, codigoOperacion). Todos eran
@@ -776,7 +779,7 @@ export async function colppyCreateInvoice(
   // console.log (no logger.info) para que aparezca en pm2 en producción.
   console.log('=== PAYLOAD FACTURA COLPPY ===');
   console.log(`[Colppy Factura] INPUT al helper: invoice.netoGravado=${JSON.stringify(invoice.netoGravado)} (typeof=${typeof invoice.netoGravado}), invoice.totalIVA=${JSON.stringify(invoice.totalIVA)} (typeof=${typeof invoice.totalIVA}), invoice.totalFactura=${JSON.stringify(invoice.totalFactura)} (typeof=${typeof invoice.totalFactura})`);
-  console.log(`[Colppy Factura] Moneda: currency=${invoice.currency}, idCurrency=${(payload.parameters as any).idCurrency ?? '(no enviado)'}, idMoneda=${(payload.parameters as any).idMoneda ?? '(no enviado)'}, tipoCambio=${payload.parameters.tipoCambio}, rate=${(payload.parameters as any).rate ?? '(no enviado)'}, not_api=${(payload.parameters as any).not_api ?? '(no enviado)'}, isFront=${payload.parameters.isFront}`);
+  console.log(`[Colppy Factura] Moneda: currency=${invoice.currency}, idCurrency=${(payload.parameters as any).idCurrency ?? '(no enviado)'}, idMoneda=${(payload.parameters as any).idMoneda ?? '(no enviado)'}, tipoCambio=${payload.parameters.tipoCambio}, rate=${(payload.parameters as any).rate ?? '(no enviado)'}, not_api=${(payload.parameters as any).not_api ?? '(no enviado)'}, isFront=${(payload.parameters as any).isFront ?? '(no enviado)'}`);
   console.log(`[Colppy Factura] Totales RAÍZ (todos deben ser string "X.XX"): netoGravado=${JSON.stringify(payload.parameters.netoGravado)} (typeof=${typeof payload.parameters.netoGravado}), netoNoGravado=${JSON.stringify(payload.parameters.netoNoGravado)} (typeof=${typeof payload.parameters.netoNoGravado}), totalIVA=${JSON.stringify(payload.parameters.totalIVA)} (typeof=${typeof payload.parameters.totalIVA}), IVA21=${JSON.stringify(payload.parameters.IVA21)} (typeof=${typeof payload.parameters.IVA21}), totalFactura=${JSON.stringify(payload.parameters.totalFactura)} (typeof=${typeof payload.parameters.totalFactura})`);
   const iva21Row = payload.parameters.totalesiva[5];
   console.log(`[Colppy Factura] totalesiva[21%]: baseImpIva=${JSON.stringify(iva21Row.baseImpIva)} (typeof=${typeof iva21Row.baseImpIva}), importeIva=${JSON.stringify(iva21Row.importeIva)} (typeof=${typeof iva21Row.importeIva})`);

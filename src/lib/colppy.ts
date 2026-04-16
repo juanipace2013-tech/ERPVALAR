@@ -1427,7 +1427,9 @@ export async function sendQuoteToColppy(
 
         // Estructura según ejemplo oficial del soporte de Colppy:
         // - Todos los numéricos como NUMBER (no string).
-        // - IVA=0 en el item; el IVA real va discriminado en totalesiva raíz.
+        // - IVA=21 (number) en el item: Colppy usa este valor para
+        //   clasificar la línea como "Neto gravado" (alícuota 21%). Con
+        //   IVA=0 lo clasificaba como "Neto no gravado".
         // - subtotal = importeUnitario*cantidad (mismo valor que la línea sin IVA).
         // - unidadMedida vacío ''.
         // - Sin importeTotal ni importeIva (no aparecen en el ejemplo).
@@ -1440,7 +1442,7 @@ export async function sendQuoteToColppy(
           Descripcion: item.descripcion,
           ImporteUnitario: Math.round(importeUnitario * 100) / 100,
           subtotal: subtotalLinea,
-          IVA: 0,
+          IVA: 21,
           Cantidad: cantidad,
           unidadMedida: '',
           Comentario: prepItem.comentario || `Cotización ${quote.quoteNumber}`,

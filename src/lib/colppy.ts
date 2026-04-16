@@ -733,12 +733,15 @@ export async function colppyCreateInvoice(
       // los recalcula desde items.
       isFront: '1',
       price_list_id: '',
-      // Campos adicionales de factura
-      cbu: '',
-      is_fce: '0',
-      transmision_fce: '',
-      codigoActividad: '',
-      codigoOperacion: '',
+      // PRUEBA F5: eliminar bloque FCE/MiPyME completo (cbu, is_fce,
+      // transmision_fce, codigoActividad, codigoOperacion). Todos eran
+      // string vacío o '0'. Hipótesis: Colppy los interpreta como
+      // indicio de Factura de Crédito Electrónica MiPyME y fuerza
+      // recálculo desde items, ignorando netoGravado/totalIVA.
+      // Campos eliminados (introducidos en commit 668c5f0 — pendiente
+      // restaurar si Colppy los rechaza como obligatorios):
+      // cbu: '', is_fce: '0', transmision_fce: '',
+      // codigoActividad: '', codigoOperacion: ''.
       // Colppy valida tipos strictos: todos los totales en la raíz y en
       // totalesiva deben ser STRING con 2 decimales. Si llega un número,
       // el campo se interpreta como "vacío" (por eso netoGravado terminaba

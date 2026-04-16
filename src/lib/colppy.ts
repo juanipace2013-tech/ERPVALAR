@@ -500,14 +500,6 @@ export async function colppyCreateDeliveryNote(
     }>;
   }
 ): Promise<{ idRemito: string; numeroRemito: string }> {
-  // console.log incondicional: logger.info queda silenciado en producción
-  console.log('[Colppy][DEBUG] >>> colppyCreateDeliveryNote INGRESO', JSON.stringify({
-    idCliente: deliveryNote.idCliente,
-    fecha: deliveryNote.fecha,
-    itemsCount: deliveryNote.items.length,
-    firstItem: deliveryNote.items[0],
-  }));
-
   const config = getColppyConfig();
   const passwordMD5 = md5Hash(config.password);
 
@@ -639,28 +631,6 @@ export async function colppyCreateInvoice(
     }>;
   }
 ): Promise<{ idFactura: string; numeroFactura: string }> {
-  // console.log incondicional: logger.info queda silenciado en producción
-  // (NODE_ENV=production → src/lib/logger.ts solo imprime warn/error).
-  console.log('[Colppy][DEBUG] >>> colppyCreateInvoice INGRESO', JSON.stringify({
-    idCliente: invoice.idCliente,
-    descripcion: invoice.descripcion,
-    tipoFactura: invoice.tipoFactura,
-    netoGravado: invoice.netoGravado,
-    netoGravadoType: typeof invoice.netoGravado,
-    totalIVA: invoice.totalIVA,
-    totalFactura: invoice.totalFactura,
-    currency: invoice.currency,
-    itemsCount: invoice.items.length,
-    firstItem: invoice.items[0] ? {
-      Descripcion: invoice.items[0].Descripcion,
-      ImporteUnitario: invoice.items[0].ImporteUnitario,
-      ImporteUnitarioType: typeof invoice.items[0].ImporteUnitario,
-      subtotal: invoice.items[0].subtotal,
-      subtotalType: typeof invoice.items[0].subtotal,
-      Cantidad: invoice.items[0].Cantidad,
-    } : null,
-  }));
-
   const config = getColppyConfig();
   const passwordMD5 = md5Hash(config.password);
 
@@ -760,28 +730,8 @@ export async function colppyCreateInvoice(
     },
   };
 
-  // console.log (no logger.info) para que aparezca en pm2 en producción.
-  console.log('=== PAYLOAD FACTURA COLPPY ===');
-  console.log(`[Colppy Factura] INPUT al helper: invoice.netoGravado=${JSON.stringify(invoice.netoGravado)} (typeof=${typeof invoice.netoGravado}), invoice.totalIVA=${JSON.stringify(invoice.totalIVA)} (typeof=${typeof invoice.totalIVA}), invoice.totalFactura=${JSON.stringify(invoice.totalFactura)} (typeof=${typeof invoice.totalFactura})`);
-  console.log(`[Colppy Factura] Moneda: currency=${invoice.currency}, idCurrency=${(payload.parameters as any).idCurrency ?? '(no enviado)'}, idMoneda=${(payload.parameters as any).idMoneda ?? '(no enviado)'}, tipoCambio=${payload.parameters.tipoCambio}, rate=${(payload.parameters as any).rate ?? '(no enviado)'}, not_api=${(payload.parameters as any).not_api ?? '(no enviado)'}, isFront=${(payload.parameters as any).isFront ?? '(no enviado)'}`);
-  console.log(`[Colppy Factura] Totales RAÍZ (todos deben ser string "X.XX"): netoGravado=${JSON.stringify(payload.parameters.netoGravado)} (typeof=${typeof payload.parameters.netoGravado}), netoNoGravado=${JSON.stringify(payload.parameters.netoNoGravado)} (typeof=${typeof payload.parameters.netoNoGravado}), totalIVA=${JSON.stringify(payload.parameters.totalIVA)} (typeof=${typeof payload.parameters.totalIVA}), IVA21=${JSON.stringify(payload.parameters.IVA21)} (typeof=${typeof payload.parameters.IVA21}), totalFactura=${JSON.stringify(payload.parameters.totalFactura)} (typeof=${typeof payload.parameters.totalFactura})`);
-  const iva21Row = payload.parameters.totalesiva[5];
-  console.log(`[Colppy Factura] totalesiva[21%]: baseImpIva=${JSON.stringify(iva21Row.baseImpIva)} (typeof=${typeof iva21Row.baseImpIva}), importeIva=${JSON.stringify(iva21Row.importeIva)} (typeof=${typeof iva21Row.importeIva})`);
-  console.log(`[Colppy Factura] itemsFactura tipos (primer item):`, payload.parameters.itemsFactura[0] ? {
-    ImporteUnitario: `${JSON.stringify(payload.parameters.itemsFactura[0].ImporteUnitario)} (${typeof payload.parameters.itemsFactura[0].ImporteUnitario})`,
-    subtotal: `${JSON.stringify(payload.parameters.itemsFactura[0].subtotal)} (${typeof payload.parameters.itemsFactura[0].subtotal})`,
-    IVA: `${JSON.stringify(payload.parameters.itemsFactura[0].IVA)} (${typeof payload.parameters.itemsFactura[0].IVA})`,
-    Cantidad: `${JSON.stringify(payload.parameters.itemsFactura[0].Cantidad)} (${typeof payload.parameters.itemsFactura[0].Cantidad})`,
-  } : 'NO HAY ITEMS');
-  console.log(JSON.stringify(payload, null, 2));
-  console.log('=== FIN PAYLOAD ===');
-
   try {
     const response = await callColppyAPI<any>(payload);
-
-    console.log('=== RESPUESTA COLPPY FACTURA ===');
-    console.log(JSON.stringify(response, null, 2));
-    console.log('=== FIN RESPUESTA ===');
 
     // Verificar si la operación fue exitosa
     if (response.response?.success === false) {
@@ -801,7 +751,7 @@ export async function colppyCreateInvoice(
       numeroFactura: numeroFactura,
     };
   } catch (error: any) {
-    console.log('[Colppy][DEBUG] <<< colppyCreateInvoice ERROR:', error.message || String(error));
+    logger.error('[Colppy] colppyCreateInvoice error:', error?.message || String(error));
     // Detectar error específico de "importe unitario negativo"
     const errorMsg = error.message || String(error);
     if (errorMsg.toLowerCase().includes('importe unitario negativo') ||
@@ -934,16 +884,6 @@ export async function colppyCreatePurchaseInvoice(
   session: ColppySession,
   invoice: ColppyPurchaseInvoiceParams
 ): Promise<{ idFactura: string }> {
-  // console.log incondicional: logger.info queda silenciado en producción
-  console.log('[Colppy][DEBUG] >>> colppyCreatePurchaseInvoice INGRESO', JSON.stringify({
-    idProveedor: invoice.idProveedor,
-    descripcion: invoice.descripcion,
-    netoGravado: invoice.netoGravado,
-    totalIVA: invoice.totalIVA,
-    totalFactura: invoice.totalFactura,
-    itemsCount: invoice.itemsFactura.length,
-  }));
-
   const config = getColppyConfig();
   const passwordMD5 = md5Hash(config.password);
 
@@ -1178,29 +1118,6 @@ export async function sendQuoteToColppy(
     }>;
   }
 ): Promise<SendToColppyResult> {
-  // console.log incondicional: logger.info queda silenciado en producción
-  console.log('[Colppy][DEBUG] >>> sendQuoteToColppy INGRESO', JSON.stringify({
-    action: options.action,
-    condicionPago: options.condicionPago,
-    puntoVenta: options.puntoVenta,
-    descripcion: options.descripcion,
-    quoteId: quote.id,
-    quoteNumber: quote.quoteNumber,
-    currency: quote.currency,
-    exchangeRate: quote.exchangeRate,
-    pricesIncludeTax: quote.pricesIncludeTax,
-    customer: { cuit: quote.customer.cuit, taxCondition: quote.customer.taxCondition },
-    itemsCount: quote.items.length,
-    firstItem: quote.items[0] ? {
-      productName: quote.items[0].productName,
-      productSku: quote.items[0].productSku,
-      quantity: quote.items[0].quantity,
-      unitPrice: quote.items[0].unitPrice,
-      iva: quote.items[0].iva,
-      additionalsCount: quote.items[0].additionals?.length || 0,
-    } : null,
-  }));
-
   let session: ColppySession | null = null;
 
   /**
@@ -1212,7 +1129,7 @@ export async function sendQuoteToColppy(
       return await fn(session!);
     } catch (error: any) {
       if (error instanceof ColppySessionExpiredError) {
-        console.log('[Colppy][DEBUG] Sesión expirada, re-autenticando...');
+        logger.info('[Colppy] Sesión expirada, re-autenticando...');
         session = await colppyLogin();
         return await fn(session);
       }
@@ -1385,8 +1302,6 @@ export async function sendQuoteToColppy(
         condicionPagoMap[idCondicionPago] ??
         (Number.isFinite(parsedCustomerDays) ? parsedCustomerDays : 0)
 
-      logger.info(`[Colppy Factura] condicionPago="${idCondicionPago}", diasVto=${diasVto}, customer.idCondicionPago="${customer.idCondicionPago}"`);
-
       // Calcular fecha de vencimiento
       const fechaVtoDate = new Date();
       fechaVtoDate.setDate(fechaVtoDate.getDate() + diasVto);
@@ -1402,7 +1317,6 @@ export async function sendQuoteToColppy(
 
       // Calcular totales para Colppy
       // Cada preparedItem tiene su propio SKU, IVA% y comentario (tanto principales como adicionales)
-      console.log(`[Colppy Factura] === INICIO CÁLCULO netoGravado === tipoFactura=${tipoFactura}, items=${itemsConIVA.length}, pricesIncludeTax=${pricesIncludeTax}`);
       let netoGravado = 0;
       const itemsFactura = itemsConIVA.map((item, index) => {
         const prepItem = preparedItems[index]; // Índices alineados: preparedItems → itemsConIVA
@@ -1422,8 +1336,6 @@ export async function sendQuoteToColppy(
             ? importeTotal
             : (importeUnitario / 1.21) * cantidad;
         netoGravado += netoLinea;
-
-        console.log(`[Colppy Factura] item[${index}] SKU=${prepItem.productSku} cant=${cantidad} pUnit=${importeUnitario} impTotal=${importeTotal} netoLinea=${netoLinea.toFixed(2)} → netoGravadoAcum=${netoGravado.toFixed(2)}`);
 
         // Estructura según ejemplo oficial del soporte de Colppy:
         // - Todos los numéricos como NUMBER (no string).
@@ -1462,15 +1374,6 @@ export async function sendQuoteToColppy(
       netoGravado = Math.round(netoGravado * 100) / 100;
       const totalIVA = Math.round(netoGravado * 0.21 * 100) / 100;
       const totalFactura = Math.round((netoGravado + totalIVA) * 100) / 100;
-      console.log(`[Colppy Factura] === FIN CÁLCULO === netoGravado=${netoGravado} totalIVA=${totalIVA} totalFactura=${totalFactura}`);
-
-      logger.info(`[Colppy Factura] fechaFactura="${fechaFactura}", fechaVto="${fechaVto}"`);
-      logger.info(`[Colppy Factura] itemsFactura Descripcion:`, itemsFactura.map((i, idx) => ({
-        idx,
-        idItem: i.idItem,
-        Descripcion: i.Descripcion,
-        SKU: preparedItems[idx]?.productSku,
-      })));
 
       const factura = await withRetry((s) => colppyCreateInvoice(s, {
         descripcion: options.descripcion || `Cotización ${quote.quoteNumber}`,
@@ -1495,19 +1398,17 @@ export async function sendQuoteToColppy(
       result.facturaNumber = factura.numeroFactura;
     }
 
-    console.log('[Colppy][DEBUG] <<< sendQuoteToColppy SALIDA OK', JSON.stringify({
+    logger.info('[Colppy] sendQuoteToColppy OK', {
       remitoId: result.remitoId,
       remitoNumber: result.remitoNumber,
       facturaId: result.facturaId,
       facturaNumber: result.facturaNumber,
-    }));
+    });
     return result;
   } catch (error: any) {
-    // IMPORTANTE: este catch devolvía {success:false, error} sin loguear,
-    // por lo que cualquier error interno (de colppyCreateInvoice, de red,
-    // de autenticación, etc.) quedaba invisible en pm2. Ahora lo logueamos.
-    console.log('[Colppy][DEBUG] <<< sendQuoteToColppy ERROR:', error?.message || String(error));
-    console.log('[Colppy][DEBUG] stack:', error?.stack || '(sin stack)');
+    // Importante: este catch devolvía {success:false, error} sin loguear,
+    // por lo que cualquier error interno quedaba invisible en pm2.
+    logger.error('[Colppy] sendQuoteToColppy error:', error?.message || String(error), error?.stack);
     return {
       success: false,
       error: error.message,

@@ -613,11 +613,13 @@ export async function colppyCreateInvoice(
       tipoItem?: string;
       codigo?: string;
       Descripcion: string;
-      ImporteUnitario?: number;
-      importeUnitario?: number;
-      importeTotal: number;
-      importeIva: number;
-      IVA: number;
+      // Los campos numéricos van como string "X.XX" para que Colppy no los
+      // trate como "vacío" (mismo criterio que colppyCreatePurchaseInvoice).
+      ImporteUnitario?: string | number;
+      importeUnitario?: string | number;
+      importeTotal: string | number;
+      importeIva: string | number;
+      IVA: string | number;
       Cantidad: string;
       unidadMedida?: string;
       Comentario?: string;
@@ -723,8 +725,18 @@ export async function colppyCreateInvoice(
   };
 
   logger.info('=== PAYLOAD FACTURA COLPPY ===');
+  logger.info(`[Colppy Factura] INPUT al helper: invoice.netoGravado=${JSON.stringify(invoice.netoGravado)} (typeof=${typeof invoice.netoGravado}), invoice.totalIVA=${JSON.stringify(invoice.totalIVA)} (typeof=${typeof invoice.totalIVA}), invoice.totalFactura=${JSON.stringify(invoice.totalFactura)} (typeof=${typeof invoice.totalFactura})`);
   logger.info(`[Colppy Factura] Moneda: currency=${invoice.currency}, idCurrency=${payload.parameters.idCurrency}, idMoneda=${payload.parameters.idMoneda}, rate=${payload.parameters.rate}, not_api=${payload.parameters.not_api}`);
-  logger.info(`[Colppy Factura] Totales: netoGravado=${payload.parameters.netoGravado}, totalIVA=${payload.parameters.totalIVA}, IVA21=${payload.parameters.IVA21}, totalFactura=${payload.parameters.totalFactura}`);
+  logger.info(`[Colppy Factura] Totales RAÍZ (todos deben ser string "X.XX"): netoGravado=${JSON.stringify(payload.parameters.netoGravado)} (typeof=${typeof payload.parameters.netoGravado}), netoNoGravado=${JSON.stringify(payload.parameters.netoNoGravado)} (typeof=${typeof payload.parameters.netoNoGravado}), totalIVA=${JSON.stringify(payload.parameters.totalIVA)} (typeof=${typeof payload.parameters.totalIVA}), IVA21=${JSON.stringify(payload.parameters.IVA21)} (typeof=${typeof payload.parameters.IVA21}), totalFactura=${JSON.stringify(payload.parameters.totalFactura)} (typeof=${typeof payload.parameters.totalFactura})`);
+  const iva21Row = payload.parameters.totalesiva[5];
+  logger.info(`[Colppy Factura] totalesiva[21%]: baseImpIva=${JSON.stringify(iva21Row.baseImpIva)} (typeof=${typeof iva21Row.baseImpIva}), importeIva=${JSON.stringify(iva21Row.importeIva)} (typeof=${typeof iva21Row.importeIva})`);
+  logger.info(`[Colppy Factura] itemsFactura tipos (primer item):`, payload.parameters.itemsFactura[0] ? {
+    ImporteUnitario: `${JSON.stringify(payload.parameters.itemsFactura[0].ImporteUnitario)} (${typeof payload.parameters.itemsFactura[0].ImporteUnitario})`,
+    importeTotal: `${JSON.stringify(payload.parameters.itemsFactura[0].importeTotal)} (${typeof payload.parameters.itemsFactura[0].importeTotal})`,
+    importeIva: `${JSON.stringify(payload.parameters.itemsFactura[0].importeIva)} (${typeof payload.parameters.itemsFactura[0].importeIva})`,
+    IVA: `${JSON.stringify(payload.parameters.itemsFactura[0].IVA)} (${typeof payload.parameters.itemsFactura[0].IVA})`,
+    Cantidad: `${JSON.stringify(payload.parameters.itemsFactura[0].Cantidad)} (${typeof payload.parameters.itemsFactura[0].Cantidad})`,
+  } : 'NO HAY ITEMS');
   logger.info(JSON.stringify(payload, null, 2));
   logger.info('=== FIN PAYLOAD ===');
 
@@ -1320,6 +1332,7 @@ export async function sendQuoteToColppy(
 
       // Calcular totales para Colppy
       // Cada preparedItem tiene su propio SKU, IVA% y comentario (tanto principales como adicionales)
+      logger.info(`[Colppy Factura] === INICIO CÁLCULO netoGravado === tipoFactura=${tipoFactura}, items=${itemsConIVA.length}, pricesIncludeTax=${pricesIncludeTax}`);
       let netoGravado = 0;
       const itemsFactura = itemsConIVA.map((item, index) => {
         const prepItem = preparedItems[index]; // Índices alineados: preparedItems → itemsConIVA
@@ -1340,16 +1353,22 @@ export async function sendQuoteToColppy(
             : (importeUnitario / 1.21) * cantidad;
         netoGravado += netoLinea;
 
+        logger.info(`[Colppy Factura] item[${index}] SKU=${prepItem.productSku} cant=${cantidad} pUnit=${importeUnitario} impTotal=${importeTotal} netoLinea=${netoLinea.toFixed(2)} → netoGravadoAcum=${netoGravado.toFixed(2)}`);
+
         return {
           idItem: Number(colppyItemIds[prepItem.productSku]) || 0,
           minimo: '',
           tipoItem: '',
           codigo: '',
           Descripcion: item.descripcion,
-          ImporteUnitario: Math.round(importeUnitario * 100) / 100,
-          importeTotal: Math.round(importeTotal * 100) / 100,
-          importeIva: Math.round(importeIva * 100) / 100,
-          IVA: Math.round(prepItem.ivaPercent * 100) / 100,
+          // Todos los campos numéricos del item van como STRING con 2 decimales
+          // (misma convención que colppyCreatePurchaseInvoice, que SÍ funciona).
+          // Si van como número, Colppy los trata como "vacío" y recalcula mal
+          // el netoGravado raíz (queda 0.00 hasta apretar TAB).
+          ImporteUnitario: (Math.round(importeUnitario * 100) / 100).toFixed(2),
+          importeTotal: (Math.round(importeTotal * 100) / 100).toFixed(2),
+          importeIva: (Math.round(importeIva * 100) / 100).toFixed(2),
+          IVA: (Math.round(prepItem.ivaPercent * 100) / 100).toFixed(2),
           Cantidad: String(cantidad),
           unidadMedida: 'Un',
           Comentario: prepItem.comentario || `Cotización ${quote.quoteNumber}`,
@@ -1369,6 +1388,7 @@ export async function sendQuoteToColppy(
       netoGravado = Math.round(netoGravado * 100) / 100;
       const totalIVA = Math.round(netoGravado * 0.21 * 100) / 100;
       const totalFactura = Math.round((netoGravado + totalIVA) * 100) / 100;
+      logger.info(`[Colppy Factura] === FIN CÁLCULO === netoGravado=${netoGravado} totalIVA=${totalIVA} totalFactura=${totalFactura}`);
 
       logger.info(`[Colppy Factura] fechaFactura="${fechaFactura}", fechaVto="${fechaVto}"`);
       logger.info(`[Colppy Factura] itemsFactura Descripcion:`, itemsFactura.map((i, idx) => ({

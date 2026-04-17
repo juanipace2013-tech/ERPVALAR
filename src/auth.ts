@@ -4,6 +4,16 @@ import { PrismaAdapter } from '@auth/prisma-adapter'
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 import * as OTPAuth from 'otpauth'
+import { checkRateLimit, recordFailedAttempt, clearAttempts } from '@/lib/rate-limit'
+
+function getClientIp(request: Request | undefined): string {
+  if (!request) return 'unknown'
+  const xff = request.headers.get('x-forwarded-for')
+  if (xff) return xff.split(',')[0].trim()
+  const xri = request.headers.get('x-real-ip')
+  if (xri) return xri.trim()
+  return 'unknown'
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma) as any,
@@ -15,23 +25,31 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         password: { label: 'Password', type: 'password' },
         mfaCode: { label: 'Código 2FA', type: 'text' },
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         if (!credentials?.email || !credentials?.password) {
           throw new Error('Email y contraseña son requeridos')
         }
 
+        const email = (credentials.email as string).toLowerCase()
+        const ip = getClientIp(request as Request | undefined)
+        const key = `login:${ip}:${email}`
+
+        if (!(await checkRateLimit(key))) {
+          throw new Error('Demasiados intentos. Intentá nuevamente en 15 minutos.')
+        }
+
         const user = await prisma.user.findUnique({
-          where: {
-            email: credentials.email as string,
-          },
+          where: { email },
         })
 
         if (!user) {
+          await recordFailedAttempt(key)
           throw new Error('Email o contraseña incorrectos')
         }
 
         if (user.status !== 'ACTIVE') {
-          throw new Error('Usuario inactivo o suspendido')
+          await recordFailedAttempt(key)
+          throw new Error('Email o contraseña incorrectos')
         }
 
         const isPasswordValid = await bcrypt.compare(
@@ -40,6 +58,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         )
 
         if (!isPasswordValid) {
+          await recordFailedAttempt(key)
           throw new Error('Email o contraseña incorrectos')
         }
 
@@ -63,10 +82,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           const delta = totp.validate({ token: mfaCode, window: 1 })
 
           if (delta === null) {
+            await recordFailedAttempt(key)
             throw new Error('MFA_INVALID')
           }
         }
 
+        await clearAttempts(key)
         return {
           id: user.id,
           email: user.email,

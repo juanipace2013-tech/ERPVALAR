@@ -3,6 +3,7 @@ import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import * as OTPAuth from 'otpauth'
 import { logger } from '@/lib/logger'
+import { checkRateLimit, recordFailedAttempt, clearAttempts } from '@/lib/rate-limit'
 
 // POST: Verificar código TOTP y activar 2FA
 export async function POST(request: NextRequest) {
@@ -10,6 +11,14 @@ export async function POST(request: NextRequest) {
     const session = await auth()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    }
+
+    const rateLimitKey = `mfa-setup:${session.user.id}`
+    if (!(await checkRateLimit(rateLimitKey))) {
+      return NextResponse.json(
+        { error: 'Demasiados intentos. Intentá nuevamente en 15 minutos.' },
+        { status: 429 }
+      )
     }
 
     const { code } = await request.json()
@@ -54,11 +63,14 @@ export async function POST(request: NextRequest) {
     const delta = totp.validate({ token: code, window: 1 })
 
     if (delta === null) {
+      await recordFailedAttempt(rateLimitKey)
       return NextResponse.json(
         { error: 'Código incorrecto. Intentá de nuevo.' },
         { status: 400 }
       )
     }
+
+    await clearAttempts(rateLimitKey)
 
     // Activar 2FA
     await prisma.user.update({

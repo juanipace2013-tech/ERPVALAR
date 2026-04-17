@@ -28,6 +28,7 @@ import {
   RefreshCw,
   Search,
   CalendarDays,
+  Eye,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber, getLocalDateString } from '@/lib/utils'
@@ -1030,6 +1031,14 @@ export default function QuoteDetailPage() {
           </div>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => router.push(`/cotizaciones/${quote.id}/ver`)}
+            title="Ver detalle completo"
+          >
+            <Eye className="h-4 w-4" />
+          </Button>
           <Button
             variant="outline"
             onClick={async () => {

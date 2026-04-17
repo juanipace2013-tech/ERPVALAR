@@ -4,8 +4,18 @@ import * as bcrypt from 'bcryptjs'
 const prisma = new PrismaClient()
 
 async function main() {
-  const email = process.argv[2] || 'admin@valarg.com'
-  const newPassword = process.argv[3] || 'admin123'
+  const email = process.argv[2]
+  const newPassword = process.argv[3]
+
+  if (!email || !newPassword) {
+    console.error('Usage: tsx scripts/reset-password.ts <email> <password>')
+    process.exit(1)
+  }
+
+  if (newPassword.length < 12) {
+    console.error('Password must be at least 12 characters')
+    process.exit(1)
+  }
 
   console.log(`🔐 Reseteando contraseña para: ${email}\n`)
 
@@ -18,7 +28,7 @@ async function main() {
     process.exit(1)
   }
 
-  const hashedPassword = await bcrypt.hash(newPassword, 10)
+  const hashedPassword = await bcrypt.hash(newPassword, 12)
 
   await prisma.user.update({
     where: { email },

@@ -1,9 +1,15 @@
 import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
+import crypto from 'crypto'
 
 const prisma = new PrismaClient()
 
 async function main() {
+  if (process.env.NODE_ENV === 'production' && !process.env.ALLOW_SEED_IN_PRODUCTION) {
+    console.error('❌ This script cannot run in production. Set ALLOW_SEED_IN_PRODUCTION=1 to override.')
+    process.exit(1)
+  }
+
   console.log('🌱 Starting simple seed...')
 
   // ========================================
@@ -11,9 +17,17 @@ async function main() {
   // ========================================
   console.log('Creating users...')
 
-  const hashedPasswordAdmin = await bcrypt.hash('admin123', 10)
-  const hashedPasswordVendedor = await bcrypt.hash('vendedor123', 10)
-  const hashedPasswordGerente = await bcrypt.hash('gerente123', 10)
+  const adminPassword = crypto.randomBytes(16).toString('base64url')
+  const vendedorPassword = crypto.randomBytes(16).toString('base64url')
+  const gerentePassword = crypto.randomBytes(16).toString('base64url')
+
+  console.log(`[SEED] admin@valarg.com password: ${adminPassword}`)
+  console.log(`[SEED] vendedor@valarg.com password: ${vendedorPassword}`)
+  console.log(`[SEED] gerente@valarg.com password: ${gerentePassword}`)
+
+  const hashedPasswordAdmin = await bcrypt.hash(adminPassword, 12)
+  const hashedPasswordVendedor = await bcrypt.hash(vendedorPassword, 12)
+  const hashedPasswordGerente = await bcrypt.hash(gerentePassword, 12)
 
   // Verificar y crear admin
   const existingAdmin = await prisma.user.findUnique({
@@ -94,10 +108,8 @@ async function main() {
   // RESUMEN
   // ========================================
   console.log('\n✅ Seed completed successfully!')
-  console.log('\n📊 Test users:')
-  console.log(`   - admin@valarg.com / admin123 (ADMIN)`)
-  console.log(`   - vendedor@valarg.com / vendedor123 (VENDEDOR)`)
-  console.log(`   - gerente@valarg.com / gerente123 (GERENTE)`)
+
+  console.log('\n⚠️  IMPORTANT: Save the passwords above. They will not be shown again.\n')
 }
 
 main()

@@ -161,15 +161,6 @@ export default function LoginPage() {
                     )}
                   </Button>
                 </form>
-
-                <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-100">
-                  <p className="text-xs font-semibold text-blue-900 mb-2 text-center">Usuarios de prueba:</p>
-                  <div className="space-y-1 text-xs text-blue-700">
-                    <p><span className="font-medium">Admin:</span> admin@valarg.com / admin123</p>
-                    <p><span className="font-medium">Vendedor:</span> vendedor@valarg.com / vendedor123</p>
-                    <p><span className="font-medium">Gerente:</span> gerente@valarg.com / gerente123</p>
-                  </div>
-                </div>
               </>
             ) : (
               /* Formulario de verificación 2FA */

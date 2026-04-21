@@ -1343,7 +1343,10 @@ export async function sendQuoteToColppy(
         //   clasificar la línea como "Neto gravado" (alícuota 21%). Con
         //   IVA=0 lo clasificaba como "Neto no gravado".
         // - subtotal = importeUnitario*cantidad (mismo valor que la línea sin IVA).
-        // - unidadMedida vacío ''.
+        // - unidadMedida "Un" (Unidades). Catálogo de VAL ARG vende por unidad;
+        //   si en el futuro aparecen productos por kg/m/l habrá que mapearlo
+        //   desde Product.unit. Mandar "" hace que Colppy muestre la columna
+        //   "U. Medida" vacía en la factura.
         // - Sin importeTotal ni importeIva (no aparecen en el ejemplo).
         const subtotalLinea = Math.round(importeTotal * 100) / 100;
         return {
@@ -1356,7 +1359,7 @@ export async function sendQuoteToColppy(
           subtotal: subtotalLinea,
           IVA: 21,
           Cantidad: cantidad,
-          unidadMedida: '',
+          unidadMedida: 'Un',
           Comentario: prepItem.comentario || `Cotización ${quote.quoteNumber}`,
           porcDesc: 0,
           idPlanCuenta: 'Ventas',

@@ -12,6 +12,7 @@ import { logger } from '@/lib/logger';
 import { getMultiplierForClient } from '@/lib/client-multipliers';
 import { mapColppyTaxCondition } from '@/lib/colppy-tax-map';
 import { auth } from '@/auth';
+import { prisma } from '@/lib/prisma';
 
 // ============================================================================
 // CONFIGURACIÓN
@@ -157,9 +158,11 @@ async function loadAllCustomers(): Promise<CachedCustomer[]> {
       );
     }
 
-    customerCache = mapCustomers(retry.response.data);
+    const localMultipliers = await loadLocalMultipliers();
+    customerCache = mapCustomers(retry.response.data, localMultipliers);
   } else {
-    customerCache = mapCustomers(response.response.data);
+    const localMultipliers = await loadLocalMultipliers();
+    customerCache = mapCustomers(response.response.data, localMultipliers);
   }
 
   cacheTimestamp = Date.now();
@@ -169,7 +172,30 @@ async function loadAllCustomers(): Promise<CachedCustomer[]> {
   return customerCache;
 }
 
-function mapCustomers(data: any[]): CachedCustomer[] {
+/**
+ * Carga el map de priceMultiplier de todos los clientes locales, indexado por
+ * CUIT normalizado (solo dígitos). El valor de la BD prima sobre la tabla
+ * hardcoded de CLIENT_MULTIPLIERS si el usuario lo editó desde la ficha.
+ */
+async function loadLocalMultipliers(): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  try {
+    const rows = await prisma.customer.findMany({
+      select: { cuit: true, priceMultiplier: true },
+    });
+    for (const row of rows) {
+      const normalized = (row.cuit || '').replace(/\D/g, '');
+      if (normalized) {
+        map.set(normalized, Number(row.priceMultiplier));
+      }
+    }
+  } catch (err) {
+    logger.error('[Colppy] Error cargando multipliers locales, se usará fallback:', err);
+  }
+  return map;
+}
+
+function mapCustomers(data: any[], localMultipliers: Map<string, number>): CachedCustomer[] {
   // Mapeo de condición IVA: ver src/lib/colppy-tax-map.ts
   const paymentTermsMap: Record<string, string> = {
     '0': 'Contado',
@@ -212,6 +238,12 @@ function mapCustomers(data: any[]): CachedCustomer[] {
       `CUIT ${cuit}, cliente ${name}`
     );
 
+    // Multiplier: priorizar valor editado en BD local (por CUIT),
+    // cae al hardcoded por razón social si el cliente no existe localmente.
+    const normalizedCuit = cuit.replace(/\D/g, '');
+    const localMultiplier = normalizedCuit ? localMultipliers.get(normalizedCuit) : undefined;
+    const priceMultiplier = localMultiplier ?? getMultiplierForClient(businessName);
+
     return {
       id: c.idCliente,
       colppyId: c.idCliente,
@@ -228,7 +260,7 @@ function mapCustomers(data: any[]): CachedCustomer[] {
       mobile: c.Celular || '',
       email: c.Email || '',
       saldo: parseFloat(c.Saldo || '0'),
-      priceMultiplier: getMultiplierForClient(businessName),
+      priceMultiplier,
       paymentTerms: paymentTermsMap[idCondicionPago] || 'Contado',
       paymentTermsDays: parseInt(idCondicionPago) || 0,
       searchText: `${name} ${cuit} ${cuit.replace(/\D/g, '')} ${businessName}`.toLowerCase(),

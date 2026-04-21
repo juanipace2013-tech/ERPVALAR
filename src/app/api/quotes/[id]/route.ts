@@ -252,14 +252,20 @@ export async function PUT(
         where: { id },
         data: { subtotal, total },
       })
+    }
 
-      // Opcionalmente guardar en el Customer para próximas cotizaciones
-      if (body.saveMultiplierToCustomer) {
-        await prisma.customer.update({
-          where: { id: quote.customerId },
-          data: { priceMultiplier: newMultiplier },
-        })
-      }
+    // Guardar el multiplicador en el Customer para futuras cotizaciones.
+    // Se ejecuta independientemente del recalculo de items: el flag vive en el
+    // Customer y no depende de que la quote actual tenga o no items cargados.
+    if (multiplierChanged && body.saveMultiplierToCustomer) {
+      const newMultiplier = Number(quote.multiplier)
+      await prisma.customer.update({
+        where: { id: quote.customerId },
+        data: { priceMultiplier: newMultiplier },
+      })
+      logger.info(
+        `[quotes/${id}] priceMultiplier persistido en Customer ${quote.customerId}: ${newMultiplier}`
+      )
     }
 
     // Si cambió el flag pricesIncludeTax (y no hubo recalculo por multiplicador),

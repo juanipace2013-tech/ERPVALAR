@@ -13,6 +13,13 @@ import { getMultiplierForClient } from '@/lib/client-multipliers';
 import { mapColppyTaxCondition } from '@/lib/colppy-tax-map';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
+import {
+  type CachedCustomer,
+  isCacheValid,
+  getCachedCustomers,
+  setCachedCustomers,
+  invalidateCustomerCache,
+} from '@/lib/colppy/customer-cache';
 
 // ============================================================================
 // CONFIGURACIÓN
@@ -30,32 +37,8 @@ function md5(text: string): string {
 // ============================================================================
 // CACHE EN MEMORIA
 // ============================================================================
-
-interface CachedCustomer {
-  id: string;
-  colppyId: string;
-  name: string;
-  businessName: string;
-  cuit: string;
-  taxCondition: string;
-  taxConditionDisplay: string;
-  address: string;
-  city: string;
-  province: string;
-  postalCode: string;
-  phone: string;
-  mobile: string;
-  email: string;
-  saldo: number;
-  priceMultiplier: number;
-  paymentTerms: string; // Condición de pago en texto (ej: "a 30 Días")
-  paymentTermsDays: number; // Días de la condición de pago (ej: 30)
-  searchText: string; // nombre + cuit + razón social en minúsculas para búsqueda rápida
-}
-
-let customerCache: CachedCustomer[] = [];
-let cacheTimestamp: number = 0;
-const CACHE_TTL = 10 * 60 * 1000; // 10 minutos
+// El cache de clientes vive en src/lib/colppy/customer-cache.ts para que
+// otros endpoints lo puedan invalidar tras editar un cliente.
 
 let cachedSession: { claveSesion: string; timestamp: number } | null = null;
 const SESSION_TTL = 20 * 60 * 1000; // 20 minutos
@@ -111,8 +94,8 @@ async function getSession(): Promise<string> {
 
 async function loadAllCustomers(): Promise<CachedCustomer[]> {
   // Si el cache es reciente, usar lo que hay
-  if (customerCache.length > 0 && Date.now() - cacheTimestamp < CACHE_TTL) {
-    return customerCache;
+  if (isCacheValid()) {
+    return getCachedCustomers();
   }
 
   logger.info('[Colppy] Cargando todos los clientes...');
@@ -134,6 +117,7 @@ async function loadAllCustomers(): Promise<CachedCustomer[]> {
     },
   });
 
+  let mapped: CachedCustomer[];
   if (response.result?.estado !== 0 || !response.response?.success) {
     // Si sesión expiró, reintentar
     cachedSession = null;
@@ -159,17 +143,17 @@ async function loadAllCustomers(): Promise<CachedCustomer[]> {
     }
 
     const localMultipliers = await loadLocalMultipliers();
-    customerCache = mapCustomers(retry.response.data, localMultipliers);
+    mapped = mapCustomers(retry.response.data, localMultipliers);
   } else {
     const localMultipliers = await loadLocalMultipliers();
-    customerCache = mapCustomers(response.response.data, localMultipliers);
+    mapped = mapCustomers(response.response.data, localMultipliers);
   }
 
-  cacheTimestamp = Date.now();
+  setCachedCustomers(mapped);
   const elapsed = Date.now() - startTime;
-  logger.info(`[Colppy] ${customerCache.length} clientes cargados en ${elapsed}ms`);
+  logger.info(`[Colppy] ${mapped.length} clientes cargados en ${elapsed}ms`);
 
-  return customerCache;
+  return mapped;
 }
 
 /**
@@ -361,8 +345,7 @@ export async function POST() {
     logger.info('[Colppy] Refrescando cache de clientes manualmente...');
 
     // Invalidar cache
-    cacheTimestamp = 0;
-    customerCache = [];
+    invalidateCustomerCache();
 
     // Recargar
     const customers = await loadAllCustomers();

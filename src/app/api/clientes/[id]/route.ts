@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma'
 import { customerSchema } from '@/lib/validations'
 import { z } from 'zod'
 import { logAudit } from '@/lib/audit'
+import { invalidateCustomerCache } from '@/lib/colppy/customer-cache'
 
 // GET /api/clientes/[id] - Obtener cliente por ID
 export async function GET(
@@ -194,6 +195,11 @@ export async function PUT(
       },
     })
 
+    // Si cambió priceMultiplier, invalidar el cache del buscador de Colppy.
+    if (Number(existingCustomer.priceMultiplier) !== Number(validatedData.priceMultiplier)) {
+      invalidateCustomerCache(customer.cuit || undefined)
+    }
+
     // Registrar actividad
     await prisma.activity.create({
       data: {
@@ -296,6 +302,12 @@ export async function PATCH(
         },
       },
     })
+
+    // Si cambió priceMultiplier, invalidar el cache del buscador de Colppy
+    // para que la próxima búsqueda refleje el valor nuevo sin esperar al TTL.
+    if ('priceMultiplier' in updateData) {
+      invalidateCustomerCache(customer.cuit || undefined)
+    }
 
     return NextResponse.json(customer)
   } catch (error) {

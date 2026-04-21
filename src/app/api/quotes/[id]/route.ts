@@ -3,6 +3,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/prisma'
+import { invalidateCustomerCache } from '@/lib/colppy/customer-cache'
 
 /**
  * GET /api/quotes/[id]
@@ -259,13 +260,15 @@ export async function PUT(
     // Customer y no depende de que la quote actual tenga o no items cargados.
     if (multiplierChanged && body.saveMultiplierToCustomer) {
       const newMultiplier = Number(quote.multiplier)
-      await prisma.customer.update({
+      const updatedCustomer = await prisma.customer.update({
         where: { id: quote.customerId },
         data: { priceMultiplier: newMultiplier },
+        select: { cuit: true },
       })
       logger.info(
         `[quotes/${id}] priceMultiplier persistido en Customer ${quote.customerId}: ${newMultiplier}`
       )
+      invalidateCustomerCache(updatedCustomer.cuit || undefined)
     }
 
     // Si cambió el flag pricesIncludeTax (y no hubo recalculo por multiplicador),

@@ -56,6 +56,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getLocalDateString } from '@/lib/utils'
+import { resolveJurisdiccionIIBB, COLPPY_JURISDICCIONES } from '@/lib/jurisdicciones-iibb'
 
 // ============ PAYMENT TERM NORMALIZATION ============
 
@@ -904,24 +905,45 @@ export default function NewPurchaseInvoicePage() {
       }> = []
 
       if (percepciones.length > 0) {
-        // Use individual percepciones from OCR
+        // Use individual percepciones from OCR / entrada manual
         for (const perc of percepciones) {
           if (perc.monto > 0) {
-            // Detect jurisdiction from description
-            let jurisdiction = 'NACIONAL'
-            let perceptionType = 'IIBB'
-            const desc = (perc.descripcion || '').toUpperCase()
-            if (/AGIP|CABA|C\.A\.B\.A/i.test(desc)) jurisdiction = 'CABA'
-            else if (/ARBA|BUENOS AIRES|BS\.?AS|PBA/i.test(desc)) jurisdiction = 'ARBA'
-            else if (/JUJUY/i.test(desc)) jurisdiction = 'JUJUY'
-            else if (/SALTA/i.test(desc)) jurisdiction = 'SALTA'
-            else if (/CÓRDOBA|CORDOBA/i.test(desc)) jurisdiction = 'CORDOBA'
-            else if (/MENDOZA/i.test(desc)) jurisdiction = 'MENDOZA'
-            else if (/SANTA FE/i.test(desc)) jurisdiction = 'SANTA FE'
+            const rawDesc = (perc.descripcion || '').trim()
+            const descUpper = rawDesc.toUpperCase()
 
-            if (/IVA/i.test(desc) && !/IIBB/i.test(desc)) {
+            // Detectar tipo: IVA/Ganancias/SUSS son nacionales; el resto se asume IIBB (provincial)
+            const isIVA = /\bIVA\b/i.test(descUpper) && !/IIBB|\bIB\b/i.test(descUpper)
+            const isGanancias = /GANANCIAS/i.test(descUpper) && !/IIBB|\bIB\b/i.test(descUpper)
+            const isSUSS = /SUSS/i.test(descUpper)
+
+            let perceptionType: string
+            let jurisdiction: string
+
+            if (isIVA) {
               perceptionType = 'IVA'
               jurisdiction = 'NACIONAL'
+            } else if (isGanancias) {
+              perceptionType = 'Ganancias'
+              jurisdiction = 'NACIONAL'
+            } else if (isSUSS) {
+              perceptionType = 'SUSS'
+              jurisdiction = 'NACIONAL'
+            } else {
+              // IIBB: exigimos jurisdicción válida (NUNCA default a NACIONAL)
+              const resolved = resolveJurisdiccionIIBB(rawDesc)
+              if (!resolved) {
+                toast.error(
+                  `Jurisdicción IIBB no reconocida en percepción "${rawDesc || '(vacío)'}". ` +
+                    `Usá alguno de estos nombres (o aliases "IB <provincia>", "IIBB <provincia>"): ` +
+                    COLPPY_JURISDICCIONES.join(', '),
+                  { duration: 12000 }
+                )
+                setLoading(false)
+                setSendingToColppy(false)
+                return
+              }
+              perceptionType = 'IIBB'
+              jurisdiction = resolved
             }
 
             perceptions.push({
@@ -930,7 +952,7 @@ export default function NewPurchaseInvoicePage() {
               rate: perc.porcentaje || 0,
               baseAmount: calculateNetAmount(),
               amount: perc.monto,
-              description: perc.descripcion,
+              description: rawDesc,
             })
           }
         }

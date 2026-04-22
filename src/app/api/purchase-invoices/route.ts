@@ -2,6 +2,7 @@ import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger'
+import { resolveJurisdiccionIIBB, COLPPY_JURISDICCIONES } from '@/lib/jurisdicciones-iibb'
 
 export async function GET(request: NextRequest) {
   try {
@@ -120,11 +121,27 @@ export async function POST(request: NextRequest) {
       taxAmount += itemNetAmount * (Number(item.taxRate) / 100);
     });
 
-    // Calcular percepciones
-    if (perceptions) {
-      perceptions.forEach((perception: any) => {
+    // Validar y normalizar jurisdicciones IIBB.
+    // Para perceptionType === 'IIBB' el label debe resolverse a una jurisdicción
+    // canónica de Colppy (24 provincias). NUNCA default a "NACIONAL".
+    // Otros tipos (IVA, Ganancias, SUSS) quedan en 'NACIONAL'.
+    if (perceptions && Array.isArray(perceptions)) {
+      for (const perception of perceptions) {
+        if (perception.perceptionType === 'IIBB') {
+          const resolved = resolveJurisdiccionIIBB(perception.jurisdiction || '')
+          if (!resolved) {
+            return NextResponse.json(
+              {
+                error: `Jurisdicción IIBB no reconocida: "${perception.jurisdiction || '(vacío)'}". ` +
+                  `Jurisdicciones válidas: ${COLPPY_JURISDICCIONES.join(', ')}.`,
+              },
+              { status: 400 }
+            );
+          }
+          perception.jurisdiction = resolved // normalizar a canónica antes de guardar
+        }
         perceptionsAmount += Number(perception.amount);
-      });
+      }
     }
 
     const total = netAmount + taxAmount + perceptionsAmount;

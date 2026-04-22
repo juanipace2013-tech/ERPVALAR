@@ -324,13 +324,27 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
       {/* RANKING DE VENDEDORES */}
       {rankingVendedores.length > 0 && (() => {
         const maxTotal = Math.max(...rankingVendedores.map(v => v.totalUSD), 1)
+        const totalCotizado = rankingVendedores.reduce((acc, v) => acc + (v.totalUSD || 0), 0)
+        const totalCotizaciones = rankingVendedores.reduce((acc, v) => acc + (v.cotizaciones || 0), 0)
+        const totalAceptadas = rankingVendedores.reduce((acc, v) => acc + (v.aceptadas || 0), 0)
         return (
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                <Trophy className="h-5 w-5 text-amber-500" />
-                Ranking de Cotizaciones del mes
-              </CardTitle>
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                <CardTitle className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <Trophy className="h-5 w-5 text-amber-500" />
+                  Ranking de Cotizaciones del mes
+                </CardTitle>
+                <div className="text-right">
+                  <p className="text-xs text-muted-foreground">Total cotizado</p>
+                  <p className="text-xl font-bold text-amber-600 dark:text-amber-400">
+                    {formatCurrency(totalCotizado)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {totalCotizaciones} cotización{totalCotizaciones !== 1 ? 'es' : ''} · {totalAceptadas} aceptada{totalAceptadas !== 1 ? 's' : ''}
+                  </p>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
@@ -411,13 +425,27 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
           return (b.montoAceptadas || 0) - (a.montoAceptadas || 0)
         })
         const maxMontoCerrado = Math.max(...rankingCerradas.map(v => v.montoAceptadas || 0), 1)
+        const totalCerrado = rankingCerradas.reduce((acc, v) => acc + (v.montoAceptadas || 0), 0)
+        const totalOperacionesCerradas = rankingCerradas.reduce((acc, v) => acc + (v.aceptadas || 0), 0)
+        const totalCotizacionesCerradas = rankingCerradas.reduce((acc, v) => acc + (v.cotizaciones || 0), 0)
         return (
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                <Trophy className="h-5 w-5 text-green-600" />
-                Ranking por Ventas Cerradas
-              </CardTitle>
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                <CardTitle className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <Trophy className="h-5 w-5 text-green-600" />
+                  Ranking por Ventas Cerradas
+                </CardTitle>
+                <div className="text-right">
+                  <p className="text-xs text-muted-foreground">Total cerrado</p>
+                  <p className="text-xl font-bold text-green-600 dark:text-green-400">
+                    {formatCurrency(totalCerrado)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {totalOperacionesCerradas} operación{totalOperacionesCerradas !== 1 ? 'es' : ''} cerrada{totalOperacionesCerradas !== 1 ? 's' : ''} de {totalCotizacionesCerradas} cotización{totalCotizacionesCerradas !== 1 ? 'es' : ''}
+                  </p>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">

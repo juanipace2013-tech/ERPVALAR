@@ -56,7 +56,8 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getLocalDateString } from '@/lib/utils'
-import { resolveJurisdiccionIIBB, COLPPY_JURISDICCIONES } from '@/lib/jurisdicciones-iibb'
+import { resolveJurisdiccionIIBB } from '@/lib/jurisdicciones-iibb'
+import { REVIEW_REASONS, type ReviewReason } from '@/lib/review-reasons'
 
 // ============ PAYMENT TERM NORMALIZATION ============
 
@@ -130,7 +131,12 @@ interface InvoiceItem {
 }
 
 interface OcrPercepcion {
+  tipo?: string
   descripcion: string
+  jurisdiccion?: string | null
+  jurisdiccion_inferida?: boolean | null
+  jurisdiccion_hint?: string | null
+  texto_original?: string | null
   porcentaje: number | null
   monto: number
 }
@@ -390,6 +396,12 @@ export default function NewPurchaseInvoicePage() {
     descripcion: string
     porcentaje: number | null
     monto: number
+    // OCR-enriched fields (all optional — sólo se usan para IIBB detectado por OCR)
+    jurisdiccionOcr?: string | null // jurisdicción canónica que devolvió el OCR (o null si no pudo)
+    jurisdiccionInferida?: boolean | null // true = inferida por emisor → pedir revisión
+    jurisdiccionHint?: string | null // código/regulación crudo (ej: "Reg. DN38")
+    textoOriginal?: string | null // línea textual de la factura
+    reviewed?: boolean // el usuario tocó el campo y confirmó
   }
   const [percepciones, setPercepciones] = useState<PercepcionItem[]>([])
 
@@ -712,12 +724,34 @@ export default function NewPurchaseInvoicePage() {
     if (data.totales) {
       // New format: percepciones as array
       if (data.totales.percepciones && Array.isArray(data.totales.percepciones) && data.totales.percepciones.length > 0) {
-        const percItems = data.totales.percepciones.map((p, idx) => ({
-          id: String(idx + 1),
-          descripcion: p.descripcion || `Percepción ${idx + 1}`,
-          porcentaje: p.porcentaje ? Number(p.porcentaje) : null,
-          monto: Number(p.monto) || 0,
-        }))
+        const percItems = data.totales.percepciones.map((p, idx) => {
+          // Si el OCR determinó la jurisdicción canónica, la usamos como descripción editable
+          // (porque `resolveJurisdiccionIIBB` se corre sobre este string al guardar).
+          // Si la jurisdicción vino null o inferida, dejamos la descripción original para
+          // que el operador vea el código y pueda corregir manualmente.
+          const juris = p.jurisdiccion || null
+          const inferida = p.jurisdiccion_inferida ?? null
+          const hint = p.jurisdiccion_hint || null
+          const textoOriginal = p.texto_original || p.descripcion || null
+
+          // Descripción por defecto: si hay jurisdicción confiable (no inferida), usar la
+          // canónica. En cualquier otro caso, preservar el texto original para revisión.
+          const descripcionDefault = juris && !inferida
+            ? juris
+            : (p.descripcion || textoOriginal || `Percepción ${idx + 1}`)
+
+          return {
+            id: String(idx + 1),
+            descripcion: descripcionDefault,
+            porcentaje: p.porcentaje ? Number(p.porcentaje) : null,
+            monto: Number(p.monto) || 0,
+            jurisdiccionOcr: juris,
+            jurisdiccionInferida: inferida,
+            jurisdiccionHint: hint,
+            textoOriginal,
+            reviewed: false,
+          } as PercepcionItem
+        })
         setPercepciones(percItems)
 
         // Also set legacy fields for calculation compatibility
@@ -904,6 +938,15 @@ export default function NewPurchaseInvoicePage() {
         description?: string
       }> = []
 
+      // Acumulamos flags de revisión para enviar al servidor.
+      // Si alguna percepción IIBB proviene del OCR con señales de baja confianza
+      // (jurisdicción inferida por emisor o no determinada) y el operador NO tocó
+      // el campo, la factura se guarda con requiresReview=true para bloquear el
+      // envío a Colppy hasta que la revisen manualmente.
+      let derivedRequiresReview = false
+      let derivedReviewReason: ReviewReason | null = null
+      const reviewPercepciones: string[] = []
+
       if (percepciones.length > 0) {
         // Use individual percepciones from OCR / entrada manual
         for (const perc of percepciones) {
@@ -929,21 +972,24 @@ export default function NewPurchaseInvoicePage() {
               perceptionType = 'SUSS'
               jurisdiction = 'NACIONAL'
             } else {
-              // IIBB: exigimos jurisdicción válida (NUNCA default a NACIONAL)
+              // IIBB: intentamos resolver; si no se puede o si la jurisdicción vino
+              // inferida del OCR y el operador no la revisó, marcamos para revisión
+              // manual en lugar de bloquear el guardado.
               const resolved = resolveJurisdiccionIIBB(rawDesc)
-              if (!resolved) {
-                toast.error(
-                  `Jurisdicción IIBB no reconocida en percepción "${rawDesc || '(vacío)'}". ` +
-                    `Usá alguno de estos nombres (o aliases "IB <provincia>", "IIBB <provincia>"): ` +
-                    COLPPY_JURISDICCIONES.join(', '),
-                  { duration: 12000 }
-                )
-                setLoading(false)
-                setSendingToColppy(false)
-                return
+              const ocrInferida = perc.jurisdiccionInferida === true
+              const needsReviewRow =
+                !resolved || (ocrInferida && !perc.reviewed)
+
+              if (needsReviewRow) {
+                derivedRequiresReview = true
+                derivedReviewReason = REVIEW_REASONS.IIBB_JURISDICTION
+                reviewPercepciones.push(rawDesc || '(vacío)')
               }
+
               perceptionType = 'IIBB'
-              jurisdiction = resolved
+              // Mandamos la canónica si pudimos resolver, si no el texto crudo.
+              // El server tolera no-resueltas y las persiste como vinieron.
+              jurisdiction = resolved || rawDesc || '(sin jurisdicción)'
             }
 
             perceptions.push({
@@ -1019,6 +1065,8 @@ export default function NewPurchaseInvoicePage() {
               taxRate: item.taxRate,
             })),
           perceptions: perceptions.length > 0 ? perceptions : undefined,
+          requiresReview: derivedRequiresReview || undefined,
+          reviewReason: derivedReviewReason || undefined,
         }),
       })
 
@@ -1028,10 +1076,27 @@ export default function NewPurchaseInvoicePage() {
       }
 
       const invoice = await response.json()
-      toast.success('Factura de compra creada correctamente')
 
-      // 2. Si pidió enviar a Colppy, hacerlo ahora
-      if (sendToColppy) {
+      // El servidor puede marcar requiresReview por su cuenta (ej. jurisdicción
+      // no resuelta que el cliente mandó crudo). Usamos lo que devolvió el server
+      // como fuente de verdad para el mensaje al usuario y para decidir si
+      // intentamos el envío a Colppy.
+      const savedNeedsReview = Boolean(invoice.requiresReview) || derivedRequiresReview
+      if (savedNeedsReview) {
+        const listado = reviewPercepciones.length > 0
+          ? ` (${reviewPercepciones.join(', ')})`
+          : ''
+        toast.warning(
+          `Factura guardada con flag de revisión${listado}. ` +
+            `No se enviará a Colppy hasta que un operador confirme la jurisdicción IIBB.`,
+          { duration: 10000 }
+        )
+      } else {
+        toast.success('Factura de compra creada correctamente')
+      }
+
+      // 2. Si pidió enviar a Colppy y la factura NO requiere revisión, hacerlo ahora
+      if (sendToColppy && !savedNeedsReview) {
         try {
           const colppyResponse = await fetch(`/api/purchase-invoices/${invoice.id}/send-to-colppy`, {
             method: 'POST',
@@ -1673,60 +1738,101 @@ export default function NewPurchaseInvoicePage() {
                 {/* Individual percepciones from OCR */}
                 {percepciones.length > 0 ? (
                   <div className="space-y-2">
-                    {percepciones.map((perc) => (
-                      <div key={perc.id} className="flex items-center gap-2">
-                        <Input
-                          value={perc.descripcion}
-                          onChange={(e) =>
-                            setPercepciones(
-                              percepciones.map((p) =>
-                                p.id === perc.id ? { ...p, descripcion: e.target.value } : p
-                              )
-                            )
-                          }
-                          className="h-8 text-sm flex-1"
-                          placeholder="Descripción (ej: PERCEP. AGIP)"
-                        />
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={perc.monto || ''}
-                          onChange={(e) => {
-                            const newMonto = Number(e.target.value)
-                            setPercepciones(
-                              percepciones.map((p) =>
-                                p.id === perc.id ? { ...p, monto: newMonto } : p
-                              )
-                            )
-                            // Update legacy totals
-                            const updated = percepciones.map((p) =>
-                              p.id === perc.id ? { ...p, monto: newMonto } : p
-                            )
-                            const total = updated.reduce((s, p) => s + p.monto, 0)
-                            setPercepcionIIBB(total)
-                            setPercepcionIva(0)
-                            setOtrosImpuestos(0)
-                          }}
-                          className="h-8 text-sm w-36"
-                          placeholder="Monto"
-                        />
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            const updated = percepciones.filter((p) => p.id !== perc.id)
-                            setPercepciones(updated)
-                            const total = updated.reduce((s, p) => s + p.monto, 0)
-                            setPercepcionIIBB(total)
-                            setPercepcionIva(0)
-                            setOtrosImpuestos(0)
-                          }}
-                        >
-                          <Trash2 className="h-3 w-3 text-red-600" />
-                        </Button>
-                      </div>
-                    ))}
+                    {percepciones.map((perc) => {
+                      // Una percepción requiere revisión si el OCR marcó la jurisdicción
+                      // como inferida (menor confianza) o no la pudo determinar (null con hint),
+                      // y el usuario todavía no confirmó.
+                      const needsReview =
+                        !perc.reviewed &&
+                        (perc.jurisdiccionInferida === true ||
+                          (perc.jurisdiccionOcr == null && !!perc.jurisdiccionHint))
+                      return (
+                        <div key={perc.id} className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            {needsReview && (
+                              <AlertCircle
+                                className="h-4 w-4 text-amber-500 flex-shrink-0"
+                                aria-label="Jurisdicción IIBB requiere revisión"
+                              />
+                            )}
+                            <Input
+                              value={perc.descripcion}
+                              onChange={(e) =>
+                                setPercepciones(
+                                  percepciones.map((p) =>
+                                    p.id === perc.id
+                                      ? { ...p, descripcion: e.target.value, reviewed: true }
+                                      : p
+                                  )
+                                )
+                              }
+                              className={`h-8 text-sm flex-1 ${
+                                needsReview ? 'border-amber-400 focus-visible:ring-amber-400' : ''
+                              }`}
+                              placeholder="Descripción (ej: PERCEP. AGIP, Buenos Aires, Córdoba)"
+                            />
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={perc.monto || ''}
+                              onChange={(e) => {
+                                const newMonto = Number(e.target.value)
+                                setPercepciones(
+                                  percepciones.map((p) =>
+                                    p.id === perc.id ? { ...p, monto: newMonto } : p
+                                  )
+                                )
+                                // Update legacy totals
+                                const updated = percepciones.map((p) =>
+                                  p.id === perc.id ? { ...p, monto: newMonto } : p
+                                )
+                                const total = updated.reduce((s, p) => s + p.monto, 0)
+                                setPercepcionIIBB(total)
+                                setPercepcionIva(0)
+                                setOtrosImpuestos(0)
+                              }}
+                              className="h-8 text-sm w-36"
+                              placeholder="Monto"
+                            />
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                const updated = percepciones.filter((p) => p.id !== perc.id)
+                                setPercepciones(updated)
+                                const total = updated.reduce((s, p) => s + p.monto, 0)
+                                setPercepcionIIBB(total)
+                                setPercepcionIva(0)
+                                setOtrosImpuestos(0)
+                              }}
+                            >
+                              <Trash2 className="h-3 w-3 text-red-600" />
+                            </Button>
+                          </div>
+                          {(perc.textoOriginal || perc.jurisdiccionHint) && (
+                            <p
+                              className={`text-xs ml-6 ${
+                                needsReview ? 'text-amber-600' : 'text-gray-400'
+                              }`}
+                            >
+                              OCR detectó:{' '}
+                              <span className="font-mono">
+                                {perc.textoOriginal || perc.jurisdiccionHint}
+                              </span>
+                              {perc.jurisdiccionInferida && (
+                                <span className="ml-1 italic">(inferida por emisor — revisar)</span>
+                              )}
+                              {perc.jurisdiccionOcr == null && perc.jurisdiccionHint && (
+                                <span className="ml-1 italic">
+                                  (jurisdicción no determinada — completar manualmente)
+                                </span>
+                              )}
+                            </p>
+                          )}
+                        </div>
+                      )
+                    })}
                     <Button
                       variant="ghost"
                       size="sm"

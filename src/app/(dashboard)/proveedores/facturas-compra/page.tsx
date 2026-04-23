@@ -43,8 +43,10 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  AlertTriangle,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { reviewReasonLabel } from '@/lib/review-reasons'
 
 interface PurchaseInvoice {
   id: string
@@ -64,6 +66,8 @@ interface PurchaseInvoice {
   balance: number
   stockImpact: boolean
   colppyInvoiceId: string | null
+  requiresReview?: boolean
+  reviewReason?: string | null
   items: Array<{
     id: string
     quantity: number
@@ -371,9 +375,20 @@ export default function PurchaseInvoicesPage() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <Badge className={statusColors[invoice.status]}>
-                          {statusLabels[invoice.status]}
-                        </Badge>
+                        <div className="flex flex-col items-start gap-1">
+                          <Badge className={statusColors[invoice.status]}>
+                            {statusLabels[invoice.status]}
+                          </Badge>
+                          {invoice.requiresReview && (
+                            <Badge
+                              className="bg-amber-100 text-amber-800 border border-amber-300 gap-1"
+                              title={reviewReasonLabel(invoice.reviewReason) || 'Revisar factura'}
+                            >
+                              <AlertTriangle className="h-3 w-3" />
+                              {reviewReasonLabel(invoice.reviewReason) || 'Revisar'}
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         {invoice.stockImpact ? (

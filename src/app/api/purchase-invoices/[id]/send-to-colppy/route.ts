@@ -12,6 +12,7 @@ import {
   ColppySessionExpiredError,
 } from '@/lib/colppy'
 import { resolveJurisdiccionIIBB } from '@/lib/jurisdicciones-iibb'
+import { reviewReasonLabel } from '@/lib/review-reasons'
 
 // Valores válidos de condición de pago en Colppy
 const COLPPY_PAYMENT_TERMS = [
@@ -133,6 +134,25 @@ export async function POST(
       return NextResponse.json(
         { error: `Esta factura ya fue enviada a Colppy (ID: ${invoice.colppyInvoiceId})` },
         { status: 400 }
+      )
+    }
+
+    // Bloquear si la factura está marcada para revisión manual.
+    // Motivo típico: OCR no pudo determinar una jurisdicción IIBB. Colppy
+    // rechazaría un payload con jurisdicción inválida y daría un error poco
+    // claro — mejor fallar temprano con un mensaje que apunte al operador a
+    // abrir la factura y corregir.
+    if (invoice.requiresReview) {
+      const reasonLabel = reviewReasonLabel(invoice.reviewReason) || 'Revisar factura'
+      return NextResponse.json(
+        {
+          error:
+            `La factura ${invoice.invoiceNumber} requiere revisión manual antes de ` +
+            `enviarse a Colppy. Motivo: ${reasonLabel}. ` +
+            `Abrila, corregí el dato marcado y destildá el flag de revisión antes de reintentar.`,
+          reviewReason: invoice.reviewReason,
+        },
+        { status: 409 }
       )
     }
 

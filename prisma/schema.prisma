@@ -503,6 +503,14 @@ model PurchaseInvoice {
   stockImpact     Boolean   @default(false) // Si ya impactó en stock
   stockImpactedAt DateTime?
 
+  // Revisión manual post-OCR u otros motivos (ambiguedad, mismatch de totales, CUIT dudoso, etc.)
+  // requiresReview es un flag denormalizado indexable para filtros de lista.
+  // reviewReason es la fuente de verdad: null/"" = sin motivo = no requiere review.
+  // Valores canónicos (lib/review-reasons.ts): "iibb_jurisdiction", "amount_mismatch",
+  // "cuit_mismatch", "ambiguous_perception". Ampliable sin migración.
+  requiresReview Boolean @default(false)
+  reviewReason   String?
+
   // Contabilidad
   journalEntryId String?       @unique
   journalEntry   JournalEntry? @relation(fields: [journalEntryId], references: [id])
@@ -534,6 +542,7 @@ model PurchaseInvoice {
   @@index([status])
   @@index([createdBy])
   @@index([colppyInvoiceId])
+  @@index([requiresReview])
   @@map("purchase_invoices")
 }
 

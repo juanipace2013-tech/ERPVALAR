@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger'
 import { resolveJurisdiccionIIBB, COLPPY_JURISDICCIONES } from '@/lib/jurisdicciones-iibb'
+import { REVIEW_REASONS, isReviewReason, type ReviewReason } from '@/lib/review-reasons'
 
 export async function GET(request: NextRequest) {
   try {
@@ -98,7 +99,20 @@ export async function POST(request: NextRequest) {
       items,
       taxes,
       perceptions,
+      // Flags de revisión enviados por el cliente (ej. flujo OCR con jurisdicción
+      // inferida o no determinada). Si el cliente los manda, respetamos lo que
+      // vino; además, el server siempre re-evalúa las percepciones y puede marcar
+      // requiresReview por su cuenta aunque el cliente no lo haya hecho.
+      requiresReview: clientRequiresReview,
+      reviewReason: clientReviewReason,
     } = body;
+
+    const warnings: string[] = []
+    // Review state derivado: partimos de lo que mandó el cliente y lo combinamos
+    // con lo que detectemos server-side abajo.
+    let effectiveRequiresReview = Boolean(clientRequiresReview)
+    let effectiveReviewReason: ReviewReason | null =
+      isReviewReason(clientReviewReason) ? (clientReviewReason as ReviewReason) : null
 
     // Calcular totales
     let subtotal = 0;
@@ -121,24 +135,36 @@ export async function POST(request: NextRequest) {
       taxAmount += itemNetAmount * (Number(item.taxRate) / 100);
     });
 
-    // Validar y normalizar jurisdicciones IIBB.
-    // Para perceptionType === 'IIBB' el label debe resolverse a una jurisdicción
+    // Normalizar jurisdicciones IIBB.
+    // Para perceptionType === 'IIBB' tratamos de resolver el label a una jurisdicción
     // canónica de Colppy (24 provincias). NUNCA default a "NACIONAL".
     // Otros tipos (IVA, Ganancias, SUSS) quedan en 'NACIONAL'.
+    //
+    // Cambio respecto del flujo anterior: si una percepción IIBB NO resuelve a una
+    // jurisdicción canónica, en vez de 400 guardamos la factura con requiresReview=true
+    // y reviewReason='iibb_jurisdiction'. El envío a Colppy (send-to-colppy) bloqueará
+    // hasta que el operador corrija manualmente la jurisdicción y limpie el flag.
     if (perceptions && Array.isArray(perceptions)) {
       for (const perception of perceptions) {
         if (perception.perceptionType === 'IIBB') {
-          const resolved = resolveJurisdiccionIIBB(perception.jurisdiction || '')
-          if (!resolved) {
-            return NextResponse.json(
-              {
-                error: `Jurisdicción IIBB no reconocida: "${perception.jurisdiction || '(vacío)'}". ` +
-                  `Jurisdicciones válidas: ${COLPPY_JURISDICCIONES.join(', ')}.`,
-              },
-              { status: 400 }
-            );
+          const rawLabel = perception.jurisdiction || ''
+          const resolved = resolveJurisdiccionIIBB(rawLabel)
+          if (resolved) {
+            perception.jurisdiction = resolved // normalizar a canónica
+          } else {
+            // No se pudo resolver: persistimos el string crudo tal cual (max 100 chars
+            // para no pasarle a la columna algo grotesco) y marcamos la factura para
+            // revisión manual. Deja constancia en `description` para que el operador
+            // vea qué texto original tenía.
+            perception.jurisdiction = String(rawLabel).slice(0, 100) || '(sin jurisdicción)'
+            effectiveRequiresReview = true
+            effectiveReviewReason = REVIEW_REASONS.IIBB_JURISDICTION
+            warnings.push(
+              `Percepción IIBB con jurisdicción no reconocida: "${rawLabel || '(vacío)'}". ` +
+                `La factura se guardó con flag de revisión — no podrá enviarse a Colppy hasta que ` +
+                `un operador seleccione una jurisdicción válida (${COLPPY_JURISDICCIONES.join(', ')}).`
+            )
           }
-          perception.jurisdiction = resolved // normalizar a canónica antes de guardar
         }
         perceptionsAmount += Number(perception.amount);
       }
@@ -173,6 +199,8 @@ export async function POST(request: NextRequest) {
         status: 'PENDING',
         description,
         internalNotes,
+        requiresReview: effectiveRequiresReview,
+        reviewReason: effectiveReviewReason,
         createdBy: session.user.id,
         items: {
           create: items.map((item: any) => {
@@ -285,7 +313,13 @@ export async function POST(request: NextRequest) {
         })
       : purchaseInvoice
 
-    return NextResponse.json(finalInvoice, { status: 201 });
+    // Si hay warnings (ej. jurisdicción IIBB no resuelta), los adjuntamos al
+    // response body para que el frontend pueda mostrarlos. Mantenemos 201 porque
+    // la factura SÍ se creó exitosamente — el caller decide si avisa al usuario.
+    const responseBody = warnings.length > 0
+      ? { ...finalInvoice, warnings, requiresReview: effectiveRequiresReview, reviewReason: effectiveReviewReason }
+      : finalInvoice
+    return NextResponse.json(responseBody, { status: 201 });
   } catch (error) {
     logger.error('Error creating purchase invoice:', error);
     return NextResponse.json(

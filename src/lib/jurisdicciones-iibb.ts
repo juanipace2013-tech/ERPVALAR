@@ -62,7 +62,7 @@ const ALIASES: Record<string, JurisdiccionIIBB> = {
   'ciudad de buenos aires': 'CABA',
   'ciudad autonoma de buenos aires': 'CABA',
 
-  // Buenos Aires
+  // Buenos Aires — incluye códigos regulatorios ARBA (Resoluciones Normativas)
   'buenos aires': 'Buenos Aires',
   'arba': 'Buenos Aires',
   'bs as': 'Buenos Aires',
@@ -70,6 +70,14 @@ const ALIASES: Record<string, JurisdiccionIIBB> = {
   'pba': 'Buenos Aires',
   'pcia buenos aires': 'Buenos Aires',
   'provincia de buenos aires': 'Buenos Aires',
+  // Códigos ARBA que aparecen en subtotales de facturas
+  'dn38': 'Buenos Aires',
+  'reg dn38': 'Buenos Aires',
+  'regimen dn38': 'Buenos Aires',
+  'rn 38': 'Buenos Aires',
+  'rn 38 2011': 'Buenos Aires',
+  'rn38 2011': 'Buenos Aires',
+  'rn38': 'Buenos Aires',
 
   // Catamarca
   'catamarca': 'Catamarca',
@@ -80,8 +88,10 @@ const ALIASES: Record<string, JurisdiccionIIBB> = {
   // Chubut
   'chubut': 'Chubut',
 
-  // Córdoba
+  // Córdoba — incluye DGR Córdoba / RG 1415
   'cordoba': 'Córdoba',
+  'dgr cordoba': 'Córdoba',
+  'rg 1415': 'Córdoba',
 
   // Corrientes
   'corrientes': 'Corrientes',
@@ -101,11 +111,15 @@ const ALIASES: Record<string, JurisdiccionIIBB> = {
   // La Rioja
   'la rioja': 'La Rioja',
 
-  // Mendoza
+  // Mendoza — incluye DGR Mendoza
   'mendoza': 'Mendoza',
+  'dgr mendoza': 'Mendoza',
+  'dgr mnes': 'Mendoza',
 
-  // Misiones
+  // Misiones — incluye ATM Misiones
   'misiones': 'Misiones',
+  'atm misiones': 'Misiones',
+  'atm mnes': 'Misiones',
 
   // Neuquén
   'neuquen': 'Neuquén',
@@ -125,9 +139,11 @@ const ALIASES: Record<string, JurisdiccionIIBB> = {
   // Santa Cruz
   'santa cruz': 'Santa Cruz',
 
-  // Santa Fé
+  // Santa Fé — incluye API Santa Fe (Administración Provincial de Impuestos)
   'santa fe': 'Santa Fé',
   'sta fe': 'Santa Fé',
+  'api santa fe': 'Santa Fé',
+  'api sta fe': 'Santa Fé',
 
   // Santiago del Estero
   'santiago del estero': 'Santiago del Estero',

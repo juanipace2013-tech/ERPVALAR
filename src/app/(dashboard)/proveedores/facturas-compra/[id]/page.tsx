@@ -30,6 +30,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber, getLocalDateString } from '@/lib/utils'
+import { reviewReasonLabel } from '@/lib/review-reasons'
 import {
   Dialog,
   DialogContent,
@@ -68,6 +69,8 @@ interface PurchaseInvoice {
   stockImpactedAt: string | null
   colppyInvoiceId: string | null
   colppySyncedAt: string | null
+  requiresReview: boolean
+  reviewReason: string | null
   supplier: {
     id: string
     name: string
@@ -169,6 +172,36 @@ export default function PurchaseInvoiceDetailPage() {
   const [loading, setLoading] = useState(true)
   // Colppy state
   const [sendingToColppy, setSendingToColppy] = useState(false)
+
+  // Review state (clearing the requiresReview flag)
+  const [clearingReview, setClearingReview] = useState(false)
+
+  const handleClearReview = async () => {
+    if (!invoice) return
+    if (!confirm(
+      'Confirmá que ya revisaste los datos marcados (jurisdicciones IIBB, totales, etc.) ' +
+      'antes de destildar el flag. Después de esto la factura podrá enviarse a Colppy.'
+    )) return
+    try {
+      setClearingReview(true)
+      const res = await fetch(`/api/purchase-invoices/${invoice.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requiresReview: false, reviewReason: null }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Error al actualizar' }))
+        throw new Error(err.error || 'Error al limpiar el flag de revisión')
+      }
+      const updated = await res.json()
+      setInvoice(updated)
+      toast.success('Flag de revisión eliminado. Ya podés enviar a Colppy.')
+    } catch (e: any) {
+      toast.error(e.message || 'Error al limpiar el flag de revisión')
+    } finally {
+      setClearingReview(false)
+    }
+  }
 
   // Stock impact state
   const [processingStock, setProcessingStock] = useState(false)
@@ -687,6 +720,49 @@ export default function PurchaseInvoiceDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Banner de revisión manual (ej. jurisdicción IIBB no determinada post-OCR) */}
+      {invoice.requiresReview && (
+        <div className="mb-6 rounded-lg border border-amber-400 bg-amber-50 p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-amber-900">
+                {reviewReasonLabel(invoice.reviewReason) || 'Esta factura requiere revisión manual'}
+              </p>
+              <p className="text-xs text-amber-800 mt-1">
+                {invoice.reviewReason === 'iibb_jurisdiction' ? (
+                  <>
+                    El OCR no pudo determinar con confianza la jurisdicción de al menos una
+                    percepción IIBB. Revisá el detalle de percepciones abajo, corregí la
+                    jurisdicción donde corresponda (24 provincias válidas), y recién después
+                    destildá el flag. <strong>Mientras el flag esté activo, el envío a Colppy
+                    se bloquea</strong>.
+                  </>
+                ) : (
+                  <>
+                    Corregí los datos señalados y destildá el flag para habilitar el envío a
+                    Colppy.
+                  </>
+                )}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleClearReview}
+              disabled={clearingReview}
+              className="border-amber-600 text-amber-800 hover:bg-amber-100"
+            >
+              {clearingReview ? (
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Guardando...</>
+              ) : (
+                'Marcar como revisada'
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Info Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">

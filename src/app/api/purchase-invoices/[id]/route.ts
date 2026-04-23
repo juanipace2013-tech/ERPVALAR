@@ -74,13 +74,21 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
+    // Whitelist de campos editables. Para limpiar el flag de revisión, mandar
+    // { requiresReview: false, reviewReason: null }. El cliente puede también
+    // actualizar la jurisdicción de percepciones a través de ?updatePerceptions=1
+    // en una iteración futura — por ahora la jurisdicción se corrige creando la
+    // factura de nuevo o editando vía Prisma.
+    const data: Record<string, unknown> = {}
+    if (body.status !== undefined) data.status = body.status
+    if (body.description !== undefined) data.description = body.description
+    if (body.internalNotes !== undefined) data.internalNotes = body.internalNotes
+    if (body.requiresReview !== undefined) data.requiresReview = Boolean(body.requiresReview)
+    if (body.reviewReason !== undefined) data.reviewReason = body.reviewReason || null
+
     const purchaseInvoice = await prisma.purchaseInvoice.update({
       where: { id },
-      data: {
-        status: body.status,
-        description: body.description,
-        internalNotes: body.internalNotes,
-      },
+      data,
       include: {
         supplier: true,
         items: {

@@ -256,21 +256,23 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
             </CardHeader>
             <CardContent>
               <div className="border rounded-lg overflow-hidden">
-                <Table>
+                <Table className="table-fixed">
                   <TableHeader>
                     <TableRow className="bg-gray-50">
                       <TableHead>Descripción</TableHead>
-                      <TableHead className="text-right">Cantidad</TableHead>
-                      <TableHead className="text-right">Precio Unit.</TableHead>
-                      <TableHead className="text-right">Desc. %</TableHead>
-                      <TableHead className="text-right">IVA %</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="w-[90px] text-right">Cantidad</TableHead>
+                      <TableHead className="w-[120px] text-right">Precio Unit.</TableHead>
+                      <TableHead className="w-[80px] text-right">Desc. %</TableHead>
+                      <TableHead className="w-[80px] text-right">IVA %</TableHead>
+                      <TableHead className="w-[140px] text-right">Total</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {invoice.items.map((item) => (
                       <TableRow key={item.id}>
-                        <TableCell>{item.description}</TableCell>
+                        <TableCell className="overflow-hidden">
+                          <p className="truncate" title={item.description}>{item.description}</p>
+                        </TableCell>
                         <TableCell className="text-right">{item.quantity}</TableCell>
                         <TableCell className="text-right">
                           {formatCurrency(item.unitPrice, invoice.currency)}

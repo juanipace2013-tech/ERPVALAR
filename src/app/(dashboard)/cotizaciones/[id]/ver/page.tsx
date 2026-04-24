@@ -1144,47 +1144,51 @@ export default function QuoteViewPage() {
             </CardHeader>
             <CardContent>
               <div className="border rounded-lg overflow-hidden">
-                <Table>
+                <Table className="table-fixed">
                   <TableHeader>
                     <TableRow className="bg-gray-50">
-                      <TableHead>Item</TableHead>
+                      <TableHead className="w-[60px]">Item</TableHead>
                       <TableHead>Producto</TableHead>
-                      <TableHead className="text-right">Cant.</TableHead>
-                      <TableHead className="text-right">P. Unit.</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="w-[80px] text-right">Cant.</TableHead>
+                      <TableHead className="w-[120px] text-right">P. Unit.</TableHead>
+                      <TableHead className="w-[140px] text-right">Total</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {quote.items
                       .filter((item: any) => !item.isAlternative)
-                      .map((item: any) => (
-                        <TableRow key={item.id}>
-                          <TableCell>{item.itemNumber}</TableCell>
-                          <TableCell>
-                            <div>
-                              <p className="font-medium">
-                                {item.product?.name || item.description || 'Item manual'}
-                              </p>
-                              <p className="text-sm text-gray-500">
-                                {item.product
-                                  ? `SKU: ${item.product.sku}`
-                                  : item.manualSku
-                                    ? `Código: ${item.manualSku}`
-                                    : 'Sin código'}
-                              </p>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {item.quantity}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {formatCurrency(item.unitPrice)}
-                          </TableCell>
-                          <TableCell className="text-right font-semibold">
-                            {formatCurrency(item.totalPrice)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      .map((item: any) => {
+                        const productoLabel = item.product?.name || item.description || 'Item manual'
+                        const codigoLabel = item.product
+                          ? `SKU: ${item.product.sku}`
+                          : item.manualSku
+                            ? `Código: ${item.manualSku}`
+                            : 'Sin código'
+                        return (
+                          <TableRow key={item.id}>
+                            <TableCell>{item.itemNumber}</TableCell>
+                            <TableCell className="overflow-hidden">
+                              <div className="min-w-0">
+                                <p className="font-medium truncate" title={productoLabel}>
+                                  {productoLabel}
+                                </p>
+                                <p className="text-sm text-gray-500 truncate" title={codigoLabel}>
+                                  {codigoLabel}
+                                </p>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {item.quantity}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {formatCurrency(item.unitPrice)}
+                            </TableCell>
+                            <TableCell className="text-right font-semibold">
+                              {formatCurrency(item.totalPrice)}
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
                   </TableBody>
                 </Table>
               </div>

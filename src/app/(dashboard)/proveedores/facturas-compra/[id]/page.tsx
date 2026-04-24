@@ -906,60 +906,64 @@ export default function PurchaseInvoiceDetailPage() {
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
-                <Table>
+                <Table className="table-fixed min-w-[1100px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Descripción</TableHead>
-                      <TableHead className="text-right">Cantidad</TableHead>
-                      <TableHead className="text-right">Precio Lista</TableHead>
-                      <TableHead className="text-right">Descuento</TableHead>
-                      <TableHead className="text-right">Precio Unit.</TableHead>
-                      <TableHead className="text-right">Subtotal</TableHead>
-                      <TableHead className="text-right">IVA ({invoice.items[0]?.taxRate || 21}%)</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="w-[90px] text-right">Cantidad</TableHead>
+                      <TableHead className="w-[120px] text-right">Precio Lista</TableHead>
+                      <TableHead className="w-[90px] text-right">Descuento</TableHead>
+                      <TableHead className="w-[120px] text-right">Precio Unit.</TableHead>
+                      <TableHead className="w-[130px] text-right">Subtotal</TableHead>
+                      <TableHead className="w-[120px] text-right">IVA ({invoice.items[0]?.taxRate || 21}%)</TableHead>
+                      <TableHead className="w-[130px] text-right">Total</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {invoice.items.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{item.description}</p>
-                            {item.product && (
-                              <p className="text-sm text-gray-500">
-                                SKU: {item.product.sku || item.product.id}
-                              </p>
-                            )}
-                            {item.account && (
-                              <p className="text-xs text-gray-400">
-                                Cuenta: {item.account.code} - {item.account.name}
-                              </p>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatNumber(item.quantity)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(item.listPrice)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatNumber(item.discountPercent)}%
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(item.unitPrice)}
-                        </TableCell>
-                        <TableCell className="text-right font-semibold">
-                          {formatCurrency(item.subtotal)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(item.taxAmount)}
-                        </TableCell>
-                        <TableCell className="text-right font-semibold">
-                          {formatCurrency(item.total)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {invoice.items.map((item) => {
+                      const skuLabel = item.product ? `SKU: ${item.product.sku || item.product.id}` : ''
+                      const accountLabel = item.account ? `Cuenta: ${item.account.code} - ${item.account.name}` : ''
+                      return (
+                        <TableRow key={item.id}>
+                          <TableCell className="overflow-hidden">
+                            <div className="min-w-0">
+                              <p className="font-medium truncate" title={item.description}>{item.description}</p>
+                              {item.product && (
+                                <p className="text-sm text-gray-500 truncate" title={skuLabel}>
+                                  {skuLabel}
+                                </p>
+                              )}
+                              {item.account && (
+                                <p className="text-xs text-gray-400 truncate" title={accountLabel}>
+                                  {accountLabel}
+                                </p>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatNumber(item.quantity)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatCurrency(item.listPrice)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatNumber(item.discountPercent)}%
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatCurrency(item.unitPrice)}
+                          </TableCell>
+                          <TableCell className="text-right font-semibold">
+                            {formatCurrency(item.subtotal)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatCurrency(item.taxAmount)}
+                          </TableCell>
+                          <TableCell className="text-right font-semibold">
+                            {formatCurrency(item.total)}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
                   </TableBody>
                 </Table>
               </div>

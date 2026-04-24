@@ -837,40 +837,45 @@ export default function DeliveryNoteDetailPage() {
             </CardHeader>
             <CardContent>
               <div className="border rounded-lg overflow-hidden">
-                <Table>
+                <Table className="table-fixed">
                   <TableHeader>
                     <TableRow className="bg-gray-50">
                       <TableHead>Producto</TableHead>
-                      <TableHead className="text-right">Cantidad</TableHead>
-                      <TableHead>Ubicación</TableHead>
-                      <TableHead>Lote</TableHead>
+                      <TableHead className="w-[120px] text-right">Cantidad</TableHead>
+                      <TableHead className="w-[140px]">Ubicación</TableHead>
+                      <TableHead className="w-[120px]">Lote</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {deliveryNote.items.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{item.description || item.product?.name}</p>
-                            {(item.sku || item.product?.sku) && (
-                              <p className="text-sm text-gray-500">SKU: {item.sku || item.product?.sku}</p>
-                            )}
-                            {item.product?.brand && (
-                              <p className="text-sm text-gray-500">{item.product.brand}</p>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {Number(item.quantity)} {item.unit || item.product?.unit || 'UN'}
-                        </TableCell>
-                        <TableCell>
-                          {item.warehouseLocation || <span className="text-gray-400">-</span>}
-                        </TableCell>
-                        <TableCell>
-                          {item.batchNumber || <span className="text-gray-400">-</span>}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {deliveryNote.items.map((item) => {
+                      const nombre = item.description || item.product?.name || ''
+                      const sku = item.sku || item.product?.sku || ''
+                      const marca = item.product?.brand || ''
+                      return (
+                        <TableRow key={item.id}>
+                          <TableCell className="overflow-hidden">
+                            <div className="min-w-0">
+                              <p className="font-medium truncate" title={nombre}>{nombre}</p>
+                              {sku && (
+                                <p className="text-sm text-gray-500 truncate" title={`SKU: ${sku}`}>SKU: {sku}</p>
+                              )}
+                              {marca && (
+                                <p className="text-sm text-gray-500 truncate" title={marca}>{marca}</p>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {Number(item.quantity)} {item.unit || item.product?.unit || 'UN'}
+                          </TableCell>
+                          <TableCell className="truncate" title={item.warehouseLocation || ''}>
+                            {item.warehouseLocation || <span className="text-gray-400">-</span>}
+                          </TableCell>
+                          <TableCell className="truncate" title={item.batchNumber || ''}>
+                            {item.batchNumber || <span className="text-gray-400">-</span>}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
                   </TableBody>
                 </Table>
               </div>

@@ -556,12 +556,12 @@ export default function EditarRemitoPage() {
               No hay items. Agregá productos buscándolos o de forma manual.
             </p>
           ) : (
-            <Table>
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[120px]">SKU</TableHead>
                   <TableHead>Descripción</TableHead>
-                  <TableHead className="w-[100px]">Cantidad</TableHead>
+                  <TableHead className="w-[100px] text-right">Cantidad</TableHead>
                   <TableHead className="w-[80px]">Unidad</TableHead>
                   <TableHead className="w-[50px]" />
                 </TableRow>

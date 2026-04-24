@@ -2071,17 +2071,27 @@ export default function QuoteDetailPage() {
                     <div key={itemNumber} className="border rounded-lg p-4">
                       {/* Main Item */}
                       <div className="space-y-4">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-3 mb-2">
-                              <span className="text-2xl font-bold text-blue-900">
+                              <span className="text-2xl font-bold text-blue-900 shrink-0">
                                 {mainItem.itemNumber}
                               </span>
-                              <div>
-                                <p className="font-semibold text-lg">
+                              <div className="min-w-0 flex-1">
+                                <p
+                                  className="font-semibold text-lg truncate"
+                                  title={mainItem.product?.name || mainItem.description || 'Item manual'}
+                                >
                                   {mainItem.product?.name || mainItem.description || 'Item manual'}
                                 </p>
-                                <p className="text-sm text-muted-foreground">
+                                <p
+                                  className="text-sm text-muted-foreground truncate"
+                                  title={
+                                    mainItem.product
+                                      ? `SKU: ${mainItem.product.sku}${mainItem.product.brand ? ` | Marca: ${mainItem.product.brand}` : ''}`
+                                      : `${mainItem.manualSku ? `Código: ${mainItem.manualSku}` : ''}${mainItem.manualBrand ? ` | Marca: ${mainItem.manualBrand}` : ''}`
+                                  }
+                                >
                                   {mainItem.product
                                     ? `SKU: ${mainItem.product.sku}${mainItem.product.brand ? ` | Marca: ${mainItem.product.brand}` : ''}`
                                     : `${mainItem.manualSku ? `Código: ${mainItem.manualSku}` : ''}${mainItem.manualBrand ? ` | Marca: ${mainItem.manualBrand}` : ''}`
@@ -2110,7 +2120,10 @@ export default function QuoteDetailPage() {
                             {mainItem.description &&
                               (!mainItem.product || mainItem.description !== mainItem.product.name) &&
                               !!mainItem.product && (
-                                <p className="text-sm text-muted-foreground mb-2">
+                                <p
+                                  className="text-sm text-muted-foreground mb-2 truncate"
+                                  title={mainItem.description}
+                                >
                                   {mainItem.description}
                                 </p>
                               )}
@@ -2190,7 +2203,7 @@ export default function QuoteDetailPage() {
                             </div>
                           </div>
 
-                          <div className="text-right space-y-2">
+                          <div className="text-right space-y-2 shrink-0 min-w-[160px]">
                             <div>
                               <p className="text-sm text-muted-foreground">
                                 Precio Unitario
@@ -2251,17 +2264,25 @@ export default function QuoteDetailPage() {
                             {alternatives.map((alt, altIdx) => (
                               <div
                                 key={alt.id}
-                                className="flex items-start justify-between bg-blue-50 p-3 rounded-md"
+                                className="flex items-start justify-between gap-3 bg-blue-50 p-3 rounded-md"
                               >
-                                <div className="flex-1">
+                                <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 mb-1">
-                                    <span className="font-bold text-blue-900">
+                                    <span className="font-bold text-blue-900 shrink-0">
                                       {mainItem.itemNumber}
                                       {String.fromCharCode(65 + altIdx)}
                                     </span>
-                                    <p className="font-medium">{alt.product?.name || alt.description || 'Item manual'}</p>
+                                    <p
+                                      className="font-medium truncate"
+                                      title={alt.product?.name || alt.description || 'Item manual'}
+                                    >
+                                      {alt.product?.name || alt.description || 'Item manual'}
+                                    </p>
                                   </div>
-                                  <p className="text-xs text-muted-foreground">
+                                  <p
+                                    className="text-xs text-muted-foreground truncate"
+                                    title={alt.product ? `SKU: ${alt.product.sku}` : alt.manualSku ? `Código: ${alt.manualSku}` : ''}
+                                  >
                                     {alt.product ? `SKU: ${alt.product.sku}` : alt.manualSku ? `Código: ${alt.manualSku}` : ''}
                                   </p>
                                   {alt.product && (
@@ -2287,7 +2308,7 @@ export default function QuoteDetailPage() {
                                       </div>
                                     )}
                                 </div>
-                                <div className="text-right flex flex-col items-end gap-1">
+                                <div className="text-right flex flex-col items-end gap-1 shrink-0">
                                   <p className="font-mono font-semibold">
                                     USD {formatNumber(alt.totalPrice)}
                                   </p>

@@ -84,6 +84,9 @@ interface Quote {
     city: string | null
     province: string | null
     taxCondition: string | null
+    defaultTransportName?: string | null
+    defaultTransportAddress?: string | null
+    defaultTransportSchedule?: string | null
   }
   items: QuoteItem[]
   exchangeRate?: number | string | null
@@ -285,6 +288,22 @@ export default function NuevoRemitoPage() {
       fetchQuote()
     }
   }, [quoteId])
+
+  // Pre-fill transport defaults from quote.customer (quote mode).
+  // Solo se setea si el campo está vacío para no pisar lo que el usuario ya tipeó.
+  useEffect(() => {
+    if (!quote?.customer) return
+    const c = quote.customer
+    if (!carrier && c.defaultTransportName) {
+      setCarrier(c.defaultTransportName)
+    }
+    if (!transportAddress && c.defaultTransportAddress) {
+      setTransportAddress(c.defaultTransportAddress)
+    }
+    if (c.defaultTransportSchedule) {
+      setCustomerTransportSchedule(c.defaultTransportSchedule)
+    }
+  }, [quote?.customer?.id])
 
   // ── Product search debounce ──
   useEffect(() => {

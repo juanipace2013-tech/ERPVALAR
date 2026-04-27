@@ -38,6 +38,9 @@ export async function GET(
             phone: true,
             priceMultiplier: true,
             paymentTerms: true,
+            defaultTransportName: true,
+            defaultTransportAddress: true,
+            defaultTransportSchedule: true,
           },
         },
         salesPerson: {

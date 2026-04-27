@@ -717,47 +717,56 @@ export default function NuevoRemitoPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Descripción</TableHead>
-                    <TableHead className="text-right w-24">Cantidad</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {mainItems.map((item) => (
-                    <>
-                      <TableRow key={item.id}>
-                        <TableCell>
-                          <p className="font-medium">
-                            {item.product?.sku || item.manualSku
-                              ? `${item.product?.sku || item.manualSku} - `
-                              : ''}
-                            {item.description || item.product?.name}
-                          </p>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {item.quantity} {item.product?.unit || 'UN'}
-                        </TableCell>
-                      </TableRow>
-                      {item.additionals && item.additionals.length > 0 && item.additionals.map((add) => (
-                        <TableRow key={`${item.id}-add-${add.id}`} className="bg-blue-50/50">
-                          <TableCell className="pl-8">
-                            <p className="text-sm text-gray-600">
-                              <span className="text-blue-600 font-medium">+ </span>
-                              {add.product?.sku ? `${add.product.sku} - ` : ''}
-                              {add.description || add.product?.name}
-                            </p>
-                          </TableCell>
-                          <TableCell className="text-right text-sm text-gray-600">
-                            {item.quantity} {add.product?.unit || 'UN'}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </>
-                  ))}
-                </TableBody>
-              </Table>
+              <div className="overflow-x-auto border rounded-lg">
+                <Table className="table-fixed">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Descripción</TableHead>
+                      <TableHead className="w-[80px] text-right">Cantidad</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {mainItems.map((item) => {
+                      const skuLabel = item.product?.sku || item.manualSku || ''
+                      const itemDesc = item.description || item.product?.name || ''
+                      const fullDesc = skuLabel ? `${skuLabel} - ${itemDesc}` : itemDesc
+                      return (
+                        <>
+                          <TableRow key={item.id}>
+                            <TableCell className="overflow-hidden">
+                              <p className="font-medium truncate" title={fullDesc}>
+                                {fullDesc}
+                              </p>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {item.quantity} {item.product?.unit || 'UN'}
+                            </TableCell>
+                          </TableRow>
+                          {item.additionals && item.additionals.length > 0 && item.additionals.map((add) => {
+                            const addSku = add.product?.sku || ''
+                            const addDesc = add.description || add.product?.name || ''
+                            const addFullDesc = addSku ? `+ ${addSku} - ${addDesc}` : `+ ${addDesc}`
+                            return (
+                              <TableRow key={`${item.id}-add-${add.id}`} className="bg-blue-50/50">
+                                <TableCell className="pl-8 overflow-hidden">
+                                  <p className="text-sm text-gray-600 truncate" title={addFullDesc}>
+                                    <span className="text-blue-600 font-medium">+ </span>
+                                    {addSku ? `${addSku} - ` : ''}
+                                    {addDesc}
+                                  </p>
+                                </TableCell>
+                                <TableCell className="text-right text-sm text-gray-600">
+                                  {item.quantity} {add.product?.unit || 'UN'}
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })}
+                        </>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
 
@@ -1198,42 +1207,46 @@ export default function NuevoRemitoPage() {
                       </div>
 
                       <div className="border rounded bg-white max-h-48 overflow-auto">
-                        <Table>
+                        <Table className="table-fixed">
                           <TableHeader>
                             <TableRow className="bg-gray-50">
                               <TableHead className="w-8" />
-                              <TableHead className="w-24">Código</TableHead>
+                              <TableHead className="w-[100px]">Código</TableHead>
                               <TableHead>Descripción</TableHead>
-                              <TableHead className="text-right w-16">Cant.</TableHead>
-                              <TableHead className="text-right w-28">P.Unit USD</TableHead>
+                              <TableHead className="w-[80px] text-right">Cant.</TableHead>
+                              <TableHead className="w-[120px] text-right">P.Unit USD</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {mainItems.map((item) => (
-                              <TableRow
-                                key={item.id}
-                                className={selectedQuoteItems.has(item.id) ? 'bg-amber-50' : ''}
-                              >
-                                <TableCell className="py-1">
-                                  <Checkbox
-                                    checked={selectedQuoteItems.has(item.id)}
-                                    onCheckedChange={() => handleToggleQuoteItem(item.id)}
-                                  />
-                                </TableCell>
-                                <TableCell className="py-1 font-mono text-xs">
-                                  {item.product?.sku || item.manualSku || '—'}
-                                </TableCell>
-                                <TableCell className="py-1 text-sm">
-                                  {item.description || item.product?.name}
-                                </TableCell>
-                                <TableCell className="py-1 text-right text-sm">
-                                  {item.quantity}
-                                </TableCell>
-                                <TableCell className="py-1 text-right text-sm font-medium">
-                                  {Number(item.unitPrice).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                                </TableCell>
-                              </TableRow>
-                            ))}
+                            {mainItems.map((item) => {
+                              const skuLabel = item.product?.sku || item.manualSku || '—'
+                              const descLabel = item.description || item.product?.name || ''
+                              return (
+                                <TableRow
+                                  key={item.id}
+                                  className={selectedQuoteItems.has(item.id) ? 'bg-amber-50' : ''}
+                                >
+                                  <TableCell className="py-1">
+                                    <Checkbox
+                                      checked={selectedQuoteItems.has(item.id)}
+                                      onCheckedChange={() => handleToggleQuoteItem(item.id)}
+                                    />
+                                  </TableCell>
+                                  <TableCell className="py-1 font-mono text-xs overflow-hidden">
+                                    <span className="truncate block" title={skuLabel}>{skuLabel}</span>
+                                  </TableCell>
+                                  <TableCell className="py-1 text-sm overflow-hidden">
+                                    <span className="truncate block" title={descLabel}>{descLabel}</span>
+                                  </TableCell>
+                                  <TableCell className="py-1 text-right text-sm">
+                                    {item.quantity}
+                                  </TableCell>
+                                  <TableCell className="py-1 text-right text-sm font-medium">
+                                    {Number(item.unitPrice).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                                  </TableCell>
+                                </TableRow>
+                              )
+                            })}
                           </TableBody>
                         </Table>
                       </div>
@@ -1369,30 +1382,32 @@ export default function NuevoRemitoPage() {
 
             {/* Lista de items */}
             {items.length > 0 ? (
-              <div className="border rounded-lg overflow-hidden">
-                <Table>
+              <div className="border rounded-lg overflow-x-auto">
+                <Table className="table-fixed">
                   <TableHeader>
                     <TableRow className="bg-gray-50">
-                      <TableHead className="w-24">Código</TableHead>
+                      <TableHead className="w-[100px]">Código</TableHead>
                       <TableHead>Descripción</TableHead>
-                      <TableHead className="w-20 text-center">Cant.</TableHead>
-                      <TableHead className="w-16 text-center">Unid.</TableHead>
-                      <TableHead className="w-12" />
+                      <TableHead className="w-[80px] text-center">Cant.</TableHead>
+                      <TableHead className="w-[64px] text-center">Unid.</TableHead>
+                      <TableHead className="w-[48px]" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {items.map((item) => (
                       <TableRow key={item.tempId}>
-                        <TableCell className="font-mono text-sm font-semibold">
-                          {item.sku || '—'}
+                        <TableCell className="font-mono text-sm font-semibold overflow-hidden">
+                          <span className="truncate block" title={item.sku || ''}>{item.sku || '—'}</span>
                         </TableCell>
-                        <TableCell className="text-sm">
-                          {item.description}
-                          {item.fromQuoteId && (
-                            <Badge variant="outline" className="ml-2 text-xs text-amber-700 border-amber-300 bg-amber-50">
-                              Cotiz.
-                            </Badge>
-                          )}
+                        <TableCell className="text-sm overflow-hidden">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="truncate" title={item.description}>{item.description}</span>
+                            {item.fromQuoteId && (
+                              <Badge variant="outline" className="shrink-0 text-xs text-amber-700 border-amber-300 bg-amber-50">
+                                Cotiz.
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-center">
                           <Input

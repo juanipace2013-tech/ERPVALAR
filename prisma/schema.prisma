@@ -988,6 +988,14 @@ model Quote {
   purchaseOrderNumber String? // Número de OC del cliente
   purchaseOrderDate   DateTime? // Fecha de la OC
 
+  // Programación de facturación: cliente pidió demorar la facturación
+  // a una fecha específica (motivos contables/fiscales). Solo informativo,
+  // NO bloquea la facturación manual.
+  billingTargetDate     DateTime?
+  billingNote           String?   @db.VarChar(500)
+  billingNoteUpdatedAt  DateTime?
+  billingNoteUpdatedBy  String? // user.id del último editor
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1012,6 +1020,7 @@ model Quote {
   @@index([colppyInvoiceId])
   @@index([colppyDeliveryNoteId])
   @@index([colppySyncedAt])
+  @@index([billingTargetDate])
   @@map("quotes")
 }
 

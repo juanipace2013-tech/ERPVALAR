@@ -154,6 +154,23 @@ export async function GET(request: NextRequest) {
       column: KanbanColumn
       colppySyncedAt: string | null
       colppyInvoiceId: string | null
+      billingTargetDate: string | null
+      billingNote: string | null
+      billingNoteUpdatedAt: string | null
+      billingNoteUpdatedByName: string | null
+    }
+
+    // Resolver nombres de los últimos editores de billingNote en una sola query
+    const editorIds = Array.from(
+      new Set(quotes.map((q) => q.billingNoteUpdatedBy).filter((v): v is string => !!v))
+    )
+    const editorMap = new Map<string, string>()
+    if (editorIds.length > 0) {
+      const editors = await prisma.user.findMany({
+        where: { id: { in: editorIds } },
+        select: { id: true, name: true },
+      })
+      for (const e of editors) editorMap.set(e.id, e.name)
     }
 
     const boardCards: BoardCardType[] = []
@@ -265,6 +282,11 @@ export async function GET(request: NextRequest) {
         // Estado Colppy
         colppySyncedAt,
         colppyInvoiceId,
+        // Programación de facturación
+        billingTargetDate: quote.billingTargetDate ? quote.billingTargetDate.toISOString() : null,
+        billingNote: quote.billingNote ?? null,
+        billingNoteUpdatedAt: quote.billingNoteUpdatedAt ? quote.billingNoteUpdatedAt.toISOString() : null,
+        billingNoteUpdatedByName: quote.billingNoteUpdatedBy ? (editorMap.get(quote.billingNoteUpdatedBy) ?? null) : null,
       })
     }
 

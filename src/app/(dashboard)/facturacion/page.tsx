@@ -32,6 +32,9 @@ import {
   Truck,
   Eye,
   ChevronLeft,
+  Calendar as CalendarIcon,
+  MessageSquare,
+  Pencil,
 } from 'lucide-react'
 import {
   Table,
@@ -47,9 +50,16 @@ import {
   SendToColppyDialog,
   type ColppySendPayload,
 } from '@/components/quotes/SendToColppyDialog'
+import { BillingScheduleDialog } from '@/components/facturacion/BillingScheduleDialog'
 import { refreshInventoryCache } from '@/hooks/useColppyStock'
 
 // ─── Helpers ─────────────────────────────────────────
+
+function startOfTodayMs(): number {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  return d.getTime()
+}
 
 const TC_BADGE_COLORS: Record<string, string> = {
   'TC Billete SIN IVA': 'bg-amber-100 text-amber-800 border-amber-300',
@@ -116,6 +126,10 @@ interface BoardCard {
   column: 'ready' | 'partial' | 'pending'
   colppySyncedAt: string | null
   colppyInvoiceId: string | null
+  billingTargetDate: string | null
+  billingNote: string | null
+  billingNoteUpdatedAt: string | null
+  billingNoteUpdatedByName: string | null
 }
 
 interface ColumnData {
@@ -190,6 +204,9 @@ export default function FacturacionPage() {
   const [showColppyDialog, setShowColppyDialog] = useState(false)
   const [colppyQuoteId, setColppyQuoteId] = useState<string | null>(null)
 
+  // Billing schedule dialog state
+  const [billingScheduleQuote, setBillingScheduleQuote] = useState<BoardCard | null>(null)
+
   // Historial state
   const [historialData, setHistorialData] = useState<HistorialData | null>(null)
   const [historialLoading, setHistorialLoading] = useState(false)
@@ -217,7 +234,19 @@ export default function FacturacionPage() {
       const response = await fetch(`/api/facturacion/board?${params.toString()}`)
       if (!response.ok) throw new Error('Error al cargar tablero')
 
-      const data = await response.json()
+      const data = (await response.json()) as BoardData
+      // Subir al tope de cada columna las cards con billingTargetDate vencida
+      // (today >= billingTargetDate). El resto del orden se preserva.
+      const todayMs = startOfTodayMs()
+      const sortByBillingDue = (a: BoardCard, b: BoardCard) => {
+        const aDue = a.billingTargetDate ? new Date(a.billingTargetDate).getTime() <= todayMs : false
+        const bDue = b.billingTargetDate ? new Date(b.billingTargetDate).getTime() <= todayMs : false
+        if (aDue === bDue) return 0
+        return aDue ? -1 : 1
+      }
+      data.columns.ready.quotes = [...data.columns.ready.quotes].sort(sortByBillingDue)
+      data.columns.partial.quotes = [...data.columns.partial.quotes].sort(sortByBillingDue)
+      data.columns.pending.quotes = [...data.columns.pending.quotes].sort(sortByBillingDue)
       setBoardData(data)
     } catch (error) {
       console.error('Error:', error)
@@ -638,6 +667,7 @@ export default function FacturacionPage() {
           onToggleItem={toggleItemSelection}
           onSelectAllReady={selectAllReadyItems}
           onSendToColppy={openColppyDialog}
+          onEditBilling={(quote) => setBillingScheduleQuote(quote)}
           formatDate={formatDate}
           formatDateTime={formatDateTime}
         />
@@ -652,6 +682,7 @@ export default function FacturacionPage() {
           onToggleItem={toggleItemSelection}
           onSelectAllReady={selectAllReadyItems}
           onSendToColppy={openColppyDialog}
+          onEditBilling={(quote) => setBillingScheduleQuote(quote)}
           formatDate={formatDate}
           formatDateTime={formatDateTime}
         />
@@ -666,6 +697,7 @@ export default function FacturacionPage() {
           onToggleItem={toggleItemSelection}
           onSelectAllReady={selectAllReadyItems}
           onSendToColppy={openColppyDialog}
+          onEditBilling={(quote) => setBillingScheduleQuote(quote)}
           formatDate={formatDate}
           formatDateTime={formatDateTime}
         />
@@ -915,6 +947,25 @@ export default function FacturacionPage() {
           subtitle={`Facturación parcial: ${colppyDialogQuote.items.length} ítem(s) seleccionados`}
         />
       )}
+
+      {/* Programación de facturación */}
+      <BillingScheduleDialog
+        open={billingScheduleQuote !== null}
+        quoteId={billingScheduleQuote?.id ?? null}
+        quoteNumber={billingScheduleQuote?.quoteNumber ?? null}
+        initial={
+          billingScheduleQuote
+            ? {
+                billingTargetDate: billingScheduleQuote.billingTargetDate,
+                billingNote: billingScheduleQuote.billingNote,
+                billingNoteUpdatedAt: billingScheduleQuote.billingNoteUpdatedAt,
+                billingNoteUpdatedByName: billingScheduleQuote.billingNoteUpdatedByName,
+              }
+            : null
+        }
+        onClose={() => setBillingScheduleQuote(null)}
+        onSaved={() => fetchBoard()}
+      />
     </div>
   )
 }
@@ -932,6 +983,7 @@ interface KanbanColumnProps {
   onToggleItem: (quoteId: string, itemId: string) => void
   onSelectAllReady: (quote: BoardCard) => void
   onSendToColppy: (quoteId: string) => void
+  onEditBilling: (quote: BoardCard) => void
   formatDate: (date: string) => string
   formatDateTime: (date: string) => string
 }
@@ -965,6 +1017,7 @@ function KanbanColumn({
   onToggleItem,
   onSelectAllReady,
   onSendToColppy,
+  onEditBilling,
   formatDate,
   formatDateTime,
 }: KanbanColumnProps) {
@@ -997,6 +1050,7 @@ function KanbanColumn({
               onToggleItem={(itemId) => onToggleItem(quote.id, itemId)}
               onSelectAllReady={() => onSelectAllReady(quote)}
               onSendToColppy={() => onSendToColppy(quote.id)}
+              onEditBilling={() => onEditBilling(quote)}
               formatDate={formatDate}
               formatDateTime={formatDateTime}
             />
@@ -1017,6 +1071,7 @@ interface QuoteCardProps {
   onToggleItem: (itemId: string) => void
   onSelectAllReady: () => void
   onSendToColppy: () => void
+  onEditBilling: () => void
   formatDate: (date: string) => string
   formatDateTime: (date: string) => string
 }
@@ -1029,6 +1084,7 @@ function QuoteCard({
   onToggleItem,
   onSelectAllReady,
   onSendToColppy,
+  onEditBilling,
   formatDate,
   formatDateTime,
 }: QuoteCardProps) {
@@ -1036,8 +1092,19 @@ function QuoteCard({
   const allSentToColppy = quote.colppySyncedAt !== null
   const hasUnsent = quote.items.some((i) => i.remainingQuantity > 0 && !i.sentToColppy)
 
+  // Estado de programación de facturación
+  const billingDateMs = quote.billingTargetDate ? new Date(quote.billingTargetDate).getTime() : null
+  const todayStartMs = startOfTodayMs()
+  const isBillingDue = billingDateMs != null && billingDateMs <= todayStartMs
+  const isBillingScheduled = billingDateMs != null && billingDateMs > todayStartMs
+  const billingBorderClass = isBillingDue
+    ? 'border-l-4 border-l-green-500'
+    : isBillingScheduled
+    ? 'border-l-4 border-l-blue-400'
+    : ''
+
   return (
-    <Card className="shadow-sm">
+    <Card className={`shadow-sm ${billingBorderClass}`}>
       <div
         className="p-3 cursor-pointer hover:bg-gray-50 transition-colors"
         onClick={onToggle}
@@ -1050,6 +1117,15 @@ function QuoteCard({
               <ChevronRight className="h-4 w-4 text-gray-400 flex-shrink-0" />
             )}
             <span className="font-mono font-semibold text-sm">{quote.quoteNumber}</span>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onEditBilling() }}
+              className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700"
+              title="Programar facturación"
+              aria-label="Programar facturación"
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
           </div>
           <span className="font-semibold text-sm">
             {formatCurrency(quote.total, quote.currency)}
@@ -1104,6 +1180,30 @@ function QuoteCard({
             <div className="flex items-center gap-1 text-xs text-orange-600">
               <Clock className="h-3 w-3" />
               <span>Plazo máx: {quote.farthestDelivery}</span>
+            </div>
+          )}
+
+          {(quote.billingTargetDate || quote.billingNote) && (
+            <div className={`text-xs rounded px-1.5 py-1 mt-0.5 space-y-0.5 ${
+              isBillingDue
+                ? 'bg-green-50 text-green-800 border border-green-200'
+                : 'bg-blue-50 text-blue-800 border border-blue-200'
+            }`}>
+              {quote.billingTargetDate && (
+                <div className="flex items-center gap-1">
+                  <CalendarIcon className="h-3 w-3 flex-shrink-0" />
+                  <span>
+                    {isBillingDue ? 'Listo para facturar' : 'Facturar el'}{' '}
+                    {formatDate(quote.billingTargetDate)}
+                  </span>
+                </div>
+              )}
+              {quote.billingNote && (
+                <div className="flex items-start gap-1">
+                  <MessageSquare className="h-3 w-3 flex-shrink-0 mt-[2px]" />
+                  <span className="break-words">{quote.billingNote}</span>
+                </div>
+              )}
             </div>
           )}
 

@@ -38,14 +38,17 @@ function isoToInputDate(iso: string | null): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (isNaN(d.getTime())) return ''
-  // YYYY-MM-DD para <input type="date">
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
+  // YYYY-MM-DD para <input type="date"> usando UTC, porque billingTargetDate
+  // se guarda como fecha civil (12:00 UTC) y queremos mostrar el día civil.
+  const y = d.getUTCFullYear()
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(d.getUTCDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
 }
 
-function formatHumanDate(iso: string | null): string {
+// Para billingNoteUpdatedAt: ese SÍ es un instante real (cuándo se editó),
+// se formatea con la timezone local del navegador.
+function formatHumanDateTime(iso: string | null): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (isNaN(d.getTime())) return ''
@@ -137,7 +140,7 @@ export function BillingScheduleDialog({
 
         {initial?.billingNoteUpdatedAt && initial?.billingNoteUpdatedByName && (
           <p className="text-xs text-muted-foreground">
-            Última edición: {initial.billingNoteUpdatedByName} el {formatHumanDate(initial.billingNoteUpdatedAt)}
+            Última edición: {initial.billingNoteUpdatedByName} el {formatHumanDateTime(initial.billingNoteUpdatedAt)}
           </p>
         )}
 

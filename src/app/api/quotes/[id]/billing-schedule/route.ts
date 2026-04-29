@@ -43,14 +43,20 @@ export async function PATCH(
       if (body.billingTargetDate === null || body.billingTargetDate === '') {
         data.billingTargetDate = null
       } else {
-        const parsed = new Date(body.billingTargetDate as string)
-        if (isNaN(parsed.getTime())) {
+        // Tratamos billingTargetDate como FECHA CIVIL (sin timezone).
+        // Si viene "YYYY-MM-DD" del <input type=date>, forzamos hora 12:00 UTC
+        // para que el día civil sea el mismo en cualquier timezone razonable.
+        const raw = String(body.billingTargetDate)
+        const civilDate = /^\d{4}-\d{2}-\d{2}$/.test(raw)
+          ? new Date(`${raw}T12:00:00.000Z`)
+          : new Date(raw)
+        if (isNaN(civilDate.getTime())) {
           return NextResponse.json(
             { error: 'Fecha inválida' },
             { status: 400 }
           )
         }
-        data.billingTargetDate = parsed
+        data.billingTargetDate = civilDate
       }
     }
 

@@ -55,10 +55,31 @@ import { refreshInventoryCache } from '@/hooks/useColppyStock'
 
 // ─── Helpers ─────────────────────────────────────────
 
-function startOfTodayMs(): number {
-  const d = new Date()
-  d.setHours(0, 0, 0, 0)
-  return d.getTime()
+// "Hoy civil" para el usuario, expresado en el mismo formato que guardamos
+// billingTargetDate: 12:00 UTC del día civil local. Se compara contra
+// billingTargetDate (también guardado a 12:00 UTC) para evitar off-by-one
+// por timezone.
+function todayCivilUtcMs(): number {
+  const now = new Date()
+  return Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0)
+}
+
+// Formatea un Date/ISO como DD/MM/YYYY tomando los componentes UTC,
+// porque billingTargetDate es una fecha civil pinchada a 12:00 UTC.
+function formatBillingDate(iso: string): string {
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  const dd = String(d.getUTCDate()).padStart(2, '0')
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const yyyy = d.getUTCFullYear()
+  return `${dd}/${mm}/${yyyy}`
+}
+
+function isBillingDue(iso: string | null): boolean {
+  if (!iso) return false
+  const target = new Date(iso).getTime()
+  if (isNaN(target)) return false
+  return target <= todayCivilUtcMs()
 }
 
 const TC_BADGE_COLORS: Record<string, string> = {
@@ -237,7 +258,7 @@ export default function FacturacionPage() {
       const data = (await response.json()) as BoardData
       // Subir al tope de cada columna las cards con billingTargetDate vencida
       // (today >= billingTargetDate). El resto del orden se preserva.
-      const todayMs = startOfTodayMs()
+      const todayMs = todayCivilUtcMs()
       const sortByBillingDue = (a: BoardCard, b: BoardCard) => {
         const aDue = a.billingTargetDate ? new Date(a.billingTargetDate).getTime() <= todayMs : false
         const bDue = b.billingTargetDate ? new Date(b.billingTargetDate).getTime() <= todayMs : false
@@ -1092,14 +1113,12 @@ function QuoteCard({
   const allSentToColppy = quote.colppySyncedAt !== null
   const hasUnsent = quote.items.some((i) => i.remainingQuantity > 0 && !i.sentToColppy)
 
-  // Estado de programación de facturación
-  const billingDateMs = quote.billingTargetDate ? new Date(quote.billingTargetDate).getTime() : null
-  const todayStartMs = startOfTodayMs()
-  const isBillingDue = billingDateMs != null && billingDateMs <= todayStartMs
-  const isBillingScheduled = billingDateMs != null && billingDateMs > todayStartMs
-  const billingBorderClass = isBillingDue
+  // Estado de programación de facturación (comparación de fechas civiles)
+  const billingDue = isBillingDue(quote.billingTargetDate)
+  const billingScheduled = quote.billingTargetDate !== null && !billingDue
+  const billingBorderClass = billingDue
     ? 'border-l-4 border-l-green-500'
-    : isBillingScheduled
+    : billingScheduled
     ? 'border-l-4 border-l-blue-400'
     : ''
 
@@ -1185,7 +1204,7 @@ function QuoteCard({
 
           {(quote.billingTargetDate || quote.billingNote) && (
             <div className={`text-xs rounded px-1.5 py-1 mt-0.5 space-y-0.5 ${
-              isBillingDue
+              billingDue
                 ? 'bg-green-50 text-green-800 border border-green-200'
                 : 'bg-blue-50 text-blue-800 border border-blue-200'
             }`}>
@@ -1193,8 +1212,8 @@ function QuoteCard({
                 <div className="flex items-center gap-1">
                   <CalendarIcon className="h-3 w-3 flex-shrink-0" />
                   <span>
-                    {isBillingDue ? 'Listo para facturar' : 'Facturar el'}{' '}
-                    {formatDate(quote.billingTargetDate)}
+                    {billingDue ? 'Listo para facturar' : 'Facturar el'}{' '}
+                    {formatBillingDate(quote.billingTargetDate)}
                   </span>
                 </div>
               )}

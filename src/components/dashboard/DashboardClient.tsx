@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -250,6 +250,9 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
             <CardTitle className="text-lg font-semibold text-gray-900">
               Cotizaciones por mes
             </CardTitle>
+            <CardDescription className="text-xs text-muted-foreground">
+              No incluye borradores ni vencidas
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
@@ -286,7 +289,7 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
                         }}
                       >
                         <p style={{ fontWeight: 600, marginBottom: 4 }}>
-                          {label} ({formatNumber(total)})
+                          {label} ({formatNumber(total, 0)})
                         </p>
                         {payload.map((item) => (
                           <p key={String(item.dataKey)} style={{ color: item.color, margin: 0 }}>

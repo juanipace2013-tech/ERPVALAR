@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { getLogo } from '@/lib/logo-base64'
+import { layoutLongTextBlock } from '@/lib/pdf/text-layout-helpers'
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
 export interface CaiPDFData {
@@ -213,19 +214,32 @@ function drawRemitoCopy(doc: jsPDF, data: RemitoPDFData, copyLabel: string, logo
   let cy = y + 6
 
   // Columna izquierda: Señores, Calle, Localidad
+  // Ancho disponible para el nombre del cliente: desde (cx+22) hasta clientDivX,
+  // con 2mm de buffer para no chocar con el divisor vertical.
+  const nameMaxWidth = clientDivX - (cx + 22) - 2 // ≈ 86mm
+  const recipientName = data.customer.businessName || data.customer.name || ''
+  const nameFontSize =
+    recipientName.length > 80 ? 6.5 :
+    recipientName.length > 50 ? 7 : 8
+  const nameLines = layoutLongTextBlock(doc, recipientName, {
+    maxWidth: nameMaxWidth,
+    fontSize: nameFontSize,
+    maxLines: 2,
+    fontStyle: 'normal',
+  })
+
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(8)
   doc.setTextColor(...DARK)
   doc.text('Señor(es):', cx, cy)
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(8)
-  doc.text(
-    (data.customer.businessName || data.customer.name || '').substring(0, 55),
-    cx + 22,
-    cy
-  )
+  doc.setFontSize(nameFontSize)
+  doc.text(nameLines, cx + 22, cy)
 
-  cy += 6
+  // Avance dinámico: 6mm si fue 1 línea (preserva layout original);
+  // si wrappeó a 2, sumamos lineHeight extra para no pisar Domicilio.
+  const nameLineHeight = nameFontSize * 0.42
+  cy += nameLines.length === 1 ? 6 : nameLines.length * nameLineHeight + 1.5
   doc.setFont('helvetica', 'bold')
   doc.text('Domicilio:', cx, cy)
   doc.setFont('helvetica', 'normal')

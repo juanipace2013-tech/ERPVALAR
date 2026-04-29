@@ -11,6 +11,7 @@
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
+    "test:remito": "tsx scripts/test-remito-wrap.ts",
     "test:rotulo": "tsx scripts/test-rotulo-wrap.ts"
   },
   "prisma": {

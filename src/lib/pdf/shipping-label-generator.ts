@@ -94,10 +94,29 @@ function drawLabel(
   doc.line(margin, y, pageWidth - margin, y)
   y += 6
 
-  // DESTINATARIO
+  // DESTINATARIO (wrap + tamaño adaptativo + blindaje palabra larga + tope 3 líneas)
   const recipientName = data.customer.businessName || data.customer.name
-  drawField(doc, 'DESTINATARIO', recipientName, margin, y, contentWidth, 16, true)
-  y += 22
+  const recipientFontSize =
+    recipientName.length > 70 ? 11 :
+    recipientName.length > 50 ? 13 :
+    recipientName.length > 35 ? 14 : 16
+  const recipientMaxWidth = contentWidth - 6
+  const recipientLines = layoutRecipientName(doc, recipientName, recipientMaxWidth, recipientFontSize, 3)
+
+  // Etiqueta
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(9)
+  doc.setTextColor(80, 80, 80)
+  doc.text('DESTINATARIO:', margin + 2, y)
+
+  // Valor (líneas ya partidas y capadas)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(recipientFontSize)
+  doc.setTextColor(0, 0, 0)
+  doc.text(recipientLines, margin + 2, y + 6)
+
+  const recipientLineHeight = recipientFontSize * 0.42
+  y += 8 + recipientLines.length * recipientLineHeight + 6
 
   // CUIT
   drawField(doc, 'CUIT', data.customer.cuit, margin, y, contentWidth, 12)
@@ -224,6 +243,54 @@ function buildAddress(data: ShippingLabelData): string {
   const parts = [addr, city, province ? `Pcia. de ${province}` : '', cp ? `CP ${cp}` : '']
     .filter(Boolean)
   return parts.join(', ') || 'Sin dirección'
+}
+
+export function layoutRecipientName(
+  doc: jsPDF,
+  name: string,
+  maxWidth: number,
+  fontSize: number,
+  maxLines: number
+): string[] {
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(fontSize)
+  const safe = breakLongWords(doc, name, maxWidth)
+  const all = doc.splitTextToSize(safe, maxWidth) as string[]
+  if (all.length <= maxLines) return all
+  const truncated = all.slice(0, maxLines)
+  const lastIdx = truncated.length - 1
+  let last = truncated[lastIdx]
+  while (last.length > 0 && doc.getTextWidth(last + '…') > maxWidth) {
+    last = last.slice(0, -1)
+  }
+  truncated[lastIdx] = last + '…'
+  return truncated
+}
+
+// Si una palabra excede maxWidth al fontSize actual, la parte en chunks que sí entren.
+// Asume que el doc ya tiene seteado el font/size correcto.
+function breakLongWords(doc: jsPDF, text: string, maxWidth: number): string {
+  const tokens = text.split(/(\s+)/)
+  const out: string[] = []
+  for (const tok of tokens) {
+    if (!tok) continue
+    if (/^\s+$/.test(tok) || doc.getTextWidth(tok) <= maxWidth) {
+      out.push(tok)
+      continue
+    }
+    let chunk = ''
+    for (const ch of Array.from(tok)) {
+      if (chunk && doc.getTextWidth(chunk + ch) > maxWidth) {
+        out.push(chunk)
+        out.push(' ')
+        chunk = ch
+      } else {
+        chunk += ch
+      }
+    }
+    if (chunk) out.push(chunk)
+  }
+  return out.join('')
 }
 
 function buildTransport(data: ShippingLabelData): string {

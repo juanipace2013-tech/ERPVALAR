@@ -265,11 +265,36 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
                   axisLine={{ stroke: chartColors.axis }}
                 />
                 <Tooltip
-                  contentStyle={{
-                    backgroundColor: chartColors.tooltipBg,
-                    border: `1px solid ${chartColors.tooltipBorder}`,
-                    borderRadius: '6px',
-                    color: isDark ? '#e5e7eb' : undefined
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload || payload.length === 0) return null
+                    const total = payload.reduce(
+                      (sum: number, item: { value?: number | string | null }) =>
+                        sum + (typeof item.value === 'number' ? item.value : 0),
+                      0
+                    )
+                    if (total === 0) return null
+                    return (
+                      <div
+                        style={{
+                          backgroundColor: chartColors.tooltipBg,
+                          border: `1px solid ${chartColors.tooltipBorder}`,
+                          borderRadius: '6px',
+                          padding: '8px 12px',
+                          color: isDark ? '#e5e7eb' : '#111827',
+                          fontSize: '12px',
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        <p style={{ fontWeight: 600, marginBottom: 4 }}>
+                          {label} ({formatNumber(total)})
+                        </p>
+                        {payload.map((item) => (
+                          <p key={String(item.dataKey)} style={{ color: item.color, margin: 0 }}>
+                            {item.name}: {item.value}
+                          </p>
+                        ))}
+                      </div>
+                    )
                   }}
                 />
                 <Legend
@@ -342,6 +367,9 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {totalCotizaciones} cotización{totalCotizaciones !== 1 ? 'es' : ''} · {totalAceptadas} aceptada{totalAceptadas !== 1 ? 's' : ''}
+                    {totalCotizaciones > 0 && (
+                      <> ({(totalAceptadas / totalCotizaciones * 100).toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%)</>
+                    )}
                   </p>
                 </div>
               </div>

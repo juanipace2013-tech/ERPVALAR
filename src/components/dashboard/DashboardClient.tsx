@@ -457,8 +457,10 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
         })
         const maxMontoCerrado = Math.max(...rankingCerradas.map(v => v.montoAceptadas || 0), 1)
         const totalCerrado = rankingCerradas.reduce((acc, v) => acc + (v.montoAceptadas || 0), 0)
+        const totalCotizadoUSD = rankingCerradas.reduce((acc, v) => acc + (v.totalUSD || 0), 0)
         const totalOperacionesCerradas = rankingCerradas.reduce((acc, v) => acc + (v.aceptadas || 0), 0)
         const totalCotizacionesCerradas = rankingCerradas.reduce((acc, v) => acc + (v.cotizaciones || 0), 0)
+        const conversionPorMonto = totalCotizadoUSD > 0 ? (totalCerrado / totalCotizadoUSD) * 100 : 0
         return (
           <Card>
             <CardHeader>
@@ -471,6 +473,11 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
                   <p className="text-xs text-muted-foreground">Total cerrado</p>
                   <p className="text-xl font-bold text-green-600 dark:text-green-400">
                     {formatCurrency(totalCerrado)}
+                    {totalCotizadoUSD > 0 && (
+                      <span className="text-sm font-semibold ml-2">
+                        ({conversionPorMonto.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%)
+                      </span>
+                    )}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {totalOperacionesCerradas} operación{totalOperacionesCerradas !== 1 ? 'es' : ''} cerrada{totalOperacionesCerradas !== 1 ? 's' : ''} de {totalCotizacionesCerradas} cotización{totalCotizacionesCerradas !== 1 ? 'es' : ''}

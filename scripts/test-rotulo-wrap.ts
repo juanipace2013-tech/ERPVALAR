@@ -1,10 +1,20 @@
-// Genera 4 PDFs de rótulo con razones sociales de distinto largo y verifica
-// la lógica de layout (cantidad de líneas, ancho, ellipsis, blindaje palabra larga)
-// directamente sobre layoutRecipientName + jsPDF.getTextWidth.
-//
-// Los PDFs se guardan en tmp/rotulos-test/ para inspección visual manual.
-//
-// Ejecutar con: npx tsx scripts/test-rotulo-wrap.ts
+/**
+ * Test de layout del rótulo de envío (shipping-label-generator.ts).
+ *
+ * Genera 5 PDFs en tmp/rotulos-test/ con casos de distinto largo
+ * de razón social (corto, medio, largo real, patológico, palabra única)
+ * y valida programáticamente que:
+ *   - El font-size adaptativo se aplica correctamente.
+ *   - Ninguna línea excede el ancho útil (174mm).
+ *   - El bloque destinatario no genera más de 3 líneas.
+ *   - El blindaje contra palabras sin espacios funciona.
+ *
+ * Uso:
+ *   npm run test:rotulo
+ *
+ * Los PDFs generados quedan en tmp/rotulos-test/ (gitignored) para
+ * inspección visual manual si hace falta.
+ */
 
 import { writeFileSync, mkdirSync, existsSync } from 'fs'
 import { join, resolve } from 'path'

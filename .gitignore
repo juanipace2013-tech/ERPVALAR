@@ -24,6 +24,10 @@
 .DS_Store
 *.pem
 
+# archivos temporales / output de scripts de test
+tmp/
+/tmp/
+
 # AFIP certificates and keys - NEVER COMMIT
 *.key
 *.crt

@@ -547,6 +547,11 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
                         <p className="text-xs text-gray-500">
                           de {vendedor.cotizaciones}
                         </p>
+                        {(vendedor.totalUSD || 0) > 0 && (
+                          <p className="text-xs text-gray-500">
+                            de {formatCurrency(vendedor.totalUSD || 0)} ({(((vendedor.montoAceptadas || 0) / vendedor.totalUSD) * 100).toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%)
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>

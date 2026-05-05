@@ -1,7 +1,7 @@
 import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { generateDeliveryNumber } from '@/lib/quote-workflow';
+import { generateDeliveryNumber, withDeliveryTx } from '@/lib/quote-workflow';
 import { logAudit } from '@/lib/audit';
 import { normalizeCuit, buildCuitWhereClause } from '@/lib/cuit-utils';
 import { logger } from '@/lib/logger'
@@ -206,50 +206,53 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generar número de remito (usa CAI si hay activo, sino PV 0002)
-    const { deliveryNumber, caiNumber } = await generateDeliveryNumber();
+    // Asignar número + crear remito en UNA sola tx Serializable.
+    // Si el create falla, el incremento de lastUsedNumber se rollbackea
+    // y no queda hueco en la numeración.
+    const deliveryNote = await withDeliveryTx(async (tx) => {
+      const { deliveryNumber, caiNumber } = await generateDeliveryNumber(tx);
 
-    // Crear remito con items
-    const deliveryNote = await prisma.deliveryNote.create({
-      data: {
-        deliveryNumber,
-        ...(caiNumber ? { caiNumber } : {}),
-        customerId,
-        quoteId: quoteId || null,
-        date: date ? new Date(date) : new Date(),
-        carrier: carrier || null,
-        transportAddress: transportAddress || null,
-        deliveryType: deliveryType || 'Retira en sucursal',
-        purchaseOrder: purchaseOrder || null,
-        customerInvoiceNumber: customerInvoiceNumber || null,
-        bultos: bultos || null,
-        totalAmountARS: totalAmountARS ? parseFloat(totalAmountARS) : null,
-        notes: notes
-          ? (invoiceRef ? `Factura: ${invoiceRef}\n${notes}` : notes)
-          : (invoiceRef ? `Factura: ${invoiceRef}` : null),
-        deliveryAddress: body.deliveryAddress || customer.address || null,
-        deliveryCity: body.deliveryCity || customer.city || null,
-        deliveryProvince: body.deliveryProvince || customer.province || null,
-        deliveryPostalCode: body.deliveryPostalCode || customer.postalCode || null,
-        deliveryContactName: body.deliveryContactName || null,
-        deliveryContactPhone: body.deliveryContactPhone || null,
-        status: 'PENDING',
-        items: {
-          create: items.map((item: any) => ({
-            productId: item.productId || null,
-            sku: item.sku || null,
-            description: item.description || 'Item',
-            quantity: parseFloat(item.quantity) || 1,
-            unit: item.unit || 'UN',
-          })),
+      return tx.deliveryNote.create({
+        data: {
+          deliveryNumber,
+          ...(caiNumber ? { caiNumber } : {}),
+          customerId,
+          quoteId: quoteId || null,
+          date: date ? new Date(date) : new Date(),
+          carrier: carrier || null,
+          transportAddress: transportAddress || null,
+          deliveryType: deliveryType || 'Retira en sucursal',
+          purchaseOrder: purchaseOrder || null,
+          customerInvoiceNumber: customerInvoiceNumber || null,
+          bultos: bultos || null,
+          totalAmountARS: totalAmountARS ? parseFloat(totalAmountARS) : null,
+          notes: notes
+            ? (invoiceRef ? `Factura: ${invoiceRef}\n${notes}` : notes)
+            : (invoiceRef ? `Factura: ${invoiceRef}` : null),
+          deliveryAddress: body.deliveryAddress || customer.address || null,
+          deliveryCity: body.deliveryCity || customer.city || null,
+          deliveryProvince: body.deliveryProvince || customer.province || null,
+          deliveryPostalCode: body.deliveryPostalCode || customer.postalCode || null,
+          deliveryContactName: body.deliveryContactName || null,
+          deliveryContactPhone: body.deliveryContactPhone || null,
+          status: 'PENDING',
+          items: {
+            create: items.map((item: any) => ({
+              productId: item.productId || null,
+              sku: item.sku || null,
+              description: item.description || 'Item',
+              quantity: parseFloat(item.quantity) || 1,
+              unit: item.unit || 'UN',
+            })),
+          },
         },
-      },
-      include: {
-        items: {
-          include: { product: true },
+        include: {
+          items: {
+            include: { product: true },
+          },
+          customer: true,
         },
-        customer: true,
-      },
+      });
     });
 
     // Registrar auditoría

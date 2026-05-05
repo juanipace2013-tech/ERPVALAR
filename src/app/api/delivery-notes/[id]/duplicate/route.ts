@@ -1,7 +1,7 @@
 import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { generateDeliveryNumber } from '@/lib/quote-workflow';
+import { generateDeliveryNumber, withDeliveryTx } from '@/lib/quote-workflow';
 import { logAudit } from '@/lib/audit';
 import { logger } from '@/lib/logger'
 
@@ -102,51 +102,53 @@ export async function POST(
       }
     }
 
-    // Generar nuevo número de remito
-    const { deliveryNumber, caiNumber } = await generateDeliveryNumber();
+    // Asignar número + crear remito duplicado en UNA sola tx Serializable.
+    // Si el create falla, el incremento de lastUsedNumber se rollbackea.
+    const newDeliveryNote = await withDeliveryTx(async (tx) => {
+      const { deliveryNumber, caiNumber } = await generateDeliveryNumber(tx);
 
-    // Crear remito duplicado
-    const newDeliveryNote = await prisma.deliveryNote.create({
-      data: {
-        deliveryNumber,
-        ...(caiNumber ? { caiNumber } : {}),
-        customerId: targetCustomerId,
-        supplierId: targetSupplierId,
-        date: new Date(),
-        status: 'PENDING',
-        // Copiar datos de transporte y observaciones (limpiar transporte si cambió destinatario)
-        carrier: recipientChanged ? null : original.carrier,
-        transportAddress: recipientChanged ? null : original.transportAddress,
-        purchaseOrder: recipientChanged ? null : original.purchaseOrder,
-        bultos: original.bultos,
-        notes: original.notes,
-        internalNotes: original.internalNotes,
-        // Dirección de entrega: del nuevo destinatario si cambió, o del original
-        deliveryAddress,
-        deliveryCity,
-        deliveryProvince,
-        deliveryPostalCode,
-        deliveryContactName,
-        deliveryContactPhone,
-        // Copiar items
-        items: {
-          create: original.items.map((item) => ({
-            productId: item.productId,
-            sku: item.sku,
-            description: item.description,
-            quantity: item.quantity,
-            unit: item.unit,
-            warehouseLocation: item.warehouseLocation,
-            batchNumber: item.batchNumber,
-            serialNumber: item.serialNumber,
-          })),
+      return tx.deliveryNote.create({
+        data: {
+          deliveryNumber,
+          ...(caiNumber ? { caiNumber } : {}),
+          customerId: targetCustomerId,
+          supplierId: targetSupplierId,
+          date: new Date(),
+          status: 'PENDING',
+          // Copiar datos de transporte y observaciones (limpiar transporte si cambió destinatario)
+          carrier: recipientChanged ? null : original.carrier,
+          transportAddress: recipientChanged ? null : original.transportAddress,
+          purchaseOrder: recipientChanged ? null : original.purchaseOrder,
+          bultos: original.bultos,
+          notes: original.notes,
+          internalNotes: original.internalNotes,
+          // Dirección de entrega: del nuevo destinatario si cambió, o del original
+          deliveryAddress,
+          deliveryCity,
+          deliveryProvince,
+          deliveryPostalCode,
+          deliveryContactName,
+          deliveryContactPhone,
+          // Copiar items
+          items: {
+            create: original.items.map((item) => ({
+              productId: item.productId,
+              sku: item.sku,
+              description: item.description,
+              quantity: item.quantity,
+              unit: item.unit,
+              warehouseLocation: item.warehouseLocation,
+              batchNumber: item.batchNumber,
+              serialNumber: item.serialNumber,
+            })),
+          },
         },
-      },
-      include: {
-        items: true,
-        customer: true,
-        supplier: true,
-      },
+        include: {
+          items: true,
+          customer: true,
+          supplier: true,
+        },
+      });
     });
 
     // Registrar auditoría

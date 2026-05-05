@@ -1,6 +1,46 @@
 import { prisma } from '@/lib/prisma';
-import { QuoteStatus, DeliveryNoteStatus } from '@prisma/client';
+import { QuoteStatus, DeliveryNoteStatus, Prisma } from '@prisma/client';
 import { logger } from '@/lib/logger';
+
+/**
+ * Ejecuta `fn` dentro de una transacción Serializable, con reintentos
+ * automáticos ante fallos de concurrencia (CAI_CONCURRENT_UPDATE o
+ * Postgres serialization_failure / Prisma P2034).
+ *
+ * Pensada para envolver "asignar número de remito + create del DeliveryNote"
+ * en una única unidad atómica: si el create falla, el incremento del
+ * contador (lastUsedNumber) se rollbackea y NO queda hueco en la numeración.
+ */
+export async function withDeliveryTx<T>(
+  fn: (tx: Prisma.TransactionClient) => Promise<T>
+): Promise<T> {
+  const MAX_ATTEMPTS = 3;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      return await prisma.$transaction(fn, {
+        isolationLevel: 'Serializable',
+        maxWait: 10000,
+        timeout: 30000,
+      });
+    } catch (e: any) {
+      lastError = e;
+      const msg = String(e?.message ?? '');
+      const code = e?.code;
+      const retriable =
+        msg.includes('CAI_CONCURRENT_UPDATE') ||
+        msg.includes('could not serialize') ||
+        code === 'P2034' || // write conflict / deadlock
+        code === '40001'; // serialization_failure
+      if (retriable && attempt < MAX_ATTEMPTS) {
+        logger.warn(`withDeliveryTx retry ${attempt}/${MAX_ATTEMPTS}: ${msg}`);
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastError;
+}
 
 /**
  * Calcula la fecha de vencimiento según los días de la condición de pago del cliente.
@@ -141,79 +181,100 @@ export async function updateQuoteStatus(
 // Mínimo secuencial para continuar la numeración pre-ERP (PV 0002)
 const DELIVERY_NUMBER_MIN = 11414;
 
-export async function generateDeliveryNumber(): Promise<{ deliveryNumber: string; caiNumber: string | null }> {
+/**
+ * Asigna el siguiente número de remito usando el `tx` provisto.
+ *
+ * Diseñado para correr DENTRO de una transacción Serializable más amplia
+ * (la que también hace el `create` del DeliveryNote), de modo que si el
+ * create falla, el incremento del contador se rollbackea y no quedan
+ * huecos en la numeración.
+ *
+ * Tira `Error('CAI_CONCURRENT_UPDATE')` si otro proceso ya incrementó
+ * el contador entre el read y el update — el caller (withDeliveryTx)
+ * reintenta la transacción completa.
+ */
+async function generateDeliveryNumberInTx(
+  tx: Prisma.TransactionClient
+): Promise<{ deliveryNumber: string; caiNumber: string | null }> {
   // Intentar usar CAI activo (si la tabla existe y hay config)
   try {
-    if (prisma.caiConfig) {
-      // Atomic increment con Serializable isolation para evitar race conditions
-      const result = await prisma.$transaction(async (tx) => {
-        const caiConfig = await tx.caiConfig.findFirst({
-          where: { active: true },
-          orderBy: { createdAt: 'desc' },
-        });
+    if ((tx as any).caiConfig) {
+      const caiConfig = await tx.caiConfig.findFirst({
+        where: { active: true },
+        orderBy: { createdAt: 'desc' },
+      });
 
-        if (!caiConfig) return null;
-
+      if (caiConfig) {
         const now = new Date();
         const notExpired = now <= caiConfig.caiExpirationDate;
         const nextNumber = caiConfig.lastUsedNumber + 1;
         const hasRange = nextNumber <= caiConfig.endNumber;
 
-        if (!notExpired || !hasRange) return null;
+        if (notExpired && hasRange) {
+          // Incrementar con atomic UPDATE + condición para evitar doble incremento
+          const updated = await tx.$executeRaw`
+            UPDATE cai_configs
+            SET "lastUsedNumber" = "lastUsedNumber" + 1
+            WHERE id = ${caiConfig.id} AND "lastUsedNumber" = ${caiConfig.lastUsedNumber}
+          `;
 
-        // Incrementar con atomic UPDATE + condición para evitar doble incremento
-        const updated = await tx.$executeRaw`
-          UPDATE cai_configs
-          SET "lastUsedNumber" = "lastUsedNumber" + 1
-          WHERE id = ${caiConfig.id} AND "lastUsedNumber" = ${caiConfig.lastUsedNumber}
-        `;
+          if (updated === 0) {
+            // Otro proceso ya incrementó → withDeliveryTx reintenta la tx entera
+            throw new Error('CAI_CONCURRENT_UPDATE');
+          }
 
-        if (updated === 0) {
-          // Otro proceso ya incrementó → reintentar leyendo el nuevo valor
-          throw new Error('CAI_CONCURRENT_UPDATE');
+          const pv = String(caiConfig.pointOfSale).padStart(4, '0');
+          const num = String(nextNumber).padStart(8, '0');
+          return {
+            deliveryNumber: `RE ${pv}-${num}`,
+            caiNumber: caiConfig.caiNumber,
+          };
         }
-
-        const pv = String(caiConfig.pointOfSale).padStart(4, '0');
-        const num = String(nextNumber).padStart(8, '0');
-        return {
-          deliveryNumber: `RE ${pv}-${num}`,
-          caiNumber: caiConfig.caiNumber,
-        };
-      }, { isolationLevel: 'Serializable' });
-
-      if (result) return result;
+      }
     }
   } catch (error) {
-    // Si es un retry por concurrencia, reintentar una vez
+    // Concurrencia: bubble up para que withDeliveryTx reintente
     if (error instanceof Error && error.message === 'CAI_CONCURRENT_UPDATE') {
-      logger.warn('CAI concurrent update detected, retrying...');
-      return generateDeliveryNumber();
+      throw error;
     }
-    // Si caiConfig no existe en el Prisma client o la tabla no existe,
-    // continuar con fallback PV 0002 sin romper
-    logger.warn('CAI config not available, falling back to PV 0002:', error instanceof Error ? error.message : error);
+    // Tabla/cliente no disponible: fallback a PV 0002
+    logger.warn(
+      'CAI config not available, falling back to PV 0002:',
+      error instanceof Error ? error.message : error
+    );
   }
 
   // Fallback: PV 0002 (legacy / contingencia)
-  // Serializable transaction + locking para evitar race conditions
-  const deliveryNumber = await prisma.$transaction(async (tx) => {
-    // FOR UPDATE lockea la fila para que otro proceso no lea el mismo número
-    const result = await tx.$queryRaw<{ max_num: number }[]>`
-      SELECT COALESCE(
-        MAX(CAST(SUBSTRING("deliveryNumber" FROM '(\d+)$') AS INTEGER)),
-        ${DELIVERY_NUMBER_MIN}
-      ) as max_num
-      FROM delivery_notes
-      WHERE "deliveryNumber" LIKE 'RE 0002%'
-      FOR UPDATE
-    `;
+  // FOR UPDATE lockea la fila para que otro proceso no lea el mismo número
+  const result = await tx.$queryRaw<{ max_num: number }[]>`
+    SELECT COALESCE(
+      MAX(CAST(SUBSTRING("deliveryNumber" FROM '(\d+)$') AS INTEGER)),
+      ${DELIVERY_NUMBER_MIN}
+    ) as max_num
+    FROM delivery_notes
+    WHERE "deliveryNumber" LIKE 'RE 0002%'
+    FOR UPDATE
+  `;
 
-    const lastNumber = result[0]?.max_num || DELIVERY_NUMBER_MIN;
-    const number = lastNumber + 1;
-    return `RE 0002-${String(number).padStart(8, '0')}`;
-  }, { isolationLevel: 'Serializable' });
+  const lastNumber = result[0]?.max_num || DELIVERY_NUMBER_MIN;
+  const number = lastNumber + 1;
+  return {
+    deliveryNumber: `RE 0002-${String(number).padStart(8, '0')}`,
+    caiNumber: null,
+  };
+}
 
-  return { deliveryNumber, caiNumber: null };
+export async function generateDeliveryNumber(
+  tx?: Prisma.TransactionClient
+): Promise<{ deliveryNumber: string; caiNumber: string | null }> {
+  // Si recibe tx, opera dentro de la transacción del caller
+  // (el caller debe usar withDeliveryTx para tener reintentos).
+  if (tx) {
+    return generateDeliveryNumberInTx(tx);
+  }
+
+  // Standalone: abre su propia tx Serializable con reintentos
+  return withDeliveryTx((innerTx) => generateDeliveryNumberInTx(innerTx));
 }
 
 /**
@@ -261,11 +322,12 @@ export async function generateDeliveryNoteFromQuote(
     throw new Error('Solo se pueden generar remitos de cotizaciones aceptadas o convertidas');
   }
 
-  // Generar número de remito (usa CAI si hay activo, sino PV 0002)
-  const { deliveryNumber, caiNumber } = await generateDeliveryNumber();
+  // Crear remito + asignar número en UNA sola transacción Serializable.
+  // Si el create falla, el incremento de lastUsedNumber se rollbackea y no
+  // queda hueco en la numeración.
+  const deliveryNote = await withDeliveryTx(async (tx) => {
+    const { deliveryNumber, caiNumber } = await generateDeliveryNumber(tx);
 
-  // Crear remito en transacción
-  const deliveryNote = await prisma.$transaction(async (tx) => {
     // Calcular valor declarado: subtotal USD × tipo de cambio = ARS sin IVA
     const quoteExchangeRate = Number(quote.exchangeRate) || 1;
     const quoteSubtotal = Number(quote.subtotal);

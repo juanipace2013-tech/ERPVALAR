@@ -2,6 +2,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { withDeliveryTx } from '@/lib/quote-workflow'
 
 /**
  * POST /api/delivery-notes/[id]/allocate-cai
@@ -45,61 +46,77 @@ export async function POST(
       })
     }
 
-    // Get active CAI config
-    const caiConfig = await prisma.caiConfig.findFirst({
+    // Pre-check fuera de tx para devolver errores 4xx amigables sin abrir tx
+    const preCheck = await prisma.caiConfig.findFirst({
       where: { active: true },
       orderBy: { createdAt: 'desc' },
     })
 
-    if (!caiConfig) {
-      // No hay CAI activo — el PDF se generará sin CAI (legacy PV 0002)
+    if (!preCheck) {
       return NextResponse.json(
         { error: 'No hay CAI activo. El PDF se generará sin CAI.' },
         { status: 404 }
       )
     }
 
-    // Validate expiration
-    if (new Date() > caiConfig.caiExpirationDate) {
+    if (new Date() > preCheck.caiExpirationDate) {
       return NextResponse.json(
-        { error: `El CAI ${caiConfig.caiNumber} está vencido (venció el ${caiConfig.caiExpirationDate.toLocaleDateString('es-AR')}). El PDF se generará sin CAI.` },
+        { error: `El CAI ${preCheck.caiNumber} está vencido (venció el ${preCheck.caiExpirationDate.toLocaleDateString('es-AR')}). El PDF se generará sin CAI.` },
         { status: 400 }
       )
     }
 
-    // Validate range
-    const nextNumber = caiConfig.lastUsedNumber + 1
-    if (nextNumber > caiConfig.endNumber) {
+    if (preCheck.lastUsedNumber + 1 > preCheck.endNumber) {
       return NextResponse.json(
-        { error: `Se agotó el rango de numeración del CAI (rango ${caiConfig.startNumber}-${caiConfig.endNumber}). El PDF se generará sin CAI.` },
+        { error: `Se agotó el rango de numeración del CAI (rango ${preCheck.startNumber}-${preCheck.endNumber}). El PDF se generará sin CAI.` },
         { status: 400 }
       )
     }
 
-    // Format delivery number: RE 0006-00000001
-    const pv = String(caiConfig.pointOfSale).padStart(4, '0')
-    const num = String(nextNumber).padStart(8, '0')
-    const newDeliveryNumber = `RE ${pv}-${num}`
+    // Asignar número + actualizar remito en UNA sola tx Serializable con
+    // UPDATE atómico condicional (WHERE lastUsedNumber = leído). Si otro
+    // proceso incrementa primero, withDeliveryTx reintenta la tx entera.
+    const allocated = await withDeliveryTx(async (tx) => {
+      const caiConfig = await tx.caiConfig.findFirst({
+        where: { active: true },
+        orderBy: { createdAt: 'desc' },
+      })
+      if (!caiConfig) throw new Error('NO_ACTIVE_CAI')
 
-    // Atomic: increment lastUsedNumber + update delivery note
-    await prisma.$transaction([
-      prisma.caiConfig.update({
-        where: { id: caiConfig.id },
-        data: { lastUsedNumber: nextNumber },
-      }),
-      prisma.deliveryNote.update({
+      const nextNumber = caiConfig.lastUsedNumber + 1
+      if (nextNumber > caiConfig.endNumber) throw new Error('CAI_RANGE_EXHAUSTED')
+
+      // UPDATE atómico condicional: solo incrementa si nadie más lo movió
+      const updated = await tx.$executeRaw`
+        UPDATE cai_configs
+        SET "lastUsedNumber" = "lastUsedNumber" + 1
+        WHERE id = ${caiConfig.id} AND "lastUsedNumber" = ${caiConfig.lastUsedNumber}
+      `
+      if (updated === 0) {
+        throw new Error('CAI_CONCURRENT_UPDATE')
+      }
+
+      const pv = String(caiConfig.pointOfSale).padStart(4, '0')
+      const num = String(nextNumber).padStart(8, '0')
+      const newDeliveryNumber = `RE ${pv}-${num}`
+
+      await tx.deliveryNote.update({
         where: { id },
         data: {
           deliveryNumber: newDeliveryNumber,
           caiNumber: caiConfig.caiNumber,
         },
-      }),
-    ])
+      })
+
+      return {
+        deliveryNumber: newDeliveryNumber,
+        caiNumber: caiConfig.caiNumber,
+        caiExpirationDate: caiConfig.caiExpirationDate,
+      }
+    })
 
     return NextResponse.json({
-      deliveryNumber: newDeliveryNumber,
-      caiNumber: caiConfig.caiNumber,
-      caiExpirationDate: caiConfig.caiExpirationDate,
+      ...allocated,
       alreadyAllocated: false,
     })
   } catch (error) {

@@ -2,6 +2,7 @@ import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { generateDeliveryNumber, withDeliveryTx } from '@/lib/quote-workflow';
+import { parseCivilDate } from '@/lib/date-helpers';
 import { logAudit } from '@/lib/audit';
 import { normalizeCuit, buildCuitWhereClause } from '@/lib/cuit-utils';
 import { logger } from '@/lib/logger'
@@ -218,7 +219,7 @@ export async function POST(request: NextRequest) {
           ...(caiNumber ? { caiNumber } : {}),
           customerId,
           quoteId: quoteId || null,
-          date: date ? new Date(date) : new Date(),
+          date: date ? parseCivilDate(date) : new Date(),
           carrier: carrier || null,
           transportAddress: transportAddress || null,
           deliveryType: deliveryType || 'Retira en sucursal',

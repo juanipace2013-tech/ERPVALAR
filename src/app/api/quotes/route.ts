@@ -6,6 +6,7 @@ import { getMultiplierForClient } from '@/lib/client-multipliers'
 import { logAudit } from '@/lib/audit'
 import { normalizeCuit, buildCuitWhereClause } from '@/lib/cuit-utils'
 import { logger } from '@/lib/logger'
+import { parseCivilDate } from '@/lib/date-helpers'
 
 /**
  * GET /api/quotes
@@ -305,7 +306,7 @@ export async function POST(request: NextRequest) {
           customerId,
           salesPersonId: body.salesPersonId || session.user.id,
           opportunityId: body.opportunityId,
-          date: new Date(body.date || Date.now()),
+          date: body.date ? parseCivilDate(body.date) : new Date(),
           exchangeRate: body.exchangeRate,
           currency: body.currency || 'USD',
           multiplier: body.multiplier || customerMultiplier,

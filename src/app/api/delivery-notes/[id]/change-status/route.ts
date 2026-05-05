@@ -4,6 +4,7 @@ import { updateDeliveryNoteStatus } from '@/lib/quote-workflow';
 import { DeliveryNoteStatus } from '@prisma/client';
 import { logAudit } from '@/lib/audit';
 import { logger } from '@/lib/logger'
+import { parseCivilDate } from '@/lib/date-helpers';
 
 export async function POST(
   request: NextRequest,
@@ -39,7 +40,7 @@ export async function POST(
       id,
       status as DeliveryNoteStatus,
       {
-        deliveryDate: deliveryDate ? new Date(deliveryDate) : undefined,
+        deliveryDate: deliveryDate ? parseCivilDate(deliveryDate) : undefined,
         receivedBy,
         notes
       }

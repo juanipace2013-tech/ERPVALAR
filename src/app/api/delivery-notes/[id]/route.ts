@@ -2,6 +2,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { parseCivilDate } from '@/lib/date-helpers'
 
 export async function GET(
   request: NextRequest,
@@ -117,7 +118,7 @@ export async function PUT(
       return tx.deliveryNote.update({
         where: { id },
         data: {
-          date: body.date ? new Date(body.date) : undefined,
+          date: body.date ? parseCivilDate(body.date) : undefined,
           carrier: body.carrier ?? undefined,
           transportAddress: body.transportAddress ?? undefined,
           deliveryType: body.deliveryType !== undefined ? (body.deliveryType || 'Retira en sucursal') : undefined,

@@ -312,7 +312,7 @@ export async function POST(request: NextRequest) {
           multiplier: body.multiplier || customerMultiplier,
           subtotal: body.subtotal || 0,
           total: body.total || 0,
-          validUntil: body.validUntil ? new Date(body.validUntil) : null,
+          validUntil: body.validUntil ? parseCivilDate(body.validUntil) : null,
           terms: body.terms,
           notes: body.notes,
           tenderNumber: body.tenderNumber || null,

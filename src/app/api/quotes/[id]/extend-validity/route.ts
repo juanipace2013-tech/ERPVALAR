@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { parseCivilDate } from '@/lib/date-helpers'
 
 export async function PUT(
   request: NextRequest,
@@ -21,7 +22,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Debe proporcionar una fecha' }, { status: 400 })
     }
 
-    const newDate = new Date(validUntil)
+    const newDate = parseCivilDate(validUntil)
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 

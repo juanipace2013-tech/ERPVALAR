@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { writeFile, mkdir, unlink } from 'fs/promises'
 import path from 'path'
 import { logger } from '@/lib/logger'
+import { parseCivilDate } from '@/lib/date-helpers'
 
 const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads', 'cotizaciones-oc')
 const MAX_SIZE = 10 * 1024 * 1024 // 10MB
@@ -91,7 +92,7 @@ export async function POST(
     }
 
     if (purchaseOrderDateStr) {
-      updateData.purchaseOrderDate = new Date(purchaseOrderDateStr)
+      updateData.purchaseOrderDate = parseCivilDate(purchaseOrderDateStr)
     }
 
     const updated = await prisma.quote.update({
@@ -155,7 +156,7 @@ export async function PATCH(
 
     if ('purchaseOrderDate' in body) {
       updateData.purchaseOrderDate = body.purchaseOrderDate
-        ? new Date(body.purchaseOrderDate)
+        ? parseCivilDate(body.purchaseOrderDate)
         : null
     }
 

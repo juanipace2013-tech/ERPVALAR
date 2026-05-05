@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/prisma'
 import { invalidateCustomerCache } from '@/lib/colppy/customer-cache'
+import { parseCivilDate } from '@/lib/date-helpers'
 
 /**
  * GET /api/quotes/[id]
@@ -176,7 +177,7 @@ export async function PUT(
     if (body.status !== undefined) updateData.status = body.status
     if (body.terms !== undefined) updateData.terms = body.terms
     if (body.notes !== undefined) updateData.notes = body.notes
-    if (body.validUntil !== undefined) updateData.validUntil = body.validUntil ? new Date(body.validUntil) : null
+    if (body.validUntil !== undefined) updateData.validUntil = body.validUntil ? parseCivilDate(body.validUntil) : null
     if (body.exchangeRate !== undefined) updateData.exchangeRate = body.exchangeRate
     if (body.multiplier !== undefined) updateData.multiplier = body.multiplier
     if (body.bonification !== undefined) updateData.bonification = body.bonification

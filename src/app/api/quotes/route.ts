@@ -7,6 +7,7 @@ import { logAudit } from '@/lib/audit'
 import { normalizeCuit, buildCuitWhereClause } from '@/lib/cuit-utils'
 import { logger } from '@/lib/logger'
 import { parseCivilDate } from '@/lib/date-helpers'
+import { generateNextQuoteNumber } from '@/lib/quotes/generate-quote-number'
 
 /**
  * GET /api/quotes
@@ -278,27 +279,7 @@ export async function POST(request: NextRequest) {
 
     // Generar número + crear cotización en transacción para evitar race conditions
     const quote = await prisma.$transaction(async (tx) => {
-      const year = new Date().getFullYear()
-      const lastQuote = await tx.quote.findFirst({
-        where: {
-          quoteNumber: {
-            startsWith: `VAL-${year}-`,
-          },
-        },
-        orderBy: {
-          quoteNumber: 'desc',
-        },
-      })
-
-      let nextNumber = 1
-      if (lastQuote) {
-        const match = lastQuote.quoteNumber.match(/VAL-\d{4}-(\d{3})/)
-        if (match) {
-          nextNumber = parseInt(match[1]) + 1
-        }
-      }
-
-      const quoteNumber = `VAL-${year}-${String(nextNumber).padStart(3, '0')}`
+      const quoteNumber = await generateNextQuoteNumber(tx)
 
       return tx.quote.create({
         data: {

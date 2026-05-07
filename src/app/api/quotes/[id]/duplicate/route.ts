@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { normalizeCuit, buildCuitWhereClause } from '@/lib/cuit-utils';
 import { logger } from '@/lib/logger'
+import { generateNextQuoteNumber } from '@/lib/quotes/generate-quote-number'
 
 export async function POST(
   request: NextRequest,
@@ -99,27 +100,7 @@ export async function POST(
       }
     }
 
-    // Obtener el siguiente número de cotización
-    const lastQuote = await prisma.quote.findFirst({
-      orderBy: { createdAt: 'desc' },
-      select: { quoteNumber: true },
-    });
-
-    const currentYear = new Date().getFullYear();
-    let nextNumber = 1;
-
-    if (lastQuote?.quoteNumber) {
-      const match = lastQuote.quoteNumber.match(/VAL-(\d{4})-(\d{3})/);
-      if (match) {
-        const year = parseInt(match[1]);
-        const number = parseInt(match[2]);
-        if (year === currentYear) {
-          nextNumber = number + 1;
-        }
-      }
-    }
-
-    const newQuoteNumber = `VAL-${currentYear}-${String(nextNumber).padStart(3, '0')}`;
+    const newQuoteNumber = await generateNextQuoteNumber(prisma);
 
     // Crear la nueva cotización duplicada
     const newQuote = await prisma.quote.create({

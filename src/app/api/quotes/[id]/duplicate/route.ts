@@ -100,50 +100,51 @@ export async function POST(
       }
     }
 
-    const newQuoteNumber = await generateNextQuoteNumber(prisma);
+    const newQuote = await prisma.$transaction(async (tx) => {
+      const newQuoteNumber = await generateNextQuoteNumber(tx);
 
-    // Crear la nueva cotización duplicada
-    const newQuote = await prisma.quote.create({
-      data: {
-        quoteNumber: newQuoteNumber,
-        customerId: targetCustomerId,
-        salesPersonId: originalQuote.salesPersonId,
-        opportunityId: originalQuote.opportunityId,
-        status: 'DRAFT',
-        currency: originalQuote.currency,
-        exchangeRate: originalQuote.exchangeRate,
-        multiplier: newMultiplier,
-        bonification: originalQuote.bonification,
-        subtotal: originalQuote.subtotal,
-        total: originalQuote.total,
-        pricesIncludeTax: originalQuote.pricesIncludeTax,
-        validUntil: originalQuote.validUntil,
-        terms: originalQuote.terms,
-        notes: originalQuote.notes,
-        items: {
-          create: originalQuote.items.map((item) => ({
-            itemNumber: item.itemNumber,
-            productId: item.productId,
-            description: item.description,
-            quantity: item.quantity,
-            listPrice: item.listPrice,
-            brandDiscount: item.brandDiscount,
-            customerMultiplier: item.customerMultiplier,
-            unitPrice: item.unitPrice,
-            totalPrice: item.totalPrice,
-            deliveryTime: item.deliveryTime,
-            isAlternative: item.isAlternative,
-            additionals: {
-              create: item.additionals.map((additional) => ({
-                productId: additional.productId,
-                description: additional.description,
-                position: additional.position,
-                listPrice: additional.listPrice,
-              })),
-            },
-          })),
+      return tx.quote.create({
+        data: {
+          quoteNumber: newQuoteNumber,
+          customerId: targetCustomerId,
+          salesPersonId: originalQuote.salesPersonId,
+          opportunityId: originalQuote.opportunityId,
+          status: 'DRAFT',
+          currency: originalQuote.currency,
+          exchangeRate: originalQuote.exchangeRate,
+          multiplier: newMultiplier,
+          bonification: originalQuote.bonification,
+          subtotal: originalQuote.subtotal,
+          total: originalQuote.total,
+          pricesIncludeTax: originalQuote.pricesIncludeTax,
+          validUntil: originalQuote.validUntil,
+          terms: originalQuote.terms,
+          notes: originalQuote.notes,
+          items: {
+            create: originalQuote.items.map((item) => ({
+              itemNumber: item.itemNumber,
+              productId: item.productId,
+              description: item.description,
+              quantity: item.quantity,
+              listPrice: item.listPrice,
+              brandDiscount: item.brandDiscount,
+              customerMultiplier: item.customerMultiplier,
+              unitPrice: item.unitPrice,
+              totalPrice: item.totalPrice,
+              deliveryTime: item.deliveryTime,
+              isAlternative: item.isAlternative,
+              additionals: {
+                create: item.additionals.map((additional) => ({
+                  productId: additional.productId,
+                  description: additional.description,
+                  position: additional.position,
+                  listPrice: additional.listPrice,
+                })),
+              },
+            })),
+          },
         },
-      },
+      });
     });
 
     return NextResponse.json(newQuote, { status: 201 });

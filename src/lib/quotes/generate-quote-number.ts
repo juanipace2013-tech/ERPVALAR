@@ -2,9 +2,15 @@ import type { PrismaClient } from "@prisma/client";
 
 type TransactionClient = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];
 
+const QUOTE_NUMBER_LOCK_KEY = 8472051;
+
 export async function generateNextQuoteNumber(
   tx: PrismaClient | TransactionClient
 ): Promise<string> {
+  // Advisory lock serializa la generación del número dentro de la transacción.
+  // Se libera automáticamente al cerrar la transacción.
+  await (tx as any).$executeRaw`SELECT pg_advisory_xact_lock(${QUOTE_NUMBER_LOCK_KEY})`;
+
   const year = new Date().getFullYear();
   const yearPrefix = `VAL-${year}-`;
 

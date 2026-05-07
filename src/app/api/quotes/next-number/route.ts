@@ -16,7 +16,9 @@ export async function GET(_request: NextRequest) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
 
-    const quoteNumber = await generateNextQuoteNumber(prisma)
+    const quoteNumber = await prisma.$transaction(async (tx) => {
+      return await generateNextQuoteNumber(tx)
+    })
 
     return NextResponse.json({ quoteNumber })
   } catch (error) {

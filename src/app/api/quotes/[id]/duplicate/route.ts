@@ -103,7 +103,7 @@ export async function POST(
     const newQuote = await prisma.$transaction(async (tx) => {
       const newQuoteNumber = await generateNextQuoteNumber(tx);
 
-      return tx.quote.create({
+      const quote = await tx.quote.create({
         data: {
           quoteNumber: newQuoteNumber,
           customerId: targetCustomerId,
@@ -120,32 +120,45 @@ export async function POST(
           validUntil: originalQuote.validUntil,
           terms: originalQuote.terms,
           notes: originalQuote.notes,
-          items: {
-            create: originalQuote.items.map((item) => ({
-              itemNumber: item.itemNumber,
-              productId: item.productId,
-              description: item.description,
-              quantity: item.quantity,
-              listPrice: item.listPrice,
-              brandDiscount: item.brandDiscount,
-              customerMultiplier: item.customerMultiplier,
-              unitPrice: item.unitPrice,
-              totalPrice: item.totalPrice,
-              deliveryTime: item.deliveryTime,
-              isAlternative: item.isAlternative,
-              additionals: {
-                create: item.additionals.map((additional) => ({
-                  productId: additional.productId,
-                  description: additional.description,
-                  position: additional.position,
-                  listPrice: additional.listPrice,
-                })),
-              },
-            })),
-          },
         },
       });
-    });
+
+      const itemsData = originalQuote.items.map((item) => ({
+        quoteId: quote.id,
+        itemNumber: item.itemNumber,
+        productId: item.productId,
+        description: item.description,
+        quantity: item.quantity,
+        listPrice: item.listPrice,
+        brandDiscount: item.brandDiscount,
+        customerMultiplier: item.customerMultiplier,
+        unitPrice: item.unitPrice,
+        totalPrice: item.totalPrice,
+        deliveryTime: item.deliveryTime,
+        isAlternative: item.isAlternative,
+      }));
+
+      const createdItems = await tx.quoteItem.createManyAndReturn({
+        data: itemsData,
+        select: { id: true },
+      });
+
+      const additionalsData = originalQuote.items.flatMap((item, idx) =>
+        item.additionals.map((additional) => ({
+          quoteItemId: createdItems[idx].id,
+          productId: additional.productId,
+          description: additional.description,
+          position: additional.position,
+          listPrice: additional.listPrice,
+        }))
+      );
+
+      if (additionalsData.length > 0) {
+        await tx.quoteItemAdditional.createMany({ data: additionalsData });
+      }
+
+      return quote;
+    }, { maxWait: 10000, timeout: 30000 });
 
     return NextResponse.json(newQuote, { status: 201 });
   } catch (error) {

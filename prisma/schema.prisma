@@ -49,10 +49,12 @@ model User {
   // Business relations
   activities           Activity[]
   opportunities        Opportunity[]
-  quotes               Quote[]
+  quotes               Quote[]              @relation("QuoteSalesPerson")
+  quotesCreadas        Quote[]              @relation("QuoteCreador")
+  cotizacionAuditLogs  CotizacionAuditLog[]
   invoices             Invoice[]
-  customersSalesPerson Customer[]    @relation("CustomerSalesPerson")
-  suppliersBuyer       Supplier[]    @relation("SupplierBuyer")
+  customersSalesPerson Customer[]           @relation("CustomerSalesPerson")
+  suppliersBuyer       Supplier[]           @relation("SupplierBuyer")
 
   // Accounting relations
   journalEntries JournalEntry[]
@@ -944,7 +946,8 @@ model Quote {
 
   customerId    String
   opportunityId String?
-  salesPersonId String // Vendedor
+  salesPersonId String // Vendedor actual
+  creadoPorId   String? // Vendedor original (inmutable después del backfill)
 
   date     DateTime    @default(now())
   status   QuoteStatus @default(DRAFT)
@@ -995,17 +998,18 @@ model Quote {
   // Programación de facturación: cliente pidió demorar la facturación
   // a una fecha específica (motivos contables/fiscales). Solo informativo,
   // NO bloquea la facturación manual.
-  billingTargetDate     DateTime?
-  billingNote           String?   @db.VarChar(500)
-  billingNoteUpdatedAt  DateTime?
-  billingNoteUpdatedBy  String? // user.id del último editor
+  billingTargetDate    DateTime?
+  billingNote          String?   @db.VarChar(500)
+  billingNoteUpdatedAt DateTime?
+  billingNoteUpdatedBy String? // user.id del último editor
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   customer      Customer             @relation(fields: [customerId], references: [id])
   opportunity   Opportunity?         @relation(fields: [opportunityId], references: [id])
-  salesPerson   User                 @relation(fields: [salesPersonId], references: [id])
+  salesPerson   User                 @relation("QuoteSalesPerson", fields: [salesPersonId], references: [id])
+  creador       User?                @relation("QuoteCreador", fields: [creadoPorId], references: [id])
   items         QuoteItem[]
   deliveryNotes DeliveryNote[] // Remitos generados
   invoices      Invoice[] // Facturas generadas
@@ -1014,6 +1018,7 @@ model Quote {
   emailLogs     QuoteEmailLog[] // Log de emails enviados
   seguimientos  QuoteSeguimiento[] // Seguimientos de contacto
   facturas      CotizacionFactura[] // Facturas parciales generadas
+  auditLogs     CotizacionAuditLog[]
 
   @@index([customerId])
   @@index([opportunityId])
@@ -1063,10 +1068,10 @@ model QuoteItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  quote             Quote                 @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  product           Product?              @relation(fields: [productId], references: [id])
-  alternativeToItem QuoteItem?            @relation("ItemAlternatives", fields: [alternativeToItemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  alternatives      QuoteItem[]           @relation("ItemAlternatives")
+  quote             Quote                   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  product           Product?                @relation(fields: [productId], references: [id])
+  alternativeToItem QuoteItem?              @relation("ItemAlternatives", fields: [alternativeToItemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  alternatives      QuoteItem[]             @relation("ItemAlternatives")
   additionals       QuoteItemAdditional[]
   invoiceItems      InvoiceItem[]
   facturaItems      CotizacionFacturaItem[]
@@ -2579,20 +2584,20 @@ model AuthAttempt {
 // ========================================
 
 model CotizacionFactura {
-  id              String   @id @default(cuid())
+  id              String                  @id @default(cuid())
   cotizacionId    String
-  cotizacion      Quote    @relation(fields: [cotizacionId], references: [id])
+  cotizacion      Quote                   @relation(fields: [cotizacionId], references: [id])
   colppyInvoiceId String?
   numeroFactura   String?
-  fecha           DateTime @default(now())
-  montoUSD        Decimal  @db.Decimal(14, 2)
-  montoARS        Decimal  @db.Decimal(14, 2)
-  tipoCambio      Decimal  @db.Decimal(10, 4)
+  fecha           DateTime                @default(now())
+  montoUSD        Decimal                 @db.Decimal(14, 2)
+  montoARS        Decimal                 @db.Decimal(14, 2)
+  tipoCambio      Decimal                 @db.Decimal(10, 4)
   estado          String
   errorMessage    String?
   createdById     String
-  createdBy       User     @relation(fields: [createdById], references: [id])
-  createdAt       DateTime @default(now())
+  createdBy       User                    @relation(fields: [createdById], references: [id])
+  createdAt       DateTime                @default(now())
   items           CotizacionFacturaItem[]
 
   @@index([cotizacionId])
@@ -2612,4 +2617,26 @@ model CotizacionFacturaItem {
 
   @@index([cotizacionItemId])
   @@map("cotizacion_factura_items")
+}
+
+// ========================================
+// AUDITORÍA DE COTIZACIONES
+// ========================================
+
+model CotizacionAuditLog {
+  id            String   @id @default(cuid())
+  cotizacionId  String
+  usuarioId     String
+  accion        String // REASIGNAR_VENDEDOR, etc.
+  valorAnterior Json?
+  valorNuevo    Json?
+  motivo        String?
+  createdAt     DateTime @default(now())
+
+  cotizacion Quote @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
+  usuario    User  @relation(fields: [usuarioId], references: [id])
+
+  @@index([cotizacionId])
+  @@index([createdAt])
+  @@map("cotizacion_audit_logs")
 }

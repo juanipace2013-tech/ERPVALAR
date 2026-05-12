@@ -16,6 +16,15 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
   ArrowLeft,
   Save,
   Loader2,
@@ -29,8 +38,12 @@ import {
   Search,
   CalendarDays,
   Eye,
+  AlertTriangle,
+  History,
+  UserRoundPen,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useSession } from 'next-auth/react'
 import { formatNumber, getLocalDateString } from '@/lib/utils'
 import { useColppyStock, refreshInventoryCache } from '@/hooks/useColppyStock'
 import { StockBadge, StockWarning } from '@/components/StockBadge'
@@ -137,10 +150,28 @@ interface ItemFormData {
   multiplierOverride: string
 }
 
+interface AuditLogEntry {
+  id: string
+  accion: string
+  valorAnterior: { id: string; nombre: string; email: string } | null
+  valorNuevo: { id: string; nombre: string; email: string } | null
+  motivo: string | null
+  createdAt: string
+  usuario: { id: string; name: string; email: string }
+}
+
+interface UserOption {
+  id: string
+  name: string
+  email: string
+  role: string
+}
+
 export default function QuoteDetailPage() {
   const router = useRouter()
   const params = useParams()
   const quoteId = params.id as string
+  const { data: session } = useSession()
 
   const [loading, setLoading] = useState(true)
   const [quote, setQuote] = useState<Quote | null>(null)
@@ -201,6 +232,17 @@ export default function QuoteDetailPage() {
   const [pricesIncludeTaxLoading, setPricesIncludeTaxLoading] = useState(false)
   const [showIvaConfirm, setShowIvaConfirm] = useState<null | { target: boolean }>(null)
 
+  // Reasignar vendedor
+  const [showReasignarModal, setShowReasignarModal] = useState(false)
+  const [reasignarLoading, setReasignarLoading] = useState(false)
+  const [vendedores, setVendedores] = useState<UserOption[]>([])
+  const [nuevoVendedorId, setNuevoVendedorId] = useState('')
+  const [reasignarMotivo, setReasignarMotivo] = useState('')
+
+  // Historial de cambios
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([])
+  const [auditLogsLoading, setAuditLogsLoading] = useState(false)
+
   // Additional product search (per-index) — legacy, kept for compatibility
   const [additionalSearchTerms, setAdditionalSearchTerms] = useState<Record<number, string>>({})
   const [additionalSearchResults, setAdditionalSearchResults] = useState<Record<number, Product[]>>({})
@@ -257,6 +299,7 @@ export default function QuoteDetailPage() {
   useEffect(() => {
     fetchQuoteData()
     fetchBrandDiscounts()
+    fetchAuditLogs()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteId])
 
@@ -341,6 +384,77 @@ export default function QuoteDetailPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const fetchVendedores = async () => {
+    try {
+      const response = await fetch('/api/users')
+      if (response.ok) {
+        const data = await response.json()
+        setVendedores(data.users || [])
+      }
+    } catch {
+      toast.error('Error al cargar vendedores')
+    }
+  }
+
+  const fetchAuditLogs = async () => {
+    try {
+      setAuditLogsLoading(true)
+      const response = await fetch(`/api/quotes/${quoteId}/audit-log`)
+      if (response.ok) {
+        const data = await response.json()
+        setAuditLogs(data.logs || [])
+      }
+    } catch {
+      console.error('Error fetching audit logs')
+    } finally {
+      setAuditLogsLoading(false)
+    }
+  }
+
+  const handleReasignarVendedor = async () => {
+    if (!nuevoVendedorId) return
+    const estadosCerrados = ['ACCEPTED', 'REJECTED', 'CONVERTED', 'FACTURADA_PARCIAL']
+    if (quote && estadosCerrados.includes(quote.status) && !reasignarMotivo.trim()) {
+      toast.error('Se requiere motivo para reasignar cotizaciones cerradas')
+      return
+    }
+
+    try {
+      setReasignarLoading(true)
+      const response = await fetch(`/api/quotes/${quoteId}/vendedor`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nuevoVendedorId,
+          motivo: reasignarMotivo.trim() || undefined,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        toast.error(data.error || 'Error al reasignar vendedor')
+        return
+      }
+      const vendedor = vendedores.find((v) => v.id === nuevoVendedorId)
+      toast.success(`Vendedor reasignado a ${vendedor?.name || 'nuevo vendedor'}`)
+      setShowReasignarModal(false)
+      setNuevoVendedorId('')
+      setReasignarMotivo('')
+      await fetchQuoteData()
+      await fetchAuditLogs()
+    } catch {
+      toast.error('Error al reasignar vendedor')
+    } finally {
+      setReasignarLoading(false)
+    }
+  }
+
+  const openReasignarModal = async () => {
+    await fetchVendedores()
+    setNuevoVendedorId('')
+    setReasignarMotivo('')
+    setShowReasignarModal(true)
   }
 
   const searchProducts = async (query: string) => {
@@ -1084,7 +1198,20 @@ export default function QuoteDetailPage() {
             </div>
             <div>
               <Label className="text-muted-foreground">Vendedor</Label>
-              <p className="font-medium">{quote.salesPerson.name}</p>
+              <div className="flex items-center gap-2">
+                <p className="font-medium">{quote.salesPerson.name}</p>
+                {session?.user?.role === 'ADMIN' && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-muted-foreground hover:text-blue-900"
+                    onClick={openReasignarModal}
+                    title="Reasignar vendedor"
+                  >
+                    <UserRoundPen className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
               <p className="text-sm text-muted-foreground">
                 {quote.salesPerson.email}
               </p>
@@ -2613,6 +2740,130 @@ export default function QuoteDetailPage() {
           )}
         </div>
       )}
+
+      {/* Historial de cambios */}
+      <Card className="border-blue-200">
+        <CardHeader>
+          <CardTitle className="text-blue-900 flex items-center gap-2">
+            <History className="h-5 w-5" />
+            Historial de cambios
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {auditLogsLoading ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : auditLogs.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Sin cambios registrados</p>
+          ) : (
+            <div className="space-y-3">
+              {auditLogs.map((log) => (
+                <div key={log.id} className="flex gap-3 border-b border-gray-100 pb-3 last:border-0 last:pb-0">
+                  <div className="flex-shrink-0 mt-0.5">
+                    <div className="h-2 w-2 rounded-full bg-blue-400 mt-1.5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline gap-2 flex-wrap">
+                      <span className="text-sm font-medium">{log.usuario.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(log.createdAt).toLocaleDateString('es-AR', {
+                          day: '2-digit', month: '2-digit', year: 'numeric',
+                          hour: '2-digit', minute: '2-digit',
+                        })}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-700">
+                      {log.accion === 'REASIGNAR_VENDEDOR' && log.valorAnterior && log.valorNuevo
+                        ? `Reasignó el vendedor de ${(log.valorAnterior as { nombre: string }).nombre} a ${(log.valorNuevo as { nombre: string }).nombre}`
+                        : log.accion}
+                    </p>
+                    {log.motivo && (
+                      <p className="text-sm italic text-muted-foreground mt-0.5">
+                        {log.motivo}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Modal Reasignar Vendedor */}
+      <Dialog open={showReasignarModal} onOpenChange={setShowReasignarModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reasignar vendedor</DialogTitle>
+            <DialogDescription>
+              Cotización {quote.quoteNumber}. Vendedor actual: {quote.salesPerson.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {(['ACCEPTED', 'REJECTED', 'CONVERTED', 'FACTURADA_PARCIAL'].includes(quote.status)) && (
+              <Alert variant="destructive" className="border-amber-300 bg-amber-50 text-amber-900 [&>svg]:text-amber-600">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  Esta cotización está cerrada. El motivo es obligatorio.
+                </AlertDescription>
+              </Alert>
+            )}
+            <div className="space-y-2">
+              <Label>Nuevo vendedor</Label>
+              <Select value={nuevoVendedorId} onValueChange={setNuevoVendedorId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar vendedor..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {vendedores
+                    .filter((v) => v.id !== quote.salesPersonId)
+                    .map((v) => (
+                      <SelectItem key={v.id} value={v.id}>
+                        {v.name} ({v.email})
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>
+                Motivo del cambio
+                {['ACCEPTED', 'REJECTED', 'CONVERTED', 'FACTURADA_PARCIAL'].includes(quote.status) && (
+                  <span className="text-red-500 ml-1">*</span>
+                )}
+              </Label>
+              <Textarea
+                value={reasignarMotivo}
+                onChange={(e) => setReasignarMotivo(e.target.value)}
+                placeholder="Ej: error al crear la cotización, reasignación de cuenta…"
+                rows={3}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowReasignarModal(false)}
+                disabled={reasignarLoading}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleReasignarVendedor}
+                disabled={
+                  reasignarLoading ||
+                  !nuevoVendedorId ||
+                  (['ACCEPTED', 'REJECTED', 'CONVERTED', 'FACTURADA_PARCIAL'].includes(quote.status) && !reasignarMotivo.trim())
+                }
+                className="bg-[#1B365D] hover:bg-[#152a4a]"
+              >
+                {reasignarLoading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                Reasignar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

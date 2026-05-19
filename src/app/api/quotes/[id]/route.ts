@@ -88,6 +88,12 @@ export async function GET(
                 },
               },
             },
+            invoiceItems: {
+              select: {
+                quantity: true,
+                invoice: { select: { status: true } },
+              },
+            },
           },
           orderBy: [{ itemNumber: 'asc' }, { isAlternative: 'asc' }],
         },

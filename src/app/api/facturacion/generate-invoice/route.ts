@@ -94,9 +94,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Cotización no encontrada' }, { status: 404 })
     }
 
-    if (quote.status !== 'ACCEPTED') {
+    if (quote.status !== 'ACCEPTED' && quote.status !== 'FACTURADA_PARCIAL') {
       return NextResponse.json(
-        { error: 'Solo se pueden facturar cotizaciones aceptadas' },
+        { error: `Solo se pueden facturar cotizaciones aceptadas o con facturación parcial (estado actual: ${quote.status})` },
         { status: 400 }
       )
     }
@@ -119,9 +119,11 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      const alreadyInvoiced = quoteItem.invoiceItems
+      const fromInvoiceItems = quoteItem.invoiceItems
         .filter((ii) => ii.invoice.status !== 'CANCELLED')
         .reduce((sum, ii) => sum + Number(ii.quantity), 0)
+      const fromColumn = Number(quoteItem.cantidadFacturada)
+      const alreadyInvoiced = Math.max(fromInvoiceItems, fromColumn)
 
       const remaining = quoteItem.quantity - alreadyInvoiced
 
@@ -278,7 +280,17 @@ export async function POST(request: NextRequest) {
         data: updateData,
       })
 
-      // Verificar si TODOS los ítems están ahora completamente facturados
+      // Incrementar cantidadFacturada por cada item solicitado
+      for (const req of requestedItems) {
+        await tx.quoteItem.update({
+          where: { id: req.quoteItemId },
+          data: { cantidadFacturada: { increment: req.quantity } },
+        })
+      }
+
+      // Verificar si TODOS los ítems están ahora completamente facturados.
+      // Considera dos fuentes para compatibilidad: cantidadFacturada (nuevo flow)
+      // y suma de InvoiceItems no cancelados (flow legacy / quotes anteriores al fix).
       const allQuoteItems = await tx.quoteItem.findMany({
         where: { quoteId: quote.id, isAlternative: false },
         include: {
@@ -291,43 +303,37 @@ export async function POST(request: NextRequest) {
       })
 
       const isFullyInvoiced = allQuoteItems.every((item) => {
-        const totalInvoiced = item.invoiceItems
+        const fromInvoiceItems = item.invoiceItems
           .filter((ii) => ii.invoice.status !== 'CANCELLED')
           .reduce((sum, ii) => sum + Number(ii.quantity), 0)
-        return totalInvoiced >= item.quantity
+        const fromColumn = Number(item.cantidadFacturada)
+        const effective = Math.max(fromInvoiceItems, fromColumn)
+        return effective >= item.quantity
       })
 
-      if (isFullyInvoiced && colppyResult.facturaId) {
-        // Solo marcar como CONVERTED si se creó una factura real (no solo remito)
-        await tx.quote.update({
-          where: { id: quoteId },
-          data: {
-            status: 'CONVERTED',
-            statusUpdatedAt: now,
-            statusUpdatedBy: session.user!.id!,
-          },
-        })
+      const fromStatus = quote.status
+      const toStatus = isFullyInvoiced && colppyResult.facturaId
+        ? 'CONVERTED'
+        : 'FACTURADA_PARCIAL'
 
-        await tx.quoteStatusHistory.create({
-          data: {
-            quoteId,
-            fromStatus: 'ACCEPTED',
-            toStatus: 'CONVERTED',
-            changedBy: session.user!.id!,
-            notes: `Enviado a Colppy (${colppyAction}). ${colppyResult.facturaNumber ? `Factura: ${colppyResult.facturaNumber}` : ''} ${colppyResult.remitoNumber ? `Remito: ${colppyResult.remitoNumber}` : ''} (facturación completa)`.trim(),
-          },
-        })
-      } else {
-        await tx.quoteStatusHistory.create({
-          data: {
-            quoteId,
-            fromStatus: 'ACCEPTED',
-            toStatus: 'ACCEPTED',
-            changedBy: session.user!.id!,
-            notes: `Facturación parcial enviada a Colppy (${colppyAction}). ${colppyResult.facturaNumber ? `Factura: ${colppyResult.facturaNumber}` : ''} ${colppyResult.remitoNumber ? `Remito: ${colppyResult.remitoNumber}` : ''} (${requestedItems.length} ítems)`.trim(),
-          },
-        })
-      }
+      await tx.quote.update({
+        where: { id: quoteId },
+        data: {
+          status: toStatus,
+          statusUpdatedAt: now,
+          statusUpdatedBy: session.user!.id!,
+        },
+      })
+
+      await tx.quoteStatusHistory.create({
+        data: {
+          quoteId,
+          fromStatus,
+          toStatus,
+          changedBy: session.user!.id!,
+          notes: `${toStatus === 'CONVERTED' ? 'Facturación completa' : 'Facturación parcial'} enviada a Colppy (${colppyAction}). ${colppyResult.facturaNumber ? `Factura: ${colppyResult.facturaNumber}` : ''} ${colppyResult.remitoNumber ? `Remito: ${colppyResult.remitoNumber}` : ''} (${requestedItems.length} ítems)`.trim(),
+        },
+      })
     })
 
     // Registrar auditoría

@@ -39,9 +39,14 @@ export interface QuoteItem {
   id: string;
   productSku: string;
   description: string;
+  /** Cantidad sugerida a facturar (por default, la cantidad pendiente). */
   quantity: number;
   unitPrice: number;
   iva: number;
+  /** Cantidad ya facturada previamente (acumulada en envíos anteriores a Colppy). */
+  quantityInvoiced?: number;
+  /** Cantidad original del item en la cotización. Si se omite, se asume = quantity. */
+  originalQuantity?: number;
 }
 
 export type ColppyAction = 'remito-factura' | 'remito' | 'factura-cuenta-corriente' | 'factura-contado';
@@ -54,6 +59,10 @@ export interface EditableItem {
   precioUnitario: number;
   iva: number;
   comentario: string;
+  /** Solo display: ya facturado en envíos previos. */
+  yaFacturado?: number;
+  /** Solo display: cantidad original del item en la cotización. */
+  cantidadOriginal?: number;
 }
 
 export interface ColppySendPayload {
@@ -165,6 +174,8 @@ export function SendToColppyDialog({
           precioUnitario: item.unitPrice,
           iva: item.iva || 21,
           comentario: comentarioBase,
+          yaFacturado: item.quantityInvoiced ?? 0,
+          cantidadOriginal: item.originalQuantity ?? item.quantity,
         }))
       );
 
@@ -218,6 +229,12 @@ export function SendToColppyDialog({
 
     return { netoGravado, totalIVA, total };
   }, [items]);
+
+  // Indica que estamos en un re-envío (facturación parcial)
+  const hasAnyInvoiced = useMemo(
+    () => items.some((i) => (i.yaFacturado ?? 0) > 0),
+    [items]
+  );
 
   // Formatear moneda
   const formatCurrency = (amount: number, currency: string) => {
@@ -411,7 +428,13 @@ export function SendToColppyDialog({
                 <tr>
                   <th className="text-left p-2 font-medium">SKU</th>
                   <th className="text-left p-2 font-medium">Descripción</th>
-                  <th className="text-right p-2 font-medium">Cant.</th>
+                  {hasAnyInvoiced && (
+                    <>
+                      <th className="text-right p-2 font-medium text-blue-700">Ya facturado</th>
+                      <th className="text-right p-2 font-medium text-gray-500">Original</th>
+                    </>
+                  )}
+                  <th className="text-right p-2 font-medium">Cant. a facturar</th>
                   <th className="text-right p-2 font-medium">Precio Unit {quote.currency}</th>
                   <th className="text-right p-2 font-medium">IVA %</th>
                   <th className="text-left p-2 font-medium">Comentario</th>
@@ -419,7 +442,11 @@ export function SendToColppyDialog({
                 </tr>
               </thead>
               <tbody>
-                {items.map((item, index) => (
+                {items.map((item, index) => {
+                  const yaFacturado = item.yaFacturado ?? 0;
+                  const cantidadOriginal = item.cantidadOriginal ?? item.cantidad;
+                  const maxCantidad = Math.max(0, cantidadOriginal - yaFacturado);
+                  return (
                   <tr key={item.id} className="border-b hover:bg-gray-50">
                     <td className="p-2 text-gray-600">{item.sku}</td>
                     <td className="p-2">
@@ -429,6 +456,12 @@ export function SendToColppyDialog({
                         className="h-8 text-sm"
                       />
                     </td>
+                    {hasAnyInvoiced && (
+                      <>
+                        <td className="p-2 text-right font-mono text-blue-700">{yaFacturado || '—'}</td>
+                        <td className="p-2 text-right font-mono text-gray-500">{cantidadOriginal}</td>
+                      </>
+                    )}
                     <td className="p-2">
                       <Input
                         type="number"
@@ -436,6 +469,7 @@ export function SendToColppyDialog({
                         onChange={(e) => updateItem(index, 'cantidad', parseFloat(e.target.value) || 0)}
                         className="h-8 text-sm text-right"
                         min="0"
+                        max={maxCantidad}
                         step="1"
                       />
                     </td>
@@ -477,7 +511,8 @@ export function SendToColppyDialog({
                       {formatCurrency(item.cantidad * item.precioUnitario, quote.currency)}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -485,6 +520,12 @@ export function SendToColppyDialog({
 
         {/* Totales */}
         <div className="border rounded-lg p-4 bg-gray-50">
+          {hasAnyInvoiced && (
+            <div className="mb-3 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-3 py-1.5">
+              Facturación parcial: {items.length} ítem(s) pendiente(s) en este envío.
+              Total a facturar ahora: <span className="font-semibold">{formatCurrency(totales.total, quote.currency)}</span>
+            </div>
+          )}
           <div className="space-y-2 text-sm max-w-md ml-auto">
             <div className="flex justify-between">
               <span className="font-medium">Neto gravado:</span>

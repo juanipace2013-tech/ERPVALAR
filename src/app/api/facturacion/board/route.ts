@@ -67,10 +67,11 @@ export async function GET(request: NextRequest) {
     const dateFrom = searchParams.get('dateFrom')
     const dateTo = searchParams.get('dateTo')
 
-    // Buscar cotizaciones ACCEPTED (no CONVERTED ni CANCELLED)
+    // Buscar cotizaciones facturables: ACCEPTED (sin facturar) y FACTURADA_PARCIAL
+    // (ya tienen al menos una factura parcial enviada a Colppy y quedan items pendientes).
     const quotes = await prisma.quote.findMany({
       where: {
-        status: 'ACCEPTED',
+        status: { in: ['ACCEPTED', 'FACTURADA_PARCIAL'] },
         ...(vendedorId && { salesPersonId: vendedorId }),
         ...(clienteId && { customerId: clienteId }),
         ...(moneda && { currency: moneda as 'USD' | 'ARS' }),
@@ -323,7 +324,7 @@ export async function GET(request: NextRequest) {
       prisma.customer.findMany({
         where: {
           quotes: {
-            some: { status: 'ACCEPTED' },
+            some: { status: { in: ['ACCEPTED', 'FACTURADA_PARCIAL'] } },
           },
         },
         select: { id: true, name: true },

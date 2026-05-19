@@ -8,6 +8,7 @@ import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { sendQuoteToColppy, type SendToColppyOptions, buildSplitItem, calcComponentPrice } from '@/lib/colppy';
 import { QuoteStatus } from '@prisma/client';
+import { calcDueDate } from '@/lib/quote-workflow';
 import { logAudit } from '@/lib/audit';
 import { logger } from '@/lib/logger'
 
@@ -88,6 +89,11 @@ export async function POST(
                 product: true,
               },
             },
+            invoiceItems: {
+              include: {
+                invoice: { select: { status: true } },
+              },
+            },
           },
           orderBy: {
             itemNumber: 'asc',
@@ -103,15 +109,15 @@ export async function POST(
       );
     }
 
-    // 5. Validar estado = ACCEPTED
-    if (quote.status !== QuoteStatus.ACCEPTED) {
+    // 5. Validar estado: ACCEPTED (sin facturar) o FACTURADA_PARCIAL (con items pendientes)
+    if (quote.status !== QuoteStatus.ACCEPTED && quote.status !== QuoteStatus.FACTURADA_PARCIAL) {
       return NextResponse.json(
-        { error: `La cotización debe estar en estado ACCEPTED (actual: ${quote.status})` },
+        { error: `La cotización debe estar en estado ACCEPTED o FACTURADA_PARCIAL (actual: ${quote.status})` },
         { status: 400 }
       );
     }
 
-    // 6. Validar que no haya sido enviada previamente
+    // 6. Validar remito previo. Para factura permitimos múltiples envíos (parcial).
     if (action.includes('remito') && quote.colppyDeliveryNoteId) {
       return NextResponse.json(
         { error: 'Esta cotización ya tiene un remito asociado en Colppy' },
@@ -119,11 +125,47 @@ export async function POST(
       );
     }
 
-    if (action.includes('factura') && quote.colppyInvoiceId) {
-      return NextResponse.json(
-        { error: 'Esta cotización ya tiene una factura asociada en Colppy' },
-        { status: 409 }
-      );
+    // 6b. Calcular cantidades ya facturadas por item (max entre cantidadFacturada y suma de InvoiceItems no cancelados)
+    const alreadyInvoicedByItem = new Map<string, number>();
+    for (const item of quote.items) {
+      const fromInvoiceItems = item.invoiceItems
+        .filter((ii) => ii.invoice.status !== 'CANCELLED')
+        .reduce((sum, ii) => sum + Number(ii.quantity), 0);
+      const fromColumn = Number(item.cantidadFacturada);
+      alreadyInvoicedByItem.set(item.id, Math.max(fromInvoiceItems, fromColumn));
+    }
+
+    // 6c. Si es una factura, validar que haya algo pendiente de facturar
+    if (action.includes('factura')) {
+      const pendingItems = quote.items.filter((i) => {
+        if (i.isAlternative) return false;
+        const already = alreadyInvoicedByItem.get(i.id) ?? 0;
+        return i.quantity - already > 0;
+      });
+      if (pendingItems.length === 0) {
+        return NextResponse.json(
+          { error: 'No hay items pendientes de facturar en esta cotización' },
+          { status: 400 }
+        );
+      }
+
+      // Validar cada item del editedData contra su cantidadPendiente
+      if (editedData?.items) {
+        for (const editedItem of editedData.items) {
+          const original = quote.items.find((i) => i.id === editedItem.id);
+          if (!original) continue;
+          const already = alreadyInvoicedByItem.get(original.id) ?? 0;
+          const pending = original.quantity - already;
+          if (editedItem.cantidad > pending) {
+            return NextResponse.json(
+              {
+                error: `Ítem "${original.description || (original as any).product?.name || editedItem.sku}": cantidad solicitada (${editedItem.cantidad}) excede la pendiente (${pending}, ya facturado ${already} de ${original.quantity})`,
+              },
+              { status: 400 }
+            );
+          }
+        }
+      }
     }
 
     // 7. Obtener el último tipo de cambio del ERP (para USD)
@@ -209,25 +251,131 @@ export async function POST(
       );
     }
 
-    // 11. Actualizar Quote con IDs de Colppy
-    const updateData: any = {
-      colppySyncedAt: new Date(),
-      status: QuoteStatus.CONVERTED,
-      statusUpdatedAt: new Date(),
-      statusUpdatedBy: session.user.id,
-    };
+    // 11. Persistir resultado en una transacción:
+    //   - crear Invoice + InvoiceItem (legacy tracking)
+    //   - incrementar QuoteItem.cantidadFacturada
+    //   - actualizar Quote.status (FACTURADA_PARCIAL o CONVERTED) y colppyIds
+    const now = new Date();
+    const invoiceType = quote.customer.taxCondition === 'RESPONSABLE_INSCRIPTO' ? 'A' : 'B';
 
-    if (result.remitoId) {
-      updateData.colppyDeliveryNoteId = result.remitoId;
+    // Mapa de cantidades realmente enviadas por quoteItemId
+    const sentQtyByItemId = new Map<string, number>();
+    for (const editedItem of (editedData?.items || [])) {
+      const original = quote.items.find((i) => i.id === editedItem.id);
+      if (original) sentQtyByItemId.set(original.id, editedItem.cantidad);
+    }
+    // Fallback: si no vino editedData, asumir cantidad pendiente para cada item no-alternativo
+    if (sentQtyByItemId.size === 0) {
+      for (const item of quote.items) {
+        if (item.isAlternative) continue;
+        const already = alreadyInvoicedByItem.get(item.id) ?? 0;
+        const pending = item.quantity - already;
+        if (pending > 0) sentQtyByItemId.set(item.id, pending);
+      }
     }
 
-    if (result.facturaId) {
-      updateData.colppyInvoiceId = result.facturaId;
-    }
+    await prisma.$transaction(async (tx) => {
+      if (action.includes('factura')) {
+        // Crear Invoice + InvoiceItems (consistente con generate-invoice)
+        const subtotal = Array.from(sentQtyByItemId.entries()).reduce((sum, [itemId, qty]) => {
+          const item = quote.items.find((i) => i.id === itemId);
+          return sum + (item ? Number(item.unitPrice) * qty : 0);
+        }, 0);
 
-    await prisma.quote.update({
-      where: { id: quote.id },
-      data: updateData,
+        await tx.invoice.create({
+          data: {
+            invoiceNumber: `BORRADOR-COLPPY-${result.facturaNumber || result.remitoNumber || Date.now()}`,
+            invoiceType,
+            transactionType: 'SALE',
+            quoteId: quote.id,
+            customerId: quote.customerId,
+            userId: quote.salesPersonId || session.user!.id!,
+            status: 'DRAFT',
+            currency: quote.currency,
+            exchangeRate: quote.exchangeRate,
+            subtotal,
+            taxAmount: 0,
+            discount: 0,
+            total: subtotal,
+            balance: subtotal,
+            issueDate: now,
+            dueDate: calcDueDate(now, quote.customer.paymentTerms),
+            notes: `Borrador enviado a Colppy el ${now.toLocaleString('es-AR')}. ${result.facturaNumber ? `Factura: ${result.facturaNumber}` : ''} ${result.remitoNumber ? `Remito: ${result.remitoNumber}` : ''}`.trim(),
+            afipStatus: 'PENDING',
+            paymentStatus: 'UNPAID',
+            items: {
+              create: Array.from(sentQtyByItemId.entries()).map(([itemId, qty]) => {
+                const item = quote.items.find((i) => i.id === itemId)!;
+                return {
+                  productId: item.productId || null,
+                  quoteItemId: item.id,
+                  description: item.description || (item as any).product?.name || 'Item',
+                  quantity: qty,
+                  unitPrice: Number(item.unitPrice),
+                  discount: 0,
+                  taxRate: 21,
+                  subtotal: Number(item.unitPrice) * qty,
+                };
+              }),
+            },
+          },
+        });
+
+        // Incrementar cantidadFacturada por item enviado
+        for (const [itemId, qty] of sentQtyByItemId.entries()) {
+          await tx.quoteItem.update({
+            where: { id: itemId },
+            data: { cantidadFacturada: { increment: qty } },
+          });
+        }
+      }
+
+      // Determinar nuevo estado: CONVERTED si todo está facturado, sino FACTURADA_PARCIAL.
+      // Para la verificación post-incremento volvemos a leer cantidadFacturada.
+      const refreshedItems = await tx.quoteItem.findMany({
+        where: { quoteId: quote.id, isAlternative: false },
+        include: {
+          invoiceItems: {
+            include: { invoice: { select: { status: true } } },
+          },
+        },
+      });
+
+      const isFullyInvoiced = action.includes('factura') && refreshedItems.every((item) => {
+        const fromInvoiceItems = item.invoiceItems
+          .filter((ii) => ii.invoice.status !== 'CANCELLED')
+          .reduce((sum, ii) => sum + Number(ii.quantity), 0);
+        const fromColumn = Number(item.cantidadFacturada);
+        return Math.max(fromInvoiceItems, fromColumn) >= item.quantity;
+      });
+
+      const updateData: any = {
+        colppySyncedAt: now,
+        statusUpdatedAt: now,
+        statusUpdatedBy: session.user!.id!,
+      };
+      if (result.remitoId) updateData.colppyDeliveryNoteId = result.remitoId;
+      if (result.facturaId) updateData.colppyInvoiceId = result.facturaId;
+
+      const fromStatus = quote.status;
+      if (action.includes('factura')) {
+        updateData.status = isFullyInvoiced ? QuoteStatus.CONVERTED : QuoteStatus.FACTURADA_PARCIAL;
+      }
+
+      await tx.quote.update({
+        where: { id: quote.id },
+        data: updateData,
+      });
+
+      await tx.quoteStatusHistory.create({
+        data: {
+          quoteId: quote.id,
+          fromStatus,
+          toStatus: updateData.status || fromStatus,
+          changedBy: session.user!.id!,
+          notes: `Enviado a Colppy: ${action}. ${result.remitoNumber ? `Remito: ${result.remitoNumber}` : ''} ${result.facturaNumber ? `Factura: ${result.facturaNumber}` : ''}${action.includes('factura') ? (isFullyInvoiced ? ' (facturación completa)' : ' (facturación parcial)') : ''}`.trim(),
+        },
+      });
     });
 
     // 11b. Sincronizar paymentTerms del cliente desde Colppy a DB local
@@ -243,17 +391,6 @@ export async function POST(
         logger.warn(`[Colppy Sync] Error al sincronizar paymentTerms: ${syncErr.message}`);
       }
     }
-
-    // 12. Crear registro en QuoteStatusHistory
-    await prisma.quoteStatusHistory.create({
-      data: {
-        quoteId: quote.id,
-        fromStatus: QuoteStatus.ACCEPTED,
-        toStatus: QuoteStatus.CONVERTED,
-        changedBy: session.user.id,
-        notes: `Enviado a Colppy: ${action}. ${result.remitoNumber ? `Remito: ${result.remitoNumber}` : ''} ${result.facturaNumber ? `Factura: ${result.facturaNumber}` : ''}`,
-      },
-    });
 
     // 13. Registrar auditoría
     logAudit({

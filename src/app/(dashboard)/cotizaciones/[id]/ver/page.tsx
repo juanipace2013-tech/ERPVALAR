@@ -135,6 +135,7 @@ const statusLabels: Record<string, string> = {
   EXPIRED: '⏰ Vencida',
   CANCELLED: '🚫 Anulada',
   CONVERTED: '🔄 Convertida',
+  FACTURADA_PARCIAL: '🧾 Facturada parcial',
 }
 
 const statusColors: Record<string, string> = {
@@ -145,6 +146,7 @@ const statusColors: Record<string, string> = {
   EXPIRED: 'bg-gray-100 text-gray-800 border border-gray-200',
   CANCELLED: 'bg-gray-100 text-gray-600 border border-gray-200',
   CONVERTED: 'bg-purple-100 text-purple-800 border border-purple-200',
+  FACTURADA_PARCIAL: 'bg-amber-100 text-amber-800 border border-amber-200',
 }
 
 const deliveryNoteStatusLabels: Record<string, string> = {
@@ -789,6 +791,22 @@ export default function QuoteViewPage() {
                   <Ban className="h-4 w-4 mr-2" />
                   Cancelar Cotización
                 </Button>
+              </>
+            )}
+
+            {/* FACTURADA PARCIAL - permitir facturar lo que quedó pendiente */}
+            {quote.status === 'FACTURADA_PARCIAL' && (
+              <>
+                <Button onClick={() => setShowColppyDialog(true)} disabled={actionLoading} className="bg-blue-600 hover:bg-blue-700">
+                  <Send className="h-4 w-4 mr-2" />
+                  Facturar pendiente
+                </Button>
+                {quote.colppySyncedAt && (
+                  <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 py-2 px-3">
+                    <Send className="h-3.5 w-3.5 mr-1.5" />
+                    Facturada parcialmente en Colppy
+                  </Badge>
+                )}
               </>
             )}
 
@@ -1787,40 +1805,64 @@ export default function QuoteViewPage() {
       </Dialog>
 
       {/* Dialog: Enviar a Colppy */}
-      {quote && (
-        <SendToColppyDialog
-          quote={{
-            id: quote.id,
-            quoteNumber: quote.quoteNumber,
-            customer: {
-              name: quote.customer.name,
-              cuit: quote.customer.cuit,
-              taxCondition: quote.customer.taxCondition,
-              idCondicionPago: (quote.customer as any).paymentTerms != null
-                ? String((quote.customer as any).paymentTerms)
-                : undefined,
-            },
-            items: quote.items.map((item: any) => ({
-              id: item.id,
-              productSku: item.product?.sku || '',
-              description: item.product?.name || item.description || '',
-              quantity: item.quantity || 0,
-              unitPrice: item.unitPrice || 0,
-              iva: 21,
-            })),
-            total: quote.total,
-            currency: quote.currency,
-            exchangeRate: quote.exchangeRate,
-            notes: quote.notes ?? undefined,
-          }}
-          open={showColppyDialog}
-          onOpenChange={setShowColppyDialog}
-          onSent={() => {
-            toast.success('Enviado a Colppy exitosamente')
-            fetchQuote()
-          }}
-        />
-      )}
+      {quote && (() => {
+        // Items facturables: principales (no alternativas) con cantidad pendiente > 0.
+        // Para cantidad ya facturada se toma el max entre cantidadFacturada
+        // (columna) y suma de invoiceItems no cancelados, para cubrir cotizaciones
+        // anteriores al fix donde el contador no se actualizaba.
+        const facturableItems = quote.items
+          .filter((item: any) => !item.isAlternative)
+          .map((item: any) => {
+            const fromInvoiceItems = (item.invoiceItems || [])
+              .filter((ii: any) => ii.invoice?.status !== 'CANCELLED')
+              .reduce((sum: number, ii: any) => sum + Number(ii.quantity || 0), 0)
+            const fromColumn = Number(item.cantidadFacturada || 0)
+            const yaFacturado = Math.max(fromInvoiceItems, fromColumn)
+            const pendiente = Math.max(0, (item.quantity || 0) - yaFacturado)
+            return { item, yaFacturado, pendiente }
+          })
+          .filter(({ pendiente }) => pendiente > 0)
+
+        return (
+          <SendToColppyDialog
+            quote={{
+              id: quote.id,
+              quoteNumber: quote.quoteNumber,
+              customer: {
+                name: quote.customer.name,
+                cuit: quote.customer.cuit,
+                taxCondition: quote.customer.taxCondition,
+                idCondicionPago: (quote.customer as any).paymentTerms != null
+                  ? String((quote.customer as any).paymentTerms)
+                  : undefined,
+              },
+              items: facturableItems.map(({ item, yaFacturado, pendiente }) => ({
+                id: item.id,
+                productSku: item.product?.sku || '',
+                description: item.product?.name || item.description || '',
+                quantity: pendiente,
+                unitPrice: item.unitPrice || 0,
+                iva: 21,
+                quantityInvoiced: yaFacturado,
+                originalQuantity: item.quantity || 0,
+              })),
+              total: quote.total,
+              currency: quote.currency,
+              exchangeRate: quote.exchangeRate,
+              notes: quote.notes ?? undefined,
+            }}
+            open={showColppyDialog}
+            onOpenChange={setShowColppyDialog}
+            onSent={() => {
+              toast.success('Enviado a Colppy exitosamente')
+              fetchQuote()
+            }}
+            subtitle={quote.status === 'FACTURADA_PARCIAL'
+              ? `Facturación parcial: ${facturableItems.length} ítem(s) pendiente(s) de facturar`
+              : undefined}
+          />
+        )
+      })()}
 
       {/* Dialog: Duplicar Cotización */}
       {quote && (

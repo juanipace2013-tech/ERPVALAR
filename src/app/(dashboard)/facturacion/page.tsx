@@ -433,6 +433,8 @@ export default function FacturacionPage() {
         quantity: item.remainingQuantity,
         unitPrice: item.unitPrice,
         iva: 21,
+        quantityInvoiced: item.invoicedQuantity,
+        originalQuantity: item.quantity,
       })),
       total: quote.total,
       currency: quote.currency,

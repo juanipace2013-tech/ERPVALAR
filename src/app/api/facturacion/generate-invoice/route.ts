@@ -236,6 +236,7 @@ export async function POST(request: NextRequest) {
           status: 'DRAFT',
           currency: quote.currency,
           exchangeRate: quote.exchangeRate,
+          colppyId: colppyResult.facturaId || null,
           subtotal,
           taxAmount: 0,
           discount: 0,
@@ -257,6 +258,38 @@ export async function POST(request: NextRequest) {
                 unitPrice: Number(quoteItem.unitPrice),
                 discount: 0,
                 taxRate: 21,
+                subtotal: Number(quoteItem.unitPrice) * req.quantity,
+              }
+            }),
+          },
+        },
+      })
+
+      // Crear CotizacionFactura (modelo nuevo) + items vinculados a esta Invoice.
+      // Representa el envío a Colppy como unidad atómica para poder generar remito
+      // específico por factura parcial.
+      const tcUsado = quote.exchangeRate ? Number(quote.exchangeRate) : 1
+      const montoUSD = quote.currency === 'USD' ? subtotal : subtotal / (tcUsado || 1)
+      const montoARS = quote.currency === 'USD' ? subtotal * tcUsado : subtotal
+      await tx.cotizacionFactura.create({
+        data: {
+          cotizacionId: quote.id,
+          invoiceId: newInvoice.id,
+          colppyInvoiceId: colppyResult.facturaId || null,
+          numeroFactura: colppyResult.facturaNumber || colppyResult.remitoNumber || null,
+          fecha: now,
+          montoUSD,
+          montoARS,
+          tipoCambio: tcUsado,
+          estado: 'BORRADOR',
+          createdById: session.user!.id!,
+          items: {
+            create: requestedItems.map((req) => {
+              const quoteItem = quote.items.find((qi) => qi.id === req.quoteItemId)!
+              return {
+                cotizacionItemId: quoteItem.id,
+                cantidad: req.quantity,
+                precioUnitario: Number(quoteItem.unitPrice),
                 subtotal: Number(quoteItem.unitPrice) * req.quantity,
               }
             }),

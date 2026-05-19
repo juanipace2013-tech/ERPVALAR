@@ -282,7 +282,7 @@ export async function POST(
           return sum + (item ? Number(item.unitPrice) * qty : 0);
         }, 0);
 
-        await tx.invoice.create({
+        const newInvoice = await tx.invoice.create({
           data: {
             invoiceNumber: `BORRADOR-COLPPY-${result.facturaNumber || result.remitoNumber || Date.now()}`,
             invoiceType,
@@ -293,6 +293,7 @@ export async function POST(
             status: 'DRAFT',
             currency: quote.currency,
             exchangeRate: quote.exchangeRate,
+            colppyId: result.facturaId || null,
             subtotal,
             taxAmount: 0,
             discount: 0,
@@ -314,6 +315,36 @@ export async function POST(
                   unitPrice: Number(item.unitPrice),
                   discount: 0,
                   taxRate: 21,
+                  subtotal: Number(item.unitPrice) * qty,
+                };
+              }),
+            },
+          },
+        });
+
+        // Crear CotizacionFactura (modelo nuevo) + items, linkeado a Invoice.
+        const tcUsado = quote.exchangeRate ? Number(quote.exchangeRate) : 1;
+        const montoUSD = quote.currency === 'USD' ? subtotal : subtotal / (tcUsado || 1);
+        const montoARS = quote.currency === 'USD' ? subtotal * tcUsado : subtotal;
+        await tx.cotizacionFactura.create({
+          data: {
+            cotizacionId: quote.id,
+            invoiceId: newInvoice.id,
+            colppyInvoiceId: result.facturaId || null,
+            numeroFactura: result.facturaNumber || result.remitoNumber || null,
+            fecha: now,
+            montoUSD,
+            montoARS,
+            tipoCambio: tcUsado,
+            estado: 'BORRADOR',
+            createdById: session.user!.id!,
+            items: {
+              create: Array.from(sentQtyByItemId.entries()).map(([itemId, qty]) => {
+                const item = quote.items.find((i) => i.id === itemId)!;
+                return {
+                  cotizacionItemId: item.id,
+                  cantidad: qty,
+                  precioUnitario: Number(item.unitPrice),
                   subtotal: Number(item.unitPrice) * qty,
                 };
               }),

@@ -30,6 +30,16 @@ export async function GET(
             }
           }
         },
+        cotizacionFactura: {
+          select: {
+            id: true,
+            numeroFactura: true,
+            colppyInvoiceId: true,
+            fecha: true,
+            montoUSD: true,
+            montoARS: true,
+          },
+        },
         items: {
           include: {
             product: true

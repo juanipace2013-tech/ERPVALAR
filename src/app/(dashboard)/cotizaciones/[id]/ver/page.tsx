@@ -125,6 +125,29 @@ interface Quote {
     notes: string | null
     createdAt: string
   }>
+  facturas?: Array<{
+    id: string
+    colppyInvoiceId: string | null
+    numeroFactura: string | null
+    fecha: string
+    montoUSD: number | string
+    montoARS: number | string
+    tipoCambio: number | string
+    estado: string
+    items: Array<{
+      id: string
+      cotizacionItemId: string
+      cantidad: number | string
+      precioUnitario: number | string
+      subtotal: number | string
+    }>
+    deliveryNotes: Array<{
+      id: string
+      deliveryNumber: string
+      date: string
+      status: string
+    }>
+  }>
 }
 
 const statusLabels: Record<string, string> = {
@@ -1488,6 +1511,67 @@ export default function QuoteViewPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Historial de facturación (envíos a Colppy) */}
+          {quote.facturas && quote.facturas.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Historial de facturación</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {quote.facturas.map((f, idx) => {
+                  const remito = f.deliveryNotes?.[0]
+                  return (
+                    <div key={f.id} className="border rounded-lg p-3 bg-gray-50">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="text-sm space-y-0.5">
+                          <p className="font-semibold">
+                            Factura {idx + 1}
+                            {f.numeroFactura ? ` · ${f.numeroFactura}` : ''}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(f.fecha).toLocaleDateString('es-AR', {
+                              day: '2-digit', month: '2-digit', year: 'numeric',
+                            })}
+                            {' · '}
+                            USD {Number(f.montoUSD).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {' · '}
+                            ARS {Number(f.montoARS).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {f.items.length} ítem{f.items.length !== 1 ? 's' : ''}
+                          </p>
+                        </div>
+                        <div className="flex-shrink-0">
+                          {remito ? (
+                            <Button variant="outline" size="sm" asChild>
+                              <Link href={`/remitos/${remito.id}`}>
+                                <Package className="h-3.5 w-3.5 mr-1.5" />
+                                Ver Remito {remito.deliveryNumber}
+                              </Link>
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              className="bg-blue-600 hover:bg-blue-700"
+                              asChild
+                            >
+                              <Link
+                                href={`/remitos/nuevo?quoteId=${quote.id}&cotizacionFacturaId=${f.id}`}
+                              >
+                                <Package className="h-3.5 w-3.5 mr-1.5" />
+                                Generar Remito
+                              </Link>
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Documentos Relacionados */}
           {(quote.deliveryNotes.length > 0 || quote.invoices.length > 0) && (

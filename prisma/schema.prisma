@@ -1208,6 +1208,12 @@ model DeliveryNote {
   quoteId String?
   quote   Quote?  @relation(fields: [quoteId], references: [id])
 
+  // Si el remito se generó a partir de una factura parcial específica
+  // (CotizacionFactura), queda vinculado para trazabilidad: el remito tiene
+  // SOLO los items de esa factura, no toda la cotización.
+  cotizacionFacturaId String?
+  cotizacionFactura   CotizacionFactura? @relation(fields: [cotizacionFacturaId], references: [id])
+
   // Cliente / Proveedor (uno u otro)
   customerId String?
   customer   Customer? @relation(fields: [customerId], references: [id])
@@ -1281,6 +1287,7 @@ model DeliveryNote {
   @@index([customerId])
   @@index([supplierId])
   @@index([quoteId])
+  @@index([cotizacionFacturaId])
   @@index([status])
   @@index([date])
   @@map("delivery_notes")
@@ -1407,6 +1414,9 @@ model Invoice {
   user            User          @relation(fields: [userId], references: [id])
   exchangeRateRef ExchangeRate? @relation(fields: [exchangeRateId], references: [id])
   items           InvoiceItem[]
+
+  // Crosslink al modelo CotizacionFactura (mismo envío a Colppy en el modelo nuevo).
+  cotizacionFactura CotizacionFactura?
 
   // Accounting relations
   journalEntries   JournalEntry[]
@@ -2599,6 +2609,15 @@ model CotizacionFactura {
   createdBy       User                    @relation(fields: [createdById], references: [id])
   createdAt       DateTime                @default(now())
   items           CotizacionFacturaItem[]
+
+  // Vínculo a la Invoice (legacy) que representa el mismo envío a Colppy.
+  // Permite cruzar el modelo nuevo con la tabla Invoice usada por las
+  // pantallas viejas (Documentos Relacionados, reportes).
+  invoiceId String?  @unique
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+
+  // Remitos generados desde esta factura parcial (puede entregarse en partes).
+  deliveryNotes DeliveryNote[]
 
   @@index([cotizacionId])
   @@index([colppyInvoiceId])

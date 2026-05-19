@@ -990,6 +990,23 @@ export default function DeliveryNoteDetailPage() {
               </CardHeader>
               <CardContent>
                 <p className="font-semibold mb-2">{deliveryNote.quote.quoteNumber}</p>
+                {(deliveryNote as any).cotizacionFactura && (
+                  <div className="mb-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    <p className="font-semibold">Asociado a factura parcial</p>
+                    <p className="mt-0.5">
+                      {(deliveryNote as any).cotizacionFactura.numeroFactura
+                        ? `N° ${(deliveryNote as any).cotizacionFactura.numeroFactura}`
+                        : 'Factura sin número Colppy'}
+                      {(deliveryNote as any).cotizacionFactura.fecha && (
+                        <> · {new Date((deliveryNote as any).cotizacionFactura.fecha).toLocaleDateString('es-AR')}</>
+                      )}
+                    </p>
+                    <p className="mt-0.5 text-amber-700">
+                      Este remito contiene solo los ítems facturados en ese envío,
+                      no toda la cotización.
+                    </p>
+                  </div>
+                )}
                 <Button variant="outline" className="w-full" asChild>
                   <Link href={`/cotizaciones/${deliveryNote.quote.id}/ver`}>
                     Ver Cotización

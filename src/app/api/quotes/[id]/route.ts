@@ -129,6 +129,20 @@ export async function GET(
             createdAt: 'asc',
           },
         },
+        facturas: {
+          orderBy: { fecha: 'asc' },
+          include: {
+            items: true,
+            deliveryNotes: {
+              select: {
+                id: true,
+                deliveryNumber: true,
+                date: true,
+                status: true,
+              },
+            },
+          },
+        },
       },
     })
 

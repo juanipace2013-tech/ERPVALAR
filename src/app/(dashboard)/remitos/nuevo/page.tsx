@@ -193,6 +193,9 @@ export default function NuevoRemitoPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const quoteId = searchParams.get('quoteId')
+  // Opcional: si viene cotizacionFacturaId, el remito se arma con los items
+  // exactos de esa factura parcial (no la cotización completa).
+  const cotizacionFacturaId = searchParams.get('cotizacionFacturaId')
 
   // Si viene quoteId → modo cotización (flujo original)
   // Si no → modo directo (nuevo)
@@ -521,6 +524,7 @@ export default function NuevoRemitoPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          cotizacionFacturaId: cotizacionFacturaId || undefined,
           carrier: carrier || undefined,
           transportAddress: transportAddress || undefined,
           deliveryType: carrier
@@ -666,6 +670,12 @@ export default function NuevoRemitoPage() {
               Cotización {quote.quoteNumber} ·{' '}
               {quote.customer.businessName || quote.customer.name}
             </p>
+            {cotizacionFacturaId && (
+              <p className="mt-1 inline-flex items-center gap-1 rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                <FileText className="h-3 w-3" />
+                Remito de factura parcial — solo los items facturados
+              </p>
+            )}
           </div>
         </div>
 

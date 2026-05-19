@@ -57,11 +57,12 @@ export function calcDueDate(issueDate: Date, paymentTermsDays: number | null | u
 const ALLOWED_TRANSITIONS: Record<QuoteStatus, QuoteStatus[]> = {
   DRAFT: ['SENT', 'ACCEPTED', 'REJECTED', 'CANCELLED'],
   SENT: ['ACCEPTED', 'REJECTED', 'EXPIRED', 'CANCELLED'],
-  ACCEPTED: ['CONVERTED', 'CANCELLED', 'DRAFT'],
+  ACCEPTED: ['CONVERTED', 'FACTURADA_PARCIAL', 'CANCELLED', 'DRAFT'],
   REJECTED: [],
   EXPIRED: [],
   CANCELLED: ['DRAFT'],
   CONVERTED: ['ACCEPTED'],
+  FACTURADA_PARCIAL: ['CONVERTED', 'FACTURADA_PARCIAL', 'ACCEPTED'],
 };
 
 interface UpdateQuoteStatusData {
@@ -278,6 +279,16 @@ export async function generateDeliveryNumber(
 }
 
 /**
+ * Carga una CotizacionFactura con sus items para armar el remito.
+ */
+async function loadCotizacionFactura(cotizacionFacturaId: string) {
+  return prisma.cotizacionFactura.findUnique({
+    where: { id: cotizacionFacturaId },
+    include: { items: true },
+  });
+}
+
+/**
  * Genera un remito desde una cotización aceptada
  */
 export async function generateDeliveryNoteFromQuote(
@@ -294,6 +305,10 @@ export async function generateDeliveryNoteFromQuote(
     customerInvoiceNumber?: string;
     bultos?: string;
     notes?: string;
+    /** Si se provee, el remito se genera con SOLO los items y cantidades de
+     *  esta CotizacionFactura (factura parcial), no con la cotización completa.
+     *  El DeliveryNote queda vinculado a esa CotizacionFactura. */
+    cotizacionFacturaId?: string;
   }
 ) {
   const quote = await prisma.quote.findUnique({
@@ -318,8 +333,25 @@ export async function generateDeliveryNoteFromQuote(
     throw new Error('Cotización no encontrada');
   }
 
-  if (quote.status !== 'ACCEPTED' && quote.status !== 'CONVERTED') {
-    throw new Error('Solo se pueden generar remitos de cotizaciones aceptadas o convertidas');
+  if (
+    quote.status !== 'ACCEPTED' &&
+    quote.status !== 'CONVERTED' &&
+    quote.status !== 'FACTURADA_PARCIAL'
+  ) {
+    throw new Error('Solo se pueden generar remitos de cotizaciones aceptadas, parciales o convertidas');
+  }
+
+  // Si vino cotizacionFacturaId, validar que pertenezca a esta cotización
+  // y cargar sus items para armar el remito de esa factura específica.
+  let cotizacionFactura: Awaited<ReturnType<typeof loadCotizacionFactura>> | null = null;
+  if (data?.cotizacionFacturaId) {
+    cotizacionFactura = await loadCotizacionFactura(data.cotizacionFacturaId);
+    if (!cotizacionFactura) {
+      throw new Error('Factura parcial no encontrada');
+    }
+    if (cotizacionFactura.cotizacionId !== quote.id) {
+      throw new Error('La factura parcial no pertenece a esta cotización');
+    }
   }
 
   // Crear remito + asignar número en UNA sola transacción Serializable.
@@ -335,7 +367,9 @@ export async function generateDeliveryNoteFromQuote(
       ? quoteSubtotal * quoteExchangeRate
       : quoteSubtotal;
 
-    // Armar items del remito: principales + adicionales de cada item
+    // Armar items del remito: principales + adicionales de cada item.
+    // Si vino cotizacionFactura, usar las CANTIDADES facturadas en esa factura
+    // específica (no la cantidad original del QuoteItem).
     const deliveryItems: Array<{
       productId: string | null;
       sku: string | null;
@@ -344,30 +378,54 @@ export async function generateDeliveryNoteFromQuote(
       unit: string;
     }> = [];
 
+    const cantidadPorItemId = new Map<string, number>();
+    if (cotizacionFactura) {
+      for (const cfItem of cotizacionFactura.items) {
+        cantidadPorItemId.set(cfItem.cotizacionItemId, Number(cfItem.cantidad));
+      }
+    }
+
     for (const item of quote.items) {
       if (item.isAlternative) continue; // Solo items principales
+
+      // Determinar cantidad para este item:
+      // - Si hay CotizacionFactura: sólo incluir items que están en ella,
+      //   y usar la cantidad facturada.
+      // - Si no: comportamiento original (cantidad completa).
+      let itemQuantity: number;
+      if (cotizacionFactura) {
+        const qty = cantidadPorItemId.get(item.id);
+        if (qty == null || qty <= 0) continue; // este item no se facturó en esta factura
+        itemQuantity = qty;
+      } else {
+        itemQuantity = item.quantity;
+      }
 
       // Item principal
       deliveryItems.push({
         productId: item.productId || null,
         sku: item.product?.sku || item.manualSku || null,
         description: item.description || item.product?.name || 'Item',
-        quantity: item.quantity,
+        quantity: itemQuantity,
         unit: item.product?.unit || 'UN',
       });
 
-      // Adicionales del item
+      // Adicionales del item (misma cantidad que el principal)
       if (item.additionals && item.additionals.length > 0) {
         for (const add of item.additionals) {
           deliveryItems.push({
             productId: add.productId || null,
             sku: add.product?.sku || null,
             description: add.description || add.product?.name || 'Adicional',
-            quantity: item.quantity, // misma cantidad que el item principal
+            quantity: itemQuantity,
             unit: add.product?.unit || 'UN',
           });
         }
       }
+    }
+
+    if (deliveryItems.length === 0) {
+      throw new Error('No hay items para incluir en el remito');
     }
 
     const newDeliveryNote = await tx.deliveryNote.create({
@@ -375,6 +433,7 @@ export async function generateDeliveryNoteFromQuote(
         deliveryNumber,
         ...(caiNumber ? { caiNumber } : {}),
         quoteId: quote.id,
+        cotizacionFacturaId: cotizacionFactura?.id || null,
         customerId: quote.customerId,
         date: new Date(),
         deliveryAddress: data?.deliveryAddress || quote.customer.address || null,

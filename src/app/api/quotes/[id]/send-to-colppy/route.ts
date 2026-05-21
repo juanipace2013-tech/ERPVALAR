@@ -407,7 +407,7 @@ export async function POST(
           notes: `Enviado a Colppy: ${action}. ${result.remitoNumber ? `Remito: ${result.remitoNumber}` : ''} ${result.facturaNumber ? `Factura: ${result.facturaNumber}` : ''}${action.includes('factura') ? (isFullyInvoiced ? ' (facturación completa)' : ' (facturación parcial)') : ''}`.trim(),
         },
       });
-    });
+    }, { maxWait: 10000, timeout: 30000 });
 
     // 11b. Sincronizar paymentTerms del cliente desde Colppy a DB local
     if (result.customerPaymentTermsDays != null && quote.customerId) {

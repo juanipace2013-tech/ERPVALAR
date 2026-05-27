@@ -158,6 +158,16 @@ const statusColors: Record<string, string> = {
   CANCELLED: 'bg-red-100 text-red-800 line-through',
 }
 
+// Mapa de transiciones inversas (debe matchear el del endpoint
+// /api/delivery-notes/[id]/revertir-estado). El destino es solo informativo
+// para el modal; el server recalcula la transición a partir del estado actual.
+const REVERSAL_MAP: Record<string, string> = {
+  PREPARING: 'PENDING',
+  READY: 'PREPARING',
+  DISPATCHED: 'READY',
+  DELIVERED: 'DISPATCHED',
+}
+
 export default function DeliveryNoteDetailPage() {
   const params = useParams()
   const searchParams = useSearchParams()
@@ -499,21 +509,21 @@ export default function DeliveryNoteDetailPage() {
     if (!deliveryNote) return
     try {
       setActionLoading(true)
-      const response = await fetch(`/api/delivery-notes/${id}/revertir-entrega`, {
+      const response = await fetch(`/api/delivery-notes/${id}/revertir-estado`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ motivo: revertMotivo.trim() }),
       })
       if (!response.ok) {
         const err = await response.json()
-        throw new Error(err.error || 'Error al revertir entrega')
+        throw new Error(err.error || 'Error al revertir estado')
       }
-      toast.success('Entrega revertida')
+      toast.success('Estado revertido')
       setShowRevertDialog(false)
       fetchDeliveryNote()
     } catch (error) {
-      console.error('Error reverting delivery:', error)
-      toast.error(error instanceof Error ? error.message : 'Error al revertir entrega')
+      console.error('Error reverting delivery note status:', error)
+      toast.error(error instanceof Error ? error.message : 'Error al revertir estado')
     } finally {
       setActionLoading(false)
     }
@@ -717,7 +727,7 @@ export default function DeliveryNoteDetailPage() {
               </Button>
             )}
 
-            {deliveryNote.status === 'DELIVERED' && (
+            {REVERSAL_MAP[deliveryNote.status] && (
               <Button
                 variant="outline"
                 className="border-amber-300 text-amber-700 hover:bg-amber-50"
@@ -725,7 +735,7 @@ export default function DeliveryNoteDetailPage() {
                 disabled={actionLoading}
               >
                 <RotateCcw className="h-4 w-4 mr-2" />
-                Revertir Entrega
+                Revertir Estado
               </Button>
             )}
 
@@ -1292,27 +1302,34 @@ export default function DeliveryNoteDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal: Revertir entrega */}
+      {/* Modal: Revertir estado */}
       <Dialog open={showRevertDialog} onOpenChange={setShowRevertDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-amber-700">
               <RotateCcw className="h-5 w-5" />
-              Revertir entrega del remito
+              Revertir estado del remito
             </DialogTitle>
             <DialogDescription>
-              Esta acción cambiará el estado de Entregado al estado anterior.
+              Esta acción cambiará el estado al inmediato anterior.
               Quedará registrada en la auditoría.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              El remito volverá al estado:{' '}
-              <span className="font-semibold">Despachado</span>.
-            </div>
+            {deliveryNote && REVERSAL_MAP[deliveryNote.status] && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                El remito volverá del estado{' '}
+                <span className="font-semibold">{statusLabels[deliveryNote.status]}</span>
+                {' '}al estado{' '}
+                <span className="font-semibold">
+                  {statusLabels[REVERSAL_MAP[deliveryNote.status]]}
+                </span>
+                .
+              </div>
+            )}
 
-            {deliveryNote && deliveryNote.invoices.length > 0 && (
+            {deliveryNote && deliveryNote.status === 'DELIVERED' && deliveryNote.invoices.length > 0 && (
               <div className="rounded-md border-2 border-amber-400 bg-amber-50 px-3 py-3 text-sm text-amber-900">
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="h-5 w-5 flex-shrink-0 text-amber-600 mt-0.5" />
@@ -1394,7 +1411,9 @@ export default function DeliveryNoteDetailPage() {
               disabled={
                 actionLoading ||
                 revertMotivo.trim().length < 10 ||
-                ((deliveryNote?.invoices.length ?? 0) > 0 && !revertAckInvoice)
+                (deliveryNote?.status === 'DELIVERED' &&
+                  (deliveryNote?.invoices.length ?? 0) > 0 &&
+                  !revertAckInvoice)
               }
               className="bg-amber-600 hover:bg-amber-700 text-white"
             >

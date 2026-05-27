@@ -47,6 +47,8 @@ import {
   Pencil,
   Ban,
   Mail,
+  RotateCcw,
+  AlertTriangle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Copy, Tag } from 'lucide-react'
@@ -184,6 +186,11 @@ export default function DeliveryNoteDetailPage() {
   const [showSendEmailDialog, setShowSendEmailDialog] = useState(false)
   const [showDuplicateDialog, setShowDuplicateDialog] = useState(false)
   const [showVoidDialog, setShowVoidDialog] = useState(false)
+
+  // Reversión de entrega (caso "marqué entregado por error")
+  const [showRevertDialog, setShowRevertDialog] = useState(false)
+  const [revertMotivo, setRevertMotivo] = useState('')
+  const [revertAckInvoice, setRevertAckInvoice] = useState(false)
 
   useEffect(() => {
     fetchDeliveryNote()
@@ -482,6 +489,36 @@ export default function DeliveryNoteDetailPage() {
     }
   }
 
+  const openRevertDialog = () => {
+    setRevertMotivo('')
+    setRevertAckInvoice(false)
+    setShowRevertDialog(true)
+  }
+
+  const confirmRevert = async () => {
+    if (!deliveryNote) return
+    try {
+      setActionLoading(true)
+      const response = await fetch(`/api/delivery-notes/${id}/revertir-entrega`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ motivo: revertMotivo.trim() }),
+      })
+      if (!response.ok) {
+        const err = await response.json()
+        throw new Error(err.error || 'Error al revertir entrega')
+      }
+      toast.success('Entrega revertida')
+      setShowRevertDialog(false)
+      fetchDeliveryNote()
+    } catch (error) {
+      console.error('Error reverting delivery:', error)
+      toast.error(error instanceof Error ? error.message : 'Error al revertir entrega')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   const handleUploadSigned = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -677,6 +714,18 @@ export default function DeliveryNoteDetailPage() {
                   <Pencil className="h-4 w-4 mr-2" />
                   Editar
                 </Link>
+              </Button>
+            )}
+
+            {deliveryNote.status === 'DELIVERED' && (
+              <Button
+                variant="outline"
+                className="border-amber-300 text-amber-700 hover:bg-amber-50"
+                onClick={openRevertDialog}
+                disabled={actionLoading}
+              >
+                <RotateCcw className="h-4 w-4 mr-2" />
+                Revertir Entrega
               </Button>
             )}
 
@@ -1238,6 +1287,123 @@ export default function DeliveryNoteDetailPage() {
                 <Ban className="h-4 w-4 mr-2" />
               )}
               Sí, Anular Remito
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Revertir entrega */}
+      <Dialog open={showRevertDialog} onOpenChange={setShowRevertDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700">
+              <RotateCcw className="h-5 w-5" />
+              Revertir entrega del remito
+            </DialogTitle>
+            <DialogDescription>
+              Esta acción cambiará el estado de Entregado al estado anterior.
+              Quedará registrada en la auditoría.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              El remito volverá al estado:{' '}
+              <span className="font-semibold">Despachado</span>.
+            </div>
+
+            {deliveryNote && deliveryNote.invoices.length > 0 && (
+              <div className="rounded-md border-2 border-amber-400 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-5 w-5 flex-shrink-0 text-amber-600 mt-0.5" />
+                  <div className="space-y-2">
+                    <p>
+                      <span className="font-semibold">
+                        ⚠️ Este remito tiene{' '}
+                        {deliveryNote.invoices.length === 1
+                          ? 'una factura asociada'
+                          : `${deliveryNote.invoices.length} facturas asociadas`}
+                        {' '}(
+                        {deliveryNote.invoices
+                          .map((inv) => `${inv.invoiceType} ${inv.invoiceNumber}`)
+                          .join(', ')}
+                        ).
+                      </span>{' '}
+                      Revertir la entrega <span className="font-semibold">NO</span> anula
+                      {deliveryNote.invoices.length === 1 ? ' la factura' : ' las facturas'}.
+                      Si necesitás anular
+                      {deliveryNote.invoices.length === 1 ? ' la factura' : ' alguna'},
+                      hacelo desde Colppy.
+                    </p>
+                    <p className="font-semibold">
+                      ¿Confirmás que querés revertir igualmente?
+                    </p>
+                    <label className="flex items-start gap-2 cursor-pointer select-none pt-1">
+                      <input
+                        type="checkbox"
+                        checked={revertAckInvoice}
+                        onChange={(e) => setRevertAckInvoice(e.target.checked)}
+                        className="mt-1 h-4 w-4 accent-amber-600"
+                      />
+                      <span>
+                        Entiendo que
+                        {deliveryNote.invoices.length === 1
+                          ? ' la factura asociada NO se ve afectada'
+                          : ' las facturas asociadas NO se ven afectadas'}
+                        .
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div>
+              <Label htmlFor="revertMotivo">
+                Motivo <span className="text-red-600">*</span>
+              </Label>
+              <Textarea
+                id="revertMotivo"
+                value={revertMotivo}
+                onChange={(e) => setRevertMotivo(e.target.value.slice(0, 500))}
+                placeholder="Explicá brevemente por qué revertís la entrega (mínimo 10 caracteres)..."
+                rows={4}
+                maxLength={500}
+              />
+              <div className="mt-1 flex justify-between text-xs text-gray-500">
+                <span>
+                  {revertMotivo.trim().length < 10
+                    ? `Faltan ${10 - revertMotivo.trim().length} caracteres para el mínimo`
+                    : 'OK'}
+                </span>
+                <span>{revertMotivo.length}/500</span>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowRevertDialog(false)}
+              disabled={actionLoading}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={confirmRevert}
+              disabled={
+                actionLoading ||
+                revertMotivo.trim().length < 10 ||
+                ((deliveryNote?.invoices.length ?? 0) > 0 && !revertAckInvoice)
+              }
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              {actionLoading ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <RotateCcw className="h-4 w-4 mr-2" />
+              )}
+              Confirmar reversión
             </Button>
           </DialogFooter>
         </DialogContent>

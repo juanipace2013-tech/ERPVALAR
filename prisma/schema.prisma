@@ -79,6 +79,10 @@ model User {
   // BCRA relations
   bcraSearches BcraSearchHistory[]
 
+  // Bandeja (mail + WhatsApp)
+  assignedConversations Conversation[] @relation("AssignedConversations")
+  sentMessages          Message[]      @relation("MessageSentByUser")
+
   @@index([email])
   @@index([role])
   @@index([status])
@@ -214,6 +218,7 @@ model Customer {
   customerReceipts  CustomerReceipt[]         @relation("CustomerReceipts")
   deliveryAddresses CustomerDeliveryAddress[]
   googleAdsLeads    GoogleAdsLead[]
+  conversations     Conversation[]
 
   @@index([cuit])
   @@index([name])
@@ -269,7 +274,8 @@ model Contact {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer      Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
 
   @@index([customerId])
   @@index([email])
@@ -2658,4 +2664,172 @@ model CotizacionAuditLog {
   @@index([cotizacionId])
   @@index([createdAt])
   @@map("cotizacion_audit_logs")
+}
+
+// ========================================
+// BANDEJA UNIFICADA (Mail + WhatsApp)
+// ========================================
+
+enum ChannelType {
+  WHATSAPP
+  EMAIL
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageStatus {
+  DRAFT
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  RECEIVED
+}
+
+enum ConversationStatus {
+  OPEN
+  PENDING
+  CLOSED
+}
+
+enum MessageCategory {
+  COTIZACION
+  CONSULTA
+  QUEJA
+  PAGO
+  OTRO
+}
+
+// Cuenta del canal en nuestro lado: nuestro número de WhatsApp o nuestra casilla de mail.
+// Permite tener múltiples en el futuro (ej: ventas@ y postventa@).
+model ChannelAccount {
+  id         String      @id @default(cuid())
+  type       ChannelType
+  name       String // "Ventas Val Arg WhatsApp", "ventas@val-ar.com.ar"
+  // WhatsApp: phone_number_id de Meta. Email: UPN del buzón (ej: ventas@val-ar.com.ar)
+  identifier String
+  isActive   Boolean     @default(true)
+  // metadata no sensible — los secretos viven en .env
+  metadata   Json?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  conversations Conversation[]
+
+  @@unique([type, identifier])
+  @@map("channel_accounts")
+}
+
+model Conversation {
+  id               String         @id @default(cuid())
+  channelAccountId String
+  channelAccount   ChannelAccount @relation(fields: [channelAccountId], references: [id])
+
+  // Identificador externo de la conversación en el canal
+  // WhatsApp: teléfono E.164 del contacto
+  // Email: conversationId de Microsoft Graph (thread)
+  externalId String
+
+  // Display
+  contactName       String?
+  contactIdentifier String // teléfono o email del contacto
+  subject           String? // solo email
+
+  // Matching CRM
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+  contactId  String?
+  contact    Contact?  @relation(fields: [contactId], references: [id])
+
+  // Estado
+  status        ConversationStatus @default(OPEN)
+  unreadCount   Int                @default(0)
+  lastMessageAt DateTime?
+
+  // Asignación
+  assignedToId String?
+  assignedTo   User?   @relation("AssignedConversations", fields: [assignedToId], references: [id])
+
+  // IA — última clasificación + borrador (Fase 2). Sin historial: se sobrescribe.
+  aiCategory           MessageCategory?
+  aiCategoryConfidence Float? // 0..1
+  aiSummary            String?          @db.Text
+  aiDraftReply         String?          @db.Text
+  aiClassifierModel    String?
+  aiDrafterModel       String?
+  aiCostUsd            Decimal?         @db.Decimal(10, 6)
+  aiAnalyzedAt         DateTime?
+  aiAnalyzedMessageId  String? // id del Message más reciente sobre el que se hizo el análisis
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages Message[]
+
+  @@unique([channelAccountId, externalId])
+  @@index([customerId])
+  @@index([contactId])
+  @@index([status])
+  @@index([assignedToId])
+  @@index([lastMessageAt])
+  @@index([aiCategory])
+  @@index([aiAnalyzedAt])
+  @@map("conversations")
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  // ID del mensaje en el canal (wamid.* para WA, id de Graph para mail)
+  externalId String? @unique
+
+  direction MessageDirection
+  status    MessageStatus    @default(RECEIVED)
+
+  // Contenido
+  body        String  @db.Text
+  bodyHtml    String? @db.Text // mail (HTML body)
+  // Lista de adjuntos: [{ filename, contentType, size, externalId?, url? }]
+  attachments Json?
+
+  // Sender
+  fromName    String?
+  fromAddress String // teléfono o email
+
+  // Hilo (solo mail)
+  inReplyToExternalId String?
+
+  // Si lo enviamos nosotros
+  sentByUserId String?
+  sentByUser   User?   @relation("MessageSentByUser", fields: [sentByUserId], references: [id])
+
+  // Cuándo ocurrió en el canal
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([conversationId])
+  @@index([createdAt])
+  @@map("messages")
+}
+
+// Tracking de las subscriptions de Microsoft Graph (webhooks de mail).
+// Las subscriptions de /messages caducan a las ~70hs, hay que renovarlas con cron.
+model GraphSubscription {
+  id               String   @id @default(cuid())
+  subscriptionId   String   @unique // el ID que devuelve Graph
+  resource         String // ej "users/ventas@val-ar.com.ar/messages"
+  changeType       String // "created"
+  notificationUrl  String
+  clientState      String // secreto compartido para validar callbacks
+  expiresAt        DateTime
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([expiresAt])
+  @@map("graph_subscriptions")
 }

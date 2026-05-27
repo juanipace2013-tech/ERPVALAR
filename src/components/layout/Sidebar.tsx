@@ -26,6 +26,7 @@ import {
   ArrowDownToLine,
   Building2,
   Sparkles,
+  Inbox,
 } from 'lucide-react'
 
 interface SubNavItem {
@@ -55,6 +56,12 @@ const navItems: NavItem[] = [
     href: '/clientes',
     icon: Users,
     roles: ['ADMIN', 'GERENTE', 'VENDEDOR', 'CONTADOR'],
+  },
+  {
+    title: 'Bandeja',
+    href: '/bandeja',
+    icon: Inbox,
+    roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
   },
   {
     title: 'Cotizaciones',

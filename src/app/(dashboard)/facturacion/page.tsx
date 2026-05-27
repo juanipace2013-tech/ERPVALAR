@@ -468,6 +468,17 @@ export default function FacturacionPage() {
       const data = await response.json()
 
       if (!response.ok) {
+        // Caso crítico: Colppy emitió pero el ERP no pudo persistir.
+        // Propagar la info estructurada para que SendToColppyDialog renderice
+        // el AlertDialog bloqueante en lugar del toast genérico.
+        if (data.errorCode === 'COLPPY_ORPHAN') {
+          const err: any = new Error(data.message)
+          err.errorCode = 'COLPPY_ORPHAN'
+          err.colppyFacturaId = data.colppyFacturaId
+          err.colppyFacturaNumber = data.colppyFacturaNumber
+          err.colppyRemitoNumber = data.colppyRemitoNumber
+          throw err
+        }
         throw new Error(data.error || 'Error al enviar a Colppy')
       }
 

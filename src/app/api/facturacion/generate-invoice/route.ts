@@ -219,12 +219,21 @@ export async function POST(request: NextRequest) {
     // Registrar en BD: crear InvoiceItems para tracking de cantidades parciales
     const now = new Date()
 
+    // Cálculos previos a la transacción. Los necesitamos también para el
+    // breadcrumb del caso COLPPY_ORPHAN (factura emitida + persistencia fallida).
+    const invoiceNumber = `BORRADOR-COLPPY-${colppyResult.facturaNumber || colppyResult.remitoNumber || Date.now()}`
+    const invoiceType = quote.customer.taxCondition === 'RESPONSABLE_INSCRIPTO' ? 'A' : 'B'
+    const subtotal = colppyItems.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0)
+    const tcUsado = quote.exchangeRate ? Number(quote.exchangeRate) : 1
+    const montoUSD = quote.currency === 'USD' ? subtotal : subtotal / (tcUsado || 1)
+    const montoARS = quote.currency === 'USD' ? subtotal * tcUsado : subtotal
+
+    // TODO: deduplicar este flujo con el endpoint hermano.
+    // Ver src/app/api/quotes/[id]/send-to-colppy/route.ts (transacción equivalente).
+    // Cualquier cambio en uno debe replicarse en el otro hasta que se haga el
+    // refactor a src/lib/colppy-billing.ts.
+    try {
     await prisma.$transaction(async (tx) => {
-      const invoiceNumber = `BORRADOR-COLPPY-${colppyResult.facturaNumber || colppyResult.remitoNumber || Date.now()}`
-      const invoiceType = quote.customer.taxCondition === 'RESPONSABLE_INSCRIPTO' ? 'A' : 'B'
-
-      const subtotal = colppyItems.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0)
-
       const newInvoice = await tx.invoice.create({
         data: {
           invoiceNumber,
@@ -268,9 +277,6 @@ export async function POST(request: NextRequest) {
       // Crear CotizacionFactura (modelo nuevo) + items vinculados a esta Invoice.
       // Representa el envío a Colppy como unidad atómica para poder generar remito
       // específico por factura parcial.
-      const tcUsado = quote.exchangeRate ? Number(quote.exchangeRate) : 1
-      const montoUSD = quote.currency === 'USD' ? subtotal : subtotal / (tcUsado || 1)
-      const montoARS = quote.currency === 'USD' ? subtotal * tcUsado : subtotal
       await tx.cotizacionFactura.create({
         data: {
           cotizacionId: quote.id,
@@ -367,7 +373,83 @@ export async function POST(request: NextRequest) {
           notes: `${toStatus === 'CONVERTED' ? 'Facturación completa' : 'Facturación parcial'} enviada a Colppy (${colppyAction}). ${colppyResult.facturaNumber ? `Factura: ${colppyResult.facturaNumber}` : ''} ${colppyResult.remitoNumber ? `Remito: ${colppyResult.remitoNumber}` : ''} (${requestedItems.length} ítems)`.trim(),
         },
       })
-    })
+    }, { maxWait: 10000, timeout: 30000 })
+    } catch (txError: any) {
+      // CASO CRÍTICO: Colppy YA emitió la factura (colppyResult.success === true
+      // arriba), pero la persistencia local falló (timeout, deadlock, etc.).
+      // El ERP queda inconsistente: la cotización sigue en su estado anterior
+      // pero la factura existe del lado de Colppy. Notificar al usuario con el
+      // número de factura para reconciliar manualmente.
+
+      // a) Log SIEMPRE primero, último resorte para grepabilidad.
+      logger.error('[COLPPY_ORPHAN] Factura emitida en Colppy pero persistencia ERP falló', {
+        quoteId: quote.id,
+        quoteNumber: quote.quoteNumber,
+        facturaId: colppyResult.facturaId,
+        facturaNumber: colppyResult.facturaNumber,
+        remitoId: colppyResult.remitoId,
+        remitoNumber: colppyResult.remitoNumber,
+        error: txError?.message,
+        stack: txError?.stack,
+      })
+
+      // b) Best-effort: breadcrumb en cotizacion_facturas con estado='ERROR_GUARDADO'.
+      //    Propio try/catch para no enmascarar el error principal si la DB sigue muerta.
+      try {
+        const stackTrunc = `${txError?.message || 'sin mensaje'}\n---\n${txError?.stack || 'sin stack'}`.slice(0, 2000)
+        await prisma.cotizacionFactura.create({
+          data: {
+            cotizacionId: quote.id,
+            colppyInvoiceId: colppyResult.facturaId || null,
+            numeroFactura: colppyResult.facturaNumber || colppyResult.remitoNumber || null,
+            fecha: now,
+            montoUSD,
+            montoARS,
+            tipoCambio: tcUsado,
+            estado: 'ERROR_GUARDADO',
+            errorMessage: stackTrunc,
+            createdById: session.user!.id!,
+          },
+        })
+      } catch (breadcrumbError: any) {
+        logger.error('[COLPPY_ORPHAN_BREADCRUMB_FAILED] No se pudo persistir el breadcrumb de error', {
+          quoteId: quote.id,
+          quoteNumber: quote.quoteNumber,
+          facturaId: colppyResult.facturaId,
+          facturaNumber: colppyResult.facturaNumber,
+          breadcrumbError: breadcrumbError?.message,
+        })
+      }
+
+      // c) AuditLog best-effort. logAudit ya es fire-and-forget internamente.
+      try {
+        logAudit({
+          userId: session.user.id,
+          userName: session.user.name || '',
+          userEmail: session.user.email || '',
+          action: 'COLPPY_ORPHAN',
+          entity: 'QUOTE',
+          entityId: quote.id,
+          entityRef: quote.quoteNumber,
+          description: `Factura emitida en Colppy pero persistencia ERP falló — quote=${quote.quoteNumber}, facturaColppy=${colppyResult.facturaNumber || colppyResult.facturaId || 'sin número'}`,
+        })
+      } catch {
+        // logAudit no debería tirar (fire-and-forget) pero por las dudas
+      }
+
+      // d) Response estructurado para que el cliente muestre AlertDialog bloqueante.
+      return NextResponse.json(
+        {
+          errorCode: 'COLPPY_ORPHAN',
+          message:
+            'La factura se emitió correctamente en Colppy pero el ERP no pudo registrarla. NO REINTENTES — contactá a soporte con el número de factura de Colppy para reconciliar manualmente.',
+          colppyFacturaId: colppyResult.facturaId || null,
+          colppyFacturaNumber: colppyResult.facturaNumber || null,
+          colppyRemitoNumber: colppyResult.remitoNumber || null,
+        },
+        { status: 500 }
+      )
+    }
 
     // Registrar auditoría
     logAudit({

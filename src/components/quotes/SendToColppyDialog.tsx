@@ -119,6 +119,16 @@ export function SendToColppyDialog({
   const selectedAction: ColppyAction = 'factura-cuenta-corriente';
   const [sending, setSending] = useState(false);
 
+  // Estado del AlertDialog de inconsistencia crítica (factura emitida en Colppy
+  // pero persistencia en ERP falló). Bloqueante: el usuario tiene que confirmar
+  // que leyó el número de factura antes de poder seguir.
+  const [orphanInfo, setOrphanInfo] = useState<{
+    message: string;
+    colppyFacturaId: string | null;
+    colppyFacturaNumber: string | null;
+    colppyRemitoNumber: string | null;
+  } | null>(null);
+
   // Estados editables
   const [items, setItems] = useState<EditableItem[]>([]);
   const [condicionPago, setCondicionPago] = useState('Contado');
@@ -280,6 +290,18 @@ export function SendToColppyDialog({
         const data = await response.json();
 
         if (!response.ok) {
+          // Caso crítico: Colppy emitió pero el ERP no pudo persistir.
+          // Aunque el endpoint default todavía no emite este errorCode (solo
+          // generate-invoice lo hace), lo manejamos acá también para que el día
+          // que el refactor unifique los endpoints ya esté soportado.
+          if (data.errorCode === 'COLPPY_ORPHAN') {
+            const err: any = new Error(data.message);
+            err.errorCode = 'COLPPY_ORPHAN';
+            err.colppyFacturaId = data.colppyFacturaId;
+            err.colppyFacturaNumber = data.colppyFacturaNumber;
+            err.colppyRemitoNumber = data.colppyRemitoNumber;
+            throw err;
+          }
           throw new Error(data.error || 'Error al enviar a Colppy');
         }
 
@@ -302,11 +324,32 @@ export function SendToColppyDialog({
       onSent();
     } catch (error: any) {
       console.error('Error al enviar a Colppy:', error);
-      toast.error('Error al enviar a Colppy', {
-        description: error.message,
-      });
+      // Caso crítico: mostrar AlertDialog bloqueante en lugar del toast genérico.
+      if (error?.errorCode === 'COLPPY_ORPHAN') {
+        setOrphanInfo({
+          message: error.message || 'Inconsistencia crítica',
+          colppyFacturaId: error.colppyFacturaId || null,
+          colppyFacturaNumber: error.colppyFacturaNumber || null,
+          colppyRemitoNumber: error.colppyRemitoNumber || null,
+        });
+      } else {
+        toast.error('Error al enviar a Colppy', {
+          description: error.message,
+        });
+      }
     } finally {
       setSending(false);
+    }
+  };
+
+  // Handler para copiar al portapapeles el número de factura del AlertDialog
+  const copyOrphanFactura = async () => {
+    if (!orphanInfo?.colppyFacturaNumber) return;
+    try {
+      await navigator.clipboard.writeText(orphanInfo.colppyFacturaNumber);
+      toast.success('Número de factura copiado');
+    } catch {
+      toast.error('No se pudo copiar al portapapeles');
     }
   };
 
@@ -318,7 +361,8 @@ export function SendToColppyDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -584,6 +628,86 @@ export function SendToColppyDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
-    </Dialog>
+      </Dialog>
+
+      {/* AlertDialog bloqueante: factura emitida en Colppy + persistencia ERP fallida.
+          NO se autocierra ni se cierra clickeando afuera — el usuario tiene que
+          confirmar que leyó el número de factura para reconciliar manualmente. */}
+      <Dialog
+        open={!!orphanInfo}
+        onOpenChange={(o) => {
+          // Solo permitir que se cierre vía el botón "Entendido". Si Radix intenta
+          // cerrarlo por click fuera o ESC, ignoramos.
+          if (!o) return;
+        }}
+      >
+        <DialogContent
+          className="sm:max-w-lg border-2 border-red-500"
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-700">
+              <AlertTriangle className="h-6 w-6" />
+              ⚠️ Inconsistencia crítica — Factura emitida pero no registrada
+            </DialogTitle>
+            <DialogDescription className="text-gray-900 pt-2">
+              {orphanInfo?.message}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            {orphanInfo?.colppyFacturaNumber && (
+              <div className="rounded-md border-2 border-red-300 bg-red-50 p-3">
+                <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">
+                  Número de factura en Colppy
+                </p>
+                <div className="flex items-center justify-between mt-1 gap-2">
+                  <code className="text-lg font-mono font-bold text-red-900 select-all break-all">
+                    {orphanInfo.colppyFacturaNumber}
+                  </code>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={copyOrphanFactura}
+                    className="flex-shrink-0 border-red-300 text-red-700 hover:bg-red-100"
+                  >
+                    Copiar
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {orphanInfo?.colppyRemitoNumber && (
+              <div className="rounded-md border border-red-200 bg-red-50 p-3">
+                <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">
+                  Número de remito en Colppy
+                </p>
+                <code className="text-base font-mono text-red-900 select-all break-all">
+                  {orphanInfo.colppyRemitoNumber}
+                </code>
+              </div>
+            )}
+
+            {orphanInfo?.colppyFacturaId && (
+              <div className="text-xs text-gray-500">
+                Colppy invoice ID: <code className="font-mono">{orphanInfo.colppyFacturaId}</code>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              onClick={() => setOrphanInfo(null)}
+              className="bg-red-600 hover:bg-red-700 text-white w-full"
+            >
+              Entendido
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

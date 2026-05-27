@@ -255,6 +255,12 @@ export async function POST(
     //   - crear Invoice + InvoiceItem (legacy tracking)
     //   - incrementar QuoteItem.cantidadFacturada
     //   - actualizar Quote.status (FACTURADA_PARCIAL o CONVERTED) y colppyIds
+    //
+    // TODO: deduplicar este flujo con el endpoint hermano.
+    // Ver src/app/api/facturacion/generate-invoice/route.ts (transacción equivalente
+    // + detección de COLPPY_ORPHAN que este endpoint todavía NO tiene).
+    // Cualquier cambio en uno debe replicarse en el otro hasta que se haga el
+    // refactor a src/lib/colppy-billing.ts.
     const now = new Date();
     const invoiceType = quote.customer.taxCondition === 'RESPONSABLE_INSCRIPTO' ? 'A' : 'B';
 

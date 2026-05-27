@@ -536,6 +536,28 @@ export default function FacturacionPage() {
   const { columns, filters } = boardData
   const colppyDialogQuote = getColppyDialogQuote()
 
+  // Orden de "Listas para Facturar":
+  //  1) Arriba: cards sin fecha programada Y sin nota → orden actual preservado (sort estable).
+  //  2) Abajo: cards con fecha programada o con nota → por billingTargetDate asc;
+  //     las que solo tienen nota (sin fecha) van al final.
+  const tieneProgramacion = (q: BoardCard) =>
+    !!q.billingTargetDate || (!!q.billingNote && q.billingNote.trim() !== '')
+  const readyQuotesOrdered = [...columns.ready.quotes].sort((a, b) => {
+    const aProg = tieneProgramacion(a)
+    const bProg = tieneProgramacion(b)
+    if (aProg !== bProg) return aProg ? 1 : -1
+    if (aProg && bProg) {
+      const aF = a.billingTargetDate
+      const bF = b.billingTargetDate
+      if (aF && bF) return new Date(aF).getTime() - new Date(bF).getTime()
+      if (aF) return -1
+      if (bF) return 1
+      return 0
+    }
+    return 0
+  })
+  const readyColumnData = { ...columns.ready, quotes: readyQuotesOrdered }
+
   return (
     <div className="container mx-auto px-6 py-8">
       {/* Header */}
@@ -683,7 +705,7 @@ export default function FacturacionPage() {
           title="Listas para Facturar"
           emoji="🟢"
           colorScheme="green"
-          data={columns.ready}
+          data={readyColumnData}
           expandedCards={expandedCards}
           selectedItems={selectedItems}
           onToggleCard={toggleCard}

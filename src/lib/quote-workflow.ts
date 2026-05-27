@@ -585,60 +585,70 @@ export async function generateInvoiceFromDeliveryNote(
   const taxAmount = subtotal * taxRate;
   const total = subtotal + taxAmount;
 
-  // Crear factura
-  const invoice = await prisma.invoice.create({
-    data: {
-      invoiceNumber,
-      invoiceType,
-      transactionType: 'SALE',
-      quoteId: deliveryNote.quoteId,
-      deliveryNoteId: deliveryNote.id,
-      customerId: deliveryNote.customerId!,
-      userId,
-      status: 'DRAFT',
-      currency: deliveryNote.quote?.currency || 'ARS',
-      exchangeRate: deliveryNote.quote?.exchangeRate,
-      subtotal,
-      taxAmount,
-      discount: 0,
-      total,
-      balance: total,
-      issueDate: new Date(),
-      dueDate: data?.dueDate || calcDueDate(new Date(), deliveryNote.customer!.paymentTerms),
-      notes: data?.notes || null,
-      afipStatus: 'PENDING',
-      paymentStatus: 'UNPAID',
-      items: {
-        create: deliveryNote.items.map(item => {
-          const quoteItem = deliveryNote.quote?.items.find(
-            qi => qi.productId === item.productId
-          );
-          const unitPrice = Number(quoteItem?.unitPrice || 0);
-          const itemSubtotal = unitPrice * Number(item.quantity);
+  // Crear factura en una $transaction EXPLÍCITA con timeout extendido.
+  // Antes era un prisma.invoice.create directo: cuando la factura tiene muchos
+  // items, la transacción IMPLÍCITA que Prisma arma para insertar la Invoice +
+  // sus N InvoiceItem nested supera el default de 5s y tira P2028 con DB lenta.
+  // No hay interacción con Colppy en este flujo, así que no aplica detección
+  // COLPPY_ORPHAN — el cliente verá el error genérico del catch del endpoint.
+  const invoice = await prisma.$transaction(
+    async (tx) => {
+      return tx.invoice.create({
+        data: {
+          invoiceNumber,
+          invoiceType,
+          transactionType: 'SALE',
+          quoteId: deliveryNote.quoteId,
+          deliveryNoteId: deliveryNote.id,
+          customerId: deliveryNote.customerId!,
+          userId,
+          status: 'DRAFT',
+          currency: deliveryNote.quote?.currency || 'ARS',
+          exchangeRate: deliveryNote.quote?.exchangeRate,
+          subtotal,
+          taxAmount,
+          discount: 0,
+          total,
+          balance: total,
+          issueDate: new Date(),
+          dueDate: data?.dueDate || calcDueDate(new Date(), deliveryNote.customer!.paymentTerms),
+          notes: data?.notes || null,
+          afipStatus: 'PENDING',
+          paymentStatus: 'UNPAID',
+          items: {
+            create: deliveryNote.items.map(item => {
+              const quoteItem = deliveryNote.quote?.items.find(
+                qi => qi.productId === item.productId
+              );
+              const unitPrice = Number(quoteItem?.unitPrice || 0);
+              const itemSubtotal = unitPrice * Number(item.quantity);
 
-          return {
-            productId: item.productId,
-            description: item.description,
-            quantity: item.quantity,
-            unitPrice,
-            discount: 0,
-            taxRate: taxRate * 100, // Guardar como porcentaje
-            subtotal: itemSubtotal
-          };
-        })
-      }
-    },
-    include: {
-      items: {
+              return {
+                productId: item.productId,
+                description: item.description,
+                quantity: item.quantity,
+                unitPrice,
+                discount: 0,
+                taxRate: taxRate * 100, // Guardar como porcentaje
+                subtotal: itemSubtotal
+              };
+            })
+          }
+        },
         include: {
-          product: true
+          items: {
+            include: {
+              product: true
+            }
+          },
+          customer: true,
+          deliveryNote: true,
+          quote: true
         }
-      },
-      customer: true,
-      deliveryNote: true,
-      quote: true
-    }
-  });
+      });
+    },
+    { maxWait: 10000, timeout: 60000 }
+  );
 
   return invoice;
 }

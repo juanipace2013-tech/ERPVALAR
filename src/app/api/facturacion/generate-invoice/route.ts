@@ -373,7 +373,7 @@ export async function POST(request: NextRequest) {
           notes: `${toStatus === 'CONVERTED' ? 'Facturación completa' : 'Facturación parcial'} enviada a Colppy (${colppyAction}). ${colppyResult.facturaNumber ? `Factura: ${colppyResult.facturaNumber}` : ''} ${colppyResult.remitoNumber ? `Remito: ${colppyResult.remitoNumber}` : ''} (${requestedItems.length} ítems)`.trim(),
         },
       })
-    }, { maxWait: 10000, timeout: 30000 })
+    }, { maxWait: 10000, timeout: 60000 })
     } catch (txError: any) {
       // CASO CRÍTICO: Colppy YA emitió la factura (colppyResult.success === true
       // arriba), pero la persistencia local falló (timeout, deadlock, etc.).

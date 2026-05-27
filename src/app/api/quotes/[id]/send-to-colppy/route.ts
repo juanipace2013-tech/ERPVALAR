@@ -257,8 +257,7 @@ export async function POST(
     //   - actualizar Quote.status (FACTURADA_PARCIAL o CONVERTED) y colppyIds
     //
     // TODO: deduplicar este flujo con el endpoint hermano.
-    // Ver src/app/api/facturacion/generate-invoice/route.ts (transacción equivalente
-    // + detección de COLPPY_ORPHAN que este endpoint todavía NO tiene).
+    // Ver src/app/api/facturacion/generate-invoice/route.ts (transacción equivalente).
     // Cualquier cambio en uno debe replicarse en el otro hasta que se haga el
     // refactor a src/lib/colppy-billing.ts.
     const now = new Date();
@@ -280,13 +279,23 @@ export async function POST(
       }
     }
 
+    // Cálculos previos a la transacción. Los necesitamos también para el
+    // breadcrumb del caso COLPPY_ORPHAN (factura emitida + persistencia fallida).
+    const subtotalPre = action.includes('factura')
+      ? Array.from(sentQtyByItemId.entries()).reduce((sum, [itemId, qty]) => {
+          const item = quote.items.find((i) => i.id === itemId);
+          return sum + (item ? Number(item.unitPrice) * qty : 0);
+        }, 0)
+      : 0;
+    const tcUsado = quote.exchangeRate ? Number(quote.exchangeRate) : 1;
+    const montoUSDPre = quote.currency === 'USD' ? subtotalPre : subtotalPre / (tcUsado || 1);
+    const montoARSPre = quote.currency === 'USD' ? subtotalPre * tcUsado : subtotalPre;
+
+    try {
     await prisma.$transaction(async (tx) => {
       if (action.includes('factura')) {
         // Crear Invoice + InvoiceItems (consistente con generate-invoice)
-        const subtotal = Array.from(sentQtyByItemId.entries()).reduce((sum, [itemId, qty]) => {
-          const item = quote.items.find((i) => i.id === itemId);
-          return sum + (item ? Number(item.unitPrice) * qty : 0);
-        }, 0);
+        const subtotal = subtotalPre;
 
         const newInvoice = await tx.invoice.create({
           data: {
@@ -329,9 +338,8 @@ export async function POST(
         });
 
         // Crear CotizacionFactura (modelo nuevo) + items, linkeado a Invoice.
-        const tcUsado = quote.exchangeRate ? Number(quote.exchangeRate) : 1;
-        const montoUSD = quote.currency === 'USD' ? subtotal : subtotal / (tcUsado || 1);
-        const montoARS = quote.currency === 'USD' ? subtotal * tcUsado : subtotal;
+        const montoUSD = montoUSDPre;
+        const montoARS = montoARSPre;
         await tx.cotizacionFactura.create({
           data: {
             cotizacionId: quote.id,
@@ -413,7 +421,85 @@ export async function POST(
           notes: `Enviado a Colppy: ${action}. ${result.remitoNumber ? `Remito: ${result.remitoNumber}` : ''} ${result.facturaNumber ? `Factura: ${result.facturaNumber}` : ''}${action.includes('factura') ? (isFullyInvoiced ? ' (facturación completa)' : ' (facturación parcial)') : ''}`.trim(),
         },
       });
-    }, { maxWait: 10000, timeout: 30000 });
+    }, { maxWait: 10000, timeout: 60000 });
+    } catch (txError: any) {
+      // CASO CRÍTICO: Colppy YA emitió la factura/remito (result.success === true
+      // arriba), pero la persistencia local falló (timeout, deadlock, etc.).
+      // Misma lógica que el endpoint hermano /api/facturacion/generate-invoice.
+
+      // a) Log SIEMPRE primero, último resorte para grepabilidad.
+      logger.error('[COLPPY_ORPHAN] Factura emitida en Colppy pero persistencia ERP falló', {
+        quoteId: quote.id,
+        quoteNumber: quote.quoteNumber,
+        action,
+        facturaId: result.facturaId,
+        facturaNumber: result.facturaNumber,
+        remitoId: result.remitoId,
+        remitoNumber: result.remitoNumber,
+        error: txError?.message,
+        stack: txError?.stack,
+      });
+
+      // b) Best-effort: breadcrumb en cotizacion_facturas con estado='ERROR_GUARDADO'
+      //    SOLO si la acción incluía facturación. Para 'remito' puro no aplica el
+      //    modelo CotizacionFactura, así que el breadcrumb queda solo en logs + audit.
+      if (action.includes('factura')) {
+        try {
+          const stackTrunc = `${txError?.message || 'sin mensaje'}\n---\n${txError?.stack || 'sin stack'}`.slice(0, 2000);
+          await prisma.cotizacionFactura.create({
+            data: {
+              cotizacionId: quote.id,
+              colppyInvoiceId: result.facturaId || null,
+              numeroFactura: result.facturaNumber || result.remitoNumber || null,
+              fecha: now,
+              montoUSD: montoUSDPre,
+              montoARS: montoARSPre,
+              tipoCambio: tcUsado,
+              estado: 'ERROR_GUARDADO',
+              errorMessage: stackTrunc,
+              createdById: session.user!.id!,
+            },
+          });
+        } catch (breadcrumbError: any) {
+          logger.error('[COLPPY_ORPHAN_BREADCRUMB_FAILED] No se pudo persistir el breadcrumb de error', {
+            quoteId: quote.id,
+            quoteNumber: quote.quoteNumber,
+            facturaId: result.facturaId,
+            facturaNumber: result.facturaNumber,
+            breadcrumbError: breadcrumbError?.message,
+          });
+        }
+      }
+
+      // c) AuditLog best-effort.
+      try {
+        logAudit({
+          userId: session.user.id,
+          userName: session.user.name || '',
+          userEmail: session.user.email || '',
+          action: 'COLPPY_ORPHAN',
+          entity: 'QUOTE',
+          entityId: quote.id,
+          entityRef: quote.quoteNumber,
+          description: `Factura emitida en Colppy pero persistencia ERP falló — quote=${quote.quoteNumber}, action=${action}, facturaColppy=${result.facturaNumber || result.facturaId || 'n/a'}, remitoColppy=${result.remitoNumber || 'n/a'}`,
+        });
+      } catch {
+        // logAudit no debería tirar (fire-and-forget) pero por las dudas
+      }
+
+      // d) Response estructurado para que el cliente muestre AlertDialog bloqueante.
+      return NextResponse.json(
+        {
+          errorCode: 'COLPPY_ORPHAN',
+          message:
+            'La factura se emitió correctamente en Colppy pero el ERP no pudo registrarla. NO REINTENTES — contactá a soporte con el número de factura de Colppy para reconciliar manualmente.',
+          colppyFacturaId: result.facturaId || null,
+          colppyFacturaNumber: result.facturaNumber || null,
+          colppyRemitoNumber: result.remitoNumber || null,
+        },
+        { status: 500 }
+      );
+    }
 
     // 11b. Sincronizar paymentTerms del cliente desde Colppy a DB local
     if (result.customerPaymentTermsDays != null && quote.customerId) {

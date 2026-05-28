@@ -63,7 +63,14 @@ export interface ProductoMasCotizado {
 }
 
 /**
- * Obtener métricas principales del dashboard de cotizaciones
+ * Obtener métricas principales del dashboard de cotizaciones.
+ *
+ * Refactor 2026-05-28: las 6 queries que originalmente corrían en serie
+ * (1.2 s a 200ms/RTT contra Oregon) ahora corren en paralelo con Promise.all
+ * (~200 ms). Los `findMany + .length/.reduce` se reemplazaron por `count` y
+ * `aggregate({ _sum: { total } })` para no transferir filas solo para
+ * contarlas/sumarlas. La lógica de cálculo se preservó EXACTA: misma
+ * matemática para porcentajes y conteos, mismo shape del retorno.
  */
 export async function getQuoteDashboardMetrics(): Promise<QuoteDashboardMetrics> {
   const now = new Date()
@@ -71,78 +78,98 @@ export async function getQuoteDashboardMetrics(): Promise<QuoteDashboardMetrics>
   const finMes = endOfMonth(now)
   const inicioMesAnterior = startOfMonth(subMonths(now, 1))
   const finMesAnterior = endOfMonth(subMonths(now, 1))
+  const hoyMas3Dias = addDays(now, 3)
 
-  // 1. Cotizaciones del mes (excluir anuladas)
-  const cotizacionesMes = await prisma.quote.findMany({
-    where: {
-      date: { gte: inicioMes, lte: finMes },
-      status: { not: 'CANCELLED' }
-    }
-  })
+  const [
+    aggMes,
+    countMesAnterior,
+    countResueltas,
+    countAceptadas,
+    aggPendientes,
+    countPorVencer,
+    productosConStock,
+    totalProductos,
+  ] = await Promise.all([
+    // 1. Cotizaciones del mes (count + sum total, excluyendo anuladas)
+    prisma.quote.aggregate({
+      where: {
+        date: { gte: inicioMes, lte: finMes },
+        status: { not: 'CANCELLED' },
+      },
+      _count: true,
+      _sum: { total: true },
+    }),
+    // 2. Cotizaciones del mes anterior (solo count, para % de cambio)
+    prisma.quote.count({
+      where: {
+        date: { gte: inicioMesAnterior, lte: finMesAnterior },
+        status: { not: 'CANCELLED' },
+      },
+    }),
+    // 3. Resueltas del mes (denominador de tasa de conversión)
+    prisma.quote.count({
+      where: {
+        date: { gte: inicioMes },
+        status: { in: ['ACCEPTED', 'CONVERTED', 'REJECTED'] },
+      },
+    }),
+    // 4. Aceptadas del mes (numerador de tasa de conversión)
+    prisma.quote.count({
+      where: {
+        date: { gte: inicioMes },
+        status: { in: ['ACCEPTED', 'CONVERTED'] },
+      },
+    }),
+    // 5. Pendientes totales (count + sum)
+    prisma.quote.aggregate({
+      where: { status: 'SENT' },
+      _count: true,
+      _sum: { total: true },
+    }),
+    // 6. Pendientes por vencer en los próximos 3 días (replica el filtro
+    //    JS original: validUntil entre `now` y `now+3d`).
+    prisma.quote.count({
+      where: {
+        status: 'SENT',
+        validUntil: { gte: now, lte: hoyMas3Dias },
+      },
+    }),
+    // 7. Productos con stock > 0
+    prisma.product.count({ where: { stockQuantity: { gt: 0 } } }),
+    // 8. Total de productos
+    prisma.product.count(),
+  ])
 
-  const cotizacionesMesAnterior = await prisma.quote.findMany({
-    where: {
-      date: { gte: inicioMesAnterior, lte: finMesAnterior },
-      status: { not: 'CANCELLED' }
-    }
-  })
-
-  const totalUSDMes = cotizacionesMes.reduce((sum, q) => sum + Number(q.total || 0), 0)
+  const cantidadMes = aggMes._count
+  const totalUSDMes = Number(aggMes._sum.total || 0)
   const cambioVsMesAnterior =
-    cotizacionesMesAnterior.length > 0
-      ? ((cotizacionesMes.length - cotizacionesMesAnterior.length) / cotizacionesMesAnterior.length) * 100
+    countMesAnterior > 0
+      ? ((cantidadMes - countMesAnterior) / countMesAnterior) * 100
       : 0
 
-  // 2. Tasa de conversión
-  const resueltas = await prisma.quote.findMany({
-    where: {
-      date: { gte: inicioMes },
-      status: { in: ['ACCEPTED', 'CONVERTED', 'REJECTED'] }
-    }
-  })
-
-  const aceptadas = resueltas.filter(q => ['ACCEPTED', 'CONVERTED'].includes(q.status)).length
-  const tasaConversion = resueltas.length > 0 ? (aceptadas / resueltas.length) * 100 : 0
-
-  // 3. Cotizaciones pendientes
-  const pendientes = await prisma.quote.findMany({
-    where: { status: 'SENT' }
-  })
-
-  const totalUSDPendientes = pendientes.reduce((sum, q) => sum + Number(q.total || 0), 0)
-
-  const hoyMas3Dias = addDays(now, 3)
-  const porVencer = pendientes.filter(
-    q => q.validUntil && new Date(q.validUntil) <= hoyMas3Dias && new Date(q.validUntil) >= now
-  ).length
-
-  // 4. Productos en stock
-  const productosConStock = await prisma.product.count({
-    where: { stockQuantity: { gt: 0 } }
-  })
-
-  const totalProductos = await prisma.product.count()
+  const tasaConversion =
+    countResueltas > 0 ? (countAceptadas / countResueltas) * 100 : 0
 
   return {
     cotizacionesMes: {
-      cantidad: cotizacionesMes.length,
+      cantidad: cantidadMes,
       totalUSD: totalUSDMes,
-      cambioVsMesAnterior
+      cambioVsMesAnterior,
     },
     tasaConversion: {
       porcentaje: tasaConversion,
-      aceptadas,
-      resueltas: resueltas.length
+      aceptadas: countAceptadas,
+      resueltas: countResueltas,
     },
     cotizacionesPendientes: {
-      cantidad: pendientes.length,
-      totalUSD: totalUSDPendientes,
-      porVencer
+      cantidad: aggPendientes._count,
+      totalUSD: Number(aggPendientes._sum.total || 0),
+      porVencer: countPorVencer,
     },
     productosEnStock: {
       conStock: productosConStock,
-      total: totalProductos
-    }
+      total: totalProductos,
+    },
   }
 }
 
@@ -366,31 +393,45 @@ export interface VendedorRanking {
 }
 
 /**
- * Obtener ranking de vendedores del mes actual
+ * Obtener ranking de vendedores del mes actual.
+ *
+ * Refactor 2026-05-28: las 3 queries antes serializadas (600 ms a 200ms/RTT)
+ * ahora corren en paralelo (~200 ms). La lookup de users se cambió de
+ * "traer solo los IDs del groupBy" a "traer todos los users con role
+ * comercial" para no depender del resultado del groupBy. El set es chico
+ * (~10 usuarios con role ADMIN/GERENTE/VENDEDOR), el costo extra es nulo.
+ * CONTADOR queda excluido (no participa de ventas).
  */
 export async function getRankingVendedores(): Promise<VendedorRanking[]> {
   const now = new Date()
   const inicioMes = startOfMonth(now)
   const finMes = endOfMonth(now)
 
-  // Todas las cotizaciones del mes agrupadas por vendedor (excluir anuladas)
-  const vendedores = await prisma.quote.groupBy({
-    by: ['salesPersonId'],
-    where: { date: { gte: inicioMes, lte: finMes }, status: { not: 'CANCELLED' } },
-    _sum: { total: true },
-    _count: true,
-  })
-
-  // Cotizaciones aceptadas/convertidas del mes agrupadas por vendedor
-  const aceptadasPorVendedor = await prisma.quote.groupBy({
-    by: ['salesPersonId'],
-    where: {
-      date: { gte: inicioMes, lte: finMes },
-      status: { in: ['ACCEPTED', 'CONVERTED'] },
-    },
-    _count: true,
-    _sum: { total: true },
-  })
+  const [vendedores, aceptadasPorVendedor, comercialUsers] = await Promise.all([
+    // Todas las cotizaciones del mes agrupadas por vendedor (excluir anuladas)
+    prisma.quote.groupBy({
+      by: ['salesPersonId'],
+      where: { date: { gte: inicioMes, lte: finMes }, status: { not: 'CANCELLED' } },
+      _sum: { total: true },
+      _count: true,
+    }),
+    // Cotizaciones aceptadas/convertidas del mes agrupadas por vendedor
+    prisma.quote.groupBy({
+      by: ['salesPersonId'],
+      where: {
+        date: { gte: inicioMes, lte: finMes },
+        status: { in: ['ACCEPTED', 'CONVERTED'] },
+      },
+      _count: true,
+      _sum: { total: true },
+    }),
+    // Lookup de todos los users con role comercial (set chico, ~10 personas).
+    // Lo hacemos en paralelo con los dos groupBy en vez de en serie tras ellos.
+    prisma.user.findMany({
+      where: { role: { in: ['VENDEDOR', 'ADMIN', 'GERENTE'] } },
+      select: { id: true, name: true },
+    }),
+  ])
 
   // Mapa de aceptadas por salesPersonId (cantidad y monto)
   const aceptadasMap = new Map<string, { count: number; monto: number }>()
@@ -401,14 +442,9 @@ export async function getRankingVendedores(): Promise<VendedorRanking[]> {
     })
   })
 
-  // Traer nombres de usuarios
-  const userIds = vendedores.map(v => v.salesPersonId)
-  const users = await prisma.user.findMany({
-    where: { id: { in: userIds } },
-    select: { id: true, name: true },
-  })
+  // Mapa de nombres de users comerciales
   const userMap = new Map<string, string>()
-  users.forEach(u => {
+  comercialUsers.forEach(u => {
     userMap.set(u.id, u.name || 'Sin nombre')
   })
 
@@ -438,19 +474,14 @@ export async function getRankingVendedores(): Promise<VendedorRanking[]> {
 }
 
 /**
- * Obtener tipo de cambio actual y últimos 10 registros
+ * Obtener tipo de cambio actual y últimos 10 registros.
+ *
+ * Refactor 2026-05-28: las 2 queries serializadas se fusionaron en 1.
+ * El `findFirst` original era equivalente al primer elemento del `findMany`
+ * con el mismo orderBy. Lo derivamos en JS y nos ahorramos un RTT (~200 ms
+ * contra Oregon). Si no hay registros, `actual` queda null como antes.
  */
 export async function getTipoCambioActual() {
-  const actual = await prisma.exchangeRate.findFirst({
-    where: {
-      fromCurrency: 'USD',
-      toCurrency: 'ARS'
-    },
-    orderBy: {
-      validFrom: 'desc'
-    }
-  })
-
   const ultimos = await prisma.exchangeRate.findMany({
     where: {
       fromCurrency: 'USD',
@@ -462,12 +493,17 @@ export async function getTipoCambioActual() {
     take: 10
   })
 
+  const actual = ultimos[0] ?? null
+
   return {
     actual: actual ? {
       valor: Number(actual.rate),
       fecha: actual.validFrom
     } : null,
-    ultimos: ultimos.reverse().map(tc => ({
+    // slice() para no mutar el array al revertirlo (el orig hacía reverse
+    // directo, lo que mutaba `ultimos` antes de mapear; acá lo evitamos por
+    // claridad sin cambiar el resultado).
+    ultimos: ultimos.slice().reverse().map(tc => ({
       fecha: format(new Date(tc.validFrom), 'dd/MM', { locale: es }),
       valor: Number(tc.rate)
     }))
@@ -475,14 +511,19 @@ export async function getTipoCambioActual() {
 }
 
 /**
- * Obtener conteo de cotizaciones vencidas sin seguimiento reciente
+ * Obtener conteo de cotizaciones vencidas sin seguimiento reciente.
+ *
+ * Refactor 2026-05-28: cambio `findMany select: { id } + .length` por
+ * `count(...)` con el mismo where. Mismo SQL en el server, misma latencia,
+ * pero ahorra transferir 657 (o cuantas haya) IDs por la red solo para
+ * descartarlos. Shape del retorno preservado.
  */
 export async function getCotizacionesSinSeguimiento() {
   const hace7dias = new Date()
   hace7dias.setDate(hace7dias.getDate() - 7)
 
   // Cotizaciones vencidas hace +7 días en estados activos sin seguimiento reciente
-  const sinSeguimiento = await prisma.quote.findMany({
+  const cantidad = await prisma.quote.count({
     where: {
       validUntil: { lt: hace7dias },
       status: { in: ['SENT', 'EXPIRED'] },
@@ -495,8 +536,7 @@ export async function getCotizacionesSinSeguimiento() {
         },
       ],
     },
-    select: { id: true },
   })
 
-  return { cantidad: sinSeguimiento.length }
+  return { cantidad }
 }

@@ -16,6 +16,7 @@ import { sendQuoteToColppy, type SendToColppyOptions, buildSplitItem, calcCompon
 import { calcDueDate } from '@/lib/quote-workflow'
 import { logAudit } from '@/lib/audit'
 import { logger } from '@/lib/logger'
+import { syncStockForSkusFireAndForget } from '@/lib/colppy-inventory'
 
 interface InvoiceItemRequest {
   quoteItemId: string
@@ -462,6 +463,26 @@ export async function POST(request: NextRequest) {
       entityRef: colppyResult.facturaNumber || colppyResult.remitoNumber || undefined,
       description: `Generó factura desde cotización ${quote.quoteNumber} para ${quote.customer.name}. ${colppyResult.facturaNumber ? `Factura: ${colppyResult.facturaNumber}` : ''} ${colppyResult.remitoNumber ? `Remito: ${colppyResult.remitoNumber}` : ''}`.trim(),
     });
+
+    // Re-sync de stock asíncrono (fire-and-forget) para SOLO los productos
+    // facturados. No bloquea la respuesta; los logs viven con prefijo
+    // [STOCK_SYNC_POST_BILLING]. Si Colppy está lento o el sync falla,
+    // el ERP queda con stock stale hasta el próximo botón "Actualizar Stock"
+    // o la próxima facturación — no se pierde nada crítico.
+    const skusFacturados: string[] = []
+    for (const req of requestedItems) {
+      const qi = quote.items.find((i) => i.id === req.quoteItemId)
+      if (!qi) continue
+      if (qi.product?.sku) skusFacturados.push(qi.product.sku)
+      for (const add of qi.additionals || []) {
+        if (add.product?.sku) skusFacturados.push(add.product.sku)
+      }
+    }
+    syncStockForSkusFireAndForget(skusFacturados, {
+      quoteId: quote.id,
+      quoteNumber: quote.quoteNumber,
+      action: colppyAction,
+    })
 
     return NextResponse.json({
       success: true,

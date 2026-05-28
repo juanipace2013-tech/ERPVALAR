@@ -11,6 +11,7 @@ import { QuoteStatus } from '@prisma/client';
 import { calcDueDate } from '@/lib/quote-workflow';
 import { logAudit } from '@/lib/audit';
 import { logger } from '@/lib/logger'
+import { syncStockForSkusFireAndForget } from '@/lib/colppy-inventory';
 
 // ============================================================================
 // TIPOS
@@ -525,6 +526,25 @@ export async function POST(
       entityId: quote.id,
       entityRef: quote.quoteNumber,
       description: `Envió cotización ${quote.quoteNumber} a Colppy (${action}). ${result.remitoNumber ? `Remito: ${result.remitoNumber}` : ''} ${result.facturaNumber ? `Factura: ${result.facturaNumber}` : ''}`.trim(),
+    });
+
+    // 13b. Re-sync de stock asíncrono (fire-and-forget) SOLO para los productos
+    // efectivamente enviados a Colppy. No bloquea la respuesta; logs con prefijo
+    // [STOCK_SYNC_POST_BILLING]. Si falla, queda stale hasta el próximo botón
+    // "Actualizar Stock" o próxima facturación.
+    const skusFacturados: string[] = [];
+    for (const itemId of sentQtyByItemId.keys()) {
+      const qi = quote.items.find((i) => i.id === itemId);
+      if (!qi) continue;
+      if (qi.product?.sku) skusFacturados.push(qi.product.sku);
+      for (const add of qi.additionals || []) {
+        if (add.product?.sku) skusFacturados.push(add.product.sku);
+      }
+    }
+    syncStockForSkusFireAndForget(skusFacturados, {
+      quoteId: quote.id,
+      quoteNumber: quote.quoteNumber,
+      action,
     });
 
     // 14. Retornar resultado

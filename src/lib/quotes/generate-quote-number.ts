@@ -13,20 +13,26 @@ export async function generateNextQuoteNumber(
 
   const year = new Date().getFullYear();
   const yearPrefix = `VAL-${year}-`;
+  const likePattern = `${yearPrefix}%`;
 
-  const cotizacionesDelAnio = await tx.quote.findMany({
-    where: { quoteNumber: { startsWith: yearPrefix } },
-    select: { quoteNumber: true },
-  });
+  // Calcular el max correlativo del año en una sola query agregada en el
+  // server, en vez de traer todas las filas y reducir en JS. Replica el patrón
+  // de generateInvoiceNumber (quote-workflow.ts:513-528). Reduce el tiempo
+  // dentro de la transacción serializada por el advisory lock, mitigando
+  // P2028 en momentos de latencia alta contra la DB (Argentina↔Oregon).
+  //
+  // SPLIT_PART('VAL-2026-521', '-', 3) → '521' → CAST AS INTEGER → 521.
+  // El formato VAL-YYYY-NNN se preserva idéntico al generador anterior.
+  const result = await (tx as any).$queryRaw<{ max_num: number }[]>`
+    SELECT COALESCE(
+      MAX(CAST(SPLIT_PART("quoteNumber", '-', 3) AS INTEGER)),
+      0
+    ) AS max_num
+    FROM quotes
+    WHERE "quoteNumber" LIKE ${likePattern}
+  `;
 
-  let maxNumber = 0;
-  for (const cot of cotizacionesDelAnio) {
-    const match = cot.quoteNumber.match(/^VAL-\d{4}-(\d+)$/);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      if (num > maxNumber) maxNumber = num;
-    }
-  }
+  const maxNumber = Number(result[0]?.max_num ?? 0);
 
   return `VAL-${year}-${String(maxNumber + 1).padStart(3, "0")}`;
 }

@@ -277,7 +277,10 @@ export async function POST(request: NextRequest) {
       customerForMultiplier?.taxCondition !== undefined &&
       customerForMultiplier.taxCondition !== 'RESPONSABLE_INSCRIPTO'
 
-    // Generar número + crear cotización en transacción para evitar race conditions
+    // Generar número + crear cotización en transacción para evitar race conditions.
+    // Timeout extendido (default 5s) por la latencia transcontinental ARG↔Oregon
+    // que provoca picos P2028 ocasionales. La tx NO se retrya automáticamente
+    // porque consume un correlativo y no es idempotente.
     const quote = await prisma.$transaction(async (tx) => {
       const quoteNumber = await generateNextQuoteNumber(tx)
 
@@ -306,7 +309,7 @@ export async function POST(request: NextRequest) {
           salesPerson: true,
         },
       })
-    })
+    }, { maxWait: 10000, timeout: 30000 })
 
     // Registrar actividad
     await prisma.activity.create({

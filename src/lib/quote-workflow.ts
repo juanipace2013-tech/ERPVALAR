@@ -162,7 +162,7 @@ export async function updateQuoteStatus(
         }
       }
     });
-  });
+  }, { maxWait: 10000, timeout: 30000 });
 
   return updated;
 }
@@ -525,7 +525,7 @@ export async function generateInvoiceNumber(
 
     const nextNumber = (result[0]?.max_num || 0) + 1;
     return `${pointOfSale}-${String(nextNumber).padStart(8, '0')}`;
-  }, { isolationLevel: 'Serializable' });
+  }, { isolationLevel: 'Serializable', maxWait: 10000, timeout: 30000 });
 
   return invoiceNumber;
 }
@@ -797,7 +797,7 @@ export async function generateInvoiceFromQuote(
     });
 
     return newInvoice;
-  });
+  }, { maxWait: 10000, timeout: 30000 });
 
   return invoice;
 }

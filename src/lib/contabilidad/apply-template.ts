@@ -205,7 +205,7 @@ export async function applyJournalTemplate(
   if (externalTx) {
     return execute(externalTx);
   } else {
-    return prisma.$transaction(execute);
+    return prisma.$transaction(execute, { maxWait: 10000, timeout: 30000 });
   }
 }
 

@@ -95,7 +95,7 @@ export async function PATCH(
       })
 
       return result
-    })
+    }, { maxWait: 10000, timeout: 30000 })
 
     logAudit({
       userId: session.user.id,

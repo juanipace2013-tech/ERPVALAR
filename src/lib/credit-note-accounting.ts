@@ -176,7 +176,7 @@ export async function createPurchaseCreditNote(data: {
       creditNote,
       journalEntry,
     };
-  });
+  }, { maxWait: 10000, timeout: 30000 });
 }
 
 /**

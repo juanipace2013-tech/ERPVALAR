@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
       })
 
       return { receipt, transaction }
-    })
+    }, { maxWait: 10000, timeout: 30000 })
 
     return NextResponse.json({
       success: true,

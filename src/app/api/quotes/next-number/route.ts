@@ -18,7 +18,7 @@ export async function GET(_request: NextRequest) {
 
     const quoteNumber = await prisma.$transaction(async (tx) => {
       return await generateNextQuoteNumber(tx)
-    })
+    }, { maxWait: 10000, timeout: 30000 })
 
     return NextResponse.json({ quoteNumber })
   } catch (error) {

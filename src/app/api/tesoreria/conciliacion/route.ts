@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
       }
 
       return updated
-    })
+    }, { maxWait: 10000, timeout: 30000 })
 
     return NextResponse.json({
       success: true,

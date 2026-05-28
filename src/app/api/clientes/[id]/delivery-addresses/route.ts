@@ -84,7 +84,7 @@ export async function POST(
           isDefault: body.isDefault || false,
         },
       })
-    })
+    }, { maxWait: 10000, timeout: 30000 })
 
     return NextResponse.json({ address }, { status: 201 })
   } catch (error) {

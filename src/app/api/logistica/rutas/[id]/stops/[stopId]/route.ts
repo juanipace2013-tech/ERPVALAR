@@ -48,7 +48,7 @@ export async function DELETE(
       await tx.deliveryStop.delete({
         where: { id: stopId },
       })
-    })
+    }, { maxWait: 10000, timeout: 30000 })
 
     return NextResponse.json({ ok: true })
   } catch (error) {

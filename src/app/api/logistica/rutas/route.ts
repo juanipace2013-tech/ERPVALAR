@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
       })
 
       return newRoute
-    })
+    }, { maxWait: 10000, timeout: 30000 })
 
     return NextResponse.json(route, { status: 201 })
   } catch (error) {

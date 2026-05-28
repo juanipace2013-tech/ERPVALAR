@@ -352,5 +352,5 @@ export async function processStockAdjustment(
     );
 
     return movement as unknown as StockMovementWithRelations;
-  });
+  }, { maxWait: 10000, timeout: 30000 });
 }

@@ -257,7 +257,7 @@ export async function approvePurchaseInvoice(invoiceId: string) {
         },
       },
     });
-  });
+  }, { maxWait: 10000, timeout: 30000 });
 
   return prisma.purchaseInvoice.findUnique({
     where: { id: invoiceId },

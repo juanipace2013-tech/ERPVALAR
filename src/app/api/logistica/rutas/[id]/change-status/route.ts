@@ -88,7 +88,7 @@ export async function POST(
             createdBy: { select: { id: true, name: true } },
           },
         })
-      })
+      }, { maxWait: 10000, timeout: 30000 })
 
       return NextResponse.json(updated)
     }

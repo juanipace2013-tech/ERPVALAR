@@ -51,7 +51,7 @@ export async function PUT(
           ...(body.isDefault !== undefined && { isDefault: body.isDefault }),
         },
       })
-    })
+    }, { maxWait: 10000, timeout: 30000 })
 
     return NextResponse.json({ address })
   } catch (error) {

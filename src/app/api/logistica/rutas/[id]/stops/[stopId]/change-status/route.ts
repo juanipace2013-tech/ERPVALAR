@@ -68,7 +68,7 @@ export async function POST(
       }
 
       return updatedStop
-    })
+    }, { maxWait: 10000, timeout: 30000 })
 
     return NextResponse.json(updated)
   } catch (error) {

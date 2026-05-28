@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
           user: true,
         },
       });
-    });
+    }, { maxWait: 10000, timeout: 30000 });
 
     return NextResponse.json(purchaseOrder, { status: 201 });
   } catch (error) {

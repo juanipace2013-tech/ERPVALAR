@@ -90,7 +90,7 @@ export async function registerPurchasePayment(data: {
       payment,
       journalEntry,
     };
-  });
+  }, { maxWait: 10000, timeout: 30000 });
 }
 
 /**
@@ -285,7 +285,7 @@ export async function registerSupplierPayment(data: {
       payment,
       journalEntry,
     };
-  });
+  }, { maxWait: 10000, timeout: 30000 });
 }
 
 /**
@@ -488,7 +488,7 @@ export async function registerCustomerReceipt(data: {
       receipt,
       journalEntry,
     };
-  });
+  }, { maxWait: 10000, timeout: 30000 });
 }
 
 /**

@@ -169,7 +169,7 @@ export async function POST(request: NextRequest) {
         },
       },
     })
-    }) // end $transaction
+    }, { maxWait: 10000, timeout: 30000 }) // end $transaction
 
     // Actualizar saldo del proveedor si la orden está aprobada
     if (body.status === 'APPROVED' || body.status === 'RECEIVED') {

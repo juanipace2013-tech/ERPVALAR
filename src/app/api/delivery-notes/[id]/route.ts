@@ -153,7 +153,7 @@ export async function PUT(
           invoices: true,
         },
       })
-    })
+    }, { maxWait: 10000, timeout: 30000 })
 
     return NextResponse.json(updated)
   } catch (error) {

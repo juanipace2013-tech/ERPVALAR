@@ -43,7 +43,18 @@ interface OrphanEntry {
   colppyInvoiceId: string
   /** Número de factura visible (ej: '0003-00000221') */
   colppyInvoiceNumber: string
-  /** Fecha de emisión en Colppy. Si no se sabe, usar new Date() */
+  /**
+   * Fecha de emisión en Colppy.
+   *
+   * ⚠️ TODO TZ: `new Date('YYYY-MM-DD')` JS lo interpreta como medianoche UTC,
+   * que en Argentina (UTC-3) es 21:00 del día anterior. La UI usa toLocaleString
+   * con TZ del browser y muestra el día corrido (ej: "26/05 21:00" en vez de
+   * "27/05 12:00"). Para evitarlo usar `new Date('YYYY-MM-DDT15:00:00Z')` (=
+   * mediodía ART) hasta que se centralice un helper de civil-date.
+   *
+   * VAL-2026-521 ya quedó persistida con este offset; corregir manualmente con
+   * UPDATE si molesta, o aceptar la cosmética (no afecta lógica de facturación).
+   */
   fecha: Date
   /** TC USD→ARS usado al momento de emitir (para montos en ARS) */
   tipoCambio: number
@@ -59,7 +70,7 @@ const orphans: OrphanEntry[] = [
     quoteNumber: 'VAL-2026-521',
     colppyInvoiceId: '<COMPLETAR_DESPUES>',
     colppyInvoiceNumber: '0003-00000221',
-    fecha: new Date('2026-05-27'),
+    fecha: new Date('2026-05-27T15:00:00Z'), // ver nota TODO TZ arriba
     tipoCambio: 1430,
     itemsFacturados: [
       // Cantidad efectivamente facturada en Colppy por cada ítem

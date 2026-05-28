@@ -1282,19 +1282,28 @@ function QuoteCard({
               const canSelect =
                 quote.column === 'partial' && item.isInStock && !isFullyInvoiced && !item.sentToColppy
 
+              // Shortage efectivo para mostrar al usuario.
+              // Si el backend computó stockShortage (stock conocido), usamos eso.
+              // Si no (caso stockQuantity=null tratado como sin stock), todo lo
+              // pendiente está faltante.
+              const effectiveShortage =
+                item.stockShortage != null && item.stockShortage > 0
+                  ? item.stockShortage
+                  : item.remainingQuantity
+
               return (
                 <div
                   key={item.id}
-                  className={`flex items-center gap-2 p-1.5 rounded text-xs ${
+                  className={`flex items-start gap-2 p-1.5 rounded text-xs ${
                     isFullyInvoiced
-                      ? 'opacity-50 bg-gray-100'
-                      : item.sentToColppy
-                      ? 'bg-blue-50 border border-blue-200'
+                      ? 'opacity-60 bg-gray-50 border border-gray-200'
+                      : !item.isInStock
+                      ? 'bg-red-50/40 border border-red-100'
                       : 'bg-white border'
                   }`}
                 >
                   {quote.column === 'partial' && (
-                    <div className="flex-shrink-0 w-5">
+                    <div className="flex-shrink-0 w-5 pt-0.5">
                       {canSelect ? (
                         <Checkbox
                           checked={selectedItems.has(item.id)}
@@ -1305,14 +1314,10 @@ function QuoteCard({
                     </div>
                   )}
 
-                  <div className="flex-shrink-0">
+                  <div className="flex-shrink-0 pt-0.5">
                     {isFullyInvoiced ? (
                       <Badge variant="outline" className="text-[10px] px-1 py-0">
                         Facturado
-                      </Badge>
-                    ) : item.sentToColppy ? (
-                      <Badge className="text-[10px] px-1 py-0 bg-blue-100 text-blue-800 hover:bg-blue-100">
-                        En Colppy
                       </Badge>
                     ) : item.isInStock ? (
                       <CircleDot className="h-3.5 w-3.5 text-green-500" />
@@ -1321,7 +1326,7 @@ function QuoteCard({
                     )}
                   </div>
 
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0 space-y-1">
                     <p className="truncate font-medium">
                       {item.productSku && (
                         <span className="font-mono text-gray-500">
@@ -1330,40 +1335,47 @@ function QuoteCard({
                       )}
                       {item.description}
                     </p>
-                    {!item.isInStock && !isFullyInvoiced && !item.sentToColppy && (
+
+                    {/* Sub-renglón: Facturado (gris). Sin monto para no saturar la card. */}
+                    {item.invoicedQuantity > 0 && (
+                      <div>
+                        <span className="text-[10px] text-gray-700 bg-gray-100 rounded px-1.5 py-0.5 inline-block">
+                          Facturado {item.invoicedQuantity} un.
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Sub-renglón: Sin stock (rojo) con monto del faltante. */}
+                    {!isFullyInvoiced && !item.isInStock && (
                       <div className="space-y-0.5">
-                        {item.stockShortage != null && (
-                          <p className="text-[10px] text-red-500">
-                            ⚠ {item.productSku || 'Principal'}: faltan {item.stockShortage} un. (stock: {item.stockQuantity ?? 0})
-                          </p>
-                        )}
+                        <span className="text-[10px] text-red-700 bg-red-100 border border-red-200 rounded px-1.5 py-0.5 inline-block">
+                          ⚠️ Sin stock — faltan {effectiveShortage} un. ({formatNumber(item.unitPrice * effectiveShortage)})
+                        </span>
+                        {/* Detalle adicionales sin stock, si aplica (no aumenta el subtotal — son advertencias secundarias). */}
                         {item.additionals.filter(a => a.shortage != null && a.shortage > 0).map((a, idx) => (
-                          <p key={idx} className="text-[10px] text-red-500">
+                          <p key={idx} className="text-[10px] text-red-500 ml-1">
                             ⚠ {a.sku || a.name || 'Adicional'}: {a.stockQuantity === 0 || a.stockQuantity == null ? 'sin stock' : `faltan ${a.shortage} un. (stock: ${a.stockQuantity})`}
                           </p>
                         ))}
-                        {item.stockShortage == null && item.additionals.every(a => !a.shortage) && (
-                          <p className="text-[10px] text-red-500">
-                            {item.stockQuantity != null
-                              ? `Stock: ${item.stockQuantity} / Necesita: ${item.remainingQuantity}`
-                              : item.deliveryTime || 'Sin stock'}
-                          </p>
-                        )}
                       </div>
                     )}
-                    {item.invoicedQuantity > 0 && !isFullyInvoiced && (
-                      <p className="text-[10px] text-blue-500">
-                        {item.remainingQuantity}/{item.quantity} pendientes
-                      </p>
+
+                    {/* Sub-renglón: Listo para facturar (verde) con monto. */}
+                    {!isFullyInvoiced && item.isInStock && (
+                      <div>
+                        <span className="text-[10px] text-green-800 bg-green-50 border border-green-200 rounded px-1.5 py-0.5 inline-block">
+                          Listo para facturar: {item.remainingQuantity} un. ({formatNumber(item.unitPrice * item.remainingQuantity)})
+                        </span>
+                      </div>
                     )}
                   </div>
 
-                  <div className="text-right flex-shrink-0">
-                    <p className="font-mono">{item.remainingQuantity > 0 ? item.remainingQuantity : item.quantity}</p>
+                  <div className="text-right flex-shrink-0 pt-0.5">
+                    <p className="font-mono text-gray-600">{item.quantity}</p>
                   </div>
-                  <div className="text-right flex-shrink-0 w-20">
+                  <div className="text-right flex-shrink-0 w-20 pt-0.5">
                     <p className="font-mono">
-                      {formatNumber(item.unitPrice * (item.remainingQuantity > 0 ? item.remainingQuantity : item.quantity))}
+                      {formatNumber(item.unitPrice * item.quantity)}
                     </p>
                   </div>
                 </div>

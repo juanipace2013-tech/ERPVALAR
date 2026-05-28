@@ -20,9 +20,12 @@ function isDeliveryImmediate(deliveryTime: string | null): boolean {
  * Determina si un item está listo para facturar.
  *
  * Reglas:
- * 1. Si hay producto vinculado con stockQuantity conocido → exigir stock >= remaining
- *    (el stock real siempre tiene prioridad sobre deliveryTime)
- * 2. Sin producto vinculado (item manual) → usar deliveryTime como señal
+ * 1. Producto vinculado con stockQuantity conocido → exigir stock >= remaining.
+ * 2. Producto vinculado SIN stockQuantity (null) → considerar SIN stock disponible
+ *    (errar conservador). Antes caíamos al deliveryTime acá, lo que producía
+ *    falsos verdes en el Kanban cuando un producto no rastreaba inventario
+ *    (ej. servicios o productos legacy sin track). Verificado con VAL-2026-521.
+ * 3. Item manual sin producto → usar deliveryTime como señal.
  */
 function isItemReady(
   stockQuantity: number | null | undefined,
@@ -34,10 +37,18 @@ function isItemReady(
   if (hasProduct && stockQuantity != null) {
     return stockQuantity >= remainingQuantity
   }
+  // Producto vinculado SIN stock trackeado → conservador, no marcar como listo.
+  if (hasProduct && stockQuantity == null) {
+    return false
+  }
   // Item manual sin producto → confiar en deliveryTime
   if (isDeliveryImmediate(deliveryTime)) return true
   return false
 }
+
+// Throttle del log [CONSISTENCY]: no loguear más de 1 vez por cotización por
+// minuto. Mapa en module scope; se reinicia al reiniciar PM2 (aceptable).
+const consistencyLogThrottle = new Map<string, number>()
 
 /**
  * Clasifica una cotización en columna Kanban según cuántos items
@@ -245,10 +256,40 @@ export async function GET(request: NextRequest) {
       // Solo items pendientes de facturar para clasificación
       const pendingItems = processedItems.filter((i) => i.remainingQuantity > 0)
 
+      // Log temporal de monitoreo: items con producto vinculado pero stockQuantity=null
+      // ahora se tratan como sin stock. Para medir el impacto del cambio durante 1-2 días.
+      // Después se puede sacar o convertir en métrica formal.
+      for (let i = 0; i < processedItems.length; i++) {
+        const pi = processedItems[i]
+        const orig = quote.items[i]
+        if (
+          orig.product != null &&
+          orig.product.stockQuantity == null &&
+          pi.remainingQuantity > 0
+        ) {
+          logger.info(
+            `[BOARD_STOCK_NULL] quote=${quote.quoteNumber} item=${pi.productSku ?? 'n/a'} remaining=${pi.remainingQuantity} → tratado como sin stock`
+          )
+        }
+      }
+
       // Clasificar por stock real
       const column = classifyByStock(
         pendingItems.map((i) => ({ isReady: i.isInStock }))
       )
+
+      // Inconsistencia: FACTURADA_PARCIAL sin items pendientes debería ser CONVERTED.
+      // Throttle 1 por cotización por minuto para no spamear si rebota.
+      if (quote.status === 'FACTURADA_PARCIAL' && pendingItems.length === 0) {
+        const last = consistencyLogThrottle.get(quote.id)
+        const now = Date.now()
+        if (!last || now - last > 60_000) {
+          logger.warn(
+            `[CONSISTENCY] Quote en FACTURADA_PARCIAL pero todos los items completamente facturados, debería ser CONVERTED — quote=${quote.quoteNumber}`
+          )
+          consistencyLogThrottle.set(quote.id, now)
+        }
+      }
 
       const readyItemsCount = pendingItems.filter((i) => i.isInStock).length
       const totalItemsCount = pendingItems.length

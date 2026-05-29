@@ -1158,6 +1158,12 @@ export async function sendQuoteToColppy(
     // 3. Preparar items (los precios van en USD tal cual)
     const exchangeRate = quote.currency === 'USD' ? quote.exchangeRate || 1 : 1;
 
+    // Bonificación global de cabecera (%). Se aplica como descuento por línea
+    // (porcDesc) + factor sobre el neto del header, para que la reconstrucción
+    // de Colppy (ImporteUnitario × Cantidad × (1 − porcDesc/100)) cuadre con la
+    // cabecera. Si bonification === 0, bonifFactor === 1 → comportamiento idéntico.
+    const bonifFactor = 1 - Number(quote.bonification) / 100;
+
     const preparedItems = quote.items.flatMap((item) => {
       // Item principal: usa SU PROPIO productName
       const mainItem = {
@@ -1356,12 +1362,12 @@ export async function sendQuoteToColppy(
           codigo: '',
           Descripcion: item.descripcion,
           ImporteUnitario: Math.round(importeUnitario * 100) / 100,
-          subtotal: subtotalLinea,
+          subtotal: Math.round(subtotalLinea * bonifFactor * 100) / 100,
           IVA: 21,
           Cantidad: cantidad,
           unidadMedida: 'Un',
           Comentario: prepItem.comentario || `Cotización ${quote.quoteNumber}`,
-          porcDesc: 0,
+          porcDesc: Number(quote.bonification),
           idPlanCuenta: 'Ventas',
           ccosto1: '',
           ccosto2: '',
@@ -1374,11 +1380,11 @@ export async function sendQuoteToColppy(
       // En ambos tipos el netoGravado (raíz) representa el neto real; el IVA
       // 21% se discrimina aparte. Así Colppy recibe todos los totales
       // consistentes y no necesita "apretar TAB" para recalcular.
-      netoGravado = Math.round(netoGravado * 100) / 100;
+      netoGravado = Math.round(netoGravado * bonifFactor * 100) / 100;
       const totalIVA = Math.round(netoGravado * 0.21 * 100) / 100;
       const totalFactura = Math.round((netoGravado + totalIVA) * 100) / 100;
 
-      const factura = await withRetry((s) => colppyCreateInvoice(s, {
+      const facturaPayload = {
         descripcion: options.descripcion || `Cotización ${quote.quoteNumber}`,
         idCliente: customer.idEntidad,
         puntoVenta: options.puntoVenta,
@@ -1395,7 +1401,11 @@ export async function sendQuoteToColppy(
         totalIVA: Math.round(totalIVA * 100) / 100,
         totalFactura: Math.round(totalFactura * 100) / 100,
         items: itemsFactura,
-      }));
+      };
+
+      console.log('=== PAYLOAD VENTA COLPPY ===', JSON.stringify(facturaPayload, null, 2));
+
+      const factura = await withRetry((s) => colppyCreateInvoice(s, facturaPayload));
 
       result.facturaId = factura.idFactura;
       result.facturaNumber = factura.numeroFactura;

@@ -6,6 +6,9 @@ import { logger } from '@/lib/logger'
 const BCRA_BASE = 'https://api.bcra.gob.ar/CentralDeDeudores/v1.0'
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24 horas — los datos BCRA se actualizan mensualmente
 const GLOBAL_COOLDOWN_MS = 10000 // mínimo 10s entre consultas nuevas al BCRA
+const FETCH_TIMEOUT_MS = 8000 // corte por intento (AbortController) para no quedar colgados
+const MAX_RETRIES = 3 // intentos por endpoint del BCRA
+const BACKOFF_BASE_MS = 500 // backoff exponencial: 500ms, 1s, 2s
 
 // ── Rate limit global ────────────────────────────────────────────────────────
 let lastBcraCallTime = 0
@@ -58,20 +61,25 @@ function calcularSemaforo(
 /**
  * Fetch al BCRA con retry y backoff exponencial.
  * La API devuelve 503 en ~60% de requests individuales,
- * pero con 4 intentos se logra 100% de éxito.
+ * pero con varios intentos se logra alta tasa de éxito.
+ * Cada intento tiene timeout propio (AbortController) para no quedar colgado.
  * HTTP 404 = sin datos (no es error).
  */
-async function fetchBCRAWithRetry(url: string, maxRetries = 4): Promise<any> {
+async function fetchBCRAWithRetry(url: string, maxRetries = MAX_RETRIES): Promise<any> {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 10000)
-      const response = await fetch(url, {
-        headers: { 'Accept': 'application/json' },
-        signal: controller.signal,
-        cache: 'no-store',
-      })
-      clearTimeout(timeout)
+      const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+      let response: Response
+      try {
+        response = await fetch(url, {
+          headers: { 'Accept': 'application/json' },
+          signal: controller.signal,
+          cache: 'no-store',
+        })
+      } finally {
+        clearTimeout(timeout)
+      }
 
       // 404 = sin datos, respuesta válida
       if (response.status === 404) {
@@ -81,7 +89,7 @@ async function fetchBCRAWithRetry(url: string, maxRetries = 4): Promise<any> {
 
       if (response.status === 503 || response.status === 502) {
         logger.info(`[BCRA] Intento ${attempt + 1}/${maxRetries} → ${response.status}, reintentando...`)
-        await sleep(1000 * Math.pow(2, attempt))
+        if (attempt < maxRetries - 1) await sleep(BACKOFF_BASE_MS * Math.pow(2, attempt))
         continue
       }
 
@@ -93,13 +101,13 @@ async function fetchBCRAWithRetry(url: string, maxRetries = 4): Promise<any> {
 
       return JSON.parse(text)
     } catch (error: any) {
-      logger.info(`[BCRA] Intento ${attempt + 1}/${maxRetries} → Error: ${error.message}`)
+      logger.warn(`[BCRA] Intento ${attempt + 1}/${maxRetries} → Error: ${error.message}`)
       if (attempt < maxRetries - 1) {
-        await sleep(1000 * Math.pow(2, attempt))
+        await sleep(BACKOFF_BASE_MS * Math.pow(2, attempt))
       }
     }
   }
-  throw new Error('BCRA API no disponible después de 4 intentos')
+  throw new Error(`BCRA API no disponible después de ${maxRetries} intentos`)
 }
 
 // ── Route handler ───────────────────────────────────────────────────────────
@@ -117,21 +125,50 @@ export async function GET(
 
   const forceRefresh = request.nextUrl.searchParams.get('refresh') === 'true'
 
-  // ── Cache 24h ──
-  if (!forceRefresh) {
-    const cache = await prisma.bcraCache.findUnique({ where: { cuit } })
-    if (cache) {
-      const age = Date.now() - new Date(cache.consultedAt).getTime()
-      if (age < CACHE_TTL_MS) {
-        const cached = cache.data as any
-        if (cached?.resumen && cached?.deudas) {
-          logger.info(`[BCRA] Cache hit for ${cuit} (age: ${Math.round(age / 3600000)}h)`)
-          return NextResponse.json(cached)
-        }
-        logger.warn(`[BCRA] Cache invalid for ${cuit}, refetching...`)
-      }
+  // ── Leer cache una sola vez: sirve para el hit fresco y como fallback stale ──
+  const cacheRow = await prisma.bcraCache.findUnique({ where: { cuit } })
+
+  /**
+   * Stale-while-error: si el BCRA está caído, devolvemos el último valor
+   * cacheado de este CUIT aunque esté vencido (marcado stale). Solo erramos
+   * si no hay NADA cacheado para el CUIT (los datos del BCRA cambian ~1 vez
+   * por mes, así que un valor viejo sigue siendo útil).
+   */
+  function staleFallback(reason: string, error?: unknown): NextResponse {
+    const cached = cacheRow?.data as any
+    if (cached?.resumen && cached?.deudas) {
+      const ageH = Math.round(
+        (Date.now() - new Date(cacheRow!.consultedAt).getTime()) / 3600000
+      )
+      logger.warn(`[BCRA] ${reason} — devolviendo valor stale de cache para ${cuit}`, {
+        cachedAt: new Date(cacheRow!.consultedAt).toISOString(),
+        ageHours: ageH,
+        error: error instanceof Error ? error.message : error ? String(error) : undefined,
+      })
+      return NextResponse.json({ ...cached, stale: true })
     }
-  } else {
+    logger.error(`[BCRA] ${reason} y sin cache disponible para ${cuit}`, error ?? '')
+    return NextResponse.json(
+      {
+        error:
+          'La API del BCRA no responde momentáneamente y no hay datos previos en cache. Intentá de nuevo.',
+      },
+      { status: 503 }
+    )
+  }
+
+  // ── Cache 24h: hit fresco ──
+  if (!forceRefresh && cacheRow) {
+    const age = Date.now() - new Date(cacheRow.consultedAt).getTime()
+    if (age < CACHE_TTL_MS) {
+      const cached = cacheRow.data as any
+      if (cached?.resumen && cached?.deudas) {
+        logger.info(`[BCRA] Cache hit for ${cuit} (age: ${Math.round(age / 3600000)}h)`)
+        return NextResponse.json({ ...cached, stale: false })
+      }
+      logger.warn(`[BCRA] Cache invalid for ${cuit}, refetching...`)
+    }
+  } else if (forceRefresh) {
     logger.info(`[BCRA] Force refresh for ${cuit}`)
   }
 
@@ -148,14 +185,7 @@ export async function GET(
       return { deudas: d, historicas: h, cheques: c }
     }))
   } catch (error) {
-    logger.error('[BCRA] Error después de reintentos:', error)
-    return NextResponse.json(
-      {
-        error:
-          'La API del BCRA no responde momentáneamente. Intentá de nuevo.',
-      },
-      { status: 503 }
-    )
+    return staleFallback('Error después de reintentos', error)
   }
 
   // ── Verificar si todas las llamadas fallaron ──
@@ -172,14 +202,7 @@ export async function GET(
       cheques?.status === 404
 
     if (!all404) {
-      logger.error(`[BCRA] Todas las llamadas fallaron para ${cuit}`)
-      return NextResponse.json(
-        {
-          error:
-            'La API del BCRA no responde momentáneamente. Intentá de nuevo.',
-        },
-        { status: 503 }
-      )
+      return staleFallback('Todas las llamadas fallaron')
     }
   }
 
@@ -329,5 +352,5 @@ export async function GET(
     logger.error('Error saving BCRA search history:', e)
   }
 
-  return NextResponse.json(result)
+  return NextResponse.json({ ...result, stale: false })
 }

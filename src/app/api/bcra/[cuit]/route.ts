@@ -59,11 +59,13 @@ function calcularSemaforo(
 }
 
 /**
- * Fetch al BCRA con retry y backoff exponencial.
- * La API devuelve 503 en ~60% de requests individuales,
- * pero con varios intentos se logra alta tasa de éxito.
- * Cada intento tiene timeout propio (AbortController) para no quedar colgado.
- * HTTP 404 = sin datos (no es error).
+ * Fetch al BCRA con timeout por intento (AbortController) y retry/backoff.
+ * Clasificación de respuestas (NO todo es error):
+ *  - 200: OK → devolver para cachear.
+ *  - 400: CUIT rechazado por el BCRA (validación) → NO reintentar, NO cachear.
+ *  - 404: el CUIT no tiene datos → respuesta VÁLIDA "sin datos", NO reintentar.
+ *  - 429 (rate-limit por IP) / 5xx (incluye el 500 documentado) / red / TLS / timeout
+ *    → transitorios: reintentar con backoff y, si se agotan, lanzar (→ fallback a cache).
  */
 async function fetchBCRAWithRetry(url: string, maxRetries = MAX_RETRIES): Promise<any> {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -81,14 +83,21 @@ async function fetchBCRAWithRetry(url: string, maxRetries = MAX_RETRIES): Promis
         clearTimeout(timeout)
       }
 
-      // 404 = sin datos, respuesta válida
+      // 404 = el CUIT no tiene datos. Respuesta válida, no error → no reintentar.
       if (response.status === 404) {
         logger.info(`[BCRA] ${url} → 404 (sin datos)`)
         return { status: 404, errorMessages: ['Sin información'] }
       }
 
-      if (response.status === 503 || response.status === 502) {
-        logger.info(`[BCRA] Intento ${attempt + 1}/${maxRetries} → ${response.status}, reintentando...`)
+      // 400 = CUIT rechazado por validación del propio BCRA → no reintentar, no cachear.
+      if (response.status === 400) {
+        logger.warn(`[BCRA] ${url} → 400 (CUIT inválido para el BCRA)`)
+        return { status: 400, errorMessages: ['CUIT inválido para el BCRA'] }
+      }
+
+      // 429 (rate-limit por IP) y 5xx (incluye el 500 documentado) → transitorios: reintentar.
+      if (response.status === 429 || response.status >= 500) {
+        logger.warn(`[BCRA] Intento ${attempt + 1}/${maxRetries} → ${response.status}, reintentando...`)
         if (attempt < maxRetries - 1) await sleep(BACKOFF_BASE_MS * Math.pow(2, attempt))
         continue
       }
@@ -101,6 +110,7 @@ async function fetchBCRAWithRetry(url: string, maxRetries = MAX_RETRIES): Promis
 
       return JSON.parse(text)
     } catch (error: any) {
+      // Red / TLS / timeout (abort) → transitorios: reintentar.
       logger.warn(`[BCRA] Intento ${attempt + 1}/${maxRetries} → Error: ${error.message}`)
       if (attempt < maxRetries - 1) {
         await sleep(BACKOFF_BASE_MS * Math.pow(2, attempt))
@@ -188,22 +198,30 @@ export async function GET(
     return staleFallback('Error después de reintentos', error)
   }
 
-  // ── Verificar si todas las llamadas fallaron ──
+  // ── 400 del BCRA = CUIT rechazado por validación: error nuestro, NO cachear, NO stale ──
+  if (deudas?.status === 400) {
+    logger.warn(`[BCRA] 400 del BCRA para ${cuit} — no se cachea`)
+    return NextResponse.json(
+      { error: 'CUIT inválido', detalle: deudas?.errorMessages },
+      { status: 400 }
+    )
+  }
+
+  // ── "Sin datos": el CUIT no figura en ninguno de los tres registros (todos 404) ──
+  const noData =
+    deudas?.status === 404 &&
+    historicas?.status === 404 &&
+    cheques?.status === 404
+
+  // ── Verificar si todas las llamadas fallaron por error transitorio (no 404) ──
   const allFailed =
     deudas?.status >= 400 &&
     historicas?.status >= 400 &&
     cheques?.status >= 400
 
-  if (allFailed) {
-    // Si todas son 404, no es error: simplemente no hay datos
-    const all404 =
-      deudas?.status === 404 &&
-      historicas?.status === 404 &&
-      cheques?.status === 404
-
-    if (!all404) {
-      return staleFallback('Todas las llamadas fallaron')
-    }
+  if (allFailed && !noData) {
+    // Algún 5xx/429 quedó como status >= 400 en las tres → tratar como caída
+    return staleFallback('Todas las llamadas fallaron')
   }
 
   // ── Deudas: extraer entidades del período más reciente ──
@@ -311,6 +329,7 @@ export async function GET(
   const result = {
     cuit: formatCuit(cuit),
     denominacion,
+    noData, // true = el CUIT no figura en el BCRA (todos 404); se cachea para no reconsultar
     deudas: deudasTransformed,
     historicas,
     cheques: chequesTransformed,

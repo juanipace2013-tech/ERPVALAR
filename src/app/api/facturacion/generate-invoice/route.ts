@@ -186,6 +186,7 @@ export async function POST(request: NextRequest) {
       quoteNumber: quote.quoteNumber,
       currency: quote.currency,
       exchangeRate: quote.exchangeRate ? Number(quote.exchangeRate) : null,
+      bonification: Number(quote.bonification ?? 0),
       customer: {
         name: quote.customer.name,
         cuit: quote.customer.cuit,

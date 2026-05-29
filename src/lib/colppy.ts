@@ -1090,6 +1090,8 @@ export async function sendQuoteToColppy(
     quoteNumber: string;
     currency: string;
     exchangeRate: number | null;
+    // Bonificación global de cabecera en % (ej. 3). Si falta/undefined, se trata como 0.
+    bonification?: number | null;
     // Si true, los unitPrice de los items YA incluyen IVA 21% (Factura B).
     // Si false, son netos y se suma IVA aparte (Factura A).
     // Cuando está indefinido caemos al comportamiento legacy basado en taxCondition.
@@ -1162,7 +1164,7 @@ export async function sendQuoteToColppy(
     // (porcDesc) + factor sobre el neto del header, para que la reconstrucción
     // de Colppy (ImporteUnitario × Cantidad × (1 − porcDesc/100)) cuadre con la
     // cabecera. Si bonification === 0, bonifFactor === 1 → comportamiento idéntico.
-    const bonifFactor = 1 - Number(quote.bonification) / 100;
+    const bonifFactor = 1 - Number(quote.bonification ?? 0) / 100;
 
     const preparedItems = quote.items.flatMap((item) => {
       // Item principal: usa SU PROPIO productName
@@ -1383,6 +1385,21 @@ export async function sendQuoteToColppy(
       netoGravado = Math.round(netoGravado * bonifFactor * 100) / 100;
       const totalIVA = Math.round(netoGravado * 0.21 * 100) / 100;
       const totalFactura = Math.round((netoGravado + totalIVA) * 100) / 100;
+
+      // Guard defensivo: nunca mandar NaN/null o totales no positivos a Colppy
+      // (Colppy devolvería un mensaje críptico tipo "El totalFactura no puede ser
+      // negativo o nulo"). Mejor fallar acá con un error claro y trazable.
+      if (
+        !Number.isFinite(netoGravado) || netoGravado <= 0 ||
+        !Number.isFinite(totalIVA) || totalIVA <= 0 ||
+        !Number.isFinite(totalFactura) || totalFactura <= 0
+      ) {
+        throw new Error(
+          `Total inválido al armar factura Colppy: netoGravado=${netoGravado}, ` +
+          `totalIVA=${totalIVA}, totalFactura=${totalFactura} ` +
+          `(quote ${quote.quoteNumber}, bonification=${quote.bonification})`
+        );
+      }
 
       const facturaPayload = {
         descripcion: options.descripcion || `Cotización ${quote.quoteNumber}`,

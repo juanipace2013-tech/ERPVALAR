@@ -223,6 +223,7 @@ export async function POST(
       quoteNumber: quote.quoteNumber,
       currency: quote.currency,
       exchangeRate: currentExchangeRate,
+      bonification: Number(quote.bonification ?? 0),
       pricesIncludeTax: quote.pricesIncludeTax,
       customer: {
         name: quote.customer.name,

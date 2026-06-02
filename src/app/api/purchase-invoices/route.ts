@@ -1,5 +1,6 @@
 import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger'
 import { resolveJurisdiccionIIBB, COLPPY_JURISDICCIONES } from '@/lib/jurisdicciones-iibb'
@@ -75,6 +76,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  // Declarado fuera del try para poder referenciarlo en el catch (ej. mensaje de
+  // conflicto P2002 por invoiceNumber duplicado).
+  let invoiceNumber = '';
   try {
     const session = await auth();
     if (!session?.user) {
@@ -171,7 +175,7 @@ export async function POST(request: NextRequest) {
     }
 
     const total = netAmount + taxAmount + perceptionsAmount;
-    const invoiceNumber = `${voucherType}${pointOfSale}-${invoiceNumberSuffix}`;
+    invoiceNumber = `${voucherType}${pointOfSale}-${invoiceNumberSuffix}`;
 
     // Crear factura de compra
     const purchaseInvoice = await prisma.purchaseInvoice.create({
@@ -321,6 +325,25 @@ export async function POST(request: NextRequest) {
       : finalInvoice
     return NextResponse.json(responseBody, { status: 201 });
   } catch (error) {
+    // Conflicto por constraint único en invoiceNumber: el comprobante ya fue
+    // cargado previamente (típicamente porque ya existe en Colppy). Devolvemos
+    // 409 con un mensaje claro en vez del 500 genérico para que el operador
+    // entienda que no es un error interno.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      const target = error.meta?.target
+      const targetFields = Array.isArray(target) ? target : typeof target === 'string' ? [target] : []
+      const isInvoiceNumberConflict = targetFields.some((f) => String(f).includes('invoiceNumber'))
+
+      if (isInvoiceNumberConflict || targetFields.length === 0) {
+        return NextResponse.json(
+          {
+            error: `Ya existe una factura de compra con el número ${invoiceNumber} para este proveedor`,
+          },
+          { status: 409 }
+        )
+      }
+    }
+
     logger.error('Error creating purchase invoice:', error);
     return NextResponse.json(
       { error: 'Error al crear factura de compra' },

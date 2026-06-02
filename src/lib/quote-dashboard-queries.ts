@@ -1,11 +1,16 @@
 import { prisma } from './prisma'
-import { startOfMonth, endOfMonth, subMonths, addMonths, format, addDays } from 'date-fns'
+import { startOfMonth, endOfMonth, subMonths, addMonths, format, addDays, endOfDay } from 'date-fns'
 import { es } from 'date-fns/locale'
 
 export interface QuoteDashboardMetrics {
   cotizacionesMes: {
     cantidad: number
     totalUSD: number
+    /** Variación % de CANTIDAD vs. mismo período (primeros N días) del mes anterior. */
+    cambioCantidadVsMesAnterior: number
+    /** Variación % de MONTO (totalUSD) vs. mismo período del mes anterior. */
+    cambioMontoVsMesAnterior: number
+    /** @deprecated Alias retrocompatible de cambioCantidadVsMesAnterior. */
     cambioVsMesAnterior: number
   }
   tasaConversion: {
@@ -76,13 +81,23 @@ export async function getQuoteDashboardMetrics(): Promise<QuoteDashboardMetrics>
   const now = new Date()
   const inicioMes = startOfMonth(now)
   const finMes = endOfMonth(now)
+  // Comparación de período EQUIVALENTE: primeros N días del mes actual vs.
+  // primeros N días del mes anterior, donde N = día del mes de hoy (incluye hoy).
+  // Evita el artefacto de comparar un mes en curso parcial contra el mes anterior
+  // completo, que daba un % siempre muy negativo a principio de mes.
+  const diaActual = now.getDate() // N (ej: 02/06 → 2)
   const inicioMesAnterior = startOfMonth(subMonths(now, 1))
-  const finMesAnterior = endOfMonth(subMonths(now, 1))
+  const finMesAnteriorCompleto = endOfMonth(subMonths(now, 1))
+  // Acotar N al último día del mes anterior (ej: hoy 31/03 → febrero no llega a
+  // día 31, se acota a 28/29) para no contar de más.
+  const diaComparable = Math.min(diaActual, finMesAnteriorCompleto.getDate())
+  // Fin del período anterior comparable = día `diaComparable` al final del día.
+  const finMesAnterior = endOfDay(addDays(inicioMesAnterior, diaComparable - 1))
   const hoyMas3Dias = addDays(now, 3)
 
   const [
     aggMes,
-    countMesAnterior,
+    aggMesAnterior,
     countResueltas,
     countAceptadas,
     aggPendientes,
@@ -99,12 +114,17 @@ export async function getQuoteDashboardMetrics(): Promise<QuoteDashboardMetrics>
       _count: true,
       _sum: { total: true },
     }),
-    // 2. Cotizaciones del mes anterior (solo count, para % de cambio)
-    prisma.quote.count({
+    // 2. Cotizaciones de los primeros N días del mes anterior (período
+    //    equivalente al transcurrido del mes actual). count + sum total para las
+    //    dos variaciones (cantidad y monto). Mismo filtro que el mes actual
+    //    (date + status != CANCELLED) para que la comparación sea consistente.
+    prisma.quote.aggregate({
       where: {
         date: { gte: inicioMesAnterior, lte: finMesAnterior },
         status: { not: 'CANCELLED' },
       },
+      _count: true,
+      _sum: { total: true },
     }),
     // 3. Resueltas del mes (denominador de tasa de conversión)
     prisma.quote.count({
@@ -142,9 +162,15 @@ export async function getQuoteDashboardMetrics(): Promise<QuoteDashboardMetrics>
 
   const cantidadMes = aggMes._count
   const totalUSDMes = Number(aggMes._sum.total || 0)
-  const cambioVsMesAnterior =
-    countMesAnterior > 0
-      ? ((cantidadMes - countMesAnterior) / countMesAnterior) * 100
+  const cantidadMesAnterior = aggMesAnterior._count
+  const totalUSDMesAnterior = Number(aggMesAnterior._sum.total || 0)
+  const cambioCantidadVsMesAnterior =
+    cantidadMesAnterior > 0
+      ? ((cantidadMes - cantidadMesAnterior) / cantidadMesAnterior) * 100
+      : 0
+  const cambioMontoVsMesAnterior =
+    totalUSDMesAnterior > 0
+      ? ((totalUSDMes - totalUSDMesAnterior) / totalUSDMesAnterior) * 100
       : 0
 
   const tasaConversion =
@@ -154,7 +180,9 @@ export async function getQuoteDashboardMetrics(): Promise<QuoteDashboardMetrics>
     cotizacionesMes: {
       cantidad: cantidadMes,
       totalUSD: totalUSDMes,
-      cambioVsMesAnterior,
+      cambioCantidadVsMesAnterior,
+      cambioMontoVsMesAnterior,
+      cambioVsMesAnterior: cambioCantidadVsMesAnterior, // alias retrocompat
     },
     tasaConversion: {
       porcentaje: tasaConversion,

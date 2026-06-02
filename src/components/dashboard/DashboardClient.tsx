@@ -135,26 +135,45 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
             <FileText className="h-5 w-5 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-gray-900">
-              {metrics.cotizacionesMes.cantidad}
-            </div>
-            <div className="flex items-center gap-2 mt-2">
-              <p className="text-sm text-gray-600">
-                {formatCurrency(metrics.cotizacionesMes.totalUSD)}
-              </p>
-              {metrics.cotizacionesMes.cambioVsMesAnterior !== 0 && (
+            {/* Cantidad + variación de CANTIDAD pegada al número */}
+            <div className="flex items-baseline gap-2">
+              <div className="text-3xl font-bold text-gray-900">
+                {metrics.cotizacionesMes.cantidad}
+              </div>
+              {metrics.cotizacionesMes.cambioCantidadVsMesAnterior !== 0 && (
                 <div className={`flex items-center text-xs font-medium ${
-                  metrics.cotizacionesMes.cambioVsMesAnterior >= 0 ? 'text-green-600' : 'text-red-600'
+                  metrics.cotizacionesMes.cambioCantidadVsMesAnterior >= 0 ? 'text-green-600' : 'text-red-600'
                 }`}>
-                  {metrics.cotizacionesMes.cambioVsMesAnterior >= 0 ? (
+                  {metrics.cotizacionesMes.cambioCantidadVsMesAnterior >= 0 ? (
                     <ArrowUpRight className="h-3 w-3" />
                   ) : (
                     <ArrowDownRight className="h-3 w-3" />
                   )}
-                  {formatNumber(Math.abs(metrics.cotizacionesMes.cambioVsMesAnterior), 1)}%
+                  {formatNumber(Math.abs(metrics.cotizacionesMes.cambioCantidadVsMesAnterior), 1)}%
                 </div>
               )}
             </div>
+            {/* Monto + variación de MONTO pegada al monto */}
+            <div className="flex items-center gap-2 mt-1">
+              <p className="text-sm text-gray-600">
+                {formatCurrency(metrics.cotizacionesMes.totalUSD)}
+              </p>
+              {metrics.cotizacionesMes.cambioMontoVsMesAnterior !== 0 && (
+                <div className={`flex items-center text-xs font-medium ${
+                  metrics.cotizacionesMes.cambioMontoVsMesAnterior >= 0 ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  {metrics.cotizacionesMes.cambioMontoVsMesAnterior >= 0 ? (
+                    <ArrowUpRight className="h-3 w-3" />
+                  ) : (
+                    <ArrowDownRight className="h-3 w-3" />
+                  )}
+                  {formatNumber(Math.abs(metrics.cotizacionesMes.cambioMontoVsMesAnterior), 1)}%
+                </div>
+              )}
+            </div>
+            <p className="text-[10px] text-gray-400 mt-1">
+              vs. mismo período del mes anterior
+            </p>
           </CardContent>
         </Card>
 

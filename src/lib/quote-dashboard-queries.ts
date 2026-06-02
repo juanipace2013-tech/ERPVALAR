@@ -415,11 +415,17 @@ export async function getRankingVendedores(): Promise<VendedorRanking[]> {
       _sum: { total: true },
       _count: true,
     }),
-    // Cotizaciones aceptadas/convertidas del mes agrupadas por vendedor
+    // Ventas CERRADAS del mes agrupadas por vendedor.
+    // Se atribuyen al mes de la FECHA DE ACEPTACIÓN (responseDate), NO al de
+    // emisión de la cotización (date). Así una cotización emitida en Mayo y
+    // aceptada en Junio cuenta como venta cerrada de Junio. El filtro de
+    // período (responseDate) y el de estado (ACCEPTED/CONVERTED) usan el mismo
+    // criterio de "cierre": responseDate se setea al pasar a ACCEPTED y no se
+    // pisa al convertir a CONVERTED.
     prisma.quote.groupBy({
       by: ['salesPersonId'],
       where: {
-        date: { gte: inicioMes, lte: finMes },
+        responseDate: { gte: inicioMes, lte: finMes },
         status: { in: ['ACCEPTED', 'CONVERTED'] },
       },
       _count: true,

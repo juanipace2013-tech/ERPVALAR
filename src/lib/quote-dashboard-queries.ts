@@ -1,16 +1,61 @@
 import { prisma } from './prisma'
 import { startOfMonth, endOfMonth, subMonths, addMonths, format, addDays, endOfDay } from 'date-fns'
 import { es } from 'date-fns/locale'
+import Holidays from 'date-holidays'
+
+// Instancia única de feriados argentinos. NOTA: date-holidays NO incluye los
+// "feriados puente turísticos" que el gobierno define por decreto año a año;
+// es aceptable para este uso (solo afecta el recorte del período comparable de
+// la card del dashboard, no cálculos contables/fiscales).
+const feriadosAR = new Holidays('AR')
+
+/** Día hábil = lunes a viernes Y que NO sea feriado nacional de tipo 'public'.
+ *  (Se excluyen los religiosos opcionales tipo 'optional'/'observance', que no
+ *  son no-laborables generales). */
+function esDiaHabil(fecha: Date): boolean {
+  const dow = fecha.getDay()
+  if (dow === 0 || dow === 6) return false // domingo / sábado
+  const feriados = feriadosAR.isHoliday(fecha)
+  if (feriados && feriados.some(f => f.type === 'public')) return false
+  return true
+}
+
+/** Cuenta días hábiles del mes (year, monthIdx 0-based) desde el día 1 hasta
+ *  `hastaDia` inclusive. */
+function contarDiasHabiles(year: number, monthIdx: number, hastaDia: number): number {
+  let n = 0
+  for (let dia = 1; dia <= hastaDia; dia++) {
+    if (esDiaHabil(new Date(year, monthIdx, dia, 12, 0, 0))) n++
+  }
+  return n
+}
+
+/** Día calendario (1-based) en que se cumple el N-ésimo día hábil del mes.
+ *  Si el mes tiene menos de N días hábiles, devuelve el último día del mes.
+ *  Si N <= 0, devuelve 0 (sin período comparable). */
+function diaDelNesimoHabil(year: number, monthIdx: number, n: number, diasEnMes: number): number {
+  if (n <= 0) return 0
+  let habiles = 0
+  for (let dia = 1; dia <= diasEnMes; dia++) {
+    if (esDiaHabil(new Date(year, monthIdx, dia, 12, 0, 0))) {
+      habiles++
+      if (habiles === n) return dia
+    }
+  }
+  return diasEnMes // menos días hábiles que N → acotar al último día del mes
+}
 
 export interface QuoteDashboardMetrics {
   cotizacionesMes: {
     cantidad: number
     totalUSD: number
-    /** Variación % de CANTIDAD vs. mismo período (primeros N días) del mes anterior. */
-    cambioCantidadVsMesAnterior: number
-    /** Variación % de MONTO (totalUSD) vs. mismo período del mes anterior. */
-    cambioMontoVsMesAnterior: number
-    /** @deprecated Alias retrocompatible de cambioCantidadVsMesAnterior. */
+    /** Variación % de CANTIDAD vs. mismo período (primeros N días) del mes anterior.
+     *  `null` = no hay base comparable (cero cotizaciones en ese período). */
+    cambioCantidadVsMesAnterior: number | null
+    /** Variación % de MONTO (totalUSD) vs. mismo período del mes anterior.
+     *  `null` = no hay base comparable (monto cero en ese período). */
+    cambioMontoVsMesAnterior: number | null
+    /** @deprecated Alias retrocompatible de cambioCantidadVsMesAnterior (0 si no hay base). */
     cambioVsMesAnterior: number
   }
   tasaConversion: {
@@ -81,18 +126,30 @@ export async function getQuoteDashboardMetrics(): Promise<QuoteDashboardMetrics>
   const now = new Date()
   const inicioMes = startOfMonth(now)
   const finMes = endOfMonth(now)
-  // Comparación de período EQUIVALENTE: primeros N días del mes actual vs.
-  // primeros N días del mes anterior, donde N = día del mes de hoy (incluye hoy).
-  // Evita el artefacto de comparar un mes en curso parcial contra el mes anterior
-  // completo, que daba un % siempre muy negativo a principio de mes.
-  const diaActual = now.getDate() // N (ej: 02/06 → 2)
+  // Comparación de período EQUIVALENTE en DÍAS HÁBILES (L-V y no feriado nacional
+  // argentino). Antes usábamos días corridos, lo que rompía cuando el arranque del
+  // mes caía en feriado/fin de semana (ej: 1/05 feriado + finde → denominador 0 y
+  // ningún porcentaje).
+  //
+  // N = días hábiles transcurridos del mes actual hasta hoy inclusive. El período
+  // del mes ACTUAL ya queda acotado a hoy por la query (no hay fechas futuras). El
+  // período comparable del mes ANTERIOR va del día 1 hasta el día calendario en que
+  // se cumple el N-ésimo día hábil de ese mes (a fin de día); si tiene menos de N
+  // días hábiles, se acota a su último día.
+  const N = contarDiasHabiles(now.getFullYear(), now.getMonth(), now.getDate())
   const inicioMesAnterior = startOfMonth(subMonths(now, 1))
   const finMesAnteriorCompleto = endOfMonth(subMonths(now, 1))
-  // Acotar N al último día del mes anterior (ej: hoy 31/03 → febrero no llega a
-  // día 31, se acota a 28/29) para no contar de más.
-  const diaComparable = Math.min(diaActual, finMesAnteriorCompleto.getDate())
-  // Fin del período anterior comparable = día `diaComparable` al final del día.
-  const finMesAnterior = endOfDay(addDays(inicioMesAnterior, diaComparable - 1))
+  const diaCorteMesAnterior = diaDelNesimoHabil(
+    finMesAnteriorCompleto.getFullYear(),
+    finMesAnteriorCompleto.getMonth(),
+    N,
+    finMesAnteriorCompleto.getDate(),
+  )
+  // diaCorte === 0 (N=0, sin días hábiles transcurridos todavía) → rango vacío
+  // (fin < inicio) → denominador 0 → el front muestra "—".
+  const finMesAnterior = diaCorteMesAnterior === 0
+    ? addDays(inicioMesAnterior, -1)
+    : endOfDay(addDays(inicioMesAnterior, diaCorteMesAnterior - 1))
   const hoyMas3Dias = addDays(now, 3)
 
   const [
@@ -164,14 +221,18 @@ export async function getQuoteDashboardMetrics(): Promise<QuoteDashboardMetrics>
   const totalUSDMes = Number(aggMes._sum.total || 0)
   const cantidadMesAnterior = aggMesAnterior._count
   const totalUSDMesAnterior = Number(aggMesAnterior._sum.total || 0)
+  // Si el período comparable del mes anterior no tuvo cotizaciones/monto, NO hay
+  // base de comparación: devolvemos null (el front muestra "—") en vez de un 0%
+  // engañoso o un +infinito. Un 0% solo se devuelve cuando SÍ hubo base y el
+  // resultado fue efectivamente igual.
   const cambioCantidadVsMesAnterior =
     cantidadMesAnterior > 0
       ? ((cantidadMes - cantidadMesAnterior) / cantidadMesAnterior) * 100
-      : 0
+      : null
   const cambioMontoVsMesAnterior =
     totalUSDMesAnterior > 0
       ? ((totalUSDMes - totalUSDMesAnterior) / totalUSDMesAnterior) * 100
-      : 0
+      : null
 
   const tasaConversion =
     countResueltas > 0 ? (countAceptadas / countResueltas) * 100 : 0
@@ -182,7 +243,7 @@ export async function getQuoteDashboardMetrics(): Promise<QuoteDashboardMetrics>
       totalUSD: totalUSDMes,
       cambioCantidadVsMesAnterior,
       cambioMontoVsMesAnterior,
-      cambioVsMesAnterior: cambioCantidadVsMesAnterior, // alias retrocompat
+      cambioVsMesAnterior: cambioCantidadVsMesAnterior ?? 0, // alias retrocompat (number)
     },
     tasaConversion: {
       porcentaje: tasaConversion,

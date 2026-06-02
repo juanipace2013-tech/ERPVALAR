@@ -135,12 +135,18 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
             <FileText className="h-5 w-5 text-blue-600" />
           </CardHeader>
           <CardContent>
-            {/* Cantidad + variación de CANTIDAD pegada al número */}
+            {/* Cantidad + variación de CANTIDAD pegada al número.
+                null = sin base comparable (0 cotizaciones en el período del mes
+                anterior) → "—". Un 0% real SÍ se muestra. */}
             <div className="flex items-baseline gap-2">
               <div className="text-3xl font-bold text-gray-900">
                 {metrics.cotizacionesMes.cantidad}
               </div>
-              {metrics.cotizacionesMes.cambioCantidadVsMesAnterior !== 0 && (
+              {metrics.cotizacionesMes.cambioCantidadVsMesAnterior === null ? (
+                <span className="text-xs font-medium text-gray-400" title="Sin dato comparable en el mes anterior">
+                  — sin dato comparable
+                </span>
+              ) : (
                 <div className={`flex items-center text-xs font-medium ${
                   metrics.cotizacionesMes.cambioCantidadVsMesAnterior >= 0 ? 'text-green-600' : 'text-red-600'
                 }`}>
@@ -158,7 +164,11 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
               <p className="text-sm text-gray-600">
                 {formatCurrency(metrics.cotizacionesMes.totalUSD)}
               </p>
-              {metrics.cotizacionesMes.cambioMontoVsMesAnterior !== 0 && (
+              {metrics.cotizacionesMes.cambioMontoVsMesAnterior === null ? (
+                <span className="text-xs font-medium text-gray-400" title="Sin dato comparable en el mes anterior">
+                  — sin dato comparable
+                </span>
+              ) : (
                 <div className={`flex items-center text-xs font-medium ${
                   metrics.cotizacionesMes.cambioMontoVsMesAnterior >= 0 ? 'text-green-600' : 'text-red-600'
                 }`}>
@@ -172,7 +182,7 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
               )}
             </div>
             <p className="text-[10px] text-gray-400 mt-1">
-              vs. mismo período del mes anterior
+              vs. mismo período (días hábiles) del mes anterior
             </p>
           </CardContent>
         </Card>

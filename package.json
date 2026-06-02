@@ -31,6 +31,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
+    "date-holidays": "^3.30.2",
     "exceljs": "^4.4.0",
     "geist": "^1.7.0",
     "html2canvas": "^1.4.1",

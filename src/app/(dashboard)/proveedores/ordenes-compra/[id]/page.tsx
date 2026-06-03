@@ -70,7 +70,7 @@ interface PurchaseOrder {
       id: string
       name: string
       sku: string | null
-    }
+    } | null
   }>
   user: {
     id: string
@@ -480,12 +480,18 @@ export default function PurchaseOrderDetailPage() {
                   <TableRow key={item.id}>
                     <TableCell>
                       <div>
-                        <p className="font-medium">{item.product.name}</p>
-                        {item.product.sku && (
+                        <p className="font-medium">
+                          {item.product?.name || item.description || 'Item manual'}
+                        </p>
+                        {item.product?.sku && (
                           <p className="text-sm text-gray-500">SKU: {item.product.sku}</p>
                         )}
-                        {item.description && (
-                          <p className="text-xs text-gray-400">{item.description}</p>
+                        {item.product ? (
+                          item.description && (
+                            <p className="text-xs text-gray-400">{item.description}</p>
+                          )
+                        ) : (
+                          <p className="text-xs text-amber-600">Item manual (sin producto)</p>
                         )}
                       </div>
                     </TableCell>

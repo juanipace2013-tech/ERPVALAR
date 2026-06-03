@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -23,7 +23,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
-import { Loader2, ArrowLeft, Plus, Trash2, Save } from 'lucide-react'
+import { Loader2, ArrowLeft, Plus, Trash2, Save, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { getLocalDateString } from '@/lib/utils'
 
@@ -51,11 +51,162 @@ interface OrderItem {
   subtotal: number
 }
 
+// Selector de producto con búsqueda debounced + opción de item manual.
+// Reemplaza el <Select> que renderizaba el catálogo entero (miles de items).
+function ProductPicker({
+  productId,
+  productName,
+  onSelect,
+  onManual,
+  onClear,
+}: {
+  productId: string
+  productName: string
+  onSelect: (product: Product) => void
+  onManual: (name: string) => void
+  onClear: () => void
+}) {
+  const [searchTerm, setSearchTerm] = useState('')
+  const [results, setResults] = useState<Product[]>([])
+  const [loading, setLoading] = useState(false)
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Búsqueda debounced contra el endpoint (limit 20, solo activos)
+  useEffect(() => {
+    const trimmed = searchTerm.trim()
+    if (trimmed.length < 2) {
+      setResults([])
+      return
+    }
+    const timeout = setTimeout(async () => {
+      setLoading(true)
+      try {
+        const params = new URLSearchParams({ search: trimmed, limit: '20', status: 'ACTIVE' })
+        const res = await fetch(`/api/productos?${params}`)
+        if (res.ok) {
+          const data = await res.json()
+          setResults(data.products || [])
+        }
+      } catch (err) {
+        console.error('Product search error:', err)
+      } finally {
+        setLoading(false)
+      }
+    }, 300)
+    return () => clearTimeout(timeout)
+  }, [searchTerm])
+
+  // Cerrar el dropdown al hacer click afuera
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  // Estado seleccionado: producto del catálogo o item manual
+  if (productId || productName) {
+    const isManual = !productId
+    return (
+      <div className="flex items-center gap-1 min-w-0">
+        <span
+          className={`text-xs truncate flex-1 px-1.5 py-1 rounded ${
+            isManual ? 'text-amber-700 bg-amber-50' : 'text-green-700 bg-green-50'
+          }`}
+          title={productName}
+        >
+          {isManual && '✎ '}
+          {productName}
+        </span>
+        <button
+          type="button"
+          onClick={onClear}
+          className="flex-shrink-0 text-gray-400 hover:text-red-500 p-0.5"
+          title="Cambiar producto"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+    )
+  }
+
+  const trimmed = searchTerm.trim()
+  return (
+    <div ref={containerRef} className="relative">
+      <Input
+        className="h-9 text-sm"
+        placeholder="Buscar producto..."
+        value={searchTerm}
+        onChange={(e) => {
+          setSearchTerm(e.target.value)
+          setOpen(true)
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            setOpen(false)
+            setSearchTerm('')
+          }
+        }}
+      />
+      {open && trimmed.length >= 2 && (
+        <div className="absolute z-50 top-full left-0 w-80 mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-y-auto">
+          {loading && results.length === 0 && (
+            <div className="px-3 py-2 text-xs text-gray-500 flex items-center gap-2">
+              <Loader2 className="h-3 w-3 animate-spin" /> Buscando...
+            </div>
+          )}
+          {results.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className="w-full text-left px-2 py-1.5 text-xs hover:bg-blue-50 border-b last:border-0 flex gap-1"
+              onClick={() => {
+                onSelect(p)
+                setSearchTerm('')
+                setOpen(false)
+                setResults([])
+              }}
+            >
+              {p.sku && (
+                <span className="font-mono font-semibold text-blue-700 whitespace-nowrap">
+                  {p.sku}
+                </span>
+              )}
+              <span className="text-gray-600 truncate">{p.name}</span>
+            </button>
+          ))}
+          {!loading && results.length === 0 && (
+            <div className="px-3 py-2 text-xs text-gray-400">Sin resultados en el catálogo</div>
+          )}
+          {/* Opción de item manual */}
+          <button
+            type="button"
+            className="w-full text-left px-2 py-2 text-xs hover:bg-amber-50 border-t bg-gray-50 flex items-center gap-1.5 text-amber-700 font-medium"
+            onClick={() => {
+              onManual(trimmed)
+              setSearchTerm('')
+              setOpen(false)
+              setResults([])
+            }}
+          >
+            <Plus className="h-3 w-3" />
+            Usar “{trimmed}” como item manual
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function NewPurchaseOrderPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
-  const [products, setProducts] = useState<Product[]>([])
 
   // Form data
   const [supplierId, setSupplierId] = useState('')
@@ -68,7 +219,6 @@ export default function NewPurchaseOrderPage() {
 
   useEffect(() => {
     fetchSuppliers()
-    fetchProducts()
   }, [])
 
   const fetchSuppliers = async () => {
@@ -81,18 +231,6 @@ export default function NewPurchaseOrderPage() {
     } catch (error) {
       console.error('Error loading suppliers:', error)
       setSuppliers([])
-    }
-  }
-
-  const fetchProducts = async () => {
-    try {
-      const response = await fetch('/api/productos?limit=1000')
-      if (response.ok) {
-        const data = await response.json()
-        setProducts(data.products || [])
-      }
-    } catch (error) {
-      console.error('Error loading products:', error)
     }
   }
 
@@ -119,20 +257,37 @@ export default function NewPurchaseOrderPage() {
     const newItems = [...items]
     newItems[index] = { ...newItems[index], [field]: value }
 
-    // If product changed, update name and cost
-    if (field === 'productId') {
-      const product = products.find((p) => p.id === value)
-      if (product) {
-        newItems[index].productName = product.name
-        newItems[index].unitCost =
-          Number(product.lastCost ?? product.averageCost) || 0
-      }
-    }
-
     // Recalculate subtotal
     const item = newItems[index]
     item.subtotal = item.quantity * item.unitCost
 
+    setItems(newItems)
+  }
+
+  // Seleccionar un producto del catálogo: completa nombre y costo
+  const selectProduct = (index: number, product: Product) => {
+    const newItems = [...items]
+    newItems[index] = {
+      ...newItems[index],
+      productId: product.id,
+      productName: product.name,
+      unitCost: Number(product.lastCost ?? product.averageCost) || 0,
+    }
+    newItems[index].subtotal = newItems[index].quantity * newItems[index].unitCost
+    setItems(newItems)
+  }
+
+  // Cargar un item manual: nombre libre, sin producto del catálogo
+  const setManualProduct = (index: number, name: string) => {
+    const newItems = [...items]
+    newItems[index] = { ...newItems[index], productId: '', productName: name }
+    setItems(newItems)
+  }
+
+  // Limpiar la selección para volver a buscar
+  const clearProduct = (index: number) => {
+    const newItems = [...items]
+    newItems[index] = { ...newItems[index], productId: '', productName: '' }
     setItems(newItems)
   }
 
@@ -171,10 +326,13 @@ export default function NewPurchaseOrderPage() {
     }
 
     const invalidItems = items.filter(
-      (item) => !item.productId || item.quantity <= 0 || item.unitCost <= 0
+      (item) =>
+        (!item.productId && !item.productName.trim()) ||
+        item.quantity <= 0 ||
+        item.unitCost <= 0
     )
     if (invalidItems.length > 0) {
-      toast.error('Todos los items deben tener producto, cantidad y precio válidos')
+      toast.error('Todos los items deben tener producto (o nombre manual), cantidad y precio válidos')
       return
     }
 
@@ -194,7 +352,7 @@ export default function NewPurchaseOrderPage() {
           notes,
           status,
           items: items.map((item) => ({
-            productId: item.productId,
+            productId: item.productId || null,
             description: item.productName,
             quantity: item.quantity,
             unitCost: item.unitCost,
@@ -360,24 +518,13 @@ export default function NewPurchaseOrderPage() {
                       {items.map((item, index) => (
                         <TableRow key={index}>
                           <TableCell>
-                            <Select
-                              value={item.productId}
-                              onValueChange={(value) =>
-                                updateItem(index, 'productId', value)
-                              }
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Seleccionar" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {products.map((product) => (
-                                  <SelectItem key={product.id} value={product.id}>
-                                    {product.name}
-                                    {product.sku && ` (${product.sku})`}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            <ProductPicker
+                              productId={item.productId}
+                              productName={item.productName}
+                              onSelect={(product) => selectProduct(index, product)}
+                              onManual={(name) => setManualProduct(index, name)}
+                              onClear={() => clearProduct(index)}
+                            />
                           </TableCell>
                           <TableCell>
                             <Input

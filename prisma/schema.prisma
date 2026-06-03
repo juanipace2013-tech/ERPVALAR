@@ -418,7 +418,9 @@ model PurchaseOrder {
 model PurchaseOrderItem {
   id              String @id @default(cuid())
   purchaseOrderId String
-  productId       String
+  // Nullable: permite items "manuales" (producto no catalogado) cargados a mano.
+  // En ese caso la descripción libre identifica al item.
+  productId       String?
 
   quantity    Int
   receivedQty Int     @default(0)
@@ -430,7 +432,7 @@ model PurchaseOrderItem {
   description String?
 
   purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-  product       Product       @relation(fields: [productId], references: [id])
+  product       Product?      @relation(fields: [productId], references: [id])
 
   @@index([purchaseOrderId])
   @@index([productId])

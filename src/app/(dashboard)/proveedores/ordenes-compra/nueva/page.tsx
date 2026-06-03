@@ -502,7 +502,7 @@ export default function NewPurchaseOrderPage() {
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <Table>
+                  <Table className="table-fixed">
                     <TableHeader>
                       <TableRow>
                         <TableHead className="w-[250px]">Producto</TableHead>
@@ -517,7 +517,7 @@ export default function NewPurchaseOrderPage() {
                     <TableBody>
                       {items.map((item, index) => (
                         <TableRow key={index}>
-                          <TableCell>
+                          <TableCell className="max-w-[250px]">
                             <ProductPicker
                               productId={item.productId}
                               productName={item.productName}

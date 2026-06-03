@@ -37,7 +37,8 @@ interface Product {
   id: string
   name: string
   sku: string | null
-  costPrice: number
+  lastCost: number | null
+  averageCost: number | null
 }
 
 interface OrderItem {
@@ -85,10 +86,10 @@ export default function NewPurchaseOrderPage() {
 
   const fetchProducts = async () => {
     try {
-      const response = await fetch('/api/productos')
+      const response = await fetch('/api/productos?limit=1000')
       if (response.ok) {
         const data = await response.json()
-        setProducts(data)
+        setProducts(data.products || [])
       }
     } catch (error) {
       console.error('Error loading products:', error)
@@ -123,7 +124,8 @@ export default function NewPurchaseOrderPage() {
       const product = products.find((p) => p.id === value)
       if (product) {
         newItems[index].productName = product.name
-        newItems[index].unitCost = Number(product.costPrice) || 0
+        newItems[index].unitCost =
+          Number(product.lastCost ?? product.averageCost) || 0
       }
     }
 

@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -71,6 +72,21 @@ function ProductPicker({
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  // Posición fija del dropdown (se renderiza en un portal sobre <body> para
+  // escapar el overflow-x-auto de la tabla, que de lo contrario lo recorta).
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number; width: number } | null>(null)
+
+  const updateMenuPos = useCallback(() => {
+    const el = containerRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    setMenuPos({
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: Math.max(rect.width, 288),
+    })
+  }, [])
 
   // Búsqueda debounced contra el endpoint (limit 20, solo activos)
   useEffect(() => {
@@ -97,16 +113,38 @@ function ProductPicker({
     return () => clearTimeout(timeout)
   }, [searchTerm])
 
-  // Cerrar el dropdown al hacer click afuera
+  // Cerrar el dropdown al hacer click afuera. El menú vive en un portal
+  // (fuera de containerRef), así que también hay que excluir menuRef.
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node
+      const inContainer = containerRef.current?.contains(target)
+      const inMenu = menuRef.current?.contains(target)
+      if (!inContainer && !inMenu) {
         setOpen(false)
       }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
+
+  // Mientras el menú está abierto, mantener su posición pegada al input
+  // ante scroll (en cualquier contenedor) o resize.
+  const menuVisible = open && searchTerm.trim().length >= 2
+  useEffect(() => {
+    if (!menuVisible) {
+      setMenuPos(null)
+      return
+    }
+    updateMenuPos()
+    const onScroll = () => updateMenuPos()
+    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onScroll)
+    return () => {
+      window.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', onScroll)
+    }
+  }, [menuVisible, updateMenuPos, results.length, loading])
 
   // Estado seleccionado: producto del catálogo o item manual
   if (productId || productName) {
@@ -153,8 +191,18 @@ function ProductPicker({
           }
         }}
       />
-      {open && trimmed.length >= 2 && (
-        <div className="absolute z-50 top-full left-0 w-80 mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-y-auto">
+      {menuVisible && menuPos && typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            ref={menuRef}
+            style={{
+              position: 'fixed',
+              top: menuPos.top,
+              left: menuPos.left,
+              width: menuPos.width,
+            }}
+            className="z-[60] bg-white border rounded-md shadow-lg max-h-60 overflow-y-auto"
+          >
           {loading && results.length === 0 && (
             <div className="px-3 py-2 text-xs text-gray-500 flex items-center gap-2">
               <Loader2 className="h-3 w-3 animate-spin" /> Buscando...
@@ -197,8 +245,9 @@ function ProductPicker({
             <Plus className="h-3 w-3" />
             Usar “{trimmed}” como item manual
           </button>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </div>
   )
 }

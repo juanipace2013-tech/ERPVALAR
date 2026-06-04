@@ -1075,6 +1075,43 @@ export function buildSplitItem(
   };
 }
 
+/**
+ * Tipo mínimo de un "split item" (salida de buildSplitItem o equivalente):
+ * principal en unitPrice + adicionales en additionals[], todos YA redondeados.
+ */
+type SplitItemAmounts = {
+  unitPrice: number
+  quantity: number
+  additionals?: Array<{ unitPrice: number }>
+}
+
+/**
+ * Precio unitario combinado de una línea = principal + Σ adicionales, usando los
+ * MISMOS valores ya redondeados a 2 decimales que se mandan a Colppy.
+ *
+ * Es la única fuente de verdad del "precio de la línea": coincide exactamente con
+ * lo que Colppy/AFIP reconstruye facturando cada componente como línea separada.
+ * Ej. VAL-2026-1160: 38,96 + 31,59 + 75,53 + 15,75 = 161,83 (NO 161,84, que era el
+ * combinado sin redondear por componente).
+ */
+export function splitItemUnitTotal(item: Pick<SplitItemAmounts, 'unitPrice' | 'additionals'>): number {
+  const adds = (item.additionals || []).reduce((s, a) => s + a.unitPrice, 0)
+  return Math.round((item.unitPrice + adds) * 100) / 100
+}
+
+/**
+ * Total de una línea = precio unitario combinado × cantidad. Igual a la suma de
+ * las líneas (principal + adicionales) que factura Colppy, porque cada componente
+ * es 2 decimales y la cantidad es entera. Ej. VAL-2026-1160 (5 u): 161,83 × 5 = 809,15.
+ *
+ * `qty` opcional permite usar una cantidad distinta a item.quantity (p. ej. cuando
+ * se persiste solo lo pendiente).
+ */
+export function splitItemLineTotal(item: SplitItemAmounts, qty?: number): number {
+  const cantidad = qty ?? item.quantity
+  return Math.round(splitItemUnitTotal(item) * cantidad * 100) / 100
+}
+
 // ============================================================================
 // FUNCIÓN WRAPPER DE ALTO NIVEL
 // ============================================================================

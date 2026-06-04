@@ -12,7 +12,7 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { sendQuoteToColppy, type SendToColppyOptions, buildSplitItem, calcComponentPrice } from '@/lib/colppy'
+import { sendQuoteToColppy, type SendToColppyOptions, buildSplitItem, calcComponentPrice, splitItemUnitTotal, splitItemLineTotal } from '@/lib/colppy'
 import { calcDueDate } from '@/lib/quote-workflow'
 import { logAudit } from '@/lib/audit'
 import { logger } from '@/lib/logger'
@@ -145,30 +145,36 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Construir datos para Colppy
-    // IMPORTANTE: QuoteItem.unitPrice INCLUYE adicionales (listPrice + additionalsPrices) * discount * multiplier
-    // Necesitamos descomponer el precio en principal + adicionales separados
-    const colppyItems = editedData
+    // Construir datos para Colppy — UNA SOLA FUENTE DE VERDAD por línea.
+    // IMPORTANTE: QuoteItem.unitPrice INCLUYE adicionales (listPrice + additionalsPrices) * discount * multiplier.
+    // Descomponemos el precio en principal + adicionales (split) y, de ese MISMO
+    // objeto, derivamos tanto el payload Colppy como TODOS los montos locales
+    // (cabecera + items), para que sea imposible que diverjan del número real de
+    // la factura. Cada `lineItem` empareja el split con su quoteItem persistible.
+    const lineItems = editedData
       ? editedData.items.map((editedItem) => {
-          const originalItem = quote.items.find((i) => i.id === editedItem.id)
-          if (!originalItem) {
-            return {
-              productName: editedItem.descripcion,
-              productSku: editedItem.sku,
-              quantity: editedItem.cantidad,
-              unitPrice: editedItem.precioUnitario,
-              iva: editedItem.iva,
-              comentario: editedItem.comentario,
-              deliveryTime: undefined as string | undefined,
-              additionals: [] as Array<{ name: string; unitPrice: number; sku: string }>,
-            }
-          }
-          return buildSplitItem(originalItem, calcComponentPrice, quote, editedItem)
+          const quoteItem = quote.items.find((i) => i.id === editedItem.id) || null
+          const split = quoteItem
+            ? buildSplitItem(quoteItem, calcComponentPrice, quote, editedItem)
+            : {
+                productName: editedItem.descripcion,
+                productSku: editedItem.sku,
+                quantity: editedItem.cantidad,
+                unitPrice: editedItem.precioUnitario,
+                iva: editedItem.iva,
+                comentario: editedItem.comentario,
+                deliveryTime: undefined as string | undefined,
+                additionals: [] as Array<{ name: string; unitPrice: number; sku: string }>,
+              }
+          return { quoteItem, split }
         })
       : requestedItems.map((req) => {
           const quoteItem = quote.items.find((i) => i.id === req.quoteItemId)!
-          return buildSplitItem(quoteItem, calcComponentPrice, quote, { cantidad: req.quantity })
+          const split = buildSplitItem(quoteItem, calcComponentPrice, quote, { cantidad: req.quantity })
+          return { quoteItem, split }
         })
+
+    const colppyItems = lineItems.map((l) => l.split)
 
     logger.info('[Generate Invoice] Items a enviar:', JSON.stringify(colppyItems, null, 2))
 
@@ -225,10 +231,14 @@ export async function POST(request: NextRequest) {
     // breadcrumb del caso COLPPY_ORPHAN (factura emitida + persistencia fallida).
     const invoiceNumber = `BORRADOR-COLPPY-${colppyResult.facturaNumber || colppyResult.remitoNumber || Date.now()}`
     const invoiceType = quote.customer.taxCondition === 'RESPONSABLE_INSCRIPTO' ? 'A' : 'B'
-    const subtotal = colppyItems.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0)
+    // Subtotal = Σ total de línea (principal + adicionales, ya redondeados). Es
+    // EXACTAMENTE la suma de las líneas que factura Colppy.
+    const subtotal = Math.round(
+      lineItems.reduce((sum, l) => sum + splitItemLineTotal(l.split), 0) * 100
+    ) / 100
     const tcUsado = quote.exchangeRate ? Number(quote.exchangeRate) : 1
-    const montoUSD = quote.currency === 'USD' ? subtotal : subtotal / (tcUsado || 1)
-    const montoARS = quote.currency === 'USD' ? subtotal * tcUsado : subtotal
+    const montoUSD = quote.currency === 'USD' ? subtotal : Math.round((subtotal / (tcUsado || 1)) * 100) / 100
+    const montoARS = quote.currency === 'USD' ? Math.round(subtotal * tcUsado * 100) / 100 : subtotal
 
     // TODO: deduplicar este flujo con el endpoint hermano.
     // Ver src/app/api/quotes/[id]/send-to-colppy/route.ts (transacción equivalente).
@@ -259,19 +269,21 @@ export async function POST(request: NextRequest) {
           afipStatus: 'PENDING',
           paymentStatus: 'UNPAID',
           items: {
-            create: requestedItems.map((req) => {
-              const quoteItem = quote.items.find((qi) => qi.id === req.quoteItemId)!
-              return {
-                productId: quoteItem.productId || null,
-                quoteItemId: quoteItem.id,
-                description: quoteItem.description || quoteItem.product?.name || 'Item',
-                quantity: req.quantity,
-                unitPrice: Number(quoteItem.unitPrice),
-                discount: 0,
-                taxRate: 21,
-                subtotal: Number(quoteItem.unitPrice) * req.quantity,
-              }
-            }),
+            create: lineItems
+              .filter((l) => l.quoteItem)
+              .map((l) => {
+                const quoteItem = l.quoteItem!
+                return {
+                  productId: quoteItem.productId || null,
+                  quoteItemId: quoteItem.id,
+                  description: quoteItem.description || quoteItem.product?.name || 'Item',
+                  quantity: l.split.quantity,
+                  unitPrice: splitItemUnitTotal(l.split),
+                  discount: 0,
+                  taxRate: 21,
+                  subtotal: splitItemLineTotal(l.split),
+                }
+              }),
           },
         },
       })
@@ -292,15 +304,14 @@ export async function POST(request: NextRequest) {
           estado: 'BORRADOR',
           createdById: session.user!.id!,
           items: {
-            create: requestedItems.map((req) => {
-              const quoteItem = quote.items.find((qi) => qi.id === req.quoteItemId)!
-              return {
-                cotizacionItemId: quoteItem.id,
-                cantidad: req.quantity,
-                precioUnitario: Number(quoteItem.unitPrice),
-                subtotal: Number(quoteItem.unitPrice) * req.quantity,
-              }
-            }),
+            create: lineItems
+              .filter((l) => l.quoteItem)
+              .map((l) => ({
+                cotizacionItemId: l.quoteItem!.id,
+                cantidad: l.split.quantity,
+                precioUnitario: splitItemUnitTotal(l.split),
+                subtotal: splitItemLineTotal(l.split),
+              })),
           },
         },
       })
@@ -321,11 +332,13 @@ export async function POST(request: NextRequest) {
         data: updateData,
       })
 
-      // Incrementar cantidadFacturada por cada item solicitado
-      for (const req of requestedItems) {
+      // Incrementar cantidadFacturada por la cantidad realmente enviada a Colppy
+      // (split.quantity = misma cantidad del payload, no la solicitada cruda).
+      for (const l of lineItems) {
+        if (!l.quoteItem) continue
         await tx.quoteItem.update({
-          where: { id: req.quoteItemId },
-          data: { cantidadFacturada: { increment: req.quantity } },
+          where: { id: l.quoteItem.id },
+          data: { cantidadFacturada: { increment: l.split.quantity } },
         })
       }
 
@@ -471,8 +484,8 @@ export async function POST(request: NextRequest) {
     // el ERP queda con stock stale hasta el próximo botón "Actualizar Stock"
     // o la próxima facturación — no se pierde nada crítico.
     const skusFacturados: string[] = []
-    for (const req of requestedItems) {
-      const qi = quote.items.find((i) => i.id === req.quoteItemId)
+    for (const l of lineItems) {
+      const qi = l.quoteItem
       if (!qi) continue
       if (qi.product?.sku) skusFacturados.push(qi.product.sku)
       for (const add of qi.additionals || []) {

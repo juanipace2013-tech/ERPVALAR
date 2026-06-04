@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
-import { sendQuoteToColppy, type SendToColppyOptions, buildSplitItem, calcComponentPrice } from '@/lib/colppy';
+import { sendQuoteToColppy, type SendToColppyOptions, buildSplitItem, calcComponentPrice, splitItemUnitTotal } from '@/lib/colppy';
 import { QuoteStatus } from '@prisma/client';
 import { calcDueDate } from '@/lib/quote-workflow';
 import { logAudit } from '@/lib/audit';
@@ -196,6 +196,12 @@ export async function POST(
     // 8. Preparar datos para Colppy
     // IMPORTANTE: QuoteItem.unitPrice INCLUYE adicionales (listPrice + additionalsPrices) * discount * multiplier
     // Necesitamos descomponer el precio en principal + adicionales separados
+    // UNA SOLA FUENTE DE VERDAD: el `split` por línea alimenta el payload Colppy
+    // y, vía splitByItemId, también los montos persistidos (cabecera + items).
+    // splitItemUnitTotal(split) = principal + Σ adicionales ya redondeados = el
+    // número exacto que factura Colppy (evita la deriva de usar el unitPrice
+    // combinado sin redondear por componente).
+    const splitByItemId = new Map<string, ReturnType<typeof buildSplitItem>>();
     const quoteItems = (editedData
       ? editedData.items.map((editedItem) => {
           const originalItem = quote.items.find((i) => i.id === editedItem.id);
@@ -211,10 +217,24 @@ export async function POST(
               additionals: [] as Array<{ name: string; unitPrice: number; sku: string }>,
             };
           }
-          return buildSplitItem(originalItem, calcComponentPrice, quote, editedItem);
+          const split = buildSplitItem(originalItem, calcComponentPrice, quote, editedItem);
+          splitByItemId.set(originalItem.id, split);
+          return split;
         })
-      : quote.items.map((item) => buildSplitItem(item, calcComponentPrice, quote))
+      : quote.items.map((item) => {
+          const split = buildSplitItem(item, calcComponentPrice, quote);
+          splitByItemId.set(item.id, split);
+          return split;
+        })
     );
+
+    // Precio unitario combinado (principal + adicionales) por quoteItemId, con
+    // fallback al unitPrice combinado del item si no hubiera split (no debería
+    // pasar en los flujos reales, pero evita NaN).
+    const unitTotalForItem = (itemId: string, fallbackUnitPrice: number): number => {
+      const split = splitByItemId.get(itemId);
+      return split ? splitItemUnitTotal(split) : Math.round(fallbackUnitPrice * 100) / 100;
+    };
 
     logger.info('[Send to Colppy] Items a enviar:', JSON.stringify(quoteItems, null, 2));
 
@@ -284,14 +304,17 @@ export async function POST(
     // Cálculos previos a la transacción. Los necesitamos también para el
     // breadcrumb del caso COLPPY_ORPHAN (factura emitida + persistencia fallida).
     const subtotalPre = action.includes('factura')
-      ? Array.from(sentQtyByItemId.entries()).reduce((sum, [itemId, qty]) => {
-          const item = quote.items.find((i) => i.id === itemId);
-          return sum + (item ? Number(item.unitPrice) * qty : 0);
-        }, 0)
+      ? Math.round(
+          Array.from(sentQtyByItemId.entries()).reduce((sum, [itemId, qty]) => {
+            const item = quote.items.find((i) => i.id === itemId);
+            if (!item) return sum;
+            return sum + Math.round(unitTotalForItem(itemId, Number(item.unitPrice)) * qty * 100) / 100;
+          }, 0) * 100
+        ) / 100
       : 0;
     const tcUsado = quote.exchangeRate ? Number(quote.exchangeRate) : 1;
-    const montoUSDPre = quote.currency === 'USD' ? subtotalPre : subtotalPre / (tcUsado || 1);
-    const montoARSPre = quote.currency === 'USD' ? subtotalPre * tcUsado : subtotalPre;
+    const montoUSDPre = quote.currency === 'USD' ? subtotalPre : Math.round((subtotalPre / (tcUsado || 1)) * 100) / 100;
+    const montoARSPre = quote.currency === 'USD' ? Math.round(subtotalPre * tcUsado * 100) / 100 : subtotalPre;
 
     try {
     await prisma.$transaction(async (tx) => {
@@ -324,15 +347,16 @@ export async function POST(
             items: {
               create: Array.from(sentQtyByItemId.entries()).map(([itemId, qty]) => {
                 const item = quote.items.find((i) => i.id === itemId)!;
+                const unit = unitTotalForItem(itemId, Number(item.unitPrice));
                 return {
                   productId: item.productId || null,
                   quoteItemId: item.id,
                   description: item.description || (item as any).product?.name || 'Item',
                   quantity: qty,
-                  unitPrice: Number(item.unitPrice),
+                  unitPrice: unit,
                   discount: 0,
                   taxRate: 21,
-                  subtotal: Number(item.unitPrice) * qty,
+                  subtotal: Math.round(unit * qty * 100) / 100,
                 };
               }),
             },
@@ -357,11 +381,12 @@ export async function POST(
             items: {
               create: Array.from(sentQtyByItemId.entries()).map(([itemId, qty]) => {
                 const item = quote.items.find((i) => i.id === itemId)!;
+                const unit = unitTotalForItem(itemId, Number(item.unitPrice));
                 return {
                   cotizacionItemId: item.id,
                   cantidad: qty,
-                  precioUnitario: Number(item.unitPrice),
-                  subtotal: Number(item.unitPrice) * qty,
+                  precioUnitario: unit,
+                  subtotal: Math.round(unit * qty * 100) / 100,
                 };
               }),
             },

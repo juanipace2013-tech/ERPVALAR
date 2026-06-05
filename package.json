@@ -10,6 +10,7 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:ml": "tsx scripts/seed-ml-rule.ts",
     "db:studio": "prisma studio",
     "test:remito": "tsx scripts/test-remito-wrap.ts",
     "test:rotulo": "tsx scripts/test-rotulo-wrap.ts"

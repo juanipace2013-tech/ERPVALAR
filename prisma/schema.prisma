@@ -2835,3 +2835,94 @@ model GraphSubscription {
   @@index([expiresAt])
   @@map("graph_subscriptions")
 }
+
+// ============================================================================
+// MERCADO LIBRE — Mensajería post-venta
+// ============================================================================
+// Flujo: ML manda un webhook (topic "orders"/"orders_v2") -> guardamos la
+// notificación cruda -> el handler trae la orden, matchea una regla por SKU/item
+// y, según el modo, deja el mensaje en revisión o lo manda solo (motivo OTHER
+// del action_guide). Ver src/lib/mercadolibre/*.
+
+enum MlMessageMode {
+  AUTO // se envía solo apenas entra la orden paga
+  REVIEW // queda pendiente y Santiago lo dispara con un click
+}
+
+enum MlPostSaleStatus {
+  PENDING_REVIEW // modo REVIEW: armado, esperando envío manual
+  SENT // enviado OK
+  MODERATED // ML lo moderó/rechazó — NO se reintenta
+  FAILED // error de API — logueado
+  SKIPPED // no había cap_available para OTHER
+}
+
+// Credenciales OAuth de la cuenta de VAL ARG en ML. Una sola fila.
+// El refresh_token de ML es de un solo uso: cada refresh devuelve uno nuevo
+// que hay que persistir. Ver getValidAccessToken en client.ts.
+model MlCredential {
+  id           String   @id @default(cuid())
+  mlUserId     BigInt   @unique // id del seller (VAL ARG)
+  accessToken  String   @db.Text
+  refreshToken String   @db.Text
+  expiresAt    DateTime // cuándo vence el access_token
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("ml_credentials")
+}
+
+// Log/cola cruda de notificaciones del webhook. Sirve para dedupe y auditoría.
+model MlNotification {
+  id         String   @id @default(cuid())
+  topic      String // "orders", "orders_v2", ...
+  resource   String // ej "/orders/123"
+  mlUserId   BigInt? // user_id del payload
+  receivedAt DateTime @default(now())
+  processed  Boolean  @default(false)
+  attempts   Int      @default(0)
+
+  @@index([processed])
+  @@index([resource])
+  @@map("ml_notifications")
+}
+
+// Regla que decide qué mensaje mandar para qué producto. Matchea si mlItemId
+// O sellerSku coinciden con algún item de la orden.
+model MlMessageRule {
+  id          String        @id @default(cuid())
+  enabled     Boolean       @default(true)
+  mlItemId    String? // ej "MLA123456789"
+  sellerSku   String? // ej "3318 05 + 3821"
+  messageText String        @db.VarChar(350)
+  mode        MlMessageMode @default(REVIEW)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  postSaleMessages MlPostSaleMessage[]
+
+  @@index([enabled])
+  @@index([mlItemId])
+  @@index([sellerSku])
+  @@map("ml_message_rules")
+}
+
+// Un mensaje post-venta por orden/pack. El UNIQUE en packId es la idempotencia:
+// garantiza que nunca se procese dos veces la misma conversación.
+model MlPostSaleMessage {
+  id               String           @id @default(cuid())
+  packId           String           @unique
+  orderId          String
+  ruleId           String?
+  rule             MlMessageRule?   @relation(fields: [ruleId], references: [id])
+  status           MlPostSaleStatus @default(PENDING_REVIEW)
+  mlMessageId      String? // id del mensaje en ML una vez enviado
+  moderationReason String?
+  text             String           @db.VarChar(350)
+  createdAt        DateTime         @default(now())
+  sentAt           DateTime?
+
+  @@index([status])
+  @@index([orderId])
+  @@map("ml_post_sale_messages")
+}

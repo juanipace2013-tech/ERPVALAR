@@ -14,7 +14,8 @@
     "ml:oauth": "tsx scripts/ml-oauth-bootstrap.ts",
     "db:studio": "prisma studio",
     "test:remito": "tsx scripts/test-remito-wrap.ts",
-    "test:rotulo": "tsx scripts/test-rotulo-wrap.ts"
+    "test:rotulo": "tsx scripts/test-rotulo-wrap.ts",
+    "test:colppy429": "tsx scripts/test-colppy-429.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

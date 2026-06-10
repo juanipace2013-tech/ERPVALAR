@@ -20,12 +20,12 @@ import {
   setCachedCustomers,
   invalidateCustomerCache,
 } from '@/lib/colppy/customer-cache';
+import { callColppyAPI } from '@/lib/colppy';
 
 // ============================================================================
 // CONFIGURACIÓN
 // ============================================================================
 
-const COLPPY_ENDPOINT = 'https://login.colppy.com/lib/frontera2/service.php';
 const COLPPY_USER = process.env.COLPPY_USER || '';
 const COLPPY_PASSWORD = process.env.COLPPY_PASSWORD || '';
 const COLPPY_ID_EMPRESA = process.env.COLPPY_ID_EMPRESA || '';
@@ -47,19 +47,11 @@ const SESSION_TTL = 20 * 60 * 1000; // 20 minutos
 // FUNCIONES COLPPY
 // ============================================================================
 
+// Delegado al wrapper central (maneja 429/Retry-After con reintentos).
+// throwOnEstadoError=false: este route chequea result.estado a mano para
+// implementar su propio retry de sesión expirada.
 async function callColppy(payload: any): Promise<any> {
-  const response = await fetch(COLPPY_ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(30000), // 30 segundos max
-  });
-
-  if (!response.ok) {
-    throw new Error(`Colppy HTTP ${response.status}: ${response.statusText}`);
-  }
-
-  return response.json();
+  return callColppyAPI<any>(payload, 30000, { throwOnEstadoError: false });
 }
 
 async function getSession(): Promise<string> {

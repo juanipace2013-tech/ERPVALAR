@@ -89,8 +89,42 @@ export class ColppySessionExpiredError extends Error {
 }
 
 /**
+ * Error específico para rate limit (HTTP 429) de Colppy, lanzado cuando se
+ * agotaron los reintentos del wrapper. Los callers con retry propio por
+ * sesión expirada NO deben reintentar este error (re-loguearse no ayuda).
+ */
+export class ColppyRateLimitError extends Error {
+  constructor() {
+    super('Colppy rate limit alcanzado. Esperá unos minutos y reintentá.');
+    this.name = 'ColppyRateLimitError';
+  }
+}
+
+// Rate limit de Colppy (vigente desde 24/06/2026): 300 req / 5 min y 60 req/min.
+// Al superarlo devuelve HTTP 429 con header Retry-After en segundos.
+const RATE_LIMIT_MAX_RETRIES = 3;
+// Backoff exponencial si el 429 viene sin Retry-After: 5s, 15s, 45s.
+const RATE_LIMIT_BACKOFF_MS = [5_000, 15_000, 45_000];
+
+// Pausa sugerida entre bloques en loops de paginación (syncs masivos).
+// 1.100ms ≈ 54 req/min máximo, abajo del límite de 60/min incluso con
+// algo de uso concurrente. Exportada para que los syncs la usen.
+export const COLPPY_PAGE_THROTTLE_MS = 1_100;
+
+// Espera no bloqueante (NUNCA usar sleep síncrono acá: congelaría el ERP).
+export const colppySleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
  * Realiza una llamada a la API de Colppy usando fetch() nativo.
- * Detecta respuestas HTML (sesión expirada) y lanza ColppySessionExpiredError.
+ *
+ * Orden de manejo de errores:
+ *   1. HTTP 429 (rate limit) → espera Retry-After + 1s (o backoff 5/15/45s)
+ *      y reintenta hasta 3 veces. Si persiste, ColppyRateLimitError.
+ *   2. Respuesta HTML / vacía / no-JSON (sesión expirada) → ColppySessionExpiredError
+ *      (el re-login y retry lo manejan los callers, como hasta ahora).
+ *   3. result.estado !== 0 → Error con el mensaje de Colppy
+ *      (omitible con opts.throwOnEstadoError=false para callers que chequean
+ *      estado a mano, p.ej. los syncs con retry de sesión propio).
  *
  * Migrado desde execSync(curl) para mayor confiabilidad:
  * - Sin archivos temporales
@@ -98,20 +132,59 @@ export class ColppySessionExpiredError extends Error {
  * - Sin límites de tamaño de comando
  * - Manejo correcto de redirects
  */
-export async function callColppyAPI<T>(payload: any, timeoutMs = 30000): Promise<T> {
-  try {
-    const response = await fetch(COLPPY_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      redirect: 'follow',
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+export async function callColppyAPI<T>(
+  payload: any,
+  timeoutMs = 30000,
+  opts: { throwOnEstadoError?: boolean } = {}
+): Promise<T> {
+  const { throwOnEstadoError = true } = opts;
+  const operacion = `${payload?.service?.provision ?? '?'}/${payload?.service?.operacion ?? '?'}`;
+
+  for (let attempt = 0; ; attempt++) {
+    let response: Response;
+    try {
+      response = await fetch(COLPPY_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        redirect: 'follow',
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error: any) {
+      if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+        throw new Error(`Timeout en llamada a Colppy: ${error.message}`);
+      }
+      throw new Error(`Error en llamada a Colppy: ${error.message}`);
+    }
+
+    // 1) Rate limit: esperar y reintentar ANTES de cualquier otro chequeo.
+    if (response.status === 429) {
+      const retryAfterHeader = response.headers.get('retry-after');
+      const retryAfterSec = retryAfterHeader ? parseInt(retryAfterHeader, 10) : NaN;
+
+      if (attempt >= RATE_LIMIT_MAX_RETRIES) {
+        console.warn(
+          `[Colppy] 429 rate limit en ${operacion} — se agotaron los ${RATE_LIMIT_MAX_RETRIES} reintentos`
+        );
+        throw new ColppyRateLimitError();
+      }
+
+      const waitMs =
+        Number.isFinite(retryAfterSec) && retryAfterSec >= 0
+          ? (retryAfterSec + 1) * 1000
+          : RATE_LIMIT_BACKOFF_MS[Math.min(attempt, RATE_LIMIT_BACKOFF_MS.length - 1)];
+
+      console.warn(
+        `[Colppy] 429 rate limit en ${operacion} — reintento ${attempt + 1}/${RATE_LIMIT_MAX_RETRIES} en ${waitMs}ms (Retry-After: ${retryAfterHeader ?? 'ausente'})`
+      );
+      await colppySleep(waitMs);
+      continue;
+    }
 
     const responseText = await response.text();
     const trimmed = responseText.trim();
 
-    // Verificar si la respuesta es HTML (sesión expirada → página de login)
+    // 2) Respuesta HTML (sesión expirada → página de login)
     if (trimmed.startsWith('<') || trimmed.startsWith('<!')) {
       logger.error(`[Colppy] Respuesta HTML detectada (${trimmed.length} bytes). Sesión probablemente expirada.`);
       throw new ColppySessionExpiredError(trimmed);
@@ -123,27 +196,21 @@ export async function callColppyAPI<T>(payload: any, timeoutMs = 30000): Promise
     }
 
     // Parsear respuesta JSON
-    const parsed = JSON.parse(trimmed);
-
-    // Verificar si hay error en la respuesta
-    if (parsed.result && parsed.result.estado !== 0) {
-      throw new Error(parsed.result.mensaje || 'Error desconocido de Colppy');
-    }
-
-    return parsed;
-  } catch (error: any) {
-    // Re-lanzar ColppySessionExpiredError sin envolver
-    if (error instanceof ColppySessionExpiredError) {
-      throw error;
-    }
-    if (error.name === 'TimeoutError' || error.name === 'AbortError') {
-      throw new Error(`Timeout en llamada a Colppy: ${error.message}`);
-    }
-    if (error.message?.includes('JSON') || error.message?.includes('Unexpected')) {
+    let parsed: any;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch (error: any) {
       logger.error(`[Colppy] Respuesta no-JSON: ${error.message}`);
       throw new ColppySessionExpiredError(error.message);
     }
-    throw new Error(`Error en llamada a Colppy: ${error.message}`);
+
+    // 3) Verificar si hay error en la respuesta
+    if (throwOnEstadoError && parsed.result && parsed.result.estado !== 0) {
+      // Mismo formato de mensaje que la versión anterior (que envolvía en el catch)
+      throw new Error(`Error en llamada a Colppy: ${parsed.result.mensaje || 'Error desconocido de Colppy'}`);
+    }
+
+    return parsed;
   }
 }
 

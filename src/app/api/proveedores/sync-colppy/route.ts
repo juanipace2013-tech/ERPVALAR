@@ -1,7 +1,7 @@
 import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { colppyLogin, colppyLogout, getColppyConfig, md5Hash, callColppyAPI, ColppySession } from '@/lib/colppy'
+import { colppyLogin, colppyLogout, getColppyConfig, md5Hash, callColppyAPI, ColppySession, colppySleep, COLPPY_PAGE_THROTTLE_MS } from '@/lib/colppy'
 import { logger } from '@/lib/logger'
 
 export const maxDuration = 120 // 2 minutos para sincronizar proveedores
@@ -42,8 +42,8 @@ async function fetchAllColppySuppliers(session: ColppySession): Promise<any[]> {
 
     start += limit
 
-    // Pausa breve entre páginas para no saturar
-    await new Promise(resolve => setTimeout(resolve, 200))
+    // Throttle entre páginas: nos mantiene lejos del rate limit de 60 req/min
+    await colppySleep(COLPPY_PAGE_THROTTLE_MS)
   }
 
   return allSuppliers

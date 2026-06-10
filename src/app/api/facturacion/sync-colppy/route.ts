@@ -15,7 +15,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getLocalDateString } from '@/lib/utils'
 import { logAudit } from '@/lib/audit'
-import { colppyLogin as colppyLoginCentral, colppyLogout, getColppyConfig, md5Hash, callColppyAPI, ColppySession } from '@/lib/colppy'
+import { colppyLogin as colppyLoginCentral, colppyLogout, getColppyConfig, md5Hash, callColppyAPI, ColppySession, ColppyRateLimitError } from '@/lib/colppy'
 import { mapColppyTaxCondition } from '@/lib/colppy-tax-map'
 import { logger } from '@/lib/logger'
 
@@ -42,6 +42,10 @@ async function callColppyWithRetry(
   try {
     return await callColppyAPI<Record<string, unknown>>(payload, 120000)
   } catch (firstError: unknown) {
+    // Rate limit agotado (el wrapper ya esperó y reintentó 3 veces):
+    // re-loguearse no ayuda, propagar directo.
+    if (firstError instanceof ColppyRateLimitError) throw firstError
+
     const msg = firstError instanceof Error ? firstError.message : ''
     logger.warn(`[Colppy] Primer intento falló: ${msg.substring(0, 200)}. Re-autenticando...`)
 

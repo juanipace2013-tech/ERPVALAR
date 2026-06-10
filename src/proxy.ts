@@ -10,7 +10,12 @@ export default auth((req) => {
     pathname === '/login' ||
     pathname.startsWith('/api/auth') ||
     pathname.startsWith('/api/cron') ||
-    pathname.startsWith('/api/webhooks')
+    pathname.startsWith('/api/webhooks') ||
+    // Agente Python de Exiros: validan Bearer EXIROS_AGENT_API_KEY en el
+    // handler (src/lib/exiros/agent-auth.ts). Match exacto a propósito:
+    // /api/exiros/licitaciones es de la UI y sigue requiriendo sesión.
+    pathname === '/api/exiros/sync' ||
+    pathname === '/api/exiros/acciones'
 
   // Si está en login y ya está autenticado, redirigir al dashboard
   if (pathname === '/login' && isLoggedIn) {

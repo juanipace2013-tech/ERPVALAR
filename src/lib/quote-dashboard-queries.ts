@@ -9,6 +9,14 @@ import Holidays from 'date-holidays'
 // la card del dashboard, no cálculos contables/fiscales).
 const feriadosAR = new Holidays('AR')
 
+// Estados que cuentan como operación CERRADA comercialmente (ganada).
+// Criterio de negocio: el cierre es independiente de la facturación — una
+// cotización ganada cuenta completa (por el monto total cotizado) aunque esté
+// facturada 0%, 50% o 100%. FACTURADA_PARCIAL y CONVERTED solo se alcanzan
+// desde ACCEPTED vía el flujo de facturación a Colppy, así que son sub-estados
+// de "ganada", no estados comerciales nuevos.
+const ESTADOS_CERRADA_GANADA = ['ACCEPTED', 'CONVERTED', 'FACTURADA_PARCIAL'] as const
+
 /** Día hábil = lunes a viernes Y que NO sea feriado nacional de tipo 'public'.
  *  (Se excluyen los religiosos opcionales tipo 'optional'/'observance', que no
  *  son no-laborables generales). */
@@ -187,14 +195,14 @@ export async function getQuoteDashboardMetrics(): Promise<QuoteDashboardMetrics>
     prisma.quote.count({
       where: {
         date: { gte: inicioMes },
-        status: { in: ['ACCEPTED', 'CONVERTED', 'REJECTED'] },
+        status: { in: [...ESTADOS_CERRADA_GANADA, 'REJECTED'] },
       },
     }),
     // 4. Aceptadas del mes (numerador de tasa de conversión)
     prisma.quote.count({
       where: {
         date: { gte: inicioMes },
-        status: { in: ['ACCEPTED', 'CONVERTED'] },
+        status: { in: [...ESTADOS_CERRADA_GANADA] },
       },
     }),
     // 5. Pendientes totales (count + sum)
@@ -302,7 +310,7 @@ export async function getCotizacionesPorMes(): Promise<CotizacionesPorMes[]> {
 
     meses.push({
       mes: format(mesInicio, 'MMM', { locale: es }),
-      aceptadas: cotizacionesMes.filter(q => ['ACCEPTED', 'CONVERTED'].includes(q.status)).length,
+      aceptadas: cotizacionesMes.filter(q => (ESTADOS_CERRADA_GANADA as readonly string[]).includes(q.status)).length,
       rechazadas: cotizacionesMes.filter(q => q.status === 'REJECTED').length,
       pendientes: cotizacionesMes.filter(q => q.status === 'SENT').length
     })
@@ -508,14 +516,16 @@ export async function getRankingVendedores(): Promise<VendedorRanking[]> {
     // Se atribuyen al mes de la FECHA DE ACEPTACIÓN (responseDate), NO al de
     // emisión de la cotización (date). Así una cotización emitida en Mayo y
     // aceptada en Junio cuenta como venta cerrada de Junio. El filtro de
-    // período (responseDate) y el de estado (ACCEPTED/CONVERTED) usan el mismo
+    // período (responseDate) y el de estado (cerrada/ganada) usan el mismo
     // criterio de "cierre": responseDate se setea al pasar a ACCEPTED y no se
-    // pisa al convertir a CONVERTED.
+    // pisa al facturar (parcial o total). El monto es _sum.total = total
+    // COTIZADO, independiente de cuánto se facturó, y cada cotización es una
+    // sola fila del groupBy → cuenta una única vez.
     prisma.quote.groupBy({
       by: ['salesPersonId'],
       where: {
         responseDate: { gte: inicioMes, lte: finMes },
-        status: { in: ['ACCEPTED', 'CONVERTED'] },
+        status: { in: [...ESTADOS_CERRADA_GANADA] },
       },
       _count: true,
       _sum: { total: true },

@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { requireExirosAgent } from '@/lib/exiros/agent-auth'
-import { EXIROS_VEREDICTOS } from '@/lib/exiros/constants'
+import { EXIROS_VEREDICTOS, EXIROS_PLATAFORMAS } from '@/lib/exiros/constants'
 
 // POST /api/exiros/sync — el agente Python pushea una licitación (nueva o
 // re-detectada). Upsert por `numero`: si ya existe se actualizan metadata e
@@ -30,7 +30,9 @@ const itemSchema = z.object({
 
 const syncSchema = z.object({
   numero: z.string().min(1),
+  plataforma: z.enum(EXIROS_PLATAFORMAS).default('EXIROS'),
   idInterno: z.number().int().nullish(),
+  linkPortal: z.string().url().nullish(),
   titulo: z.string().min(1),
   empresa: z.string().nullish(),
   comprador: z.string().nullish(),
@@ -58,7 +60,9 @@ export async function POST(req: NextRequest) {
     const { items, ...lic } = parsed.data
 
     const metadata = {
+      plataforma: lic.plataforma,
       idInterno: lic.idInterno ?? null,
+      linkPortal: lic.linkPortal ?? null,
       titulo: lic.titulo,
       empresa: lic.empresa ?? null,
       comprador: lic.comprador ?? null,

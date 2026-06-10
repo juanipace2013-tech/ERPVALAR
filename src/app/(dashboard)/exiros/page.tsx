@@ -42,9 +42,15 @@ import {
   Undo2,
   AlertTriangle,
   Clock,
+  Globe,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { deepLinkExiros } from '@/lib/exiros/constants'
+import {
+  deepLinkExiros,
+  EXIROS_PORTAL_URL,
+  EXIROS_PLATAFORMAS,
+  PLATAFORMA_LABELS,
+} from '@/lib/exiros/constants'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -64,7 +70,9 @@ interface ExirosItem {
 interface Licitacion {
   id: string
   numero: string
+  plataforma: string
   idInterno: number | null
+  linkPortal: string | null
   titulo: string
   empresa: string | null
   comprador: string | null
@@ -80,7 +88,7 @@ interface Licitacion {
   items: ExirosItem[]
 }
 
-const EMPRESAS = ['EXIROS', 'TENARIS', 'TERNIUM', 'TECHINT', 'TECPETROL']
+const EMPRESAS = ['EXIROS', 'TENARIS', 'TERNIUM', 'TECHINT', 'TECPETROL', 'PAMPA ENERGIA']
 
 const ESTADOS_FILTRO = [
   { value: 'NUEVA', label: 'Nueva' },
@@ -185,6 +193,7 @@ export default function ExirosPage() {
   const [filtroVeredicto, setFiltroVeredicto] = useState('todos')
   const [filtroEstado, setFiltroEstado] = useState('activas') // default: oculta IGNORADA y VENCIDA
   const [filtroEmpresa, setFiltroEmpresa] = useState('todas')
+  const [filtroPlataforma, setFiltroPlataforma] = useState('todas')
   const [expanded, setExpanded] = useState<string[]>([])
   const [declineTarget, setDeclineTarget] = useState<Licitacion | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null) // numero en vuelo
@@ -208,6 +217,7 @@ export default function ExirosPage() {
       const params = new URLSearchParams()
       if (filtroVeredicto !== 'todos') params.set('veredicto', filtroVeredicto)
       if (filtroEmpresa !== 'todas') params.set('empresa', filtroEmpresa)
+      if (filtroPlataforma !== 'todas') params.set('plataforma', filtroPlataforma)
       if (debouncedSearch) params.set('search', debouncedSearch)
       const res = await fetch(`/api/exiros/licitaciones?${params}`)
       if (!res.ok) throw new Error('Error al cargar licitaciones')
@@ -218,7 +228,7 @@ export default function ExirosPage() {
     } finally {
       setLoading(false)
     }
-  }, [filtroVeredicto, filtroEmpresa, debouncedSearch])
+  }, [filtroVeredicto, filtroEmpresa, filtroPlataforma, debouncedSearch])
 
   useEffect(() => {
     fetchLicitaciones()
@@ -276,9 +286,9 @@ export default function ExirosPage() {
         <div className="flex items-center gap-3">
           <Gavel className="h-8 w-8 text-blue-600" />
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-blue-900">Licitaciones Exiros</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-blue-900">Licitaciones</h1>
             <p className="text-gray-500 text-sm">
-              Detectadas por el agente en el Bidding Point, clasificadas con IA
+              Exiros y Ariba (Pampa), clasificadas con IA
             </p>
           </div>
         </div>
@@ -350,6 +360,21 @@ export default function ExirosPage() {
               </Select>
             </div>
 
+            <div className="min-w-[150px]">
+              <label className="text-xs text-gray-500 mb-1 block">Plataforma</label>
+              <Select value={filtroPlataforma} onValueChange={setFiltroPlataforma}>
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todas">Todas</SelectItem>
+                  {EXIROS_PLATAFORMAS.map((p) => (
+                    <SelectItem key={p} value={p}>{PLATAFORMA_LABELS[p] || p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <span className="text-xs text-gray-500 pb-1 ml-auto whitespace-nowrap">
               {display.length} licitaciones
             </span>
@@ -391,7 +416,13 @@ export default function ExirosPage() {
                 <TableBody>
                   {display.map((lic) => {
                     const isExpanded = expanded.includes(lic.numero)
-                    const link = deepLinkExiros(lic.idInterno)
+                    // Sin link en vencidas o estados terminales (no hay nada que
+                    // hacer en el portal). Ariba trae linkPortal en el mail;
+                    // Exiros lo construye con el idInterno del Bidding Point.
+                    const sinLink = ['VENCIDA', 'COTIZADA', 'IGNORADA', 'DECLINADA', 'DECLINE_ERROR'].includes(
+                      lic.estadoEfectivo
+                    )
+                    const link = sinLink ? null : lic.linkPortal || deepLinkExiros(lic.idInterno)
                     const busy = actionLoading === lic.numero
                     const accionable =
                       lic.estadoEfectivo === 'NUEVA' || lic.estadoEfectivo === 'EN_PROCESO'
@@ -513,16 +544,35 @@ function ExirosRow({
         </TableCell>
         <TableCell className="font-medium whitespace-nowrap">
           {link ? (
-            <a
-              href={link}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-600 hover:underline inline-flex items-center gap-1"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {lic.numero}
-              <ExternalLink className="h-3 w-3" />
-            </a>
+            <span className="inline-flex items-center gap-1.5">
+              <a
+                href={link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:underline inline-flex items-center gap-1"
+                onClick={(e) => e.stopPropagation()}
+                title={
+                  lic.plataforma === 'EXIROS'
+                    ? 'Requiere sesión activa en el Bidding Point — si da error, entrá primero por Portal'
+                    : undefined
+                }
+              >
+                {lic.numero}
+                <ExternalLink className="h-3 w-3" />
+              </a>
+              {lic.plataforma === 'EXIROS' && (
+                <a
+                  href={EXIROS_PORTAL_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-gray-400 hover:text-blue-600"
+                  onClick={(e) => e.stopPropagation()}
+                  title="Abrir el portal de proveedores de Exiros (iniciar sesión)"
+                >
+                  <Globe className="h-3.5 w-3.5" />
+                </a>
+              )}
+            </span>
           ) : (
             lic.numero
           )}
@@ -567,15 +617,19 @@ function ExirosRow({
                   <EyeOff className="h-3 w-3 mr-1 text-gray-500" />
                   Ignorar
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50"
-                  onClick={onDeclinar}
-                >
-                  <XCircle className="h-3 w-3 mr-1" />
-                  Declinar
-                </Button>
+                {/* El decline automático solo existe para Exiros: el worker
+                    no sabe declinar en Ariba. */}
+                {lic.plataforma === 'EXIROS' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50"
+                    onClick={onDeclinar}
+                  >
+                    <XCircle className="h-3 w-3 mr-1" />
+                    Declinar
+                  </Button>
+                )}
               </>
             ) : lic.estadoEfectivo === 'DECLINAR_PENDIENTE' ? (
               <Button size="sm" variant="outline" className="h-7 text-xs" onClick={onCancelarDecline}>

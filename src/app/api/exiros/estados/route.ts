@@ -17,6 +17,9 @@ export async function GET(req: NextRequest) {
   try {
     const licitaciones = await prisma.exirosLicitacion.findMany({
       where: {
+        // Solo EXIROS: el status_sync del agente verifica contra el portal
+        // de Exiros; no sabe consultar Ariba.
+        plataforma: 'EXIROS',
         estado: { in: ['NUEVA', 'EN_PROCESO'] },
         OR: [{ cierre: null }, { cierre: { gte: new Date() } }],
       },

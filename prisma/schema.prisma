@@ -2938,14 +2938,17 @@ model MlPostSaleMessage {
 // las levanta con GET /api/exiros/acciones, ejecuta el decline en el portal y
 // reporta el resultado con PATCH /api/exiros/acciones.
 
-// Licitación detectada en Exiros. El upsert del agente NUNCA pisa `estado`
-// si ya no es NUEVA (respeta las decisiones tomadas desde la UI).
+// Licitación detectada por el agente (multi-plataforma: Exiros y SAP Ariba de
+// Pampa Energía). El upsert del agente NUNCA pisa `estado` si ya no es NUEVA
+// (respeta las decisiones tomadas desde la UI).
 model ExirosLicitacion {
   id           String    @id @default(cuid())
-  numero       String    @unique // número público de Exiros, ej "5344579"
-  idInterno    Int? // id interno del Bidding Point (para el deep-link al portal)
+  numero       String    @unique // número público, ej "5344579" (Exiros) o "PR443348" (Ariba)
+  plataforma   String    @default("EXIROS") // EXIROS | ARIBA_PAMPA (extensible)
+  idInterno    Int? // id interno del Bidding Point de Exiros (para el deep-link)
+  linkPortal   String? // URL directa al evento (Ariba la trae en el mail; Exiros usa idInterno)
   titulo       String
-  empresa      String? // EXIROS / TENARIS / TERNIUM / TECHINT / TECPETROL
+  empresa      String? // EXIROS / TENARIS / TERNIUM / TECHINT / TECPETROL / PAMPA ENERGIA
   comprador    String?
   clienteFinal String? // deducido de los ítems (ej "Tecpetrol/Yac. Fortín")
   cierre       DateTime?
@@ -2966,6 +2969,7 @@ model ExirosLicitacion {
   @@index([veredicto])
   @@index([empresa])
   @@index([cierre])
+  @@index([plataforma])
   @@map("exiros_licitaciones")
 }
 

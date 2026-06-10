@@ -29,6 +29,21 @@ export const UI_TRANSICIONES: Record<string, ExirosEstado[]> = {
   DECLINAR_PENDIENTE: ['NUEVA'], // "Cancelar" antes de que el agente lo tome
 }
 
+// Plataformas de origen de las licitaciones. El agente externo detecta y
+// pushea de todas; el flujo de decline automático solo existe para EXIROS.
+export const EXIROS_PLATAFORMAS = ['EXIROS', 'ARIBA_PAMPA'] as const
+
+export type ExirosPlataforma = (typeof EXIROS_PLATAFORMAS)[number]
+
+export const PLATAFORMA_LABELS: Record<string, string> = {
+  EXIROS: 'Exiros',
+  ARIBA_PAMPA: 'Ariba (Pampa)',
+}
+
+// Home del portal de proveedores de Exiros. El deep-link al evento requiere
+// sesión activa en el Bidding Point; si da error hay que entrar primero acá.
+export const EXIROS_PORTAL_URL = 'https://suppliersworkplace.exiros.com/EPR/Portal'
+
 export function deepLinkExiros(idInterno: number | null | undefined): string | null {
   if (!idInterno) return null
   return `https://biddingpoint.exiros.com/BNE/supplier/Auction/Details/${idInterno}`

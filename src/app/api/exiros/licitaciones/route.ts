@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
     const veredicto = searchParams.get('veredicto') || ''
     const estado = searchParams.get('estado') || ''
     const empresa = searchParams.get('empresa') || ''
+    const plataforma = searchParams.get('plataforma') || ''
     const search = searchParams.get('search') || ''
     const countOnly = searchParams.get('countOnly') === 'true'
 
@@ -35,6 +36,7 @@ export async function GET(request: NextRequest) {
     const where: Record<string, unknown> = {}
     if (veredicto) where.veredicto = veredicto
     if (empresa) where.empresa = empresa
+    if (plataforma) where.plataforma = plataforma
     if (search) {
       where.OR = [
         { numero: { contains: search, mode: 'insensitive' } },

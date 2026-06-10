@@ -137,6 +137,7 @@ interface BoardCard {
   currency: 'USD' | 'ARS'
   total: number
   exchangeRate: number
+  bonification: number
   terms: string | null
   notes: string | null
   date: string
@@ -435,11 +436,13 @@ export default function FacturacionPage() {
         iva: 21,
         quantityInvoiced: item.invoicedQuantity,
         originalQuantity: item.quantity,
+        inStock: item.isInStock,
       })),
       total: quote.total,
       currency: quote.currency,
       exchangeRate: quote.exchangeRate,
       notes: quote.notes ?? undefined,
+      bonification: quote.bonification,
     }
   }, [colppyQuoteId, boardData, getItemsForColppy])
 
@@ -448,17 +451,19 @@ export default function FacturacionPage() {
     async (payload: ColppySendPayload) => {
       if (!colppyQuoteId) throw new Error('No se seleccionó cotización')
 
-      const itemsToSend = getItemsForColppy(colppyQuoteId)
-      if (!itemsToSend) throw new Error('No hay ítems para enviar')
+      // Los ítems salen de lo que el usuario dejó seleccionado/editado en el
+      // dialog (checkbox + cantidad), NO de todo lo pendiente del tablero.
+      const dialogItems = payload.editedData.items
+      if (!dialogItems.length) throw new Error('No hay ítems seleccionados para enviar')
 
       const response = await fetch('/api/facturacion/generate-invoice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           quoteId: colppyQuoteId,
-          items: itemsToSend.map((i) => ({
+          items: dialogItems.map((i) => ({
             quoteItemId: i.id,
-            quantity: i.remainingQuantity,
+            quantity: i.cantidad,
           })),
           action: payload.action,
           editedData: payload.editedData,
@@ -497,7 +502,7 @@ export default function FacturacionPage() {
 
       setSelectedItems(new Map())
     },
-    [colppyQuoteId, getItemsForColppy]
+    [colppyQuoteId]
   )
 
   const formatDate = (date: string) => {
@@ -1279,8 +1284,14 @@ function QuoteCard({
           <div className="space-y-1">
             {quote.items.map((item) => {
               const isFullyInvoiced = item.remainingQuantity <= 0
+              // Sin stock NO bloquea la selección: el stock se sincroniza desde
+              // Colppy recién al ingresar la factura del proveedor, así que es
+              // normal facturar ítems que figuran sin stock (la mercadería ya
+              // está físicamente). El badge rojo queda como advertencia.
               const canSelect =
-                quote.column === 'partial' && item.isInStock && !isFullyInvoiced && !item.sentToColppy
+                (quote.column === 'partial' || quote.column === 'pending') &&
+                !isFullyInvoiced &&
+                !item.sentToColppy
 
               // Shortage efectivo para mostrar al usuario.
               // Si el backend computó stockShortage (stock conocido), usamos eso.
@@ -1302,7 +1313,7 @@ function QuoteCard({
                       : 'bg-white border'
                   }`}
                 >
-                  {quote.column === 'partial' && (
+                  {(quote.column === 'partial' || quote.column === 'pending') && (
                     <div className="flex-shrink-0 w-5 pt-0.5">
                       {canSelect ? (
                         <Checkbox
@@ -1413,9 +1424,9 @@ function QuoteCard({
               </Badge>
             )}
 
-            {quote.column === 'partial' && (
+            {(quote.column === 'partial' || quote.column === 'pending') && (
               <>
-                {hasUnsent && (
+                {hasUnsent && quote.column === 'partial' && (
                   <Button
                     variant="ghost"
                     size="sm"

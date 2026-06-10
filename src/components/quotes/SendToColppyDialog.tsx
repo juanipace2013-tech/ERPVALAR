@@ -28,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { Send, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
 
@@ -47,6 +48,10 @@ export interface QuoteItem {
   quantityInvoiced?: number;
   /** Cantidad original del item en la cotización. Si se omite, se asume = quantity. */
   originalQuantity?: number;
+  /** Stock conocido del ERP: false = figura sin stock. Solo advertencia
+   *  informativa — el stock se sincroniza recién al ingresar la factura del
+   *  proveedor, así que es normal facturar ítems que figuran sin stock. */
+  inStock?: boolean | null;
 }
 
 export type ColppyAction = 'remito-factura' | 'remito' | 'factura-cuenta-corriente' | 'factura-contado';
@@ -63,6 +68,11 @@ export interface EditableItem {
   yaFacturado?: number;
   /** Solo display: cantidad original del item en la cotización. */
   cantidadOriginal?: number;
+  /** Checkbox de selección: si es false el ítem NO se incluye en la factura.
+   *  Default true. Los excluidos no viajan en el payload. */
+  incluido?: boolean;
+  /** Solo display: figura sin stock en el ERP (advertencia, nunca bloquea). */
+  sinStock?: boolean;
 }
 
 export interface ColppySendPayload {
@@ -90,6 +100,9 @@ interface SendToColppyDialogProps {
     currency: string;
     exchangeRate: number | null;
     notes?: string;
+    /** Bonificación de cabecera (%) de la cotización. Solo display: el server
+     *  la aplica al payload de Colppy por su cuenta (porcDesc por línea). */
+    bonification?: number;
   };
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -186,6 +199,8 @@ export function SendToColppyDialog({
           comentario: comentarioBase,
           yaFacturado: item.quantityInvoiced ?? 0,
           cantidadOriginal: item.originalQuantity ?? item.quantity,
+          incluido: true,
+          sinStock: item.inStock === false,
         }))
       );
 
@@ -228,17 +243,42 @@ export function SendToColppyDialog({
   // Determinar tipo de factura según condición IVA
   const invoiceType = quote.customer.taxCondition === 'RESPONSABLE_INSCRIPTO' ? 'A' : 'B';
 
-  // Calcular totales en tiempo real
+  // Cantidad pendiente de facturar de un ítem (tope del input de cantidad)
+  const pendienteDe = (item: EditableItem) =>
+    Math.max(0, (item.cantidadOriginal ?? item.cantidad) - (item.yaFacturado ?? 0));
+
+  // Ítems seleccionados (checkbox) — son los únicos que viajan en el payload
+  const selectedCount = useMemo(() => items.filter((i) => i.incluido !== false).length, [items]);
+
+  // Ítems seleccionados con cantidad inválida (fuera de 1..pendiente)
+  const invalidSelected = useMemo(
+    () =>
+      items.filter(
+        (i) => i.incluido !== false && (i.cantidad <= 0 || i.cantidad > pendienteDe(i))
+      ),
+    [items]
+  );
+
+  // Calcular totales en tiempo real — solo ítems seleccionados, aplicando la
+  // bonificación de cabecera con el mismo factor que usa el server para armar
+  // el payload de Colppy (porcDesc por línea → neto × (1 − bonif/100)).
+  const bonification = Number(quote.bonification ?? 0);
   const totales = useMemo(() => {
-    const netoGravado = items.reduce((sum, item) => sum + item.cantidad * item.precioUnitario, 0);
-    const totalIVA = items.reduce((sum, item) => {
-      const subtotal = item.cantidad * item.precioUnitario;
+    const seleccionados = items.filter((i) => i.incluido !== false);
+    const bonifFactor = 1 - bonification / 100;
+    const subtotalSinBonif = seleccionados.reduce(
+      (sum, item) => sum + item.cantidad * item.precioUnitario,
+      0
+    );
+    const netoGravado = subtotalSinBonif * bonifFactor;
+    const totalIVA = seleccionados.reduce((sum, item) => {
+      const subtotal = item.cantidad * item.precioUnitario * bonifFactor;
       return sum + subtotal * (item.iva / 100);
     }, 0);
     const total = netoGravado + totalIVA;
 
-    return { netoGravado, totalIVA, total };
-  }, [items]);
+    return { subtotalSinBonif, netoGravado, totalIVA, total };
+  }, [items, bonification]);
 
   // Indica que estamos en un re-envío (facturación parcial)
   const hasAnyInvoiced = useMemo(
@@ -256,11 +296,11 @@ export function SendToColppyDialog({
     }).format(amount);
   };
 
-  // Construir payload
+  // Construir payload — solo los ítems seleccionados (checkbox)
   const buildPayload = (): ColppySendPayload => ({
     action: selectedAction,
     editedData: {
-      items,
+      items: items.filter((i) => i.incluido !== false),
       condicionPago,
       puntoVenta,
       descripcion: descripcionFactura,
@@ -470,14 +510,12 @@ export function SendToColppyDialog({
             <table className="w-full text-sm">
               <thead className="bg-gray-100 border-b">
                 <tr>
+                  <th className="p-2 w-8" title="Incluir en la factura" />
                   <th className="text-left p-2 font-medium">SKU</th>
                   <th className="text-left p-2 font-medium">Descripción</th>
-                  {hasAnyInvoiced && (
-                    <>
-                      <th className="text-right p-2 font-medium text-blue-700">Ya facturado</th>
-                      <th className="text-right p-2 font-medium text-gray-500">Original</th>
-                    </>
-                  )}
+                  <th className="text-right p-2 font-medium text-gray-500">Cant. total</th>
+                  <th className="text-right p-2 font-medium text-blue-700">Ya facturada</th>
+                  <th className="text-right p-2 font-medium text-green-700">Pendiente</th>
                   <th className="text-right p-2 font-medium">Cant. a facturar</th>
                   <th className="text-right p-2 font-medium">Precio Unit {quote.currency}</th>
                   <th className="text-right p-2 font-medium">IVA %</th>
@@ -490,32 +528,59 @@ export function SendToColppyDialog({
                   const yaFacturado = item.yaFacturado ?? 0;
                   const cantidadOriginal = item.cantidadOriginal ?? item.cantidad;
                   const maxCantidad = Math.max(0, cantidadOriginal - yaFacturado);
+                  const incluido = item.incluido !== false;
+                  const cantidadInvalida =
+                    incluido && (item.cantidad <= 0 || item.cantidad > maxCantidad);
                   return (
-                  <tr key={item.id} className="border-b hover:bg-gray-50">
-                    <td className="p-2 text-gray-600">{item.sku}</td>
+                  <tr
+                    key={item.id}
+                    className={`border-b hover:bg-gray-50 ${incluido ? '' : 'opacity-50 bg-gray-50'}`}
+                  >
+                    <td className="p-2 align-top pt-3">
+                      <Checkbox
+                        checked={incluido}
+                        onCheckedChange={(checked) => updateItem(index, 'incluido', checked === true)}
+                        aria-label="Incluir ítem en la factura"
+                      />
+                    </td>
+                    <td className="p-2 text-gray-600 align-top">
+                      <div>{item.sku}</div>
+                      {item.sinStock && (
+                        <span
+                          className="mt-1 inline-block text-[10px] text-amber-800 bg-amber-50 border border-amber-300 rounded px-1.5 py-0.5 whitespace-nowrap"
+                          title="El stock se sincroniza desde Colppy al ingresar la factura del proveedor — figura sin stock pero se puede facturar igual"
+                        >
+                          ⚠ Sin stock (no bloquea)
+                        </span>
+                      )}
+                    </td>
                     <td className="p-2">
                       <Input
                         value={item.descripcion}
                         onChange={(e) => updateItem(index, 'descripcion', e.target.value)}
                         className="h-8 text-sm"
+                        disabled={!incluido}
                       />
                     </td>
-                    {hasAnyInvoiced && (
-                      <>
-                        <td className="p-2 text-right font-mono text-blue-700">{yaFacturado || '—'}</td>
-                        <td className="p-2 text-right font-mono text-gray-500">{cantidadOriginal}</td>
-                      </>
-                    )}
+                    <td className="p-2 text-right font-mono text-gray-500">{cantidadOriginal}</td>
+                    <td className="p-2 text-right font-mono text-blue-700">{yaFacturado || '—'}</td>
+                    <td className="p-2 text-right font-mono text-green-700">{maxCantidad}</td>
                     <td className="p-2">
                       <Input
                         type="number"
                         value={item.cantidad}
                         onChange={(e) => updateItem(index, 'cantidad', parseFloat(e.target.value) || 0)}
-                        className="h-8 text-sm text-right"
-                        min="0"
+                        className={`h-8 text-sm text-right ${cantidadInvalida ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
+                        min="1"
                         max={maxCantidad}
                         step="1"
+                        disabled={!incluido}
                       />
+                      {cantidadInvalida && (
+                        <p className="text-[10px] text-red-600 mt-0.5 text-right whitespace-nowrap">
+                          Debe ser entre 1 y {maxCantidad}
+                        </p>
+                      )}
                     </td>
                     <td className="p-2">
                       <Input
@@ -525,6 +590,7 @@ export function SendToColppyDialog({
                         className="h-8 text-sm text-right"
                         min="0"
                         step="0.01"
+                        disabled={!incluido}
                       />
                     </td>
                     <td className="p-2">
@@ -536,6 +602,7 @@ export function SendToColppyDialog({
                         min="0"
                         max="100"
                         step="0.01"
+                        disabled={!incluido}
                       />
                     </td>
                     <td className="p-2">
@@ -548,11 +615,14 @@ export function SendToColppyDialog({
                           target.style.height = target.scrollHeight + 'px';
                         }}
                         rows={2}
-                        className="w-full min-h-[60px] resize-y rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        disabled={!incluido}
+                        className="w-full min-h-[60px] resize-y rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
                       />
                     </td>
                     <td className="p-2 text-right font-medium">
-                      {formatCurrency(item.cantidad * item.precioUnitario, quote.currency)}
+                      {incluido
+                        ? formatCurrency(item.cantidad * item.precioUnitario, quote.currency)
+                        : '—'}
                     </td>
                   </tr>
                   );
@@ -564,13 +634,32 @@ export function SendToColppyDialog({
 
         {/* Totales */}
         <div className="border rounded-lg p-4 bg-gray-50">
-          {hasAnyInvoiced && (
+          {(hasAnyInvoiced || selectedCount < items.length) && (
             <div className="mb-3 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-3 py-1.5">
-              Facturación parcial: {items.length} ítem(s) pendiente(s) en este envío.
+              Facturación parcial: {selectedCount} de {items.length} ítem(s) seleccionado(s) en este envío.
               Total a facturar ahora: <span className="font-semibold">{formatCurrency(totales.total, quote.currency)}</span>
             </div>
           )}
+          {selectedCount === 0 && (
+            <div className="mb-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-3 py-1.5">
+              Seleccioná al menos un ítem para facturar.
+            </div>
+          )}
           <div className="space-y-2 text-sm max-w-md ml-auto">
+            {bonification > 0 && (
+              <>
+                <div className="flex justify-between">
+                  <span className="font-medium">Subtotal:</span>
+                  <span>{formatCurrency(totales.subtotalSinBonif, quote.currency)}</span>
+                </div>
+                <div className="flex justify-between text-green-700">
+                  <span className="font-medium">Bonificación ({bonification}%):</span>
+                  <span>
+                    - {formatCurrency(totales.subtotalSinBonif - totales.netoGravado, quote.currency)}
+                  </span>
+                </div>
+              </>
+            )}
             <div className="flex justify-between">
               <span className="font-medium">Neto gravado:</span>
               <span>{formatCurrency(totales.netoGravado, quote.currency)}</span>
@@ -611,8 +700,15 @@ export function SendToColppyDialog({
           <Button
             type="button"
             onClick={handleSend}
-            disabled={sending}
+            disabled={sending || selectedCount === 0 || invalidSelected.length > 0}
             className="bg-blue-600 hover:bg-blue-700"
+            title={
+              selectedCount === 0
+                ? 'Seleccioná al menos un ítem'
+                : invalidSelected.length > 0
+                ? 'Hay ítems con cantidad fuera del rango pendiente'
+                : undefined
+            }
           >
             {sending ? (
               <>

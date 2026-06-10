@@ -152,9 +152,21 @@ export async function POST(
 
       // Validar cada item del editedData contra su cantidadPendiente
       if (editedData?.items) {
+        if (editedData.items.length === 0) {
+          return NextResponse.json(
+            { error: 'No hay ítems seleccionados para facturar' },
+            { status: 400 }
+          );
+        }
         for (const editedItem of editedData.items) {
           const original = quote.items.find((i) => i.id === editedItem.id);
           if (!original) continue;
+          if (editedItem.cantidad <= 0) {
+            return NextResponse.json(
+              { error: `Ítem "${editedItem.descripcion}": la cantidad debe ser mayor a 0` },
+              { status: 400 }
+            );
+          }
           const already = alreadyInvoicedByItem.get(original.id) ?? 0;
           const pending = original.quantity - already;
           if (editedItem.cantidad > pending) {

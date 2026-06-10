@@ -156,6 +156,7 @@ export async function GET(request: NextRequest) {
       currency: string
       total: number
       exchangeRate: number
+      bonification: number
       terms: string | null
       notes: string | null
       date: string
@@ -308,6 +309,7 @@ export async function GET(request: NextRequest) {
         currency: quote.currency,
         total: Number(quote.total),
         exchangeRate: Number(quote.exchangeRate),
+        bonification: Number(quote.bonification ?? 0),
         terms: quote.terms,
         notes: quote.notes,
         date: quote.date.toISOString(),

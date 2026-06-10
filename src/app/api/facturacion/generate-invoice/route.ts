@@ -110,6 +110,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Cantidad pendiente de facturar de un quoteItem (max entre la columna
+    // cantidadFacturada y la suma de InvoiceItems no cancelados).
+    const remainingFor = (quoteItem: (typeof quote.items)[number]): number => {
+      const fromInvoiceItems = quoteItem.invoiceItems
+        .filter((ii) => ii.invoice.status !== 'CANCELLED')
+        .reduce((sum, ii) => sum + Number(ii.quantity), 0)
+      const fromColumn = Number(quoteItem.cantidadFacturada)
+      return quoteItem.quantity - Math.max(fromInvoiceItems, fromColumn)
+    }
+
     // Validar cada ítem solicitado
     for (const req of requestedItems) {
       const quoteItem = quote.items.find((i) => i.id === req.quoteItemId)
@@ -120,13 +130,7 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      const fromInvoiceItems = quoteItem.invoiceItems
-        .filter((ii) => ii.invoice.status !== 'CANCELLED')
-        .reduce((sum, ii) => sum + Number(ii.quantity), 0)
-      const fromColumn = Number(quoteItem.cantidadFacturada)
-      const alreadyInvoiced = Math.max(fromInvoiceItems, fromColumn)
-
-      const remaining = quoteItem.quantity - alreadyInvoiced
+      const remaining = remainingFor(quoteItem)
 
       if (req.quantity > remaining) {
         return NextResponse.json(
@@ -142,6 +146,40 @@ export async function POST(request: NextRequest) {
           { error: 'La cantidad debe ser mayor a 0' },
           { status: 400 }
         )
+      }
+    }
+
+    // Validar TAMBIÉN los ítems del editedData: cuando viene, son los que
+    // realmente arman el payload de Colppy y los que se persisten (lineItems
+    // más abajo), así que la validación de pendientes tiene que correr sobre
+    // ellos — protege contra race conditions entre abrir el dialog y confirmar.
+    if (editedData) {
+      if (!editedData.items?.length) {
+        return NextResponse.json(
+          { error: 'No hay ítems seleccionados para facturar' },
+          { status: 400 }
+        )
+      }
+      for (const editedItem of editedData.items) {
+        const quoteItem = quote.items.find((i) => i.id === editedItem.id)
+        if (!quoteItem) continue // ítem manual sin quoteItem asociado: no afecta cantidadFacturada
+
+        if (editedItem.cantidad <= 0) {
+          return NextResponse.json(
+            { error: `Ítem "${editedItem.descripcion}": la cantidad debe ser mayor a 0` },
+            { status: 400 }
+          )
+        }
+
+        const remaining = remainingFor(quoteItem)
+        if (editedItem.cantidad > remaining) {
+          return NextResponse.json(
+            {
+              error: `Ítem "${quoteItem.description || quoteItem.product?.name}": cantidad solicitada (${editedItem.cantidad}) excede la pendiente (${remaining})`,
+            },
+            { status: 400 }
+          )
+        }
       }
     }
 

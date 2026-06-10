@@ -15,7 +15,8 @@ export default auth((req) => {
     // handler (src/lib/exiros/agent-auth.ts). Match exacto a propósito:
     // /api/exiros/licitaciones es de la UI y sigue requiriendo sesión.
     pathname === '/api/exiros/sync' ||
-    pathname === '/api/exiros/acciones'
+    pathname === '/api/exiros/acciones' ||
+    pathname === '/api/exiros/estados'
 
   // Si está en login y ya está autenticado, redirigir al dashboard
   if (pathname === '/login' && isLoggedIn) {

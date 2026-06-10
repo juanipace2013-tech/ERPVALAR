@@ -32,7 +32,7 @@ import { Textarea } from '@/components/ui/textarea'
 type ChannelType = 'WHATSAPP' | 'EMAIL'
 type ConversationStatus = 'OPEN' | 'PENDING' | 'CLOSED'
 type MessageDirection = 'INBOUND' | 'OUTBOUND'
-type MessageCategory = 'COTIZACION' | 'CONSULTA' | 'QUEJA' | 'PAGO' | 'OTRO'
+type MessageCategory = 'COTIZACION' | 'CONSULTA' | 'QUEJA' | 'PAGO' | 'OTRO' | 'EXIROS_LICITACION'
 
 interface ConversationListItem {
   id: string
@@ -106,6 +106,10 @@ const CATEGORY_STYLE: Record<MessageCategory, { label: string; className: string
   OTRO: {
     label: 'Otro',
     className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+  },
+  EXIROS_LICITACION: {
+    label: 'Exiros/Licitaciones',
+    className: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300',
   },
 }
 

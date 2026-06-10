@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useSession } from 'next-auth/react'
@@ -27,6 +27,7 @@ import {
   Building2,
   Sparkles,
   Inbox,
+  Gavel,
 } from 'lucide-react'
 
 interface SubNavItem {
@@ -61,6 +62,12 @@ const navItems: NavItem[] = [
     title: 'Bandeja',
     href: '/bandeja',
     icon: Inbox,
+    roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
+  },
+  {
+    title: 'Licitaciones',
+    href: '/exiros',
+    icon: Gavel,
     roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
   },
   {
@@ -170,6 +177,17 @@ export function Sidebar() {
   const pathname = usePathname()
   const { data: session } = useSession()
   const [expandedItems, setExpandedItems] = useState<string[]>([])
+  const [exirosNuevas, setExirosNuevas] = useState(0)
+
+  // Badge de licitaciones NUEVAS. Se refresca al navegar (la query es un count liviano).
+  useEffect(() => {
+    fetch('/api/exiros/licitaciones?countOnly=true')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (typeof data?.nuevasCount === 'number') setExirosNuevas(data.nuevasCount)
+      })
+      .catch(() => {})
+  }, [pathname])
 
   const userRole = session?.user?.role
 
@@ -276,7 +294,17 @@ export function Sidebar() {
                   )}
                 >
                   <Icon className="h-5 w-5" />
-                  {item.title}
+                  <span className="flex-1">{item.title}</span>
+                  {item.href === '/exiros' && exirosNuevas > 0 && (
+                    <span
+                      className={cn(
+                        'ml-auto inline-flex items-center justify-center rounded-full px-1.5 py-0.5 text-xs font-semibold min-w-[1.25rem]',
+                        isActive ? 'bg-white/20 text-white' : 'bg-blue-600 text-white'
+                      )}
+                    >
+                      {exirosNuevas}
+                    </span>
+                  )}
                 </Link>
               )}
             </div>

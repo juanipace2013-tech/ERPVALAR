@@ -2703,6 +2703,7 @@ enum MessageCategory {
   QUEJA
   PAGO
   OTRO
+  EXIROS_LICITACION // mails de bidding-no-reply@exiros.com — se gestionan desde /exiros
 }
 
 // Cuenta del canal en nuestro lado: nuestro número de WhatsApp o nuestra casilla de mail.
@@ -2925,4 +2926,63 @@ model MlPostSaleMessage {
   @@index([status])
   @@index([orderId])
   @@map("ml_post_sale_messages")
+}
+
+// ============================================================================
+// EXIROS — Licitaciones (Bidding Point)
+// ============================================================================
+// Un agente Python externo (corre en el mismo VPS, fuera del ERP) detecta
+// licitaciones nuevas en el portal de Exiros, las clasifica con IA y las
+// pushea acá vía POST /api/exiros/sync (auth: Bearer EXIROS_AGENT_API_KEY).
+// El decline es asíncrono: la UI encola (estado DECLINAR_PENDIENTE), el agente
+// las levanta con GET /api/exiros/acciones, ejecuta el decline en el portal y
+// reporta el resultado con PATCH /api/exiros/acciones.
+
+// Licitación detectada en Exiros. El upsert del agente NUNCA pisa `estado`
+// si ya no es NUEVA (respeta las decisiones tomadas desde la UI).
+model ExirosLicitacion {
+  id           String    @id @default(cuid())
+  numero       String    @unique // número público de Exiros, ej "5344579"
+  idInterno    Int? // id interno del Bidding Point (para el deep-link al portal)
+  titulo       String
+  empresa      String? // EXIROS / TENARIS / TERNIUM / TECHINT / TECPETROL
+  comprador    String?
+  clienteFinal String? // deducido de los ítems (ej "Tecpetrol/Yac. Fortín")
+  cierre       DateTime?
+  veredicto    String // COTIZAR | REVISAR | DECLINAR
+  confianza    Int?
+  razon        String?   @db.Text
+  estado       String    @default("NUEVA")
+  // NUEVA | EN_PROCESO | COTIZADA | DECLINAR_PENDIENTE | DECLINADA | DECLINE_ERROR | IGNORADA | VENCIDA
+  origen       String? // "mail" | "sweep"
+  declineMsg   String?   @db.Text // resultado del decline reportado por el agente
+
+  items ExirosItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([estado])
+  @@index([veredicto])
+  @@index([empresa])
+  @@index([cierre])
+  @@map("exiros_licitaciones")
+}
+
+model ExirosItem {
+  id             String           @id @default(cuid())
+  licitacionId   String
+  licitacion     ExirosLicitacion @relation(fields: [licitacionId], references: [id], onDelete: Cascade)
+  nro            Int
+  descCorta      String
+  descLarga      String?          @db.Text
+  cantidad       Float?
+  unidad         String?
+  cliente        String?
+  fechaRequerida DateTime?
+  quePide        String? // resumen IA en criollo de qué están pidiendo
+  match          String? // sugerencia IA: "GENEBRE art.2034" / "fuera de rubro" / etc.
+
+  @@index([licitacionId])
+  @@map("exiros_items")
 }

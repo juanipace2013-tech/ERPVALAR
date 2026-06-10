@@ -14,11 +14,17 @@
 
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
-import { ChannelType } from '@prisma/client'
+import { ChannelType, MessageCategory } from '@prisma/client'
 import { classifyMessage } from './classifier'
 import { draftReply, type DrafterMessage } from './drafter'
 
 const MAX_THREAD_MESSAGES = 10
+
+// Remitentes que se clasifican por regla, sin pasar por la IA. Los mails de
+// licitaciones de Exiros se gestionan desde /exiros (el agente Python las
+// pushea por API), así que acá solo se etiquetan y se cierran para que no
+// queden como pendientes de respuesta.
+const EXIROS_SENDER = 'bidding-no-reply@exiros.com'
 
 export type AnalyzeOutcome =
   | { status: 'ANALYZED'; conversationId: string }
@@ -58,6 +64,30 @@ export async function analyzeConversation(
       conversationId,
       lastAnalyzedMessageId: lastInbound.id,
     }
+  }
+
+  // Regla pre-IA: notificaciones de licitaciones de Exiros. Categoría fija,
+  // sin draft (no se responden por mail) y conversación cerrada para que no
+  // figure como pendiente — se gestionan desde /exiros.
+  if (conversation.contactIdentifier.toLowerCase() === EXIROS_SENDER) {
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        aiCategory: MessageCategory.EXIROS_LICITACION,
+        aiCategoryConfidence: 1,
+        aiSummary: 'Notificación de licitación de Exiros — se gestiona desde Licitaciones.',
+        aiDraftReply: null,
+        aiClassifierModel: 'RULE_BASED',
+        aiDrafterModel: null,
+        aiCostUsd: 0,
+        aiAnalyzedAt: new Date(),
+        aiAnalyzedMessageId: lastInbound.id,
+        status: 'CLOSED',
+        unreadCount: 0,
+      },
+    })
+    logger.info(`[ai/analyze] Conversación ${conversationId} clasificada por regla: EXIROS_LICITACION`)
+    return { status: 'ANALYZED', conversationId }
   }
 
   const channelType = conversation.channelAccount.type === ChannelType.WHATSAPP ? 'WHATSAPP' : 'EMAIL'

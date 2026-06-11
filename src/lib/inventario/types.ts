@@ -76,7 +76,13 @@ export interface InvoiceWithInventoryResult {
     invoiceNumber: string;
     [key: string]: unknown;
   };
-  movements: StockMovementWithRelations[];
+  // Movimientos tal como los devuelve tx.stockMovement.create (sin relaciones)
+  movements: Array<{
+    id: string;
+    productId: string;
+    quantity: number;
+    [key: string]: unknown;
+  }>;
   journalEntry: {
     id: string;
     entryNumber: number;

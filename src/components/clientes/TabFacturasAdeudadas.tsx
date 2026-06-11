@@ -160,7 +160,7 @@ export default function TabFacturasAdeudadas({ colppyId }: Props) {
             <div className="text-center py-8">
               <AlertCircle className="h-8 w-8 text-red-400 mx-auto mb-2" />
               <p className="text-red-600 text-sm">{error}</p>
-              <Button variant="outline" size="sm" className="mt-3" onClick={fetchFacturas}>
+              <Button variant="outline" size="sm" className="mt-3" onClick={() => fetchFacturas(true)}>
                 Reintentar
               </Button>
             </div>

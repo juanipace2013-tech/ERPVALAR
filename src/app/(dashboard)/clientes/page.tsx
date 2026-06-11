@@ -118,7 +118,7 @@ export default function ClientesPage() {
   const [page, setPage] = useState(1)
 
   // Debounce search
-  const searchTimer = useRef<ReturnType<typeof setTimeout>>()
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => {
     searchTimer.current = setTimeout(() => setDebouncedSearch(searchQuery), 300)
     return () => clearTimeout(searchTimer.current)

@@ -118,7 +118,7 @@ export function BankAccountDialog({ open, onOpenChange, account, onSuccess }: Ba
     }
   }, [account, open])
 
-  const handleChange = (field: string, value: string | number | boolean) => {
+  const handleChange = (field: string, value: string | number | boolean | null) => {
     setFormData(prev => ({ ...prev, [field]: value }))
   }
 

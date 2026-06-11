@@ -945,9 +945,9 @@ export default function AnalisisCrediticioPage() {
                           borderRadius: '8px',
                           color: '#f3f4f6',
                         }}
-                        formatter={(value: number, name: string) => [
-                          `$${formatMonto(value)}`,
-                          name,
+                        formatter={(value: number | undefined, name: string | undefined) => [
+                          `$${formatMonto(value ?? 0)}`,
+                          name ?? '',
                         ]}
                         labelFormatter={(label) => `Período: ${label}`}
                       />

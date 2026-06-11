@@ -206,7 +206,7 @@ export default function InventoryDashboard() {
                   tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
                 />
                 <Tooltip
-                  formatter={(value: number) => [formatCurrency(value), 'Valor']}
+                  formatter={(value: number | undefined) => [formatCurrency(value ?? 0), 'Valor']}
                   contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '6px' }}
                 />
                 <Bar dataKey="valor" fill="#3B82F6" radius={[4, 4, 0, 0]} maxBarSize={60} />

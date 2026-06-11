@@ -106,7 +106,7 @@ export function InteractiveBarChart({
             </TooltipProvider>
           )}
         </CardTitle>
-        <Select value={period} onValueChange={(value: string) => setPeriod(value)}>
+        <Select value={period} onValueChange={(value: string) => setPeriod(value as 'daily' | 'weekly' | 'monthly')}>
           <SelectTrigger className="w-[130px]">
             <SelectValue placeholder="Período" />
           </SelectTrigger>
@@ -137,7 +137,7 @@ export function InteractiveBarChart({
                 tickFormatter={formatCurrency}
               />
               <Tooltip
-                formatter={(value: number) => formatCurrency(value)}
+                formatter={(value: number | undefined) => formatCurrency(value ?? 0)}
                 contentStyle={{
                   backgroundColor: '#fff',
                   border: '1px solid #e5e7eb',

@@ -31,6 +31,7 @@ import {
 } from '@/components/ui/dialog'
 import { Loader2, Save, Plus, Building2, Trash2 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import type { CompanySettings } from './types'
 
 interface Chequera {
   id: string
@@ -68,7 +69,7 @@ const BANCOS_ARGENTINA = [
 ]
 
 interface TesoreriaTabProps {
-  settings: Record<string, unknown>
+  settings: CompanySettings
   onUpdate: () => void
 }
 
@@ -108,7 +109,7 @@ export function TesoreriaTab({ settings, onUpdate }: TesoreriaTabProps) {
           setSelectedChequera(data[0])
         }
       }
-    } catch (_error) {
+    } catch (error) {
       console.error('Error loading chequeras:', error)
       toast({
         title: 'Error',

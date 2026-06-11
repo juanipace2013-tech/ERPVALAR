@@ -11,7 +11,7 @@ import fs from 'fs'
 import path from 'path'
 import { sendMail, getEmailConfig } from './microsoft-graph'
 import { generateRemitoEmailHTML, generateRemitoEmailText } from './templates/remito-email'
-import { generateRemitoPDF, type RemitoPDFData } from '@/lib/pdf/remito-generator'
+import { generateRemitoPDF, type RemitoPDFData, type CaiPDFData } from '@/lib/pdf/remito-generator'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 
@@ -122,24 +122,28 @@ export async function sendRemitoEmail(options: SendRemitoEmailOptions) {
   // 2) Fallback: generar PDF del sistema si no hay firmado
   if (!pdfAttachment) {
     try {
-      let caiData = undefined
+      let caiData: CaiPDFData | undefined
       try {
-        const cai = await prisma.caiRegistration.findFirst({
-          where: {
-            active: true,
-            expiresAt: { gt: new Date() },
-          },
-          orderBy: { createdAt: 'desc' },
-        })
+        // Si el remito ya tiene CAI asignado (vía allocate-cai), usar ese;
+        // si no, el CAI activo vigente. Sin CAI el PDF sale igual (sin sello).
+        const cai = dn.caiNumber
+          ? await prisma.caiConfig.findFirst({ where: { caiNumber: dn.caiNumber } })
+          : await prisma.caiConfig.findFirst({
+              where: { active: true, caiExpirationDate: { gt: new Date() } },
+              orderBy: { createdAt: 'desc' },
+            })
         if (cai) {
           caiData = {
             caiNumber: cai.caiNumber,
-            expiresAt: cai.expiresAt,
-            puntoVenta: cai.puntoVenta,
+            caiExpirationDate: new Intl.DateTimeFormat('es-AR', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+            }).format(cai.caiExpirationDate),
           }
         }
-      } catch {
-        // Sin CAI, continuar
+      } catch (caiError) {
+        logger.error('[Mail] Error obteniendo CAI para el PDF del remito:', caiError)
       }
 
       const pdfData: RemitoPDFData = {
@@ -160,16 +164,11 @@ export async function sendRemitoEmail(options: SendRemitoEmailOptions) {
           quantity: Number(item.quantity),
           unit: item.unit || item.product?.unit || 'UN',
         })),
-        deliveryAddress: dn.deliveryAddress || undefined,
-        deliveryCity: dn.deliveryCity || undefined,
-        deliveryProvince: dn.deliveryProvince || undefined,
         carrier: dn.carrier || undefined,
         deliveryType: dn.deliveryType || undefined,
         purchaseOrder: dn.purchaseOrder || undefined,
         notes: dn.notes || undefined,
         bultos: dn.bultos || undefined,
-        preparedBy: dn.preparedBy || undefined,
-        deliveredBy: dn.deliveredBy || undefined,
         cai: caiData,
       }
 

@@ -89,7 +89,7 @@ export function InvoicesChart() {
               </UITooltip>
             </TooltipProvider>
           </CardTitle>
-          <Select value={period} onValueChange={(value: string) => setPeriod(value)}>
+          <Select value={period} onValueChange={(value: string) => setPeriod(value as 'daily' | 'weekly' | 'monthly')}>
             <SelectTrigger className="w-[130px]">
               <SelectValue placeholder="Período" />
             </SelectTrigger>
@@ -102,7 +102,7 @@ export function InvoicesChart() {
         </div>
       </CardHeader>
       <CardContent>
-        <Tabs value={type} onValueChange={(value: string) => setType(value)} className="w-full">
+        <Tabs value={type} onValueChange={(value: string) => setType(value as 'collect' | 'pay')} className="w-full">
           <TabsList className="grid w-full grid-cols-2 mb-4">
             <TabsTrigger value="collect">Por cobrar</TabsTrigger>
             <TabsTrigger value="pay">Por pagar</TabsTrigger>
@@ -127,7 +127,7 @@ export function InvoicesChart() {
                     tickFormatter={formatCurrency}
                   />
                   <Tooltip
-                    formatter={(value: number) => formatCurrency(value)}
+                    formatter={(value: number | undefined) => formatCurrency(value ?? 0)}
                     contentStyle={{
                       backgroundColor: '#fff',
                       border: '1px solid #e5e7eb',

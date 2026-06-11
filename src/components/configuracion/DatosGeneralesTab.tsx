@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/select'
 import { Loader2, Save, Upload } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import type { CompanySettings } from './types'
 
 const PROVINCIAS_ARGENTINAS = [
   'CABA',
@@ -43,7 +44,7 @@ const PROVINCIAS_ARGENTINAS = [
 ]
 
 interface DatosGeneralesTabProps {
-  settings: Record<string, unknown>
+  settings: CompanySettings
   onUpdate: () => void
 }
 

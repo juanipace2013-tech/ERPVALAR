@@ -66,7 +66,7 @@ export function CheckManagementDialog({ open, onOpenChange }: CheckManagementDia
         const data = await response.json()
         setChecks(data.checks || [])
       }
-    } catch (_error) {
+    } catch (error) {
       console.error('Error loading checks:', error)
       toast({
         title: 'Error',

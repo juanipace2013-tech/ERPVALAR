@@ -135,8 +135,8 @@ export default function RotationABCTab() {
                 <YAxis yAxisId="left" tick={{ fill: '#6b7280', fontSize: 11 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
                 <YAxis yAxisId="right" orientation="right" tick={{ fill: '#6b7280', fontSize: 11 }} tickFormatter={(v) => `${v}%`} domain={[0, 100]} />
                 <Tooltip
-                  formatter={(value: number, name: string) =>
-                    name === 'valor' ? [formatCurrency(value), 'Valor'] : [`${value}%`, 'Acumulado']
+                  formatter={(value: number | undefined, name: string | undefined) =>
+                    name === 'valor' ? [formatCurrency(value ?? 0), 'Valor'] : [`${value ?? 0}%`, 'Acumulado']
                   }
                   contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '6px' }}
                 />

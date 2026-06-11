@@ -73,6 +73,7 @@ interface DeliveryNote {
   carrier: string | null
   transportAddress: string | null
   trackingNumber: string | null
+  deliveryType: string | null
   purchaseOrder: string | null
   customerInvoiceNumber: string | null
   totalAmountARS: string | number | null

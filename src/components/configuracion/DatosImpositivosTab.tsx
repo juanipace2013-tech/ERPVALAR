@@ -15,9 +15,10 @@ import {
 } from '@/components/ui/select'
 import { Loader2, Save } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import type { CompanySettings } from './types'
 
 interface DatosImpositivosTabProps {
-  settings: Record<string, unknown>
+  settings: CompanySettings
   onUpdate: () => void
 }
 

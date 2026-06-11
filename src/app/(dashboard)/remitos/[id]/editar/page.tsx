@@ -81,6 +81,15 @@ interface DeliveryNote {
     defaultTransportAddress: string | null
     defaultTransportSchedule: string | null
   }
+  supplier: {
+    id: string
+    name: string
+    legalName: string | null
+    taxId: string | null
+    address: string | null
+    city: string | null
+    province: string | null
+  } | null
   items: Array<{
     id: string
     productId: string | null

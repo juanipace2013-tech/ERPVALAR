@@ -9,9 +9,10 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Loader2, Save, Info } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import type { CompanySettings } from './types'
 
 interface ClientesProveedoresTabProps {
-  settings: Record<string, unknown>
+  settings: CompanySettings
   onUpdate: () => void
 }
 

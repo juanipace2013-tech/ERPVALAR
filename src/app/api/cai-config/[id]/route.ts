@@ -16,7 +16,7 @@ const caiConfigUpdateSchema = z.object({
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth()
@@ -24,15 +24,16 @@ export async function PUT(
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
 
+    const { id } = await params
     const body = await request.json()
     const validated = caiConfigUpdateSchema.parse(body)
 
     // Si se activa, desactivar las demás del mismo PV
     if (validated.active === true) {
-      const existing = await prisma.caiConfig.findUnique({ where: { id: params.id } })
+      const existing = await prisma.caiConfig.findUnique({ where: { id } })
       if (existing) {
         await prisma.caiConfig.updateMany({
-          where: { pointOfSale: existing.pointOfSale, active: true, NOT: { id: params.id } },
+          where: { pointOfSale: existing.pointOfSale, active: true, NOT: { id } },
           data: { active: false },
         })
       }
@@ -44,7 +45,7 @@ export async function PUT(
     }
 
     const config = await prisma.caiConfig.update({
-      where: { id: params.id },
+      where: { id },
       data: updateData,
     })
 
@@ -60,7 +61,7 @@ export async function PUT(
 
 export async function DELETE(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth()
@@ -68,7 +69,8 @@ export async function DELETE(
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
 
-    await prisma.caiConfig.delete({ where: { id: params.id } })
+    const { id } = await params
+    await prisma.caiConfig.delete({ where: { id } })
 
     return NextResponse.json({ ok: true })
   } catch (error) {

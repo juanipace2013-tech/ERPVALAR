@@ -776,7 +776,7 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
                           fontSize: '12px',
                           color: isDark ? '#e5e7eb' : undefined
                         }}
-                        formatter={(value: number) => [`$${formatNumber(value)}`, 'Tipo de cambio']}
+                        formatter={(value: number | undefined) => [`$${formatNumber(value ?? 0)}`, 'Tipo de cambio']}
                       />
                       <Line
                         type="monotone"

@@ -31,14 +31,26 @@ export const UI_TRANSICIONES: Record<string, ExirosEstado[]> = {
 
 // Plataformas de origen de las licitaciones. El agente externo detecta y
 // pushea de todas; el flujo de decline automático solo existe para EXIROS.
-export const EXIROS_PLATAFORMAS = ['EXIROS', 'ARIBA_PAMPA'] as const
+// ARIBA_PAMPA quedó de la primera versión (cuando Ariba era solo Pampa);
+// hoy la cuenta de Ariba recibe de múltiples compradores (Pampa, Minera
+// EXAR, Central Puerto, YPF LUZ, CocaCola Andina, Telecom) — la columna
+// Empresa los distingue. Para filtrar/mostrar, ambas valen como "Ariba"
+// (matchear con startsWith('ARIBA')).
+export const EXIROS_PLATAFORMAS = ['EXIROS', 'ARIBA', 'ARIBA_PAMPA'] as const
 
 export type ExirosPlataforma = (typeof EXIROS_PLATAFORMAS)[number]
 
 export const PLATAFORMA_LABELS: Record<string, string> = {
   EXIROS: 'Exiros',
-  ARIBA_PAMPA: 'Ariba (Pampa)',
+  ARIBA: 'Ariba',
+  ARIBA_PAMPA: 'Ariba',
 }
+
+// Opciones del filtro de plataforma en la UI (ARIBA agrupa ARIBA_PAMPA)
+export const PLATAFORMA_FILTRO_OPCIONES = [
+  { value: 'EXIROS', label: 'Exiros' },
+  { value: 'ARIBA', label: 'Ariba' },
+] as const
 
 // Home del portal de proveedores de Exiros. El deep-link al evento requiere
 // sesión activa en el Bidding Point; si da error hay que entrar primero acá.

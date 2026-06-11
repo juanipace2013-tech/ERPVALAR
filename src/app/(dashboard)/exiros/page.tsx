@@ -43,13 +43,14 @@ import {
   AlertTriangle,
   Clock,
   Globe,
+  Upload,
+  FileSpreadsheet,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   deepLinkExiros,
   EXIROS_PORTAL_URL,
-  EXIROS_PLATAFORMAS,
-  PLATAFORMA_LABELS,
+  PLATAFORMA_FILTRO_OPCIONES,
 } from '@/lib/exiros/constants'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
@@ -197,6 +198,9 @@ export default function ExirosPage() {
   const [expanded, setExpanded] = useState<string[]>([])
   const [declineTarget, setDeclineTarget] = useState<Licitacion | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null) // numero en vuelo
+  const [importTarget, setImportTarget] = useState<Licitacion | null>(null)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importing, setImporting] = useState(false)
   const [now, setNow] = useState<number | null>(null)
 
   // Reloj para los countdowns de cierre (refresca cada minuto)
@@ -275,6 +279,37 @@ export default function ExirosPage() {
     const numero = declineTarget.numero
     setDeclineTarget(null)
     await cambiarEstado(numero, 'DECLINAR_PENDIENTE', `Licitación ${numero} encolada para declinar`)
+  }
+
+  const confirmarImport = async () => {
+    if (!importTarget || !importFile) return
+    setImporting(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', importFile)
+      const res = await fetch(
+        `/api/exiros/licitaciones/${encodeURIComponent(importTarget.numero)}/importar-excel`,
+        { method: 'POST', body: formData }
+      )
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Error al importar')
+
+      const partes = [`${data.itemsImportados} ítem(s) importados`]
+      if (data.veredicto) partes.push(`veredicto ${data.veredicto} ${data.confianza}%`)
+      toast.success(partes.join(', '))
+      if (data.iaError) {
+        toast.warning('Los ítems se importaron pero la re-clasificación IA falló', {
+          description: data.iaError,
+        })
+      }
+      setImportTarget(null)
+      setImportFile(null)
+      fetchLicitaciones()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Error al importar')
+    } finally {
+      setImporting(false)
+    }
   }
 
   // ─── Render ─────────────────────────────────────────────────────────────────
@@ -368,8 +403,8 @@ export default function ExirosPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todas">Todas</SelectItem>
-                  {EXIROS_PLATAFORMAS.map((p) => (
-                    <SelectItem key={p} value={p}>{PLATAFORMA_LABELS[p] || p}</SelectItem>
+                  {PLATAFORMA_FILTRO_OPCIONES.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -449,6 +484,10 @@ export default function ExirosPage() {
                         onDeshacer={() =>
                           cambiarEstado(lic.numero, 'NUEVA', `${lic.numero} vuelve a Nueva`)
                         }
+                        onImportar={() => {
+                          setImportFile(null)
+                          setImportTarget(lic)
+                        }}
                       />
                     )
                   })}
@@ -499,6 +538,72 @@ export default function ExirosPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog de importación de Excel de Ariba */}
+      <Dialog
+        open={importTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !importing) {
+            setImportTarget(null)
+            setImportFile(null)
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5 text-green-700" />
+              Importar Excel del evento
+            </DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-3 pt-2">
+                <div>
+                  <span className="font-semibold text-gray-900">#{importTarget?.numero}</span>{' '}
+                  — {importTarget?.titulo}
+                </div>
+                <p className="text-sm text-gray-600">
+                  En Ariba: <span className="font-medium">Descargar contenido → Excel</span>.
+                  Se cargan los ítems del evento, los requisitos de papeleo, y se
+                  re-clasifica con IA usando el detalle completo.
+                </p>
+                <input
+                  type="file"
+                  accept=".xls,.xlsx"
+                  disabled={importing}
+                  onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
+                  className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-blue-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100"
+                />
+                {importTarget && importTarget.items.length > 0 && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                    Esta licitación ya tiene {importTarget.items.length} ítem(s): se
+                    reemplazan por los del archivo.
+                  </p>
+                )}
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setImportTarget(null)
+                setImportFile(null)
+              }}
+              disabled={importing}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={confirmarImport} disabled={!importFile || importing}>
+              {importing ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Upload className="h-4 w-4 mr-2" />
+              )}
+              {importing ? 'Importando...' : 'Importar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -518,6 +623,7 @@ function ExirosRow({
   onDeclinar,
   onCancelarDecline,
   onDeshacer,
+  onImportar,
 }: {
   lic: Licitacion
   link: string | null
@@ -531,7 +637,9 @@ function ExirosRow({
   onDeclinar: () => void
   onCancelarDecline: () => void
   onDeshacer: () => void
+  onImportar: () => void
 }) {
+  const esAriba = lic.plataforma.startsWith('ARIBA')
   return (
     <>
       <TableRow className="cursor-pointer hover:bg-blue-50/50" onClick={onToggle}>
@@ -609,6 +717,18 @@ function ExirosRow({
               <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
             ) : accionable ? (
               <>
+                {esAriba && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs text-green-700 border-green-200 hover:bg-green-50"
+                    onClick={onImportar}
+                    title="Importar el Excel de contenido del evento descargado de Ariba"
+                  >
+                    <Upload className="h-3 w-3 mr-1" />
+                    Importar Excel
+                  </Button>
+                )}
                 <Button size="sm" variant="outline" className="h-7 text-xs" onClick={onCotizada}>
                   <CheckCircle2 className="h-3 w-3 mr-1 text-green-600" />
                   Cotizada
@@ -722,6 +842,12 @@ function ExirosRow({
                     ))}
                   </TableBody>
                 </Table>
+              ) : esAriba ? (
+                <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 inline-flex items-center gap-2">
+                  <FileSpreadsheet className="h-4 w-4 shrink-0" />
+                  Sin ítems: descargá el contenido del evento en Ariba (Descargar
+                  contenido → Excel) e importalo acá con el botón &quot;Importar Excel&quot;.
+                </p>
               ) : (
                 <p className="text-sm text-gray-400">Sin ítems cargados</p>
               )}

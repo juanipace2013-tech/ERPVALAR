@@ -36,7 +36,9 @@ export async function GET(request: NextRequest) {
     const where: Record<string, unknown> = {}
     if (veredicto) where.veredicto = veredicto
     if (empresa) where.empresa = empresa
-    if (plataforma) where.plataforma = plataforma
+    // "ARIBA" agrupa también el valor legacy ARIBA_PAMPA
+    if (plataforma === 'ARIBA') where.plataforma = { startsWith: 'ARIBA' }
+    else if (plataforma) where.plataforma = plataforma
     if (search) {
       where.OR = [
         { numero: { contains: search, mode: 'insensitive' } },

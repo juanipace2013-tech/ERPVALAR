@@ -56,7 +56,7 @@ import { generateRemitoPDF, type RemitoPDFData, type CaiPDFData } from '@/lib/pd
 import { generateShippingLabels, type ShippingLabelData } from '@/lib/pdf/shipping-label-generator'
 import { SendRemitoDialog } from '@/components/remitos/SendRemitoDialog'
 import { DuplicateDeliveryNoteDialog } from '@/components/remitos/DuplicateDeliveryNoteDialog'
-import { getLocalDateString } from '@/lib/utils'
+import { getLocalDateString, formatCurrency as formatCurrencyAR } from '@/lib/utils'
 
 interface DeliveryNote {
   id: string
@@ -315,13 +315,9 @@ export default function DeliveryNoteDetailPage() {
     })
   }
 
-  const formatCurrency = (amount: number, currency: string = 'ARS') => {
-    const symbol = currency === 'USD' ? 'USD' : 'ARS'
-    return `${symbol} ${amount.toLocaleString('es-AR', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`
-  }
+  // Los Decimal de Prisma llegan como string vía JSON; el helper los coerciona.
+  const formatCurrency = (amount: number | string, currency: string = 'ARS') =>
+    formatCurrencyAR(amount, currency === 'USD' ? 'USD' : 'ARS')
 
   const handleDownloadPDF = async () => {
     if (!deliveryNote) return

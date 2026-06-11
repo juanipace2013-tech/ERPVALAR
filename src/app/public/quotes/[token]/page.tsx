@@ -25,7 +25,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Loader2, CheckCircle2, XCircle, FileText, Building2, Calendar, DollarSign } from 'lucide-react'
 import { toast } from 'sonner'
-import { formatNumber } from '@/lib/utils'
+import { formatNumber, formatCurrency as formatCurrencyAR } from '@/lib/utils'
 
 interface Quote {
   id: string
@@ -158,13 +158,9 @@ export default function PublicQuotePage() {
     }
   }
 
-  const formatCurrency = (amount: number) => {
-    const symbol = quote?.currency === 'USD' ? 'USD' : 'ARS'
-    return `${symbol} ${amount.toLocaleString('es-AR', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`
-  }
+  // Los Decimal de Prisma llegan como string vía JSON; el helper los coerciona.
+  const formatCurrency = (amount: number | string) =>
+    formatCurrencyAR(amount, quote?.currency === 'USD' ? 'USD' : 'ARS')
 
   const formatDate = (date: string) => {
     return new Date(date).toLocaleDateString('es-AR', {

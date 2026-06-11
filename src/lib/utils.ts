@@ -62,25 +62,21 @@ export function formatNumber(
 }
 
 /**
- * Formatea un número como moneda argentina
- * Ejemplo: formatCurrency(2359.43, 'USD') → "USD 2.359,43"
+ * Formatea un monto como moneda con formato argentino (punto miles, coma decimales).
+ * Acepta number o string (los Decimal de Prisma llegan como string vía JSON).
+ * Ejemplos: formatCurrency(3590, 'USD') → "USD 3.590,00"
+ *           formatCurrency(19758900, 'ARS') → "$19.758.900,00"
  */
 export function formatCurrency(
   amount: number | string,
   currency: 'ARS' | 'USD' | 'EUR' = 'ARS'
 ): string {
   const num = typeof amount === 'string' ? parseFloat(amount) : amount
-
-  const currencySymbols = {
-    ARS: 'ARS',
-    USD: 'USD',
-    EUR: 'EUR',
-  }
-
-  return `${currencySymbols[currency]} ${num.toLocaleString('es-AR', {
+  const formatted = (Number.isFinite(num) ? num : 0).toLocaleString('es-AR', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  })}`
+  })
+  return currency === 'ARS' ? `$${formatted}` : `${currency} ${formatted}`
 }
 
 /**

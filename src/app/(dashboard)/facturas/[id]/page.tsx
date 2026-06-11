@@ -16,6 +16,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, Loader2, FileText, Printer, Download, Mail, CheckCircle2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatCurrency as formatCurrencyAR } from '@/lib/utils'
 
 interface InvoiceItem {
   id: string
@@ -114,13 +115,9 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     }
   }
 
-  const formatCurrency = (amount: number, currency: string = 'ARS') => {
-    const symbol = currency === 'USD' ? 'USD' : 'ARS'
-    return `${symbol} ${amount.toLocaleString('es-AR', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`
-  }
+  // Los Decimal de Prisma llegan como string vía JSON; el helper los coerciona.
+  const formatCurrency = (amount: number | string, currency: string = 'ARS') =>
+    formatCurrencyAR(amount, currency === 'USD' ? 'USD' : 'ARS')
 
   const formatDate = (date: string) => {
     return new Date(date).toLocaleDateString('es-AR', {

@@ -55,7 +55,7 @@ import {
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { formatNumber, getLocalDateString } from '@/lib/utils'
+import { formatNumber, formatCurrency as formatCurrencyAR, getLocalDateString } from '@/lib/utils'
 import { SendQuoteDialog } from '@/components/quotes/SendQuoteDialog'
 import { SendToColppyDialog } from '@/components/quotes/SendToColppyDialog'
 import { DuplicateQuoteDialog } from '@/components/quotes/DuplicateQuoteDialog'
@@ -595,13 +595,9 @@ export default function QuoteViewPage() {
     }
   }
 
-  const formatCurrency = (amount: number) => {
-    const symbol = quote?.currency === 'USD' ? 'USD' : 'ARS'
-    return `${symbol} ${amount.toLocaleString('es-AR', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`
-  }
+  // Los Decimal de Prisma llegan como string vía JSON; el helper los coerciona.
+  const formatCurrency = (amount: number | string) =>
+    formatCurrencyAR(amount, quote?.currency === 'USD' ? 'USD' : 'ARS')
 
   const handleValidityChange = async (dateStr: string) => {
     if (!dateStr || !quote) return
@@ -1260,10 +1256,7 @@ export default function QuoteViewPage() {
                   <div className="flex justify-between text-sm text-gray-600">
                     <span>Total en ARS:</span>
                     <span>
-                      ${(Number(quote.total) * Number(quote.exchangeRate)).toLocaleString('es-AR', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
+                      {formatCurrencyAR(Number(quote.total) * Number(quote.exchangeRate), 'ARS')}
                     </span>
                   </div>
                 )}
@@ -1534,7 +1527,7 @@ export default function QuoteViewPage() {
                               day: '2-digit', month: '2-digit', year: 'numeric',
                             })}
                             {' · '}
-                            USD {Number(f.montoUSD).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {formatCurrencyAR(f.montoUSD, 'USD')}
                             {' · '}
                             ARS {Number(f.montoARS).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </p>

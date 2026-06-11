@@ -15,6 +15,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Loader2, Send, Mail, Paperclip, X } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatCurrency as formatCurrencyAR } from '@/lib/utils'
 
 interface SendQuoteDialogProps {
   quote: {
@@ -83,13 +84,9 @@ export function SendQuoteDialog({
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
   }
 
-  const formatCurrency = (amount: number) => {
-    const symbol = quote.currency === 'USD' ? 'USD' : 'ARS'
-    return `${symbol} ${amount.toLocaleString('es-AR', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`
-  }
+  // Los Decimal de Prisma llegan como string vía JSON; el helper los coerciona.
+  const formatCurrency = (amount: number | string) =>
+    formatCurrencyAR(amount, quote.currency === 'USD' ? 'USD' : 'ARS')
 
   function validateEmails(): string[] | null {
     const parsed = parseEmails(emails)

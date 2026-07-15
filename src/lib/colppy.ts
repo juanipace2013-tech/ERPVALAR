@@ -114,6 +114,34 @@ export const COLPPY_PAGE_THROTTLE_MS = 1_100;
 // Espera no bloqueante (NUNCA usar sleep síncrono acá: congelaría el ERP).
 export const colppySleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+// Tamaño de página para listados completos (clientes, etc.). Colppy corta la
+// respuesta en el `limit` pedido, así que un limit fijo (ej. 6000) silenciosamente
+// pierde registros cuando la empresa lo supera — pasó con >6000 clientes: ZAPOR
+// y todo lo alfabéticamente posterior al corte desaparecían del ERP.
+export const COLPPY_LIST_PAGE_SIZE = 3000;
+
+/**
+ * Trae TODAS las páginas de un listado de Colppy iterando start/limit hasta
+ * que una página venga incompleta. El caller provee `fetchPage`, que hace la
+ * llamada real (con su propio manejo de sesión/retry) y devuelve los registros
+ * de esa página.
+ */
+export async function fetchAllColppyPages<T>(
+  fetchPage: (start: number, limit: number) => Promise<T[]>,
+  pageSize = COLPPY_LIST_PAGE_SIZE
+): Promise<T[]> {
+  const all: T[] = [];
+  let start = 0;
+  while (true) {
+    const page = await fetchPage(start, pageSize);
+    all.push(...page);
+    if (page.length < pageSize) break;
+    start += pageSize;
+    await colppySleep(COLPPY_PAGE_THROTTLE_MS);
+  }
+  return all;
+}
+
 /**
  * Realiza una llamada a la API de Colppy usando fetch() nativo.
  *

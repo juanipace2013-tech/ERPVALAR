@@ -20,7 +20,7 @@ import {
   setCachedCustomers,
   invalidateCustomerCache,
 } from '@/lib/colppy/customer-cache';
-import { callColppyAPI } from '@/lib/colppy';
+import { callColppyAPI, fetchAllColppyPages } from '@/lib/colppy';
 
 // ============================================================================
 // CONFIGURACIÓN
@@ -84,6 +84,42 @@ async function getSession(): Promise<string> {
 // CARGAR TODOS LOS CLIENTES
 // ============================================================================
 
+/**
+ * Trae una página de listar_cliente. Si la sesión expiró (estado !== 0),
+ * re-loguea y reintenta UNA vez.
+ */
+async function listClientesPage(start: number, limit: number): Promise<any[]> {
+  const passwordMD5 = md5(COLPPY_PASSWORD);
+  const buildPayload = (claveSesion: string) => ({
+    auth: { usuario: COLPPY_USER, password: passwordMD5 },
+    service: { provision: 'Cliente', operacion: 'listar_cliente' },
+    parameters: {
+      sesion: { usuario: COLPPY_USER, claveSesion },
+      idEmpresa: COLPPY_ID_EMPRESA,
+      start,
+      limit,
+      filter: [],
+      order: [{ field: 'NombreFantasia', dir: 'asc' }],
+    },
+  });
+
+  let response = await callColppy(buildPayload(await getSession()));
+
+  if (response.result?.estado !== 0 || !response.response?.success) {
+    // Si sesión expiró, reintentar
+    cachedSession = null;
+    response = await callColppy(buildPayload(await getSession()));
+
+    if (response.result?.estado !== 0 || !response.response?.success) {
+      throw new Error(
+        response.result?.mensaje || response.response?.message || 'Error cargando clientes'
+      );
+    }
+  }
+
+  return response.response.data || [];
+}
+
 async function loadAllCustomers(): Promise<CachedCustomer[]> {
   // Si el cache es reciente, usar lo que hay
   if (isCacheValid()) {
@@ -93,53 +129,11 @@ async function loadAllCustomers(): Promise<CachedCustomer[]> {
   logger.info('[Colppy] Cargando todos los clientes...');
   const startTime = Date.now();
 
-  const claveSesion = await getSession();
-  const passwordMD5 = md5(COLPPY_PASSWORD);
+  // Paginar hasta traer TODOS (un limit fijo cortaba en 6000 clientes)
+  const data = await fetchAllColppyPages((start, limit) => listClientesPage(start, limit));
 
-  const response = await callColppy({
-    auth: { usuario: COLPPY_USER, password: passwordMD5 },
-    service: { provision: 'Cliente', operacion: 'listar_cliente' },
-    parameters: {
-      sesion: { usuario: COLPPY_USER, claveSesion },
-      idEmpresa: COLPPY_ID_EMPRESA,
-      start: 0,
-      limit: 6000,
-      filter: [],
-      order: [{ field: 'NombreFantasia', dir: 'asc' }],
-    },
-  });
-
-  let mapped: CachedCustomer[];
-  if (response.result?.estado !== 0 || !response.response?.success) {
-    // Si sesión expiró, reintentar
-    cachedSession = null;
-    const newSession = await getSession();
-
-    const retry = await callColppy({
-      auth: { usuario: COLPPY_USER, password: md5(COLPPY_PASSWORD) },
-      service: { provision: 'Cliente', operacion: 'listar_cliente' },
-      parameters: {
-        sesion: { usuario: COLPPY_USER, claveSesion: newSession },
-        idEmpresa: COLPPY_ID_EMPRESA,
-        start: 0,
-        limit: 6000,
-        filter: [],
-        order: [{ field: 'NombreFantasia', dir: 'asc' }],
-      },
-    });
-
-    if (retry.result?.estado !== 0 || !retry.response?.success) {
-      throw new Error(
-        retry.result?.mensaje || retry.response?.message || 'Error cargando clientes'
-      );
-    }
-
-    const localMultipliers = await loadLocalMultipliers();
-    mapped = mapCustomers(retry.response.data, localMultipliers);
-  } else {
-    const localMultipliers = await loadLocalMultipliers();
-    mapped = mapCustomers(response.response.data, localMultipliers);
-  }
+  const localMultipliers = await loadLocalMultipliers();
+  const mapped = mapCustomers(data, localMultipliers);
 
   setCachedCustomers(mapped);
   const elapsed = Date.now() - startTime;

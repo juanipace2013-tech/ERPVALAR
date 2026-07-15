@@ -1,7 +1,7 @@
 import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { colppyLogin, colppyLogout, getColppyConfig, md5Hash, callColppyAPI, ColppySession } from '@/lib/colppy'
+import { colppyLogin, colppyLogout, getColppyConfig, md5Hash, callColppyAPI, fetchAllColppyPages, ColppySession } from '@/lib/colppy'
 import { mapColppyTaxCondition } from '@/lib/colppy-tax-map'
 import { logger } from '@/lib/logger'
 
@@ -10,22 +10,25 @@ import { logger } from '@/lib/logger'
 async function fetchAllColppyCustomers(session: ColppySession): Promise<any[]> {
   const config = getColppyConfig()
   const passwordMD5 = md5Hash(config.password)
-  const response = await callColppyAPI<any>({
-    auth: { usuario: config.user, password: passwordMD5 },
-    service: { provision: 'Cliente', operacion: 'listar_cliente' },
-    parameters: {
-      sesion: { usuario: session.usuario, claveSesion: session.claveSesion },
-      idEmpresa: session.idEmpresa,
-      start: 0,
-      limit: 10000, // Traer todos
-      filter: [],
-      order: [{ field: 'NombreFantasia', dir: 'asc' }],
-    },
+  // Paginar hasta traer todos (un limit fijo corta silenciosamente el listado)
+  return fetchAllColppyPages(async (start, limit) => {
+    const response = await callColppyAPI<any>({
+      auth: { usuario: config.user, password: passwordMD5 },
+      service: { provision: 'Cliente', operacion: 'listar_cliente' },
+      parameters: {
+        sesion: { usuario: session.usuario, claveSesion: session.claveSesion },
+        idEmpresa: session.idEmpresa,
+        start,
+        limit,
+        filter: [],
+        order: [{ field: 'NombreFantasia', dir: 'asc' }],
+      },
+    })
+    if (!response.response?.success) {
+      throw new Error('Error cargando clientes de Colppy')
+    }
+    return response.response.data || []
   })
-  if (!response.response?.success) {
-    throw new Error('Error cargando clientes de Colppy')
-  }
-  return response.response.data || []
 }
 
 // Mapeo de condición IVA: ver src/lib/colppy-tax-map.ts (fuente única de verdad)

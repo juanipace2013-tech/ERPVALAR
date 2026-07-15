@@ -15,7 +15,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getLocalDateString } from '@/lib/utils'
 import { logAudit } from '@/lib/audit'
-import { colppyLogin as colppyLoginCentral, colppyLogout, getColppyConfig, md5Hash, callColppyAPI, ColppySession, ColppyRateLimitError } from '@/lib/colppy'
+import { colppyLogin as colppyLoginCentral, colppyLogout, getColppyConfig, md5Hash, callColppyAPI, fetchAllColppyPages, ColppySession, ColppyRateLimitError } from '@/lib/colppy'
 import { mapColppyTaxCondition } from '@/lib/colppy-tax-map'
 import { logger } from '@/lib/logger'
 
@@ -139,37 +139,42 @@ interface ColppyClient {
  */
 async function fetchAllColppyClients(claveSesion: string, passwordMD5: string): Promise<ColppyClient[]> {
   try {
-    const payload = {
-      auth: { usuario: COLPPY_USER, password: passwordMD5 },
-      service: { provision: 'Cliente', operacion: 'listar_cliente' },
-      parameters: {
-        sesion: { usuario: COLPPY_USER, claveSesion },
-        idEmpresa: COLPPY_ID_EMPRESA,
-        start: 0,
-        limit: 6000,
-        filter: [],
-        order: [{ field: 'NombreFantasia', dir: 'asc' }],
-      },
-    }
-
-    const response = await callColppyWithRetry(
-      payload,
-      async () => {
-        const newSession = await localColppyLogin()
-        return { claveSesion: newSession, passwordMD5 }
-      },
-      (p, newSession) => {
-        const pl = p as typeof payload
-        return { ...pl, parameters: { ...pl.parameters, sesion: { usuario: COLPPY_USER, claveSesion: newSession } } }
+    // Paginado: un limit fijo corta silenciosamente el listado de clientes.
+    const data = await fetchAllColppyPages<Record<string, unknown>>(async (start, limit) => {
+      const payload = {
+        auth: { usuario: COLPPY_USER, password: passwordMD5 },
+        service: { provision: 'Cliente', operacion: 'listar_cliente' },
+        parameters: {
+          sesion: { usuario: COLPPY_USER, claveSesion },
+          idEmpresa: COLPPY_ID_EMPRESA,
+          start,
+          limit,
+          filter: [],
+          order: [{ field: 'NombreFantasia', dir: 'asc' }],
+        },
       }
-    ) as { result?: { estado?: number }; response?: { success?: boolean; data?: Record<string, unknown>[] } }
 
-    if (response.result?.estado !== 0 || !response.response?.success) {
-      logger.warn('[Sync Colppy] Respuesta de clientes no exitosa:', response.result)
-      return []
-    }
+      const response = await callColppyWithRetry(
+        payload,
+        async () => {
+          const newSession = await localColppyLogin()
+          return { claveSesion: newSession, passwordMD5 }
+        },
+        (p, newSession) => {
+          const pl = p as typeof payload
+          return { ...pl, parameters: { ...pl.parameters, sesion: { usuario: COLPPY_USER, claveSesion: newSession } } }
+        }
+      ) as { result?: { estado?: number }; response?: { success?: boolean; data?: Record<string, unknown>[] } }
 
-    return (response.response.data || []).map((c: Record<string, unknown>) => ({
+      if (response.result?.estado !== 0 || !response.response?.success) {
+        logger.warn('[Sync Colppy] Respuesta de clientes no exitosa:', response.result)
+        throw new Error('Respuesta de clientes no exitosa')
+      }
+
+      return response.response.data || []
+    })
+
+    return data.map((c: Record<string, unknown>) => ({
       idCliente: String(c.idCliente || ''),
       cuit: String(c.CUIT || ''),
       name: String(c.NombreFantasia || c.RazonSocial || ''),

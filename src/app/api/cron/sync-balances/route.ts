@@ -10,7 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { colppyLogin, colppyLogout, getColppyConfig, md5Hash, callColppyAPI, ColppySession } from '@/lib/colppy'
+import { colppyLogin, colppyLogout, getColppyConfig, md5Hash, callColppyAPI, fetchAllColppyPages, ColppySession } from '@/lib/colppy'
 import { logger } from '@/lib/logger'
 
 // ─── Estado en memoria ──────────────────────────────────────────────────────
@@ -50,25 +50,28 @@ export async function GET(req: NextRequest) {
     const passwordMD5 = md5Hash(config.password)
 
     try {
-    // 2. Traer todos los clientes de Colppy (solo necesitamos idCliente + Saldo)
-    const listRes = await callColppyAPI<any>({
-      auth: { usuario: config.user, password: passwordMD5 },
-      service: { provision: 'Cliente', operacion: 'listar_cliente' },
-      parameters: {
-        sesion: { usuario: session.usuario, claveSesion: session.claveSesion },
-        idEmpresa: session.idEmpresa,
-        start: 0,
-        limit: 10000,
-        filter: [],
-        order: [{ field: 'NombreFantasia', dir: 'asc' }],
-      },
+    // 2. Traer todos los clientes de Colppy (solo necesitamos idCliente + Saldo).
+    // Paginado: un limit fijo corta silenciosamente el listado.
+    const colppyClients: any[] = await fetchAllColppyPages(async (start, limit) => {
+      const listRes = await callColppyAPI<any>({
+        auth: { usuario: config.user, password: passwordMD5 },
+        service: { provision: 'Cliente', operacion: 'listar_cliente' },
+        parameters: {
+          sesion: { usuario: session.usuario, claveSesion: session.claveSesion },
+          idEmpresa: session.idEmpresa,
+          start,
+          limit,
+          filter: [],
+          order: [{ field: 'NombreFantasia', dir: 'asc' }],
+        },
+      })
+
+      if (!listRes.response?.success) {
+        throw new Error('Error cargando clientes de Colppy')
+      }
+
+      return listRes.response.data || []
     })
-
-    if (!listRes.response?.success) {
-      throw new Error('Error cargando clientes de Colppy')
-    }
-
-    const colppyClients: any[] = listRes.response.data || []
     logger.info(`[CRON] Sync balances: ${colppyClients.length} clientes de Colppy`)
 
     // 3. Cargar mapa colppyId → id de la DB local

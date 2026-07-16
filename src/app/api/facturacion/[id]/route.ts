@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { VENDEDOR_SELECCIONABLE } from '@/lib/vendedores'
 
 const updateInvoiceSchema = z.object({
   userId: z.string().min(1, 'El vendedor es obligatorio'),
@@ -39,16 +40,16 @@ export async function PATCH(
       )
     }
 
-    // Verificar que el usuario existe
-    const user = await prisma.user.findUnique({
-      where: { id: validatedData.userId },
+    // Verificar que el vendedor existe y es asignable (activo + vendedor)
+    const user = await prisma.user.findFirst({
+      where: { id: validatedData.userId, ...VENDEDOR_SELECCIONABLE },
       select: { id: true, name: true },
     })
 
     if (!user) {
       return NextResponse.json(
-        { error: 'Usuario no encontrado' },
-        { status: 404 }
+        { error: 'El vendedor seleccionado no existe, no está activo o no es vendedor' },
+        { status: 400 }
       )
     }
 

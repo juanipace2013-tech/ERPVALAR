@@ -2,6 +2,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { VENDEDOR_SELECCIONABLE } from '@/lib/vendedores'
 
 /**
  * GET /api/facturacion/historial
@@ -76,7 +77,7 @@ export async function GET(request: NextRequest) {
     // Obtener vendedores y clientes para filtros
     const [vendedores, clientes] = await Promise.all([
       prisma.user.findMany({
-        where: { role: { in: ['ADMIN', 'GERENTE', 'VENDEDOR'] } },
+        where: VENDEDOR_SELECCIONABLE,
         select: { id: true, name: true },
         orderBy: { name: 'asc' },
       }),

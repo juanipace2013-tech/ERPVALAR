@@ -2,6 +2,8 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { logAudit } from '@/lib/audit'
+import { VENDEDOR_SELECCIONABLE } from '@/lib/vendedores'
 
 // Permitir body grande y timeout extendido para archivos con muchas filas
 export const maxDuration = 60 // seconds (Vercel/serverless)
@@ -39,8 +41,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 1. Pre-cargar todos los usuarios en un Map por email (lowercase)
+    // 1. Pre-cargar los vendedores asignables en un Map por email (lowercase).
+    //    Sólo activos y marcados como vendedor: un email de alguien dado de baja
+    //    o de administración cae en `vendedorNoEncontrado` en vez de asignarse.
     const allUsers = await prisma.user.findMany({
+      where: VENDEDOR_SELECCIONABLE,
       select: { id: true, name: true, email: true },
     })
     const usersByEmail = new Map(
@@ -125,6 +130,17 @@ export async function POST(request: NextRequest) {
             data: { salesPersonId: vendorId },
           })
           asignados += result.count
+
+          const vendedor = allUsers.find((u) => u.id === vendorId)
+          logAudit({
+            userId: session.user.id,
+            userName: session.user.name || '',
+            userEmail: session.user.email || '',
+            action: 'REASIGNAR_VENDEDOR',
+            entity: 'CLIENT',
+            description:
+              `Asignación masiva: ${result.count} cliente(s) → ${vendedor?.name || vendorId}`,
+          })
         } catch (err: any) {
           for (const id of data.customerIdsToUpdate) {
             const customer = allCustomers.find(c => c.id === id)

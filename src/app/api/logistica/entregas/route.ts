@@ -2,6 +2,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { VENDEDOR_SELECCIONABLE } from '@/lib/vendedores'
 
 export async function GET(request: NextRequest) {
   try {
@@ -66,7 +67,7 @@ export async function GET(request: NextRequest) {
 
     // Also fetch vendedores for filter dropdown
     const vendedores = await prisma.user.findMany({
-      where: { role: { in: ['ADMIN', 'GERENTE', 'VENDEDOR'] } },
+      where: VENDEDOR_SELECCIONABLE,
       select: { id: true, name: true },
       orderBy: { name: 'asc' },
     })

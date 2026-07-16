@@ -2,10 +2,14 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { logAudit } from '@/lib/audit'
+import { VENDEDOR_SELECCIONABLE } from '@/lib/vendedores'
 
 /**
  * PATCH /api/clientes/assign-salesperson
- * Asigna un vendedor a un cliente por CUIT.
+ * Asigna un vendedor a un cliente por CUIT. salesPersonId null/vacío deja al
+ * cliente sin vendedor fijo (modo automático: la cotización queda para quien
+ * la crea).
  * Si el cliente no existe localmente, crea un registro mínimo.
  */
 export async function PATCH(request: NextRequest) {
@@ -33,16 +37,19 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
-    // Validar que el vendedor existe si se asigna uno
+    // Validar que el vendedor existe y es asignable (activo + vendedor).
+    // Antes sólo se chequeaba la existencia, así que se podía asignar un
+    // usuario dado de baja o alguien de administración.
+    let nuevoVendedor: { id: string; name: string } | null = null
     if (salesPersonId) {
-      const user = await prisma.user.findUnique({
-        where: { id: salesPersonId },
-        select: { id: true, status: true },
+      nuevoVendedor = await prisma.user.findFirst({
+        where: { id: salesPersonId, ...VENDEDOR_SELECCIONABLE },
+        select: { id: true, name: true },
       })
-      if (!user) {
+      if (!nuevoVendedor) {
         return NextResponse.json(
-          { error: 'Vendedor no encontrado' },
-          { status: 404 }
+          { error: 'El vendedor seleccionado no existe, no está activo o no es vendedor' },
+          { status: 400 }
         )
       }
     }
@@ -50,7 +57,7 @@ export async function PATCH(request: NextRequest) {
     // Buscar cliente por CUIT (ambos formatos)
     const formattedCuit = `${normalizedCuit.slice(0, 2)}-${normalizedCuit.slice(2, 10)}-${normalizedCuit.slice(10)}`
 
-    let customer = await prisma.customer.findFirst({
+    const existente = await prisma.customer.findFirst({
       where: {
         OR: [
           { cuit: normalizedCuit },
@@ -58,18 +65,40 @@ export async function PATCH(request: NextRequest) {
           { cuit: { contains: normalizedCuit } },
         ],
       },
-      select: { id: true },
+      select: {
+        id: true,
+        name: true,
+        cuit: true,
+        salesPerson: { select: { id: true, name: true } },
+      },
     })
 
-    if (customer) {
-      // Actualizar vendedor
+    const nuevoNombre = nuevoVendedor?.name || 'sin vendedor fijo'
+    let customerId: string
+
+    if (existente) {
+      customerId = existente.id
+
       await prisma.customer.update({
-        where: { id: customer.id },
+        where: { id: existente.id },
         data: { salesPersonId: salesPersonId || null },
+      })
+
+      logAudit({
+        userId: session.user.id,
+        userName: session.user.name || '',
+        userEmail: session.user.email || '',
+        action: 'REASIGNAR_VENDEDOR',
+        entity: 'CLIENT',
+        entityId: existente.id,
+        entityRef: existente.cuit,
+        description:
+          `Reasignó vendedor de ${existente.name}: ` +
+          `${existente.salesPerson?.name || 'sin vendedor fijo'} → ${nuevoNombre}`,
       })
     } else {
       // Crear registro mínimo para clientes que solo existen en Colppy
-      customer = await prisma.customer.create({
+      const creado = await prisma.customer.create({
         data: {
           name: formattedCuit, // Se actualizará cuando se sincronice con Colppy
           cuit: formattedCuit,
@@ -78,11 +107,23 @@ export async function PATCH(request: NextRequest) {
         },
         select: { id: true },
       })
+      customerId = creado.id
+
+      logAudit({
+        userId: session.user.id,
+        userName: session.user.name || '',
+        userEmail: session.user.email || '',
+        action: 'CREATE',
+        entity: 'CLIENT',
+        entityId: creado.id,
+        entityRef: formattedCuit,
+        description: `Creó cliente mínimo ${formattedCuit} con vendedor: ${nuevoNombre}`,
+      })
     }
 
     // Obtener el vendedor actualizado para retornar
     const updated = await prisma.customer.findUnique({
-      where: { id: customer.id },
+      where: { id: customerId },
       select: {
         salesPerson: {
           select: { id: true, name: true, email: true },

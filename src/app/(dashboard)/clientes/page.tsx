@@ -198,7 +198,7 @@ export default function ClientesPage() {
   // ─── Load users on mount ──────────────────────────────────────────────────
 
   useEffect(() => {
-    fetch('/api/users')
+    fetch('/api/users?vendedores=true')
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.users) setUsers(data.users)

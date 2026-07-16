@@ -138,7 +138,7 @@ export default function CotizacionesPage() {
 
   // Fetch vendedores al montar
   useEffect(() => {
-    fetch('/api/users')
+    fetch('/api/users?vendedores=true')
       .then((res) => res.json())
       .then((data) => setSalesPersons(data.users || []))
       .catch(() => {})

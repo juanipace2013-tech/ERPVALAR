@@ -3,10 +3,16 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/prisma'
+import { VENDEDOR_SELECCIONABLE } from '@/lib/vendedores'
 
 /**
  * GET /api/users
- * Listar usuarios (para selectores)
+ * Listar usuarios activos (para selectores).
+ *
+ * ?vendedores=true limita el listado a vendedores seleccionables. Lo usan los
+ * selectores y filtros de vendedor; sin el flag se devuelven todos los usuarios
+ * activos (ej: el selector de "Comprador asignado" de proveedores, que no es un
+ * vendedor).
  */
 export async function GET(request: NextRequest) {
   try {
@@ -17,10 +23,11 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const role = searchParams.get('role') || ''
+    const soloVendedores = searchParams.get('vendedores') === 'true'
 
-    const where: Record<string, unknown> = {
-      status: 'ACTIVE',
-    }
+    const where: Record<string, unknown> = soloVendedores
+      ? { ...VENDEDOR_SELECCIONABLE }
+      : { status: 'ACTIVE' }
 
     if (role) {
       where.role = role

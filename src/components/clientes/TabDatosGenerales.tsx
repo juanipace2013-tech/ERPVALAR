@@ -241,7 +241,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
 
     Promise.all([
       fetch(`/api/clientes/by-cuit/${normalizedCuit}`).then((r) => r.ok ? r.json() : null),
-      fetch('/api/users').then((r) => r.ok ? r.json() : null),
+      fetch('/api/users?vendedores=true').then((r) => r.ok ? r.json() : null),
     ]).then(([customerData, usersData]) => {
       if (customerData?.found && customerData.customer?.salesPerson) {
         setSalesPersonId(customerData.customer.salesPerson.id)

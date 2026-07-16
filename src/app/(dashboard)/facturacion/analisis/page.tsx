@@ -197,7 +197,7 @@ export default function AnalisisFacturacionPage() {
   const [editingVendedor, setEditingVendedor] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch('/api/users')
+    fetch('/api/users?vendedores=true')
       .then((r) => r.json())
       .then((d) => setSalesPersons(d.users || []))
       .catch(() => {})

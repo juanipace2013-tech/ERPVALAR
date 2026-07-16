@@ -29,11 +29,19 @@ enum UserStatus {
 }
 
 model User {
-  id         String     @id @default(cuid())
-  name       String
-  email      String     @unique
-  password   String
-  role       UserRole   @default(VENDEDOR)
+  id       String @id @default(cuid())
+  name     String
+  email    String @unique
+  password String
+  // `role` expresa NIVEL DE PERMISO (hoy todo el equipo es ADMIN), no función
+  // comercial. Para saber si alguien es vendedor usar `isVendedor`, que es
+  // independiente de los permisos: Carolina Rutolo es ADMIN y no vende.
+  role     UserRole @default(VENDEDOR)
+
+  // Vendedor: aparece en los selectores y filtros de vendedor.
+  // Ver VENDEDOR_SELECCIONABLE en src/lib/vendedores.ts.
+  isVendedor Boolean @default(false)
+
   status     UserStatus @default(ACTIVE)
   avatar     String?
   phone      String?

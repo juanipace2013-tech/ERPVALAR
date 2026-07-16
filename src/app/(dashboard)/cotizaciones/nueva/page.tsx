@@ -121,7 +121,7 @@ export default function NuevaCotizacionPage() {
       }
 
       // Obtener usuarios para selector de vendedor
-      const usersRes = await fetch('/api/users')
+      const usersRes = await fetch('/api/users?vendedores=true')
       if (usersRes.ok) {
         const data = await usersRes.json()
         setUsers(data.users || [])

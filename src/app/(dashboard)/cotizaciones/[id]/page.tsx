@@ -388,7 +388,7 @@ export default function QuoteDetailPage() {
 
   const fetchVendedores = async () => {
     try {
-      const response = await fetch('/api/users')
+      const response = await fetch('/api/users?vendedores=true')
       if (response.ok) {
         const data = await response.json()
         setVendedores(data.users || [])

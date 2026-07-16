@@ -55,7 +55,7 @@ import {
   Check,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { getLocalDateString } from '@/lib/utils'
+import { getLocalDateString, parseDecimalAR } from '@/lib/utils'
 import { resolveJurisdiccionIIBB } from '@/lib/jurisdicciones-iibb'
 import { REVIEW_REASONS, type ReviewReason } from '@/lib/review-reasons'
 
@@ -1128,27 +1128,47 @@ export default function NewPurchaseInvoicePage() {
   const fmt = (n: number) =>
     n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-  // Helper para inputs numéricos como text
-  // Soporta formato argentino: 38.289,75 (punto=miles, coma=decimal) y también 38289.75
-  const parseNumericInput = (val: string): number => {
-    if (!val) return 0
-    // Si tiene coma, asumir formato AR: quitar puntos de miles, coma→punto decimal
-    if (val.includes(',')) {
-      const cleaned = val.replace(/[^0-9.,]/g, '').replace(/\./g, '').replace(',', '.')
-      return Number(cleaned) || 0
-    }
-    // Formato estándar: solo números y punto decimal
-    const cleaned = val.replace(/[^0-9.]/g, '')
-    return Number(cleaned) || 0
-  }
-  // Formato simple para Cant y Bonif% (sin separadores de miles)
-  const fmtInput = (n: number): string => (n > 0 ? String(n) : '')
+  // Formato editable para Cant y Bonif%: sin separadores de miles, coma decimal
+  const fmtInput = (n: number): string => (n > 0 ? String(n).replace('.', ',') : '')
   // Formato argentino para P.Unit y montos (con separadores de miles y 2 decimales)
   const fmtInputAR = (n: number): string =>
     n > 0 ? n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''
 
-  // Track qué input tiene foco para no formatear mientras se edita
-  const [editingField, setEditingField] = useState<string | null>(null)
+  // Texto crudo de los inputs numéricos del grid mientras tienen foco, keyed por
+  // `${campo}-${itemId}`. Sin esto el value se re-deriva del Number en cada tecla y
+  // borra el separador decimal antes de poder escribir los decimales.
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+
+  const setDraft = (key: string, text: string) =>
+    setDrafts((prev) => ({ ...prev, [key]: text }))
+
+  const clearDraft = (key: string) =>
+    setDrafts((prev) => {
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+
+  /**
+   * Props para un input numérico del grid: muestra el draft crudo mientras se edita
+   * y el valor formateado desde el Number al salir del campo.
+   */
+  const numericCell = (
+    key: string,
+    value: number,
+    commit: (n: number) => void,
+    fmtBlurred: (n: number) => string
+  ) => ({
+    type: 'text' as const,
+    inputMode: 'decimal' as const,
+    value: drafts[key] ?? fmtBlurred(value),
+    onFocus: () => setDraft(key, fmtInput(value)),
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
+      setDraft(key, e.target.value)
+      commit(parseDecimalAR(e.target.value))
+    },
+    onBlur: () => clearDraft(key),
+  })
 
   // ============ RENDER ============
 
@@ -1659,30 +1679,37 @@ export default function NewPurchaseInvoicePage() {
                         <TableCell className="w-[75px]">
                           <Input
                             className="h-8 text-xs text-right font-mono w-full"
-                            inputMode="decimal"
-                            value={fmtInput(item.quantity)}
                             placeholder="0"
-                            onChange={(e) => updateItem(item.id, 'quantity', parseNumericInput(e.target.value))}
+                            {...numericCell(
+                              `qty-${item.id}`,
+                              item.quantity,
+                              (n) => updateItem(item.id, 'quantity', n),
+                              fmtInput
+                            )}
                           />
                         </TableCell>
                         <TableCell className="w-[130px]">
                           <Input
                             className="h-8 text-xs text-right font-mono w-full"
-                            inputMode="decimal"
-                            value={editingField === `price-${item.id}` ? fmtInput(item.listPrice) : fmtInputAR(item.listPrice)}
                             placeholder="0,00"
-                            onFocus={() => setEditingField(`price-${item.id}`)}
-                            onBlur={() => setEditingField(null)}
-                            onChange={(e) => updateItem(item.id, 'listPrice', parseNumericInput(e.target.value))}
+                            {...numericCell(
+                              `price-${item.id}`,
+                              item.listPrice,
+                              (n) => updateItem(item.id, 'listPrice', n),
+                              fmtInputAR
+                            )}
                           />
                         </TableCell>
                         <TableCell className="w-[75px]">
                           <Input
                             className="h-8 text-xs text-right font-mono w-full"
-                            inputMode="decimal"
-                            value={fmtInput(item.bonificacion)}
                             placeholder="0"
-                            onChange={(e) => updateItem(item.id, 'bonificacion', parseNumericInput(e.target.value))}
+                            {...numericCell(
+                              `bonif-${item.id}`,
+                              item.bonificacion,
+                              (n) => updateItem(item.id, 'bonificacion', n),
+                              fmtInput
+                            )}
                           />
                         </TableCell>
                         <TableCell>

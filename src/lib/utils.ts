@@ -62,6 +62,24 @@ export function formatNumber(
 }
 
 /**
+ * Parsea un número tipeado con formato argentino o estándar.
+ * Heurística: si hay coma, es el separador decimal y los puntos son de miles;
+ * si sólo hay punto, es el separador decimal.
+ * Ejemplos: "1.234,56" → 1234.56 | "38289.75" → 38289.75 | "1,5" → 1.5
+ * Devuelve 0 para entradas vacías o no parseables.
+ */
+export function parseDecimalAR(val: string): number {
+  if (!val) return 0
+  const raw = val.replace(/[^0-9.,]/g, '')
+  if (!raw) return 0
+  const normalized = raw.includes(',')
+    ? raw.replace(/\./g, '').replace(',', '.')
+    : raw
+  const num = Number(normalized)
+  return Number.isFinite(num) ? num : 0
+}
+
+/**
  * Formatea un monto como moneda con formato argentino (punto miles, coma decimales).
  * Acepta number o string (los Decimal de Prisma llegan como string vía JSON).
  * Ejemplos: formatCurrency(3590, 'USD') → "USD 3.590,00"

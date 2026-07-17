@@ -448,7 +448,7 @@ export default function QuoteViewPage() {
   const revertDialogConfig: Record<string, { title: string; description: string; icon: string; color: string }> = {
     ACCEPTED: {
       title: 'Revertir a Aceptada',
-      description: 'La cotización volverá al estado Aceptada. Se limpiarán los datos de Colppy (factura/remito) asociados y volverá a aparecer en el tablero de facturación.',
+      description: 'La cotización volverá al estado Aceptada. Se anularán los borradores de factura locales, los ítems volverán a quedar pendientes de facturar y la cotización reaparecerá en el tablero de facturación. Si el borrador también se envió a Colppy, hay que eliminarlo manualmente allá.',
       icon: 'undo',
       color: 'amber',
     },

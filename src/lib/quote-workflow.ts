@@ -121,9 +121,12 @@ export async function updateQuoteStatus(
   if (data?.customerResponse) updateData.customerResponse = data.customerResponse;
   if (data?.rejectionReason) updateData.rejectionReason = data.rejectionReason;
 
-  // Limpieza de campos en reversiones
-  if (quote.status === 'CONVERTED' && newStatus === 'ACCEPTED') {
-    // Revertir CONVERTED → ACCEPTED: limpiar campos de Colppy
+  // Limpieza de campos en reversiones de facturación (CONVERTED o
+  // FACTURADA_PARCIAL → ACCEPTED): limpiar campos de Colppy en la cotización.
+  const isRevertFacturacion =
+    (quote.status === 'CONVERTED' || quote.status === 'FACTURADA_PARCIAL') &&
+    newStatus === 'ACCEPTED';
+  if (isRevertFacturacion) {
     updateData.colppyInvoiceId = null;
     updateData.colppyDeliveryNoteId = null;
     updateData.colppySyncedAt = null;
@@ -137,6 +140,16 @@ export async function updateQuoteStatus(
 
   // Actualizar estado en una transacción
   const updated = await prisma.$transaction(async (tx) => {
+    // Al revertir una facturación, anular también el rastro local (Invoices
+    // borrador Colppy + CotizacionFactura + cantidadFacturada). Sin esto la
+    // cotización volvía al tablero pero con los items como "facturados" y el
+    // envío a Colppy la rechazaba con "No hay items pendientes de facturar"
+    // (caso VAL-2026-1327).
+    let borradoresAnulados = 0;
+    if (isRevertFacturacion) {
+      borradoresAnulados = await anularBorradoresColppy(tx, quoteId);
+    }
+
     // Crear registro en historial
     await tx.quoteStatusHistory.create({
       data: {
@@ -144,7 +157,9 @@ export async function updateQuoteStatus(
         fromStatus: quote.status,
         toStatus: newStatus,
         changedBy: userId,
-        notes: historyNotes,
+        notes: borradoresAnulados > 0
+          ? `${historyNotes ? `${historyNotes} — ` : ''}Se anularon ${borradoresAnulados} borrador(es) de factura locales`
+          : historyNotes,
       }
     });
 
@@ -165,6 +180,62 @@ export async function updateQuoteStatus(
   }, { maxWait: 10000, timeout: 30000 });
 
   return updated;
+}
+
+/**
+ * Anula el rastro local de la facturación en borrador de una cotización:
+ *  - Invoices DRAFT `BORRADOR-COLPPY-*` → CANCELLED
+ *  - CotizacionFactura en estado BORRADOR → ANULADA
+ *  - Recalcula QuoteItem.cantidadFacturada con los InvoiceItems de facturas
+ *    que quedaron vigentes (no CANCELLED)
+ *
+ * NO toca nada en Colppy: si el borrador también se envió allá, hay que
+ * eliminarlo manualmente en Colppy.
+ *
+ * Devuelve la cantidad de borradores locales anulados.
+ */
+export async function anularBorradoresColppy(
+  tx: Prisma.TransactionClient,
+  quoteId: string,
+): Promise<number> {
+  const borradores = await tx.invoice.updateMany({
+    where: {
+      quoteId,
+      status: 'DRAFT',
+      invoiceNumber: { startsWith: 'BORRADOR-COLPPY-' },
+    },
+    data: { status: 'CANCELLED' },
+  });
+
+  await tx.cotizacionFactura.updateMany({
+    where: { cotizacionId: quoteId, estado: 'BORRADOR' },
+    data: { estado: 'ANULADA' },
+  });
+
+  // Recalcular cantidadFacturada por item desde las facturas vigentes. Se
+  // recomputa (en vez de decrementar) para absorber cualquier deriva previa
+  // entre la columna y los InvoiceItems.
+  const items = await tx.quoteItem.findMany({
+    where: { quoteId },
+    include: {
+      invoiceItems: {
+        include: { invoice: { select: { status: true } } },
+      },
+    },
+  });
+  for (const item of items) {
+    const vigente = item.invoiceItems
+      .filter((ii) => ii.invoice.status !== 'CANCELLED')
+      .reduce((sum, ii) => sum + Number(ii.quantity), 0);
+    if (Number(item.cantidadFacturada) !== vigente) {
+      await tx.quoteItem.update({
+        where: { id: item.id },
+        data: { cantidadFacturada: vigente },
+      });
+    }
+  }
+
+  return borradores.count;
 }
 
 /**

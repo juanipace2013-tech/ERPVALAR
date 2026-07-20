@@ -29,9 +29,9 @@ enum UserStatus {
 }
 
 model User {
-  id       String @id @default(cuid())
+  id       String   @id @default(cuid())
   name     String
-  email    String @unique
+  email    String   @unique
   password String
   // `role` expresa NIVEL DE PERMISO (hoy todo el equipo es ADMIN), no función
   // comercial. Para saber si alguien es vendedor usar `isVendedor`, que es
@@ -90,6 +90,11 @@ model User {
   // Bandeja (mail + WhatsApp)
   assignedConversations Conversation[] @relation("AssignedConversations")
   sentMessages          Message[]      @relation("MessageSentByUser")
+
+  // Comisiones
+  comisionConfig        VendedorComisionConfig?
+  comisionLineas        ComisionLinea[]
+  comisionLiquidaciones ComisionLiquidacion[]
 
   @@index([email])
   @@index([role])
@@ -424,7 +429,7 @@ model PurchaseOrder {
 }
 
 model PurchaseOrderItem {
-  id              String @id @default(cuid())
+  id              String  @id @default(cuid())
   purchaseOrderId String
   // Nullable: permite items "manuales" (producto no catalogado) cargados a mano.
   // En ese caso la descripción libre identifica al item.
@@ -1022,19 +1027,20 @@ model Quote {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  customer      Customer             @relation(fields: [customerId], references: [id])
-  opportunity   Opportunity?         @relation(fields: [opportunityId], references: [id])
-  salesPerson   User                 @relation("QuoteSalesPerson", fields: [salesPersonId], references: [id])
-  creador       User?                @relation("QuoteCreador", fields: [creadoPorId], references: [id])
-  items         QuoteItem[]
-  deliveryNotes DeliveryNote[] // Remitos generados
-  invoices      Invoice[] // Facturas generadas
-  statusHistory QuoteStatusHistory[]
-  publicToken   QuotePublicToken? // Token para acceso público
-  emailLogs     QuoteEmailLog[] // Log de emails enviados
-  seguimientos  QuoteSeguimiento[] // Seguimientos de contacto
-  facturas      CotizacionFactura[] // Facturas parciales generadas
-  auditLogs     CotizacionAuditLog[]
+  customer       Customer             @relation(fields: [customerId], references: [id])
+  opportunity    Opportunity?         @relation(fields: [opportunityId], references: [id])
+  salesPerson    User                 @relation("QuoteSalesPerson", fields: [salesPersonId], references: [id])
+  creador        User?                @relation("QuoteCreador", fields: [creadoPorId], references: [id])
+  items          QuoteItem[]
+  deliveryNotes  DeliveryNote[] // Remitos generados
+  invoices       Invoice[] // Facturas generadas
+  statusHistory  QuoteStatusHistory[]
+  publicToken    QuotePublicToken? // Token para acceso público
+  emailLogs      QuoteEmailLog[] // Log de emails enviados
+  seguimientos   QuoteSeguimiento[] // Seguimientos de contacto
+  facturas       CotizacionFactura[] // Facturas parciales generadas
+  auditLogs      CotizacionAuditLog[]
+  comisionLineas ComisionLinea[] // Líneas de comisión vinculadas
 
   @@index([customerId])
   @@index([opportunityId])
@@ -2635,6 +2641,9 @@ model CotizacionFactura {
   // Remitos generados desde esta factura parcial (puede entregarse en partes).
   deliveryNotes DeliveryNote[]
 
+  // Líneas de comisión que snapshotearon esta factura
+  comisionLineas ComisionLinea[]
+
   @@index([cotizacionId])
   @@index([colppyInvoiceId])
   @@map("cotizacion_facturas")
@@ -2831,15 +2840,15 @@ model Message {
 // Tracking de las subscriptions de Microsoft Graph (webhooks de mail).
 // Las subscriptions de /messages caducan a las ~70hs, hay que renovarlas con cron.
 model GraphSubscription {
-  id               String   @id @default(cuid())
-  subscriptionId   String   @unique // el ID que devuelve Graph
-  resource         String // ej "users/ventas@val-ar.com.ar/messages"
-  changeType       String // "created"
-  notificationUrl  String
-  clientState      String // secreto compartido para validar callbacks
-  expiresAt        DateTime
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id              String   @id @default(cuid())
+  subscriptionId  String   @unique // el ID que devuelve Graph
+  resource        String // ej "users/ventas@val-ar.com.ar/messages"
+  changeType      String // "created"
+  notificationUrl String
+  clientState     String // secreto compartido para validar callbacks
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@index([expiresAt])
   @@map("graph_subscriptions")
@@ -2997,4 +3006,164 @@ model ExirosItem {
 
   @@index([licitacionId])
   @@map("exiros_items")
+}
+
+// ========================================
+// COMISIONES DE VENDEDORES
+// ========================================
+
+enum TipoOperacionComision {
+  BILLETE // el cliente paga en pesos → TC billete del mes
+  DIVISA // el cliente paga en dólares (transferencia) → TC divisa del mes
+}
+
+enum EstadoComisionLinea {
+  CERRADO // cotización aprobada sin facturar: forecast, solo USD, no se paga
+  FACTURADO // facturado: entra en la liquidación del mes (tasa provisoria)
+  LIQUIDADO // incluido en una liquidación cerrada: tasa y montos congelados
+}
+
+enum EstadoComisionLiquidacion {
+  ABIERTA // borrador: las líneas se recalculan con el tramo provisorio
+  CERRADA // cerrada: tasaAplicada y montos congelados en cada línea
+}
+
+// Escala mensual de comisión. El TOTAL facturado USD del mes define un único
+// tramo que se aplica a TODAS las ventas facturadas de ese mes (no es por
+// venta). Bordes: piso inclusivo, techo exclusivo → [50000, 75000) = 1,25%.
+// Seed constante; versionable a futuro vía vigenteDesde.
+model ComisionEscala {
+  id           Int      @id @default(autoincrement())
+  pisoUsd      Decimal  @db.Decimal(15, 2)
+  techoUsd     Decimal? @db.Decimal(15, 2) // null = sin techo (último tramo)
+  tasa         Decimal  @db.Decimal(6, 4) // 0.01, 0.0125, 0.015, 0.02
+  vigenteDesde DateTime @default(now())
+
+  @@map("comision_escalas")
+}
+
+model VendedorComisionConfig {
+  id         String   @id @default(cuid())
+  vendedorId String   @unique
+  basicoArs  Decimal  @db.Decimal(15, 2) // básico mensual fijo en ARS
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  vendedor User @relation(fields: [vendedorId], references: [id])
+
+  @@map("vendedor_comision_configs")
+}
+
+// Tipo de cambio USD→ARS del mes para liquidar comisiones. Un valor por
+// tipo de operación (la planilla original usaba TC distinto según cómo
+// pagaba el cliente: billete vs divisa).
+model TipoCambioMes {
+  id        Int      @id @default(autoincrement())
+  anio      Int
+  mes       Int // 1-12
+  billete   Decimal  @db.Decimal(12, 4)
+  divisa    Decimal  @db.Decimal(12, 4)
+  updatedAt DateTime @updatedAt
+
+  @@unique([anio, mes])
+  @@map("tipo_cambio_meses")
+}
+
+// Línea de comisión. Se materializa en dos casos:
+//   1. Migración de planillas históricas (estado LIQUIDADO/CERRADO, sin
+//      vínculos al ERP: la numeración de presupuestos vieja no existe acá).
+//   2. Al abrir/refrescar una liquidación: snapshot de las CotizacionFactura
+//      del mes del vendedor (estado FACTURADO → LIQUIDADO al cerrar).
+// El forecast en vivo (pipeline de cotizaciones aprobadas) NO se
+// materializa: se calcula on-the-fly desde Quote/CotizacionFactura.
+model ComisionLinea {
+  id            String  @id @default(cuid())
+  vendedorId    String
+  liquidacionId String?
+
+  // Datos denormalizados: histórico de planilla, o snapshot al liquidar
+  clienteNombre String
+  presupuesto   String // número de presupuesto (formato viejo o VAL-YYYY-NNN)
+  numeroFactura String? // "S/F" en planilla = sin factura asignada aún
+
+  // Vínculos best-effort al ERP (null para históricos pre-ERP)
+  clienteId        String?
+  cotizacionId     String?
+  facturaParcialId String? // CotizacionFactura origen del snapshot
+
+  importeCerradoUsd   Decimal? @db.Decimal(15, 2) // USD de la cotización aprobada
+  importeFacturadoUsd Decimal? @db.Decimal(15, 2) // USD facturado (por factura)
+
+  tipoOperacion  TipoOperacionComision @default(BILLETE)
+  tipoCambio     Decimal?              @db.Decimal(12, 4) // TC aplicado a esta línea
+  anioImputacion Int?
+  mesImputacion  Int? // mes de la factura
+
+  estado       EstadoComisionLinea @default(FACTURADO)
+  tasaAplicada Decimal?            @db.Decimal(6, 4) // se congela al cerrar la liquidación
+  comisionUsd  Decimal?            @db.Decimal(15, 2)
+  comisionArs  Decimal?            @db.Decimal(15, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vendedor       User                 @relation(fields: [vendedorId], references: [id])
+  liquidacion    ComisionLiquidacion? @relation(fields: [liquidacionId], references: [id])
+  cotizacion     Quote?               @relation(fields: [cotizacionId], references: [id])
+  facturaParcial CotizacionFactura?   @relation(fields: [facturaParcialId], references: [id])
+
+  @@index([vendedorId])
+  @@index([liquidacionId])
+  @@index([anioImputacion, mesImputacion])
+  @@index([estado])
+  @@index([facturaParcialId])
+  @@map("comision_lineas")
+}
+
+model ComisionLiquidacion {
+  id         String @id @default(cuid())
+  vendedorId String
+  anio       Int
+  mes        Int // 1-12
+
+  estado EstadoComisionLiquidacion @default(ABIERTA)
+
+  totalFacturadoUsd Decimal  @default(0) @db.Decimal(15, 2)
+  tasaMes           Decimal? @db.Decimal(6, 4) // tramo según totalFacturadoUsd
+  basicoArs         Decimal  @default(0) @db.Decimal(15, 2)
+  comisionesArs     Decimal  @default(0) @db.Decimal(15, 2)
+  // neto = basicoArs + comisionesArs + Σ ajustes.montoArs (ajustes con signo)
+  netoArs           Decimal  @default(0) @db.Decimal(15, 2)
+
+  // Split del pago (inputs manuales)
+  efectivoArs Decimal? @db.Decimal(15, 2)
+  mlArs       Decimal? @db.Decimal(15, 2)
+
+  notas     String?   @db.Text
+  cerradaEn DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  vendedor User             @relation(fields: [vendedorId], references: [id])
+  ajustes  ComisionAjuste[]
+  lineas   ComisionLinea[]
+
+  @@unique([vendedorId, anio, mes])
+  @@index([anio, mes])
+  @@map("comision_liquidaciones")
+}
+
+// Concepto manual con signo (ej: "Deuda Germán" -100611, "Sommier Center"
+// -613635.56). Negativo resta del neto.
+model ComisionAjuste {
+  id            String   @id @default(cuid())
+  liquidacionId String
+  concepto      String
+  montoArs      Decimal  @db.Decimal(15, 2)
+  createdAt     DateTime @default(now())
+
+  liquidacion ComisionLiquidacion @relation(fields: [liquidacionId], references: [id], onDelete: Cascade)
+
+  @@index([liquidacionId])
+  @@map("comision_ajustes")
 }

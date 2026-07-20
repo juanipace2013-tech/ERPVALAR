@@ -28,6 +28,7 @@ import {
   Sparkles,
   Inbox,
   Gavel,
+  Percent,
 } from 'lucide-react'
 
 interface SubNavItem {
@@ -120,6 +121,12 @@ const navItems: NavItem[] = [
         roles: ['ADMIN', 'GERENTE', 'VENDEDOR', 'CONTADOR'],
       },
     ],
+  },
+  {
+    title: 'Comisiones',
+    href: '/comisiones',
+    icon: Percent,
+    roles: ['ADMIN', 'GERENTE'],
   },
   {
     title: 'Productos',

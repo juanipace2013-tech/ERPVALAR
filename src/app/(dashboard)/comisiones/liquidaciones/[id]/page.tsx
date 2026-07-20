@@ -1,0 +1,501 @@
+'use client'
+
+import { useCallback, useEffect, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  ArrowLeft,
+  Loader2,
+  Lock,
+  LockOpen,
+  RefreshCw,
+  Trash2,
+  Plus,
+  AlertTriangle,
+} from 'lucide-react'
+import { toast } from 'sonner'
+import { formatCurrency, formatNumber, parseDecimalAR } from '@/lib/utils'
+
+const MESES = [
+  'Enero',
+  'Febrero',
+  'Marzo',
+  'Abril',
+  'Mayo',
+  'Junio',
+  'Julio',
+  'Agosto',
+  'Septiembre',
+  'Octubre',
+  'Noviembre',
+  'Diciembre',
+]
+
+interface Linea {
+  id: string
+  clienteNombre: string
+  presupuesto: string
+  numeroFactura: string | null
+  importeFacturadoUsd: string | null
+  tipoOperacion: 'BILLETE' | 'DIVISA'
+  tipoCambio: string | null
+  tasaAplicada: string | null
+  comisionUsd: string | null
+  comisionArs: string | null
+  estado: string
+}
+
+interface Ajuste {
+  id: string
+  concepto: string
+  montoArs: string
+}
+
+interface Liquidacion {
+  id: string
+  anio: number
+  mes: number
+  estado: 'ABIERTA' | 'CERRADA'
+  totalFacturadoUsd: string
+  tasaMes: string | null
+  basicoArs: string
+  comisionesArs: string
+  netoArs: string
+  efectivoArs: string | null
+  mlArs: string | null
+  notas: string | null
+  cerradaEn: string | null
+  vendedor?: { id: string; name: string }
+  lineas: Linea[]
+  ajustes: Ajuste[]
+}
+
+export default function LiquidacionPage() {
+  const params = useParams<{ id: string }>()
+  const router = useRouter()
+  const [liq, setLiq] = useState<Liquidacion | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [accionando, setAccionando] = useState(false)
+  const [concepto, setConcepto] = useState('')
+  const [monto, setMonto] = useState('')
+  const [basico, setBasico] = useState('')
+  const [efectivo, setEfectivo] = useState('')
+  const [ml, setMl] = useState('')
+
+  const cargar = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/comisiones/liquidaciones/${params.id}`)
+      if (!res.ok) throw new Error()
+      const json = await res.json()
+      setLiq(json.liquidacion)
+      setBasico(formatNumber(Number(json.liquidacion.basicoArs)))
+      setEfectivo(json.liquidacion.efectivoArs ? formatNumber(Number(json.liquidacion.efectivoArs)) : '')
+      setMl(json.liquidacion.mlArs ? formatNumber(Number(json.liquidacion.mlArs)) : '')
+    } catch {
+      toast.error('No se pudo cargar la liquidación')
+    } finally {
+      setLoading(false)
+    }
+  }, [params.id])
+
+  useEffect(() => {
+    cargar()
+  }, [cargar])
+
+  const accion = async (fn: () => Promise<Response>, okMsg: string) => {
+    setAccionando(true)
+    try {
+      const res = await fn()
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Error')
+      toast.success(okMsg)
+      await cargar()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Error')
+    } finally {
+      setAccionando(false)
+    }
+  }
+
+  const refrescar = () =>
+    accion(
+      () => fetch(`/api/comisiones/liquidaciones/${params.id}/refrescar`, { method: 'POST' }),
+      'Líneas sincronizadas con las facturas del mes'
+    )
+
+  const cerrar = () =>
+    accion(
+      () => fetch(`/api/comisiones/liquidaciones/${params.id}/cerrar`, { method: 'POST' }),
+      'Liquidación cerrada: tasa y montos congelados'
+    )
+
+  const reabrir = () =>
+    accion(
+      () => fetch(`/api/comisiones/liquidaciones/${params.id}/reabrir`, { method: 'POST' }),
+      'Liquidación reabierta'
+    )
+
+  const guardarCampos = (payload: Record<string, unknown>, okMsg: string) =>
+    accion(
+      () =>
+        fetch(`/api/comisiones/liquidaciones/${params.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }),
+      okMsg
+    )
+
+  const agregarAjuste = () => {
+    const montoNum = parseDecimalAR(monto)
+    if (!concepto.trim() || montoNum === 0) {
+      toast.error('Concepto y monto (con signo: negativo resta)')
+      return
+    }
+    setConcepto('')
+    setMonto('')
+    accion(
+      () =>
+        fetch(`/api/comisiones/liquidaciones/${params.id}/ajustes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ concepto: concepto.trim(), montoArs: montoNum }),
+        }),
+      'Ajuste agregado'
+    )
+  }
+
+  const eliminarAjuste = (id: string) =>
+    accion(
+      () => fetch(`/api/comisiones/ajustes/${id}`, { method: 'DELETE' }),
+      'Ajuste eliminado'
+    )
+
+  const cambiarTipoOperacion = (lineaId: string, tipo: string) =>
+    accion(
+      () =>
+        fetch(`/api/comisiones/lineas/${lineaId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tipoOperacion: tipo }),
+        }),
+      'Tipo de operación actualizado'
+    )
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-16">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+  if (!liq) {
+    return <div className="p-6 text-muted-foreground">Liquidación no encontrada.</div>
+  }
+
+  const abierta = liq.estado === 'ABIERTA'
+  const ajustesTotal = liq.ajustes.reduce((s, a) => s + Number(a.montoArs), 0)
+  const tcFaltante = abierta && liq.lineas.some((l) => l.tipoCambio === null)
+
+  return (
+    <div className="space-y-6 p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={() => router.push('/comisiones')}>
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold">
+              Liquidación {MESES[liq.mes - 1]} {liq.anio}
+              {liq.vendedor ? ` — ${liq.vendedor.name}` : ''}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {liq.lineas.length} facturas ·{' '}
+              <Badge
+                variant="outline"
+                className={
+                  abierta
+                    ? 'bg-yellow-100 text-yellow-800 border-yellow-300'
+                    : 'bg-green-100 text-green-800 border-green-300'
+                }
+              >
+                {liq.estado}
+              </Badge>
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          {abierta ? (
+            <>
+              <Button variant="outline" onClick={refrescar} disabled={accionando}>
+                <RefreshCw className="h-4 w-4 mr-2" /> Refrescar facturas
+              </Button>
+              <Button onClick={cerrar} disabled={accionando}>
+                <Lock className="h-4 w-4 mr-2" /> Cerrar liquidación
+              </Button>
+            </>
+          ) : (
+            <Button variant="outline" onClick={reabrir} disabled={accionando}>
+              <LockOpen className="h-4 w-4 mr-2" /> Reabrir
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {tcFaltante && (
+        <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          <AlertTriangle className="h-4 w-4" />
+          Falta cargar el tipo de cambio de {MESES[liq.mes - 1]} {liq.anio} (se carga desde el
+          dashboard de Comisiones). Sin TC no se puede cerrar.
+        </div>
+      )}
+
+      <div className="grid gap-4 md:grid-cols-5">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Facturado (USD)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-xl font-bold">{formatCurrency(liq.totalFacturadoUsd, 'USD')}</div>
+            <p className="text-xs text-muted-foreground">
+              Tasa {liq.tasaMes != null ? `${formatNumber(Number(liq.tasaMes) * 100)}%` : '—'}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Básico</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <Input
+              value={basico}
+              onChange={(e) => setBasico(e.target.value)}
+              disabled={!abierta}
+              onBlur={() => {
+                const val = parseDecimalAR(basico)
+                if (val !== Number(liq.basicoArs)) {
+                  guardarCampos({ basicoArs: val }, 'Básico actualizado')
+                }
+              }}
+            />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Comisiones (ARS)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-xl font-bold">{formatCurrency(liq.comisionesArs, 'ARS')}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Ajustes</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className={`text-xl font-bold ${ajustesTotal < 0 ? 'text-red-600' : ''}`}>
+              {formatCurrency(ajustesTotal, 'ARS')}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Neto</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-xl font-bold">{formatCurrency(liq.netoArs, 'ARS')}</div>
+            <p className="text-xs text-muted-foreground">básico + comisiones + ajustes</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">Ventas facturadas del mes</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {liq.lineas.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4">
+                Sin facturas en el mes. Usá &quot;Refrescar facturas&quot; si facturaste hace poco.
+              </p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Presupuesto</TableHead>
+                    <TableHead>Factura</TableHead>
+                    <TableHead className="text-right">Importe USD</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead className="text-right">TC</TableHead>
+                    <TableHead className="text-right">Com. USD</TableHead>
+                    <TableHead className="text-right">Com. ARS</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {liq.lineas.map((l) => (
+                    <TableRow key={l.id}>
+                      <TableCell className="max-w-52 truncate">{l.clienteNombre}</TableCell>
+                      <TableCell>{l.presupuesto}</TableCell>
+                      <TableCell>{l.numeroFactura || 'S/F'}</TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(l.importeFacturadoUsd ?? 0, 'USD')}
+                      </TableCell>
+                      <TableCell>
+                        <Select
+                          value={l.tipoOperacion}
+                          onValueChange={(v) => cambiarTipoOperacion(l.id, v)}
+                          disabled={!abierta || accionando}
+                        >
+                          <SelectTrigger className="w-28 h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="BILLETE">Billete</SelectItem>
+                            <SelectItem value="DIVISA">Divisa</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {l.tipoCambio != null ? formatNumber(Number(l.tipoCambio)) : '—'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {l.comisionUsd != null ? formatCurrency(l.comisionUsd, 'USD') : '—'}
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {l.comisionArs != null ? formatCurrency(l.comisionArs, 'ARS') : '—'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Ajustes</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {liq.ajustes.map((a) => (
+                <div key={a.id} className="flex items-center justify-between gap-2 text-sm">
+                  <span className="truncate">{a.concepto}</span>
+                  <span
+                    className={`whitespace-nowrap font-medium ${Number(a.montoArs) < 0 ? 'text-red-600' : ''}`}
+                  >
+                    {formatCurrency(a.montoArs, 'ARS')}
+                  </span>
+                  {abierta && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => eliminarAjuste(a.id)}
+                      disabled={accionando}
+                    >
+                      <Trash2 className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+              {liq.ajustes.length === 0 && (
+                <p className="text-sm text-muted-foreground">Sin ajustes.</p>
+              )}
+              {abierta && (
+                <div className="flex gap-2 pt-2">
+                  <Input
+                    placeholder="Concepto (ej: Deuda)"
+                    value={concepto}
+                    onChange={(e) => setConcepto(e.target.value)}
+                  />
+                  <Input
+                    placeholder="-100.611"
+                    className="w-28"
+                    value={monto}
+                    onChange={(e) => setMonto(e.target.value)}
+                  />
+                  <Button variant="outline" size="icon" onClick={agregarAjuste} disabled={accionando}>
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Split del pago</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <label className="text-xs text-muted-foreground">Efectivo (ARS)</label>
+                <Input
+                  value={efectivo}
+                  onChange={(e) => setEfectivo(e.target.value)}
+                  onBlur={() =>
+                    guardarCampos(
+                      { efectivoArs: efectivo.trim() === '' ? null : parseDecimalAR(efectivo) },
+                      'Split actualizado'
+                    )
+                  }
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">ML (ARS)</label>
+                <Input
+                  value={ml}
+                  onChange={(e) => setMl(e.target.value)}
+                  onBlur={() =>
+                    guardarCampos(
+                      { mlArs: ml.trim() === '' ? null : parseDecimalAR(ml) },
+                      'Split actualizado'
+                    )
+                  }
+                />
+              </div>
+              {(() => {
+                const suma = parseDecimalAR(efectivo) + parseDecimalAR(ml)
+                const neto = Number(liq.netoArs)
+                if (suma !== 0 && Math.abs(suma - neto) > 1) {
+                  return (
+                    <p className="text-xs text-amber-600 flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3" />
+                      El split ({formatCurrency(suma, 'ARS')}) no coincide con el neto (
+                      {formatCurrency(neto, 'ARS')})
+                    </p>
+                  )
+                }
+                return null
+              })()}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -5,7 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { VENDEDOR_SELECCIONABLE } from '@/lib/vendedores'
 import { pipelineCerrado, resumenMes } from '@/lib/comisiones/liquidacion'
-import { COMISIONES_INICIO, mesHabilitado } from '@/lib/comisiones/calculo'
+import { COMISIONES_INICIO, getTipoCambioMes, mesHabilitado } from '@/lib/comisiones/calculo'
 
 // GET /api/comisiones/dashboard?vendedorId=&anio=&mes=
 // Resumen del vendedor: mes en curso (facturado, tramo, comisión provisoria),
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ vendedores: [], vendedorId: null })
     }
 
-    const [resumen, pipeline, liquidaciones, config] = await Promise.all([
+    const [resumen, pipeline, liquidaciones, config, tipoCambio] = await Promise.all([
       resumenMes(vendedorId, anio, mes),
       pipelineCerrado(vendedorId),
       prisma.comisionLiquidacion.findMany({
@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
         include: { _count: { select: { lineas: true } } },
       }),
       prisma.vendedorComisionConfig.findUnique({ where: { vendedorId } }),
+      getTipoCambioMes(anio, mes),
     ])
 
     return NextResponse.json({
@@ -57,6 +58,7 @@ export async function GET(request: NextRequest) {
       pipeline,
       liquidaciones,
       basicoArs: config ? Number(config.basicoArs) : null,
+      tipoCambio,
     })
   } catch (e) {
     logger.error('[comisiones/dashboard] GET error', e)

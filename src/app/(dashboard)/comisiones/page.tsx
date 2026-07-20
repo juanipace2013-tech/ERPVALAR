@@ -88,6 +88,7 @@ interface DashboardData {
   pipeline: { items: PipelineItem[]; pipelineUsd: number } | null
   liquidaciones: LiquidacionResumen[]
   basicoArs: number | null
+  tipoCambio: { billete: number | null; divisa: number | null } | null
 }
 
 export default function ComisionesPage() {
@@ -113,6 +114,9 @@ export default function ComisionesPage() {
       const json: DashboardData = await res.json()
       setData(json)
       if (!vendedorId && json.vendedorId) setVendedorId(json.vendedorId)
+      // Precargar el TC guardado del mes (coma decimal, formato argentino)
+      setTcBillete(json.tipoCambio?.billete != null ? String(json.tipoCambio.billete).replace('.', ',') : '')
+      setTcDivisa(json.tipoCambio?.divisa != null ? String(json.tipoCambio.divisa).replace('.', ',') : '')
     } catch {
       toast.error('No se pudo cargar el dashboard de comisiones')
     } finally {
@@ -315,7 +319,7 @@ export default function ComisionesPage() {
                 </label>
                 <Input
                   className="w-28"
-                  placeholder="1465"
+                  placeholder="sin cargar"
                   value={tcBillete}
                   onChange={(e) => setTcBillete(e.target.value)}
                 />
@@ -326,7 +330,7 @@ export default function ComisionesPage() {
                 </label>
                 <Input
                   className="w-28"
-                  placeholder="1444,5"
+                  placeholder="sin cargar"
                   value={tcDivisa}
                   onChange={(e) => setTcDivisa(e.target.value)}
                 />

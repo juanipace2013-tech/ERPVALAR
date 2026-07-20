@@ -12,6 +12,7 @@ import { calcDueDate } from '@/lib/quote-workflow';
 import { logAudit } from '@/lib/audit';
 import { logger } from '@/lib/logger'
 import { syncStockForSkusFireAndForget } from '@/lib/colppy-inventory';
+import { sincronizarComisionesDeQuote } from '@/lib/comisiones/liquidacion';
 
 // ============================================================================
 // TIPOS
@@ -552,6 +553,13 @@ export async function POST(
         // No bloquear la operación principal si falla el sync
         logger.warn(`[Colppy Sync] Error al sincronizar paymentTerms: ${syncErr.message}`);
       }
+    }
+
+    // 11c. Impactar la facturación en la liquidación de comisiones del mes
+    // del vendedor (crea la liquidación ABIERTA si no existe). Best-effort:
+    // nunca bloquea la facturación.
+    if (action.includes('factura')) {
+      await sincronizarComisionesDeQuote(quote.id, { crearLiquidacion: true });
     }
 
     // 13. Registrar auditoría

@@ -17,6 +17,7 @@ import { calcDueDate } from '@/lib/quote-workflow'
 import { logAudit } from '@/lib/audit'
 import { logger } from '@/lib/logger'
 import { syncStockForSkusFireAndForget } from '@/lib/colppy-inventory'
+import { sincronizarComisionesDeQuote } from '@/lib/comisiones/liquidacion'
 
 interface InvoiceItemRequest {
   quoteItemId: string
@@ -503,6 +504,11 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       )
     }
+
+    // Impactar la facturación en la liquidación de comisiones del mes del
+    // vendedor (crea la liquidación ABIERTA si no existe). Best-effort:
+    // nunca bloquea la facturación.
+    await sincronizarComisionesDeQuote(quote.id, { crearLiquidacion: true })
 
     // Registrar auditoría
     logAudit({

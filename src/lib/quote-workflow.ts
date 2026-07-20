@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { QuoteStatus, DeliveryNoteStatus, Prisma } from '@prisma/client';
 import { logger } from '@/lib/logger';
+import { sincronizarComisionesDeQuote } from '@/lib/comisiones/liquidacion';
 
 /**
  * Ejecuta `fn` dentro de una transacción Serializable, con reintentos
@@ -178,6 +179,13 @@ export async function updateQuoteStatus(
       }
     });
   }, { maxWait: 10000, timeout: 30000 });
+
+  // Al revertir una facturación, sacar las líneas de las facturas anuladas de
+  // las liquidaciones de comisiones ABIERTAS de esos meses. Best-effort, fuera
+  // de la transacción: no crea liquidaciones nuevas ni toca las cerradas.
+  if (isRevertFacturacion) {
+    await sincronizarComisionesDeQuote(quoteId, { crearLiquidacion: false });
+  }
 
   return updated;
 }

@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 import {
   calcularComisionLinea,
@@ -205,6 +206,63 @@ export async function reabrir(liquidacionId: string) {
     data: { estado: 'ABIERTA', cerradaEn: null },
     include: { lineas: true, ajustes: true },
   })
+}
+
+/**
+ * Impacto automático de la facturación en comisiones. Se llama después de
+ * facturar (send-to-colppy / generate-invoice) y después de revertir una
+ * facturación: sincroniza la liquidación de cada mes tocado por las facturas
+ * de la cotización.
+ *
+ * - crearLiquidacion true (alta de factura): si el mes no tiene liquidación,
+ *   la crea ABIERTA para que la venta impacte apenas se factura.
+ * - crearLiquidacion false (reversión): solo toca liquidaciones existentes
+ *   (no tiene sentido crear una vacía para sacar una línea que no está).
+ * - Un mes CERRADO no se toca nunca: queda logueado para reabrir a mano.
+ *
+ * NUNCA lanza: la facturación no puede fallar por un problema de comisiones.
+ */
+export async function sincronizarComisionesDeQuote(
+  quoteId: string,
+  opts: { crearLiquidacion: boolean }
+): Promise<void> {
+  try {
+    const quote = await prisma.quote.findUnique({
+      where: { id: quoteId },
+      select: {
+        quoteNumber: true,
+        salesPersonId: true,
+        // Todas las facturas (incluidas anuladas) para cubrir también la
+        // limpieza de meses donde la factura dejó de contar.
+        facturas: { select: { fecha: true } },
+      },
+    })
+    if (!quote) return
+
+    const meses = new Map<string, { anio: number; mes: number }>()
+    for (const f of quote.facturas) {
+      const anio = f.fecha.getFullYear()
+      const mes = f.fecha.getMonth() + 1
+      meses.set(`${anio}-${mes}`, { anio, mes })
+    }
+
+    for (const { anio, mes } of meses.values()) {
+      const existente = await prisma.comisionLiquidacion.findUnique({
+        where: { vendedorId_anio_mes: { vendedorId: quote.salesPersonId, anio, mes } },
+        select: { estado: true },
+      })
+      if (!existente && !opts.crearLiquidacion) continue
+      if (existente?.estado === 'CERRADA') {
+        logger.warn(
+          `[COMISIONES_SYNC] Liquidación ${mes}/${anio} CERRADA: la facturación de ${quote.quoteNumber} no impacta hasta reabrirla`
+        )
+        continue
+      }
+      await abrirYSincronizar(quote.salesPersonId, anio, mes)
+    }
+  } catch (e) {
+    logger.warn('[COMISIONES_SYNC] Error sincronizando comisiones (no bloquea la facturación)', e)
+  }
 }
 
 /**

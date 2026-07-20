@@ -1,6 +1,11 @@
 /**
  * Migra la "Planilla de Comisiones German 2026.xlsx" al módulo Comisiones.
  *
+ * ⚠️ NO CORRER EN PROD: decisión 2026-07-20 — el módulo arranca en Agosto
+ * 2026 y el historial (Enero–Julio) queda en la planilla Excel. Este script
+ * se conserva por si algún día se decide importar el historial; por eso
+ * además de --apply exige --force-historico.
+ *
  * Importa:
  *   - TipoCambioMes (billete/divisa) de los meses con datos. El TC billete
  *     sale de las filas reales (columna E); el divisa del panel lateral, salvo
@@ -129,6 +134,13 @@ async function main() {
   const apply = process.argv.includes('--apply')
   const fileIdx = process.argv.indexOf('--file')
   const file = fileIdx !== -1 ? process.argv[fileIdx + 1] : DEFAULT_FILE
+
+  if (apply && !process.argv.includes('--force-historico')) {
+    throw new Error(
+      'El historial pre-Agosto 2026 queda en el Excel (no se migra). ' +
+        'Si de verdad querés importarlo, agregá --force-historico.'
+    )
+  }
 
   console.log(apply ? '=== MODO APPLY ===' : '=== DRY RUN (no escribe) ===')
   console.log(`Planilla: ${file}\n`)

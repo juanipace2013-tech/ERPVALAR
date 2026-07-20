@@ -2,9 +2,11 @@ import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 
 import {
+  COMISIONES_INICIO,
   calcularComisionLinea,
   getEscala,
   getTipoCambioMes,
+  mesHabilitado,
   redondear2,
   tasaParaTotal,
   tcParaOperacion,
@@ -50,6 +52,13 @@ export async function facturasDelMes(vendedorId: string, anio: number, mes: numb
  * a mano en líneas existentes. Solo opera sobre liquidaciones ABIERTAS.
  */
 export async function abrirYSincronizar(vendedorId: string, anio: number, mes: number) {
+  if (!mesHabilitado(anio, mes)) {
+    throw new Error(
+      `Las comisiones en el ERP arrancan en ${COMISIONES_INICIO.mes}/${COMISIONES_INICIO.anio}: ` +
+        `${mes}/${anio} se liquida en la planilla Excel`
+    )
+  }
+
   const config = await prisma.vendedorComisionConfig.findUnique({ where: { vendedorId } })
 
   const liquidacion = await prisma.comisionLiquidacion.upsert({
@@ -247,6 +256,8 @@ export async function sincronizarComisionesDeQuote(
     }
 
     for (const { anio, mes } of meses.values()) {
+      // Antes del arranque del módulo la liquidación vive en el Excel.
+      if (!mesHabilitado(anio, mes)) continue
       const existente = await prisma.comisionLiquidacion.findUnique({
         where: { vendedorId_anio_mes: { vendedorId: quote.salesPersonId, anio, mes } },
         select: { estado: true },

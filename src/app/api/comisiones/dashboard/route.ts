@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { VENDEDOR_SELECCIONABLE } from '@/lib/vendedores'
 import { pipelineCerrado, resumenMes } from '@/lib/comisiones/liquidacion'
+import { COMISIONES_INICIO, mesHabilitado } from '@/lib/comisiones/calculo'
 
 // GET /api/comisiones/dashboard?vendedorId=&anio=&mes=
 // Resumen del vendedor: mes en curso (facturado, tramo, comisión provisoria),
@@ -48,6 +49,10 @@ export async function GET(request: NextRequest) {
       vendedorId,
       anio,
       mes,
+      // Los meses anteriores al arranque del módulo se liquidan en el Excel:
+      // la UI oculta "Abrir liquidación" y lo aclara.
+      habilitado: mesHabilitado(anio, mes),
+      inicio: COMISIONES_INICIO,
       resumen,
       pipeline,
       liquidaciones,

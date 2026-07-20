@@ -82,6 +82,8 @@ interface DashboardData {
   vendedorId: string | null
   anio: number
   mes: number
+  habilitado: boolean
+  inicio: { anio: number; mes: number }
   resumen: Resumen | null
   pipeline: { items: PipelineItem[]; pipelineUsd: number } | null
   liquidaciones: LiquidacionResumen[]
@@ -291,14 +293,21 @@ export default function ComisionesPage() {
           </div>
 
           <div className="flex flex-wrap items-end gap-3">
-            <Button onClick={abrirLiquidacion} disabled={abriendo || !vendedorId}>
-              {abriendo ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <FileClock className="h-4 w-4 mr-2" />
-              )}
-              {resumen?.liquidacionId ? 'Ver liquidación del mes' : 'Abrir liquidación del mes'}
-            </Button>
+            {data?.habilitado ? (
+              <Button onClick={abrirLiquidacion} disabled={abriendo || !vendedorId}>
+                {abriendo ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <FileClock className="h-4 w-4 mr-2" />
+                )}
+                {resumen?.liquidacionId ? 'Ver liquidación del mes' : 'Abrir liquidación del mes'}
+              </Button>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {MESES[mes - 1]} {anio} se liquida en la planilla Excel — el módulo arranca en{' '}
+                {data ? `${MESES[data.inicio.mes - 1]} ${data.inicio.anio}` : 'Agosto 2026'}.
+              </p>
+            )}
             <div className="flex items-end gap-2 ml-auto">
               <div>
                 <label className="text-xs text-muted-foreground flex items-center gap-1">

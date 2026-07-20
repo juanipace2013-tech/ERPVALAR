@@ -13,6 +13,19 @@ import { prisma } from '@/lib/prisma'
  * paga, no aplica TC y NO empuja el tramo.
  */
 
+/**
+ * Primer mes que se liquida en el ERP. Todo lo anterior vive en la planilla
+ * Excel de siempre (decisión 2026-07-20: no se migra el historial).
+ */
+export const COMISIONES_INICIO = { anio: 2026, mes: 8 }
+
+export function mesHabilitado(anio: number, mes: number): boolean {
+  return (
+    anio > COMISIONES_INICIO.anio ||
+    (anio === COMISIONES_INICIO.anio && mes >= COMISIONES_INICIO.mes)
+  )
+}
+
 export interface TramoEscala {
   pisoUsd: number
   techoUsd: number | null // null = sin techo

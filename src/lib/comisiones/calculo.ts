@@ -15,9 +15,10 @@ import { prisma } from '@/lib/prisma'
 
 /**
  * Primer mes que se liquida en el ERP. Todo lo anterior vive en la planilla
- * Excel de siempre (decisión 2026-07-20: no se migra el historial).
+ * Excel de siempre (decisión 2026-07-20: no se migra el historial, que llega
+ * hasta Junio; Julio arranca en el ERP para probar el circuito completo).
  */
-export const COMISIONES_INICIO = { anio: 2026, mes: 8 }
+export const COMISIONES_INICIO = { anio: 2026, mes: 7 }
 
 export function mesHabilitado(anio: number, mes: number): boolean {
   return (

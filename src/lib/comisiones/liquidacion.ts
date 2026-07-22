@@ -45,6 +45,87 @@ export async function facturasDelMes(vendedorId: string, anio: number, mes: numb
   })
 }
 
+// Prefijo del marcador en errorMessage cuando una factura se anula por una NC
+// de Colppy detectada automáticamente: "ANULADA_POR_NC:<invoiceId>: NC ...".
+const MARCA_ANULADA_POR_NC = 'ANULADA_POR_NC:'
+
+/**
+ * Detecta NC totales hechas directo en Colppy y anula la CotizacionFactura
+ * correspondiente para que deje de contar en comisiones.
+ *
+ * Las NC entran al ERP por el sync de facturación (tabla Invoice con
+ * transactionType CREDIT_NOTE). Una NC anula una factura del mes si es del
+ * mismo cliente, en USD, por el mismo monto (tolerancia 0,5% / mín USD 1 por
+ * redondeos de TC) y de fecha igual o posterior. Cada NC anula UNA sola
+ * factura (queda referenciada en errorMessage).
+ *
+ * Best-effort: nunca lanza, para no bloquear la sincronización de la
+ * liquidación.
+ */
+async function anularFacturasPorNC(vendedorId: string, anio: number, mes: number) {
+  try {
+    const { desde, hasta } = rangoMes(anio, mes)
+    const facturas = await prisma.cotizacionFactura.findMany({
+      where: {
+        fecha: { gte: desde, lt: hasta },
+        estado: { notIn: ESTADOS_FACTURA_EXCLUIDOS },
+        cotizacion: { salesPersonId: vendedorId },
+      },
+      include: { cotizacion: { select: { customerId: true, quoteNumber: true } } },
+    })
+    if (facturas.length === 0) return
+
+    const customerIds = [...new Set(facturas.map((f) => f.cotizacion.customerId))]
+    const ncs = await prisma.invoice.findMany({
+      where: {
+        transactionType: 'CREDIT_NOTE',
+        customerId: { in: customerIds },
+        currency: 'USD',
+        status: { not: 'CANCELLED' },
+      },
+      select: { id: true, invoiceNumber: true, customerId: true, total: true, issueDate: true },
+    })
+    if (ncs.length === 0) return
+
+    // NCs que ya anularon otra factura (marcadas en errorMessage)
+    const yaUsadas = await prisma.cotizacionFactura.findMany({
+      where: { errorMessage: { startsWith: MARCA_ANULADA_POR_NC } },
+      select: { errorMessage: true },
+    })
+    const ncIdsUsados = new Set(
+      yaUsadas.map((u) => u.errorMessage?.split(':')[1]).filter(Boolean)
+    )
+
+    const UN_DIA_MS = 24 * 60 * 60 * 1000
+    for (const factura of facturas) {
+      const monto = Number(factura.montoUSD)
+      const tolerancia = Math.max(1, monto * 0.005)
+      const nc = ncs.find(
+        (n) =>
+          !ncIdsUsados.has(n.id) &&
+          n.customerId === factura.cotizacion.customerId &&
+          n.issueDate.getTime() >= factura.fecha.getTime() - UN_DIA_MS &&
+          Math.abs(Number(n.total) - monto) <= tolerancia
+      )
+      if (!nc) continue
+
+      ncIdsUsados.add(nc.id)
+      await prisma.cotizacionFactura.update({
+        where: { id: factura.id },
+        data: {
+          estado: 'ANULADA',
+          errorMessage: `${MARCA_ANULADA_POR_NC}${nc.id}: NC ${nc.invoiceNumber} de Colppy anula esta factura`,
+        },
+      })
+      logger.info(
+        `[COMISIONES_NC] Factura ${factura.numeroFactura} (${factura.cotizacion.quoteNumber}) anulada por NC ${nc.invoiceNumber} de Colppy: no cuenta para comisiones`
+      )
+    }
+  } catch (e) {
+    logger.warn('[COMISIONES_NC] Error detectando NC de Colppy (no bloquea la sincronización)', e)
+  }
+}
+
 /**
  * Crea (si no existe) la liquidación del mes y sincroniza sus líneas con las
  * CotizacionFactura del mes: agrega las facturas nuevas y elimina las líneas
@@ -73,6 +154,9 @@ export async function abrirYSincronizar(vendedorId: string, anio: number, mes: n
   })
 
   if (liquidacion.estado === 'CERRADA') return liquidacion
+
+  // NC totales hechas directo en Colppy anulan la factura antes de sincronizar
+  await anularFacturasPorNC(vendedorId, anio, mes)
 
   const [facturas, lineas] = await Promise.all([
     facturasDelMes(vendedorId, anio, mes),

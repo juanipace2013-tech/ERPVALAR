@@ -54,6 +54,7 @@ interface Linea {
   clienteNombre: string
   presupuesto: string
   numeroFactura: string | null
+  facturaParcialId: string | null
   importeFacturadoUsd: string | null
   tipoOperacion: 'BILLETE' | 'DIVISA'
   tipoCambio: string | null
@@ -96,6 +97,9 @@ export default function LiquidacionPage() {
   const [accionando, setAccionando] = useState(false)
   const [concepto, setConcepto] = useState('')
   const [monto, setMonto] = useState('')
+  const [ncCliente, setNcCliente] = useState('')
+  const [ncNumero, setNcNumero] = useState('')
+  const [ncMonto, setNcMonto] = useState('')
   const [basico, setBasico] = useState('')
   const [efectivo, setEfectivo] = useState('')
   const [ml, setMl] = useState('')
@@ -187,6 +191,36 @@ export default function LiquidacionPage() {
     accion(
       () => fetch(`/api/comisiones/ajustes/${id}`, { method: 'DELETE' }),
       'Ajuste eliminado'
+    )
+
+  const agregarNC = () => {
+    const montoNum = parseDecimalAR(ncMonto)
+    if (!ncCliente.trim() || montoNum <= 0) {
+      toast.error('Cliente y monto USD de la NC (positivo: se resta solo)')
+      return
+    }
+    setNcCliente('')
+    setNcNumero('')
+    setNcMonto('')
+    accion(
+      () =>
+        fetch(`/api/comisiones/liquidaciones/${params.id}/lineas`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clienteNombre: ncCliente.trim(),
+            numeroNota: ncNumero.trim() || undefined,
+            montoUsd: montoNum,
+          }),
+        }),
+      'NC agregada: resta de la comisión del mes'
+    )
+  }
+
+  const eliminarLineaNC = (lineaId: string) =>
+    accion(
+      () => fetch(`/api/comisiones/lineas/${lineaId}`, { method: 'DELETE' }),
+      'NC eliminada'
     )
 
   const cambiarTipoOperacion = (lineaId: string, tipo: string) =>
@@ -353,45 +387,94 @@ export default function LiquidacionPage() {
                     <TableHead className="text-right">TC</TableHead>
                     <TableHead className="text-right">Com. USD</TableHead>
                     <TableHead className="text-right">Com. ARS</TableHead>
+                    <TableHead className="w-10" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {liq.lineas.map((l) => (
-                    <TableRow key={l.id}>
-                      <TableCell className="max-w-52 truncate">{l.clienteNombre}</TableCell>
-                      <TableCell>{l.presupuesto}</TableCell>
-                      <TableCell>{l.numeroFactura || 'S/F'}</TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(l.importeFacturadoUsd ?? 0, 'USD')}
-                      </TableCell>
-                      <TableCell>
-                        <Select
-                          value={l.tipoOperacion}
-                          onValueChange={(v) => cambiarTipoOperacion(l.id, v)}
-                          disabled={!abierta || accionando}
-                        >
-                          <SelectTrigger className="w-28 h-8">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="BILLETE">Billete</SelectItem>
-                            <SelectItem value="DIVISA">Divisa</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {l.tipoCambio != null ? formatNumber(Number(l.tipoCambio)) : '—'}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {l.comisionUsd != null ? formatCurrency(l.comisionUsd, 'USD') : '—'}
-                      </TableCell>
-                      <TableCell className="text-right font-medium">
-                        {l.comisionArs != null ? formatCurrency(l.comisionArs, 'ARS') : '—'}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {liq.lineas.map((l) => {
+                    const esNC = Number(l.importeFacturadoUsd ?? 0) < 0
+                    const rojo = esNC ? 'text-red-600' : ''
+                    return (
+                      <TableRow key={l.id}>
+                        <TableCell className="max-w-52 truncate">{l.clienteNombre}</TableCell>
+                        <TableCell>{l.presupuesto}</TableCell>
+                        <TableCell>{l.numeroFactura || 'S/F'}</TableCell>
+                        <TableCell className={`text-right ${rojo}`}>
+                          {formatCurrency(l.importeFacturadoUsd ?? 0, 'USD')}
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={l.tipoOperacion}
+                            onValueChange={(v) => cambiarTipoOperacion(l.id, v)}
+                            disabled={!abierta || accionando}
+                          >
+                            <SelectTrigger className="w-28 h-8">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="BILLETE">Billete</SelectItem>
+                              <SelectItem value="DIVISA">Divisa</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {l.tipoCambio != null ? formatNumber(Number(l.tipoCambio)) : '—'}
+                        </TableCell>
+                        <TableCell className={`text-right ${rojo}`}>
+                          {l.comisionUsd != null ? formatCurrency(l.comisionUsd, 'USD') : '—'}
+                        </TableCell>
+                        <TableCell className={`text-right font-medium ${rojo}`}>
+                          {l.comisionArs != null ? formatCurrency(l.comisionArs, 'ARS') : '—'}
+                        </TableCell>
+                        <TableCell>
+                          {abierta && esNC && l.facturaParcialId === null && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => eliminarLineaNC(l.id)}
+                              disabled={accionando}
+                            >
+                              <Trash2 className="h-4 w-4 text-muted-foreground" />
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
                 </TableBody>
               </Table>
+            )}
+            {abierta && (
+              <div className="mt-4 space-y-1 border-t pt-4">
+                <p className="text-xs text-muted-foreground">
+                  Nota de crédito (NC): resta del facturado del mes. Las NC totales hechas en
+                  Colppy se detectan solas al refrescar (si el sync de facturación está al día);
+                  esto es para NC parciales o que no matchean.
+                </p>
+                <div className="flex gap-2 pt-1">
+                  <Input
+                    placeholder="Cliente"
+                    value={ncCliente}
+                    onChange={(e) => setNcCliente(e.target.value)}
+                  />
+                  <Input
+                    placeholder="N° NC"
+                    className="w-36"
+                    value={ncNumero}
+                    onChange={(e) => setNcNumero(e.target.value)}
+                  />
+                  <Input
+                    placeholder="Monto USD"
+                    className="w-28"
+                    value={ncMonto}
+                    onChange={(e) => setNcMonto(e.target.value)}
+                  />
+                  <Button variant="outline" onClick={agregarNC} disabled={accionando}>
+                    <Plus className="h-4 w-4 mr-2" /> Agregar NC
+                  </Button>
+                </div>
+              </div>
             )}
           </CardContent>
         </Card>

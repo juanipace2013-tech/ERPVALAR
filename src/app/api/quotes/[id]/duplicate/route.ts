@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { normalizeCuit, buildCuitWhereClause } from '@/lib/cuit-utils';
 import { logger } from '@/lib/logger'
 import { generateNextQuoteNumber } from '@/lib/quotes/generate-quote-number'
+import { getBCRAUSDRate } from '@/lib/bcra'
 
 export async function POST(
   request: NextRequest,
@@ -100,6 +101,35 @@ export async function POST(
       }
     }
 
+    // Vigencia: hoy + 5 días, igual que una cotización nueva
+    const newValidUntil = new Date();
+    newValidUntil.setDate(newValidUntil.getDate() + 5);
+
+    // Tipo de cambio actual: primero el vigente en la DB, sino el del BCRA.
+    // Si ambos fallan, se mantiene el de la cotización original.
+    let newExchangeRate = Number(originalQuote.exchangeRate);
+    const now = new Date();
+    const currentRate = await prisma.exchangeRate.findFirst({
+      where: {
+        fromCurrency: 'USD',
+        toCurrency: 'ARS',
+        validFrom: { lte: now },
+        OR: [{ validUntil: null }, { validUntil: { gte: now } }],
+      },
+      orderBy: [{ validFrom: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    if (currentRate) {
+      newExchangeRate = Number(currentRate.rate);
+    } else {
+      try {
+        const bcraData = await getBCRAUSDRate();
+        newExchangeRate = bcraData.rate;
+      } catch (e) {
+        logger.error('Error obteniendo TC del BCRA al duplicar cotización:', e);
+      }
+    }
+
     const newQuote = await prisma.$transaction(async (tx) => {
       const newQuoteNumber = await generateNextQuoteNumber(tx);
 
@@ -111,13 +141,13 @@ export async function POST(
           opportunityId: originalQuote.opportunityId,
           status: 'DRAFT',
           currency: originalQuote.currency,
-          exchangeRate: originalQuote.exchangeRate,
+          exchangeRate: newExchangeRate,
           multiplier: newMultiplier,
           bonification: originalQuote.bonification,
           subtotal: originalQuote.subtotal,
           total: originalQuote.total,
           pricesIncludeTax: originalQuote.pricesIncludeTax,
-          validUntil: originalQuote.validUntil,
+          validUntil: newValidUntil,
           terms: originalQuote.terms,
           notes: originalQuote.notes,
         },

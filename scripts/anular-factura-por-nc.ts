@@ -65,20 +65,22 @@ async function main() {
       customerId: quote.customer.id,
       status: { not: 'CANCELLED' },
     },
-    select: { id: true, invoiceNumber: true, currency: true, total: true, issueDate: true },
+    select: { id: true, invoiceNumber: true, currency: true, subtotal: true, total: true, issueDate: true },
     orderBy: { issueDate: 'desc' },
   });
   console.log(`\nNC de Colppy sincronizadas para el cliente: ${ncs.length}`);
   for (const n of ncs) {
-    console.log(`  - ${n.invoiceNumber} | ${n.issueDate.toISOString().slice(0, 10)} | ${n.currency} ${n.total}`);
+    console.log(`  - ${n.invoiceNumber} | ${n.issueDate.toISOString().slice(0, 10)} | ${n.currency} neto ${n.subtotal} (total ${n.total})`);
   }
 
   for (const f of vigentes) {
     const monto = Number(f.montoUSD);
     const tolerancia = Math.max(1, monto * 0.005);
-    const nc = ncs.find(
-      (n) => n.currency === 'USD' && Math.abs(Number(n.total) - monto) <= tolerancia
-    );
+    // montoUSD es neto sin IVA: se compara contra el subtotal (neto) de la NC.
+    const nc = ncs.find((n) => {
+      const netoNC = Number(n.subtotal) > 0 ? Number(n.subtotal) : Number(n.total);
+      return n.currency === 'USD' && Math.abs(netoNC - monto) <= tolerancia;
+    });
 
     let errorMessage: string;
     if (nc) {

@@ -56,7 +56,9 @@ const MARCA_ANULADA_POR_NC = 'ANULADA_POR_NC:'
  * Las NC entran al ERP por el sync de facturación (tabla Invoice con
  * transactionType CREDIT_NOTE). Una NC anula una factura del mes si es del
  * mismo cliente, en USD, por el mismo monto (tolerancia 0,5% / mín USD 1 por
- * redondeos de TC) y de fecha igual o posterior. Cada NC anula UNA sola
+ * redondeos de TC) y de fecha igual o posterior. El monto comparable es el
+ * subtotal (neto gravado) de la NC: montoUSD de la factura parcial es neto
+ * sin IVA, mientras que Invoice.total incluye IVA. Cada NC anula UNA sola
  * factura (queda referenciada en errorMessage).
  *
  * Best-effort: nunca lanza, para no bloquear la sincronización de la
@@ -83,7 +85,14 @@ async function anularFacturasPorNC(vendedorId: string, anio: number, mes: number
         currency: 'USD',
         status: { not: 'CANCELLED' },
       },
-      select: { id: true, invoiceNumber: true, customerId: true, total: true, issueDate: true },
+      select: {
+        id: true,
+        invoiceNumber: true,
+        customerId: true,
+        subtotal: true,
+        total: true,
+        issueDate: true,
+      },
     })
     if (ncs.length === 0) return
 
@@ -100,13 +109,16 @@ async function anularFacturasPorNC(vendedorId: string, anio: number, mes: number
     for (const factura of facturas) {
       const monto = Number(factura.montoUSD)
       const tolerancia = Math.max(1, monto * 0.005)
-      const nc = ncs.find(
-        (n) =>
+      const nc = ncs.find((n) => {
+        // Neto de la NC (sin IVA); si el sync no trajo subtotal, cae al total.
+        const netoNC = Number(n.subtotal) > 0 ? Number(n.subtotal) : Number(n.total)
+        return (
           !ncIdsUsados.has(n.id) &&
           n.customerId === factura.cotizacion.customerId &&
           n.issueDate.getTime() >= factura.fecha.getTime() - UN_DIA_MS &&
-          Math.abs(Number(n.total) - monto) <= tolerancia
-      )
+          Math.abs(netoNC - monto) <= tolerancia
+        )
+      })
       if (!nc) continue
 
       ncIdsUsados.add(nc.id)

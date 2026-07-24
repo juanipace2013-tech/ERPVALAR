@@ -49,6 +49,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   AlertTriangle,
+  BarChart3,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getLocalDateString } from '@/lib/utils'
@@ -318,6 +319,36 @@ export default function CotizacionesPage() {
     toast.success('Excel descargado correctamente')
   }
 
+  const handleExportCotizado = async () => {
+    try {
+      const params = new URLSearchParams()
+      if (dateFrom) params.set('desde', dateFrom)
+      if (dateTo) params.set('hasta', dateTo)
+      if (salesPersonId && salesPersonId !== 'ALL') params.set('vendedor', salesPersonId)
+      // ACTIVE y ALL usan el default del endpoint (todo menos anuladas)
+      if (statusFilter !== 'ALL' && statusFilter !== 'ACTIVE') params.set('estado', statusFilter)
+
+      const res = await fetch(`/api/quotes/export-cotizado?${params.toString()}`)
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Error al generar reporte')
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      const today = getLocalDateString().replace(/-/g, '')
+      a.href = url
+      a.download = `Analisis_Cotizado_${today}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast.success('Reporte de cotizado descargado')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Error al descargar reporte')
+    }
+  }
+
   const handleExportRejections = async () => {
     try {
       const params = new URLSearchParams()
@@ -429,6 +460,14 @@ export default function CotizacionesPage() {
           >
             <Download className="mr-2 h-4 w-4" />
             Descargar Excel
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleExportCotizado}
+            className="border-blue-300 text-blue-700 hover:bg-blue-50"
+          >
+            <BarChart3 className="mr-2 h-4 w-4" />
+            Análisis de Cotizado
           </Button>
           <Button
             variant="outline"

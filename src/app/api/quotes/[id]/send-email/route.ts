@@ -35,19 +35,25 @@ async function buildFichaAttachments(quoteId: string, productIds: string[]) {
   })
 
   const attachments: Array<{ filename: string; contentBase64: string; contentType: string }> = []
-  const seen = new Set<string>()
+  const seenProducts = new Set<string>()
+  // Productos de la misma familia comparten la ficha (mismo nombre de
+  // archivo): adjuntarla una sola vez aunque vengan varios seleccionados.
+  const seenFilenames = new Set<string>()
 
   for (const item of items) {
     const p = item.product
-    if (!p?.technicalSheetUrl || seen.has(p.id)) continue
-    seen.add(p.id)
+    if (!p?.technicalSheetUrl || seenProducts.has(p.id)) continue
+    seenProducts.add(p.id)
 
     try {
       const filePath = path.join(process.cwd(), 'public', p.technicalSheetUrl)
-      const buffer = await readFile(filePath)
       const ext = path.extname(p.technicalSheetUrl).toLowerCase()
+      const filename = p.technicalSheetName || `Ficha-Tecnica-${p.sku}${ext}`
+      if (seenFilenames.has(filename)) continue
+      const buffer = await readFile(filePath)
+      seenFilenames.add(filename)
       attachments.push({
-        filename: p.technicalSheetName || `Ficha-Tecnica-${p.sku}${ext}`,
+        filename,
         contentBase64: buffer.toString('base64'),
         contentType: SHEET_CONTENT_TYPES[ext] || 'application/octet-stream',
       })

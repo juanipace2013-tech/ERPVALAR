@@ -47,38 +47,57 @@ export async function GET(
     }
 
     // Dedup por producto (el mismo producto puede estar en varios ítems)
-    const seen = new Set<string>()
-    const fichas: Array<{
-      productId: string
-      sku: string
-      productName: string
-      filename: string
-      size: number | null
-    }> = []
+    // y después por archivo: productos de la misma familia comparten la
+    // misma ficha (mismo nombre y tamaño), se ofrece una sola vez.
+    const seenProducts = new Set<string>()
+    const byFile = new Map<
+      string,
+      {
+        productId: string
+        skus: string[]
+        productName: string
+        filename: string
+        size: number | null
+      }
+    >()
 
     for (const item of quote.items) {
       const p = item.product
-      if (!p?.technicalSheetUrl || seen.has(p.id)) continue
-      seen.add(p.id)
+      if (!p?.technicalSheetUrl || seenProducts.has(p.id)) continue
+      seenProducts.add(p.id)
 
-      // Tamaño del archivo (null si no existe en disco)
-      let size: number | null = null
+      // Tamaño del archivo (si no existe en disco, no ofrecer la ficha)
+      let size: number
       try {
         const info = await stat(path.join(process.cwd(), 'public', p.technicalSheetUrl))
         size = info.size
       } catch {
-        // Archivo faltante en disco: no ofrecer la ficha
         continue
       }
 
-      fichas.push({
-        productId: p.id,
-        sku: p.sku,
-        productName: p.name,
-        filename: p.technicalSheetName || path.basename(p.technicalSheetUrl),
-        size,
-      })
+      const filename = p.technicalSheetName || path.basename(p.technicalSheetUrl)
+      const key = `${filename}|${size}`
+      const existing = byFile.get(key)
+      if (existing) {
+        existing.skus.push(p.sku)
+      } else {
+        byFile.set(key, {
+          productId: p.id,
+          skus: [p.sku],
+          productName: p.name,
+          filename,
+          size,
+        })
+      }
     }
+
+    const fichas = Array.from(byFile.values()).map((f) => ({
+      productId: f.productId,
+      sku: f.skus.join(', '),
+      productName: f.productName,
+      filename: f.filename,
+      size: f.size,
+    }))
 
     return NextResponse.json({ fichas })
   } catch (error) {

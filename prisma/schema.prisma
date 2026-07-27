@@ -795,6 +795,11 @@ model Product {
   // Imágenes y documentos
   images String[] @default([]) // Array de URLs
 
+  // Ficha técnica del producto (PDF/imagen en public/uploads/fichas-tecnicas).
+  // Se adjunta automáticamente al enviar cotizaciones por email.
+  technicalSheetUrl  String?
+  technicalSheetName String? // Nombre original del archivo subido
+
   // Metadatos
   notes     String?  @db.Text
   createdAt DateTime @default(now())

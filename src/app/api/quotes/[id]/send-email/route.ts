@@ -4,6 +4,61 @@ import { sendQuoteEmail } from '@/lib/email/send-quote-email';
 import { updateQuoteStatus } from '@/lib/quote-workflow';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger'
+import { readFile } from 'fs/promises'
+import path from 'path'
+
+const SHEET_CONTENT_TYPES: Record<string, string> = {
+  '.pdf': 'application/pdf',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+}
+
+/**
+ * Lee del disco las fichas técnicas de los productos seleccionados
+ * (solo productos que pertenecen a la cotización) y las devuelve
+ * como adjuntos base64 para el email.
+ */
+async function buildFichaAttachments(quoteId: string, productIds: string[]) {
+  const items = await prisma.quoteItem.findMany({
+    where: { quoteId, productId: { in: productIds } },
+    select: {
+      product: {
+        select: {
+          id: true,
+          sku: true,
+          technicalSheetUrl: true,
+          technicalSheetName: true,
+        },
+      },
+    },
+  })
+
+  const attachments: Array<{ filename: string; contentBase64: string; contentType: string }> = []
+  const seen = new Set<string>()
+
+  for (const item of items) {
+    const p = item.product
+    if (!p?.technicalSheetUrl || seen.has(p.id)) continue
+    seen.add(p.id)
+
+    try {
+      const filePath = path.join(process.cwd(), 'public', p.technicalSheetUrl)
+      const buffer = await readFile(filePath)
+      const ext = path.extname(p.technicalSheetUrl).toLowerCase()
+      attachments.push({
+        filename: p.technicalSheetName || `Ficha-Tecnica-${p.sku}${ext}`,
+        contentBase64: buffer.toString('base64'),
+        contentType: SHEET_CONTENT_TYPES[ext] || 'application/octet-stream',
+      })
+    } catch (err) {
+      // Ficha faltante en disco: avisar en logs pero no frenar el envío
+      logger.error(`[Mail] Ficha técnica no encontrada para producto ${p.sku}:`, err)
+    }
+  }
+
+  return attachments
+}
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -24,7 +79,7 @@ export async function POST(
 
     const { id } = await params;
     const body = await request.json();
-    const { email, message, additionalAttachments } = body;
+    const { email, message, additionalAttachments, fichaProductIds } = body;
 
     // Validar que haya al menos un email
     if (!email || !email.trim()) {
@@ -77,6 +132,18 @@ export async function POST(
       await updateQuoteStatus(id, 'SENT', session.user.id);
     }
 
+    // Fichas técnicas seleccionadas: leerlas del disco y sumarlas a los adjuntos
+    let allAttachments = additionalAttachments as
+      | Array<{ filename: string; contentBase64: string; contentType: string }>
+      | undefined;
+
+    if (Array.isArray(fichaProductIds) && fichaProductIds.length > 0) {
+      const fichas = await buildFichaAttachments(id, fichaProductIds);
+      if (fichas.length > 0) {
+        allAttachments = [...fichas, ...(allAttachments || [])];
+      }
+    }
+
     // Enviar email — primer email como TO, resto como CC
     const [primaryEmail, ...ccEmails] = emails;
 
@@ -85,7 +152,7 @@ export async function POST(
       recipientEmail: primaryEmail,
       ccEmails: ccEmails.length > 0 ? ccEmails : undefined,
       message,
-      additionalAttachments,
+      additionalAttachments: allAttachments,
     });
 
     return NextResponse.json({

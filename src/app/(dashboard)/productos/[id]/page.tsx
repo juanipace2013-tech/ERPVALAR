@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { ArrowLeft, Loader2, Package, Pencil, Save, X } from 'lucide-react'
+import { ArrowLeft, FileText, Loader2, Package, Pencil, Save, Trash2, Upload, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface Category {
@@ -61,6 +61,8 @@ interface Product {
   trackInventory: boolean
   allowNegative: boolean
   notes: string | null
+  technicalSheetUrl: string | null
+  technicalSheetName: string | null
   createdAt: string
   updatedAt: string
   category: Category | null
@@ -117,6 +119,7 @@ export default function ProductoDetallePage() {
   const [error, setError] = useState('')
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [uploadingFicha, setUploadingFicha] = useState(false)
 
   // Edit mode data
   const [categories, setCategories] = useState<Category[]>([])
@@ -311,6 +314,57 @@ export default function ProductoDetallePage() {
       toast.error(err instanceof Error ? err.message : 'Error al guardar producto')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleUploadFicha = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+
+    if (file.size > 3 * 1024 * 1024) {
+      toast.error('El archivo excede el límite de 3MB')
+      return
+    }
+
+    try {
+      setUploadingFicha(true)
+      const fd = new FormData()
+      fd.append('file', file)
+      const response = await fetch(`/api/productos/${id}/ficha-tecnica`, {
+        method: 'POST',
+        body: fd,
+      })
+      if (!response.ok) {
+        const err = await response.json()
+        throw new Error(err.error || 'Error al subir la ficha')
+      }
+      toast.success('Ficha técnica guardada')
+      fetchProduct()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error al subir la ficha')
+    } finally {
+      setUploadingFicha(false)
+    }
+  }
+
+  const handleDeleteFicha = async () => {
+    if (!confirm('¿Eliminar la ficha técnica de este producto?')) return
+    try {
+      setUploadingFicha(true)
+      const response = await fetch(`/api/productos/${id}/ficha-tecnica`, {
+        method: 'DELETE',
+      })
+      if (!response.ok) {
+        const err = await response.json()
+        throw new Error(err.error || 'Error al eliminar la ficha')
+      }
+      toast.success('Ficha técnica eliminada')
+      fetchProduct()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error al eliminar la ficha')
+    } finally {
+      setUploadingFicha(false)
     }
   }
 
@@ -786,6 +840,64 @@ export default function ProductoDetallePage() {
               ) : (
                 <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Ficha Técnica */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Ficha T&eacute;cnica</CardTitle>
+              <CardDescription>
+                Se adjunta autom&aacute;ticamente al enviar cotizaciones por email
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {product.technicalSheetUrl ? (
+                <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded px-3 py-2">
+                  <a
+                    href={product.technicalSheetUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm text-green-800 hover:underline truncate flex-1 mr-2"
+                  >
+                    <FileText className="h-4 w-4 flex-shrink-0" />
+                    <span className="truncate">
+                      {product.technicalSheetName || 'Ver ficha técnica'}
+                    </span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={handleDeleteFicha}
+                    disabled={uploadingFicha}
+                    className="text-red-500 hover:text-red-700 flex-shrink-0"
+                    title="Eliminar ficha técnica"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400 italic">Sin ficha técnica</p>
+              )}
+
+              <label
+                htmlFor="ficha-upload"
+                className="flex items-center justify-center gap-2 px-4 py-2 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors text-sm text-gray-600"
+              >
+                {uploadingFicha ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4" />
+                )}
+                {product.technicalSheetUrl ? 'Reemplazar ficha' : 'Subir ficha (PDF, máx 3MB)'}
+                <input
+                  id="ficha-upload"
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  onChange={handleUploadFicha}
+                  disabled={uploadingFicha}
+                  className="hidden"
+                />
+              </label>
             </CardContent>
           </Card>
 

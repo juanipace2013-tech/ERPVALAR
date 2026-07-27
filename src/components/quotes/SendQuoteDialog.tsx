@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
-import { Loader2, Send, Mail, Paperclip, X } from 'lucide-react'
+import { Loader2, Send, Mail, Paperclip, X, FileText } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatCurrency as formatCurrencyAR } from '@/lib/utils'
 
@@ -31,6 +31,14 @@ interface SendQuoteDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSent?: () => void
+}
+
+interface FichaTecnica {
+  productId: string
+  sku: string
+  productName: string
+  filename: string
+  size: number | null
 }
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -53,6 +61,33 @@ export function SendQuoteDialog({
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
   const [attachedFiles, setAttachedFiles] = useState<File[]>([])
+  const [fichas, setFichas] = useState<FichaTecnica[]>([])
+  const [selectedFichas, setSelectedFichas] = useState<Set<string>>(new Set())
+
+  // Al abrir el diálogo, buscar fichas técnicas de los productos cotizados
+  useEffect(() => {
+    if (!open) return
+    fetch(`/api/quotes/${quote.id}/fichas-tecnicas`)
+      .then((res) => (res.ok ? res.json() : { fichas: [] }))
+      .then((data: { fichas: FichaTecnica[] }) => {
+        setFichas(data.fichas || [])
+        // Todas tildadas por defecto
+        setSelectedFichas(new Set((data.fichas || []).map((f) => f.productId)))
+      })
+      .catch(() => setFichas([]))
+  }, [open, quote.id])
+
+  function toggleFicha(productId: string) {
+    setSelectedFichas((prev) => {
+      const next = new Set(prev)
+      if (next.has(productId)) {
+        next.delete(productId)
+      } else {
+        next.add(productId)
+      }
+      return next
+    })
+  }
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || [])
@@ -134,6 +169,7 @@ export function SendQuoteDialog({
           email: validEmails.join(', '),
           message: message.trim() || undefined,
           additionalAttachments: fileAttachments.length > 0 ? fileAttachments : undefined,
+          fichaProductIds: selectedFichas.size > 0 ? Array.from(selectedFichas) : undefined,
         })
       })
 
@@ -231,9 +267,41 @@ export function SendQuoteDialog({
             </p>
           </div>
 
+          {/* Fichas técnicas detectadas automáticamente */}
+          {fichas.length > 0 && (
+            <div>
+              <Label>Fichas Técnicas de los Productos</Label>
+              <div className="mt-1 space-y-1">
+                {fichas.map((f) => (
+                  <label
+                    key={f.productId}
+                    className="flex items-center gap-2 bg-green-50 border border-green-200 rounded px-3 py-2 text-sm cursor-pointer hover:bg-green-100 transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedFichas.has(f.productId)}
+                      onChange={() => toggleFicha(f.productId)}
+                      className="rounded flex-shrink-0"
+                    />
+                    <FileText className="h-4 w-4 text-green-700 flex-shrink-0" />
+                    <span className="truncate flex-1">
+                      <span className="font-medium">{f.sku}</span> — {f.filename}
+                      {f.size != null && (
+                        <span className="text-gray-500"> ({formatFileSize(f.size)})</span>
+                      )}
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Detectadas automáticamente según los productos cotizados. Destildá las que no quieras enviar.
+              </p>
+            </div>
+          )}
+
           {/* Archivos adjuntos */}
           <div>
-            <Label>Fichas Técnicas / Adjuntos (opcional)</Label>
+            <Label>Otros Adjuntos (opcional)</Label>
             <div className="mt-1">
               <label
                 htmlFor="file-upload"
@@ -289,8 +357,11 @@ export function SendQuoteDialog({
             <ul className="text-xs text-gray-600 mt-2 space-y-1 ml-4 list-disc">
               <li>Detalles completos de la cotización</li>
               <li>PDF de la cotización adjunto</li>
+              {selectedFichas.size > 0 && (
+                <li>{selectedFichas.size} ficha(s) técnica(s) de producto</li>
+              )}
               {attachedFiles.length > 0 && (
-                <li>{attachedFiles.length} ficha(s) técnica(s) adjunta(s)</li>
+                <li>{attachedFiles.length} adjunto(s) manual(es)</li>
               )}
               <li>Botones para aceptar o rechazar</li>
               <li>Link para ver la cotización online</li>

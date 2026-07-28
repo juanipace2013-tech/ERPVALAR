@@ -235,40 +235,47 @@ async function main() {
     ? await buildGroupsFromMap(sourceDir, mapFile, brand, sinProductos)
     : await buildGroupsFromFilenames(sourceDir, brand, ambiguos, sinProductos)
 
+  const CONCURRENCY = 20
+  await mkdir(UPLOAD_DIR, { recursive: true })
+
   for (const { code, chosen, products } of groups) {
     console.log(`\n--- ${code} (${products.length} productos) <- ${chosen.fileName} (${Math.round(chosen.size / 1024)}KB)`)
-    for (const product of products) {
-      if (product.technicalSheetUrl && !overwrite) {
-        console.log(`  [YA TIENE] ${product.sku}`)
-        salteados++
-        continue
-      }
+    for (let i = 0; i < products.length; i += CONCURRENCY) {
+      const batch = products.slice(i, i + CONCURRENCY)
+      await Promise.all(
+        batch.map(async (product) => {
+          if (product.technicalSheetUrl && !overwrite) {
+            console.log(`  [YA TIENE] ${product.sku}`)
+            salteados++
+            return
+          }
 
-      console.log(`  ${product.sku}`)
-      asignados++
+          console.log(`  ${product.sku}`)
+          asignados++
 
-      if (!apply) continue
+          if (!apply) return
 
-      await mkdir(UPLOAD_DIR, { recursive: true })
-      const safeSku = product.sku.replace(/[^a-zA-Z0-9-_]/g, '-')
-      const destName = `${safeSku}_ficha_${Date.now()}.pdf`
-      await copyFile(chosen.filePath, path.join(UPLOAD_DIR, destName))
+          const safeSku = product.sku.replace(/[^a-zA-Z0-9-_]/g, '-')
+          const destName = `${safeSku}_ficha_${Date.now()}.pdf`
+          await copyFile(chosen.filePath, path.join(UPLOAD_DIR, destName))
 
-      if (product.technicalSheetUrl) {
-        try {
-          await unlink(path.join(process.cwd(), 'public', product.technicalSheetUrl))
-        } catch {
-          // Archivo anterior ya no existe: continuar
-        }
-      }
+          if (product.technicalSheetUrl) {
+            try {
+              await unlink(path.join(process.cwd(), 'public', product.technicalSheetUrl))
+            } catch {
+              // Archivo anterior ya no existe: continuar
+            }
+          }
 
-      await prisma.product.update({
-        where: { id: product.id },
-        data: {
-          technicalSheetUrl: `/uploads/fichas-tecnicas/${destName}`,
-          technicalSheetName: chosen.fileName,
-        },
-      })
+          await prisma.product.update({
+            where: { id: product.id },
+            data: {
+              technicalSheetUrl: `/uploads/fichas-tecnicas/${destName}`,
+              technicalSheetName: chosen.fileName,
+            },
+          })
+        })
+      )
     }
   }
 

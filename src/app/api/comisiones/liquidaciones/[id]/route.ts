@@ -22,7 +22,10 @@ export async function GET(
       where: { id },
       include: {
         vendedor: { select: { id: true, name: true } },
-        lineas: { orderBy: { createdAt: 'asc' } },
+        lineas: {
+          orderBy: { createdAt: 'asc' },
+          include: { facturaParcial: { select: { fecha: true } } },
+        },
         ajustes: { orderBy: { createdAt: 'asc' } },
       },
     })

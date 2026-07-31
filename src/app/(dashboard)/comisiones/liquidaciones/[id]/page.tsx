@@ -23,6 +23,9 @@ import {
 } from '@/components/ui/select'
 import {
   ArrowLeft,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   Loader2,
   Lock,
   LockOpen,
@@ -32,7 +35,7 @@ import {
   AlertTriangle,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { formatCurrency, formatNumber, parseDecimalAR } from '@/lib/utils'
+import { formatCurrency, formatDateAR, formatNumber, parseDecimalAR } from '@/lib/utils'
 
 const MESES = [
   'Enero',
@@ -62,7 +65,10 @@ interface Linea {
   comisionUsd: string | null
   comisionArs: string | null
   estado: string
+  facturaParcial: { fecha: string } | null
 }
+
+type OrdenCampo = 'fecha' | 'cliente' | 'importe'
 
 interface Ajuste {
   id: string
@@ -103,6 +109,9 @@ export default function LiquidacionPage() {
   const [basico, setBasico] = useState('')
   const [efectivo, setEfectivo] = useState('')
   const [ml, setMl] = useState('')
+  const [filtroCliente, setFiltroCliente] = useState('')
+  const [ordenCampo, setOrdenCampo] = useState<OrdenCampo | null>(null)
+  const [ordenAsc, setOrdenAsc] = useState(true)
 
   const cargar = useCallback(async () => {
     try {
@@ -249,6 +258,40 @@ export default function LiquidacionPage() {
   const ajustesTotal = liq.ajustes.reduce((s, a) => s + Number(a.montoArs), 0)
   const tcFaltante = abierta && liq.lineas.some((l) => l.tipoCambio === null)
 
+  const ordenarPor = (campo: OrdenCampo) => {
+    if (ordenCampo === campo) {
+      setOrdenAsc(!ordenAsc)
+    } else {
+      setOrdenCampo(campo)
+      setOrdenAsc(campo === 'cliente') // cliente arranca A-Z; fecha e importe, descendente
+    }
+  }
+
+  const iconoOrden = (campo: OrdenCampo) => {
+    if (ordenCampo !== campo) return <ArrowUpDown className="ml-1 h-3 w-3 opacity-40" />
+    return ordenAsc ? <ArrowUp className="ml-1 h-3 w-3" /> : <ArrowDown className="ml-1 h-3 w-3" />
+  }
+
+  const filtro = filtroCliente.trim().toLowerCase()
+  const lineasVisibles = liq.lineas.filter(
+    (l) => !filtro || l.clienteNombre.toLowerCase().includes(filtro)
+  )
+  if (ordenCampo) {
+    lineasVisibles.sort((a, b) => {
+      let cmp = 0
+      if (ordenCampo === 'cliente') {
+        cmp = a.clienteNombre.localeCompare(b.clienteNombre, 'es')
+      } else if (ordenCampo === 'importe') {
+        cmp = Number(a.importeFacturadoUsd ?? 0) - Number(b.importeFacturadoUsd ?? 0)
+      } else {
+        const fa = a.facturaParcial ? new Date(a.facturaParcial.fecha).getTime() : 0
+        const fb = b.facturaParcial ? new Date(b.facturaParcial.fecha).getTime() : 0
+        cmp = fa - fb
+      }
+      return ordenAsc ? cmp : -cmp
+    })
+  }
+
   return (
     <div className="space-y-6 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -367,8 +410,14 @@ export default function LiquidacionPage() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
             <CardTitle className="text-base">Ventas facturadas del mes</CardTitle>
+            <Input
+              placeholder="Buscar cliente..."
+              className="h-8 w-56"
+              value={filtroCliente}
+              onChange={(e) => setFiltroCliente(e.target.value)}
+            />
           </CardHeader>
           <CardContent>
             {liq.lineas.length === 0 ? (
@@ -379,10 +428,35 @@ export default function LiquidacionPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Cliente</TableHead>
+                    <TableHead>
+                      <button
+                        type="button"
+                        className="flex items-center hover:text-foreground"
+                        onClick={() => ordenarPor('fecha')}
+                      >
+                        Fecha {iconoOrden('fecha')}
+                      </button>
+                    </TableHead>
+                    <TableHead>
+                      <button
+                        type="button"
+                        className="flex items-center hover:text-foreground"
+                        onClick={() => ordenarPor('cliente')}
+                      >
+                        Cliente {iconoOrden('cliente')}
+                      </button>
+                    </TableHead>
                     <TableHead>Presupuesto</TableHead>
                     <TableHead>Factura</TableHead>
-                    <TableHead className="text-right">Importe USD</TableHead>
+                    <TableHead className="text-right">
+                      <button
+                        type="button"
+                        className="ml-auto flex items-center hover:text-foreground"
+                        onClick={() => ordenarPor('importe')}
+                      >
+                        Importe USD {iconoOrden('importe')}
+                      </button>
+                    </TableHead>
                     <TableHead>Tipo</TableHead>
                     <TableHead className="text-right">TC</TableHead>
                     <TableHead className="text-right">Com. USD</TableHead>
@@ -391,11 +465,21 @@ export default function LiquidacionPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {liq.lineas.map((l) => {
+                  {lineasVisibles.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={10} className="text-center text-sm text-muted-foreground">
+                        Sin resultados para &quot;{filtroCliente}&quot;
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {lineasVisibles.map((l) => {
                     const esNC = Number(l.importeFacturadoUsd ?? 0) < 0
                     const rojo = esNC ? 'text-red-600' : ''
                     return (
                       <TableRow key={l.id}>
+                        <TableCell className="whitespace-nowrap">
+                          {formatDateAR(l.facturaParcial?.fecha)}
+                        </TableCell>
                         <TableCell className="max-w-52 truncate">{l.clienteNombre}</TableCell>
                         <TableCell>{l.presupuesto}</TableCell>
                         <TableCell>{l.numeroFactura || 'S/F'}</TableCell>

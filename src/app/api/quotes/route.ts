@@ -196,13 +196,11 @@ export async function POST(request: NextRequest) {
         : null
 
       if (existingCustomer) {
-        // Actualizar datos del cliente existente
-        // Si el multiplicador en DB es 1.0 (default) y la tabla tiene uno configurado, sincronizar
-        const razonSocial = colppyCustomer.businessName || colppyCustomer.name
-        const configuredMultiplier = getMultiplierForClient(razonSocial)
-        const currentMultiplier = Number(existingCustomer.priceMultiplier)
-        const shouldSyncMultiplier = currentMultiplier === 1.0 && configuredMultiplier !== 1.0
-
+        // Actualizar datos del cliente existente.
+        // OJO: no tocar priceMultiplier acá. Es un dato local editable por el
+        // usuario ("Guardar en cliente para futuras cotizaciones"); un valor de
+        // 1.0 puede ser una elección deliberada, no el default sin configurar,
+        // así que re-sincronizar contra CLIENT_MULTIPLIERS lo pisaba.
         const updatedCustomer = await prisma.customer.update({
           where: { id: existingCustomer.id },
           data: {
@@ -216,17 +214,11 @@ export async function POST(request: NextRequest) {
             city: colppyCustomer.city || existingCustomer.city,
             province: colppyCustomer.province || existingCustomer.province,
             postalCode: colppyCustomer.postalCode || existingCustomer.postalCode,
-            // Sincronizar multiplicador solo si está en default (1.0) y hay uno configurado
-            ...(shouldSyncMultiplier && { priceMultiplier: configuredMultiplier }),
             balance: colppyCustomer.saldo || existingCustomer.balance,
           },
         })
         customerId = updatedCustomer.id
-        if (shouldSyncMultiplier) {
-          logger.info(`✅ Cliente actualizado desde Colppy: ${updatedCustomer.name} (multiplicador sincronizado: ${configuredMultiplier}x)`)
-        } else {
-          logger.info('✅ Cliente actualizado desde Colppy:', updatedCustomer.name)
-        }
+        logger.info('✅ Cliente actualizado desde Colppy:', updatedCustomer.name)
       } else {
         // Crear nuevo cliente - buscar multiplicador preconfigurado por razón social
         const razonSocial = colppyCustomer.businessName || colppyCustomer.name
@@ -293,7 +285,10 @@ export async function POST(request: NextRequest) {
           date: body.date ? parseCivilDate(body.date) : new Date(),
           exchangeRate: body.exchangeRate,
           currency: body.currency || 'USD',
-          multiplier: body.multiplier || customerMultiplier,
+          // El multiplicador sale de la BD local (fuente de verdad). El que
+          // manda el frontend es un eco del cache del buscador de Colppy y
+          // puede estar viejo si se guardó un multiplicador nuevo hace poco.
+          multiplier: customerMultiplier,
           subtotal: body.subtotal || 0,
           total: body.total || 0,
           validUntil: body.validUntil ? parseCivilDate(body.validUntil) : null,

@@ -1,7 +1,7 @@
 /**
  * Seed del módulo Comisiones:
- *   - Escala constante (corrige el bug de la planilla: el tramo >100k
- *     apuntaba a una celda vacía).
+ *   - Escala constante (vigente desde Agosto 2026; si ya hay tramos cargados
+ *     no los pisa — para cambiar la escala usar actualizar-escala-comisiones.ts).
  *   - Config de Germán Acevedo: básico mensual ARS 1.500.000.
  *
  * Idempotente. Uso:
@@ -12,10 +12,10 @@ import { PrismaClient } from '@prisma/client'
 const prisma = new PrismaClient()
 
 const ESCALA = [
-  { pisoUsd: 0, techoUsd: 50000, tasa: 0.01 },
-  { pisoUsd: 50000, techoUsd: 75000, tasa: 0.0125 },
-  { pisoUsd: 75000, techoUsd: 100000, tasa: 0.015 },
-  { pisoUsd: 100000, techoUsd: null, tasa: 0.02 },
+  { pisoUsd: 0, techoUsd: 20000, tasa: 0.0125 },
+  { pisoUsd: 20000, techoUsd: 40000, tasa: 0.015 },
+  { pisoUsd: 40000, techoUsd: 60000, tasa: 0.0175 },
+  { pisoUsd: 60000, techoUsd: null, tasa: 0.02 },
 ]
 
 const GERMAN_EMAIL = 'gacevedo@val-ar.com.ar'

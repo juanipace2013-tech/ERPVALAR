@@ -33,13 +33,14 @@ export interface TramoEscala {
   tasa: number
 }
 
-// Escala por defecto (la de la planilla, con el bug del tramo >100k corregido).
-// Se usa como fallback si la tabla comision_escalas está vacía.
+// Escala por defecto (vigente desde Agosto 2026; la anterior arrancaba en 1%
+// con tramos de 50/75/100k). Se usa como fallback si la tabla
+// comision_escalas está vacía.
 export const ESCALA_DEFAULT: TramoEscala[] = [
-  { pisoUsd: 0, techoUsd: 50000, tasa: 0.01 },
-  { pisoUsd: 50000, techoUsd: 75000, tasa: 0.0125 },
-  { pisoUsd: 75000, techoUsd: 100000, tasa: 0.015 },
-  { pisoUsd: 100000, techoUsd: null, tasa: 0.02 },
+  { pisoUsd: 0, techoUsd: 20000, tasa: 0.0125 },
+  { pisoUsd: 20000, techoUsd: 40000, tasa: 0.015 },
+  { pisoUsd: 40000, techoUsd: 60000, tasa: 0.0175 },
+  { pisoUsd: 60000, techoUsd: null, tasa: 0.02 },
 ]
 
 /** Escala vigente desde la DB (fallback: ESCALA_DEFAULT). */
@@ -57,8 +58,8 @@ export async function getEscala(): Promise<TramoEscala[]> {
 
 /**
  * Tramo que corresponde a un total facturado USD del mes.
- * Bordes: piso inclusivo, techo exclusivo → 50.000 exacto paga 1,25%
- * (en la planilla `<50000` caía en 1%, o sea 50.000 ya salía del primer tramo).
+ * Bordes: piso inclusivo, techo exclusivo → 20.000 exacto paga 1,50%
+ * (en la planilla `Menos $20000` es exclusivo: 20.000 ya sale del primer tramo).
  */
 export function tasaParaTotal(totalUsd: number, escala: TramoEscala[]): number {
   for (const tramo of escala) {

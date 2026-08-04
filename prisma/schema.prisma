@@ -3090,6 +3090,7 @@ model ComisionLinea {
   clienteNombre String
   presupuesto   String // número de presupuesto (formato viejo o VAL-YYYY-NNN)
   numeroFactura String? // "S/F" en planilla = sin factura asignada aún
+  fecha         DateTime? // fecha de la NC manual; las líneas de factura usan facturaParcial.fecha
 
   // Vínculos best-effort al ERP (null para históricos pre-ERP)
   clienteId        String?

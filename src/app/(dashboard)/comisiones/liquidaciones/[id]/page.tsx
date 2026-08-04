@@ -26,6 +26,7 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  Download,
   Loader2,
   Lock,
   LockOpen,
@@ -57,6 +58,7 @@ interface Linea {
   clienteNombre: string
   presupuesto: string
   numeroFactura: string | null
+  fecha: string | null // fecha propia de la NC manual
   facturaParcialId: string | null
   importeFacturadoUsd: string | null
   tipoOperacion: 'BILLETE' | 'DIVISA'
@@ -105,6 +107,7 @@ export default function LiquidacionPage() {
   const [monto, setMonto] = useState('')
   const [ncCliente, setNcCliente] = useState('')
   const [ncNumero, setNcNumero] = useState('')
+  const [ncFecha, setNcFecha] = useState('')
   const [ncMonto, setNcMonto] = useState('')
   const [basico, setBasico] = useState('')
   const [efectivo, setEfectivo] = useState('')
@@ -210,6 +213,7 @@ export default function LiquidacionPage() {
     }
     setNcCliente('')
     setNcNumero('')
+    setNcFecha('')
     setNcMonto('')
     accion(
       () =>
@@ -219,6 +223,7 @@ export default function LiquidacionPage() {
           body: JSON.stringify({
             clienteNombre: ncCliente.trim(),
             numeroNota: ncNumero.trim() || undefined,
+            fecha: ncFecha || undefined,
             montoUsd: montoNum,
           }),
         }),
@@ -284,8 +289,9 @@ export default function LiquidacionPage() {
       } else if (ordenCampo === 'importe') {
         cmp = Number(a.importeFacturadoUsd ?? 0) - Number(b.importeFacturadoUsd ?? 0)
       } else {
-        const fa = a.facturaParcial ? new Date(a.facturaParcial.fecha).getTime() : 0
-        const fb = b.facturaParcial ? new Date(b.facturaParcial.fecha).getTime() : 0
+        const fechaDe = (l: Linea) => l.facturaParcial?.fecha ?? l.fecha
+        const fa = fechaDe(a) ? new Date(fechaDe(a)!).getTime() : 0
+        const fb = fechaDe(b) ? new Date(fechaDe(b)!).getTime() : 0
         cmp = fa - fb
       }
       return ordenAsc ? cmp : -cmp
@@ -320,6 +326,12 @@ export default function LiquidacionPage() {
           </div>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => window.open(`/api/comisiones/liquidaciones/${params.id}/export`, '_blank')}
+          >
+            <Download className="h-4 w-4 mr-2" /> Excel
+          </Button>
           {abierta ? (
             <>
               <Button variant="outline" onClick={refrescar} disabled={accionando}>
@@ -478,7 +490,7 @@ export default function LiquidacionPage() {
                     return (
                       <TableRow key={l.id}>
                         <TableCell className="whitespace-nowrap">
-                          {formatDateAR(l.facturaParcial?.fecha)}
+                          {formatDateAR(l.facturaParcial?.fecha ?? l.fecha)}
                         </TableCell>
                         <TableCell className="max-w-52 truncate">{l.clienteNombre}</TableCell>
                         <TableCell>{l.presupuesto}</TableCell>
@@ -547,6 +559,13 @@ export default function LiquidacionPage() {
                     className="w-36"
                     value={ncNumero}
                     onChange={(e) => setNcNumero(e.target.value)}
+                  />
+                  <Input
+                    type="date"
+                    title="Fecha de la NC"
+                    className="w-40"
+                    value={ncFecha}
+                    onChange={(e) => setNcFecha(e.target.value)}
                   />
                   <Input
                     placeholder="Monto USD"

@@ -9,6 +9,7 @@ import { recalcular } from '@/lib/comisiones/liquidacion'
 const postSchema = z.object({
   clienteNombre: z.string().min(1).max(200),
   numeroNota: z.string().max(50).optional(),
+  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), // fecha de la NC
   montoUsd: z.number().positive(), // se guarda en negativo: la NC resta
 })
 
@@ -46,7 +47,7 @@ export async function POST(
       )
     }
 
-    const { clienteNombre, numeroNota, montoUsd } = parsed.data
+    const { clienteNombre, numeroNota, fecha, montoUsd } = parsed.data
     await prisma.comisionLinea.create({
       data: {
         vendedorId: liquidacion.vendedorId,
@@ -54,6 +55,8 @@ export async function POST(
         clienteNombre,
         presupuesto: 'NC',
         numeroFactura: numeroNota || null,
+        // Mediodía UTC: la fecha se muestra igual en cualquier huso razonable.
+        fecha: fecha ? new Date(`${fecha}T12:00:00Z`) : null,
         importeFacturadoUsd: -montoUsd,
         anioImputacion: liquidacion.anio,
         mesImputacion: liquidacion.mes,

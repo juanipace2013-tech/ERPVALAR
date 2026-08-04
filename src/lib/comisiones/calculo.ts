@@ -33,9 +33,9 @@ export interface TramoEscala {
   tasa: number
 }
 
-// Escala por defecto (vigente desde Agosto 2026; la anterior arrancaba en 1%
-// con tramos de 50/75/100k). Se usa como fallback si la tabla
-// comision_escalas está vacía.
+// Escala por defecto (vigente desde Julio 2026, decisión 2026-08-04: aplica
+// también retroactivo a Julio; la anterior arrancaba en 1% con tramos de
+// 50/75/100k). Se usa como fallback si la tabla comision_escalas está vacía.
 export const ESCALA_DEFAULT: TramoEscala[] = [
   { pisoUsd: 0, techoUsd: 20000, tasa: 0.0125 },
   { pisoUsd: 20000, techoUsd: 40000, tasa: 0.015 },
@@ -46,8 +46,7 @@ export const ESCALA_DEFAULT: TramoEscala[] = [
 /**
  * Escala vigente para un mes, desde la DB (fallback: ESCALA_DEFAULT).
  * Rige el set de tramos con el mayor vigenteDesde anterior al fin del mes,
- * así un cambio de escala no pisa meses anteriores todavía abiertos: Julio
- * 2026 se refresca con la escala vieja y Agosto en adelante usa la nueva.
+ * así un futuro cambio de escala no pisa meses anteriores todavía abiertos.
  */
 export async function getEscala(anio: number, mes: number): Promise<TramoEscala[]> {
   // mes es 1-12 y Date.UTC usa 0-11 → esto da el primer instante del mes siguiente.

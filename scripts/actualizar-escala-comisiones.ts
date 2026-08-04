@@ -1,25 +1,25 @@
 /**
- * Carga la escala de comisiones nueva, vigente desde Agosto 2026:
+ * Reemplaza la escala de comisiones por la nueva, vigente desde Julio 2026
+ * (decisión 2026-08-04: aplica también retroactivo a Julio, que sigue ABIERTA):
  *
  *   Menos de $20.000        → 1,25%
  *   $20.000 - $40.000       → 1,50%
  *   $40.000 - $60.000       → 1,75%
  *   Más de $60.000          → 2,00%
  *
- * No borra la escala vieja: le normaliza vigenteDesde a 2026-07-01 y agrega
- * los tramos nuevos con vigenteDesde 2026-08-01. getEscala(anio, mes) elige
- * el set según el mes, así Julio 2026 (todavía ABIERTA) se sigue refrescando
- * con la escala vieja y Agosto en adelante usa la nueva.
+ * Borra la escala vieja (no hay meses liquidados anteriores a Julio en el ERP),
+ * carga la nueva con vigenteDesde 2026-07-01 y recalcula todas las
+ * liquidaciones ABIERTAS para que tomen el tramo nuevo.
  *
  * Idempotente. Uso (en el VPS):
  *   npx tsx scripts/actualizar-escala-comisiones.ts
  */
 import { PrismaClient } from '@prisma/client'
+import { recalcular } from '@/lib/comisiones/liquidacion'
 
 const prisma = new PrismaClient()
 
-const VIEJA_DESDE = new Date(Date.UTC(2026, 6, 1)) // 2026-07-01
-const NUEVA_DESDE = new Date(Date.UTC(2026, 7, 1)) // 2026-08-01
+const NUEVA_DESDE = new Date(Date.UTC(2026, 6, 1)) // 2026-07-01
 
 const ESCALA_NUEVA = [
   { pisoUsd: 0, techoUsd: 20000, tasa: 0.0125, vigenteDesde: NUEVA_DESDE },
@@ -34,28 +34,35 @@ function fmt(t: { pisoUsd: unknown; techoUsd: unknown; tasa: unknown }) {
 }
 
 async function main() {
-  const yaCargada = await prisma.comisionEscala.count({
-    where: { vigenteDesde: { gte: NUEVA_DESDE } },
-  })
-  if (yaCargada > 0) {
-    console.log(`Escala nueva ya cargada (${yaCargada} tramos), no se toca`)
+  const total = await prisma.comisionEscala.count()
+  const nuevaYa = await prisma.comisionEscala.count({ where: { vigenteDesde: NUEVA_DESDE } })
+  if (total === ESCALA_NUEVA.length && nuevaYa === ESCALA_NUEVA.length) {
+    console.log('Escala nueva ya cargada, no se toca la tabla')
   } else {
     await prisma.$transaction([
-      prisma.comisionEscala.updateMany({
-        where: { vigenteDesde: { lt: NUEVA_DESDE } },
-        data: { vigenteDesde: VIEJA_DESDE },
-      }),
+      prisma.comisionEscala.deleteMany(),
       prisma.comisionEscala.createMany({ data: ESCALA_NUEVA }),
     ])
-    console.log('Escala nueva cargada')
+    console.log('Escala nueva cargada (vigente desde 2026-07-01):')
+    const tramos = await prisma.comisionEscala.findMany({ orderBy: { pisoUsd: 'asc' } })
+    tramos.forEach((t) => console.log(fmt(t)))
   }
 
-  const tramos = await prisma.comisionEscala.findMany({
-    orderBy: [{ vigenteDesde: 'asc' }, { pisoUsd: 'asc' }],
+  const abiertas = await prisma.comisionLiquidacion.findMany({
+    where: { estado: 'ABIERTA' },
+    include: { vendedor: { select: { name: true } } },
+    orderBy: [{ anio: 'asc' }, { mes: 'asc' }],
   })
-  for (const t of tramos) {
-    console.log(`vigente desde ${t.vigenteDesde.toISOString().slice(0, 10)}:`)
-    console.log(fmt(t))
+  console.log(`\nRecalculando ${abiertas.length} liquidaciones ABIERTAS:`)
+  for (const liq of abiertas) {
+    const antes = liq.tasaMes === null ? '—' : `${(Number(liq.tasaMes) * 100).toFixed(2)}%`
+    const despues = await recalcular(liq.id)
+    const tasa = despues.tasaMes === null ? '—' : `${(Number(despues.tasaMes) * 100).toFixed(2)}%`
+    console.log(
+      `  ${liq.anio}-${String(liq.mes).padStart(2, '0')} ${liq.vendedor.name}: ` +
+        `USD ${Number(despues.totalFacturadoUsd).toLocaleString('es-AR')} | tasa ${antes} → ${tasa} | ` +
+        `comisiones ARS ${Number(despues.comisionesArs).toLocaleString('es-AR')}`
+    )
   }
 }
 

@@ -43,13 +43,22 @@ export const ESCALA_DEFAULT: TramoEscala[] = [
   { pisoUsd: 60000, techoUsd: null, tasa: 0.02 },
 ]
 
-/** Escala vigente desde la DB (fallback: ESCALA_DEFAULT). */
-export async function getEscala(): Promise<TramoEscala[]> {
+/**
+ * Escala vigente para un mes, desde la DB (fallback: ESCALA_DEFAULT).
+ * Rige el set de tramos con el mayor vigenteDesde anterior al fin del mes,
+ * así un cambio de escala no pisa meses anteriores todavía abiertos: Julio
+ * 2026 se refresca con la escala vieja y Agosto en adelante usa la nueva.
+ */
+export async function getEscala(anio: number, mes: number): Promise<TramoEscala[]> {
+  // mes es 1-12 y Date.UTC usa 0-11 → esto da el primer instante del mes siguiente.
+  const finDeMes = new Date(Date.UTC(anio, mes, 1))
   const tramos = await prisma.comisionEscala.findMany({
-    orderBy: { pisoUsd: 'asc' },
+    where: { vigenteDesde: { lt: finDeMes } },
+    orderBy: [{ vigenteDesde: 'desc' }, { pisoUsd: 'asc' }],
   })
   if (tramos.length === 0) return ESCALA_DEFAULT
-  return tramos.map((t) => ({
+  const corte = tramos[0].vigenteDesde.getTime()
+  return tramos.filter((t) => t.vigenteDesde.getTime() === corte).map((t) => ({
     pisoUsd: Number(t.pisoUsd),
     techoUsd: t.techoUsd === null ? null : Number(t.techoUsd),
     tasa: Number(t.tasa),

@@ -1,27 +1,31 @@
 /**
- * Reemplaza la escala de comisiones por la nueva (vigente desde Agosto 2026):
+ * Carga la escala de comisiones nueva, vigente desde Agosto 2026:
  *
  *   Menos de $20.000        → 1,25%
  *   $20.000 - $40.000       → 1,50%
  *   $40.000 - $60.000       → 1,75%
  *   Más de $60.000          → 2,00%
  *
- * OJO: getEscala() no versiona por fecha — cualquier liquidación que se
- * refresque o reabra después de correr esto (incluida Julio 2026) usa la
- * escala nueva. Julio ya liquidado no se recalcula solo.
+ * No borra la escala vieja: le normaliza vigenteDesde a 2026-07-01 y agrega
+ * los tramos nuevos con vigenteDesde 2026-08-01. getEscala(anio, mes) elige
+ * el set según el mes, así Julio 2026 (todavía ABIERTA) se sigue refrescando
+ * con la escala vieja y Agosto en adelante usa la nueva.
  *
- * Uso (en el VPS):
+ * Idempotente. Uso (en el VPS):
  *   npx tsx scripts/actualizar-escala-comisiones.ts
  */
 import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
+const VIEJA_DESDE = new Date(Date.UTC(2026, 6, 1)) // 2026-07-01
+const NUEVA_DESDE = new Date(Date.UTC(2026, 7, 1)) // 2026-08-01
+
 const ESCALA_NUEVA = [
-  { pisoUsd: 0, techoUsd: 20000, tasa: 0.0125 },
-  { pisoUsd: 20000, techoUsd: 40000, tasa: 0.015 },
-  { pisoUsd: 40000, techoUsd: 60000, tasa: 0.0175 },
-  { pisoUsd: 60000, techoUsd: null, tasa: 0.02 },
+  { pisoUsd: 0, techoUsd: 20000, tasa: 0.0125, vigenteDesde: NUEVA_DESDE },
+  { pisoUsd: 20000, techoUsd: 40000, tasa: 0.015, vigenteDesde: NUEVA_DESDE },
+  { pisoUsd: 40000, techoUsd: 60000, tasa: 0.0175, vigenteDesde: NUEVA_DESDE },
+  { pisoUsd: 60000, techoUsd: null, tasa: 0.02, vigenteDesde: NUEVA_DESDE },
 ]
 
 function fmt(t: { pisoUsd: unknown; techoUsd: unknown; tasa: unknown }) {
@@ -30,18 +34,29 @@ function fmt(t: { pisoUsd: unknown; techoUsd: unknown; tasa: unknown }) {
 }
 
 async function main() {
-  const actual = await prisma.comisionEscala.findMany({ orderBy: { pisoUsd: 'asc' } })
-  console.log(`Escala actual (${actual.length} tramos):`)
-  actual.forEach((t) => console.log(fmt(t)))
+  const yaCargada = await prisma.comisionEscala.count({
+    where: { vigenteDesde: { gte: NUEVA_DESDE } },
+  })
+  if (yaCargada > 0) {
+    console.log(`Escala nueva ya cargada (${yaCargada} tramos), no se toca`)
+  } else {
+    await prisma.$transaction([
+      prisma.comisionEscala.updateMany({
+        where: { vigenteDesde: { lt: NUEVA_DESDE } },
+        data: { vigenteDesde: VIEJA_DESDE },
+      }),
+      prisma.comisionEscala.createMany({ data: ESCALA_NUEVA }),
+    ])
+    console.log('Escala nueva cargada')
+  }
 
-  await prisma.$transaction([
-    prisma.comisionEscala.deleteMany(),
-    prisma.comisionEscala.createMany({ data: ESCALA_NUEVA }),
-  ])
-
-  const nueva = await prisma.comisionEscala.findMany({ orderBy: { pisoUsd: 'asc' } })
-  console.log(`\nEscala nueva (${nueva.length} tramos):`)
-  nueva.forEach((t) => console.log(fmt(t)))
+  const tramos = await prisma.comisionEscala.findMany({
+    orderBy: [{ vigenteDesde: 'asc' }, { pisoUsd: 'asc' }],
+  })
+  for (const t of tramos) {
+    console.log(`vigente desde ${t.vigenteDesde.toISOString().slice(0, 10)}:`)
+    console.log(fmt(t))
+  }
 }
 
 main()

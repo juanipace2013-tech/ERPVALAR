@@ -236,7 +236,7 @@ export async function recalcular(liquidacionId: string) {
   })
   if (liquidacion.estado === 'CERRADA') return liquidacion
 
-  const escala = await getEscala()
+  const escala = await getEscala(liquidacion.anio, liquidacion.mes)
   const tc = await getTipoCambioMes(liquidacion.anio, liquidacion.mes)
 
   const totalUsd = redondear2(
@@ -442,7 +442,7 @@ export async function pipelineCerrado(vendedorId: string) {
  * persistir nada).
  */
 export async function resumenMes(vendedorId: string, anio: number, mes: number) {
-  const escala = await getEscala()
+  const escala = await getEscala(anio, mes)
   const tc = await getTipoCambioMes(anio, mes)
 
   const liquidacion = await prisma.comisionLiquidacion.findUnique({

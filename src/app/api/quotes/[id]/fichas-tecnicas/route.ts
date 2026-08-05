@@ -37,6 +37,21 @@ export async function GET(
                 technicalSheetName: true,
               },
             },
+            // Adicionales del conjunto (ej: actuador montado sobre la válvula):
+            // sus fichas también se ofrecen para adjuntar.
+            additionals: {
+              select: {
+                product: {
+                  select: {
+                    id: true,
+                    sku: true,
+                    name: true,
+                    technicalSheetUrl: true,
+                    technicalSheetName: true,
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -62,32 +77,36 @@ export async function GET(
     >()
 
     for (const item of quote.items) {
-      const p = item.product
-      if (!p?.technicalSheetUrl || seenProducts.has(p.id)) continue
-      seenProducts.add(p.id)
+      // Producto principal + productos de los adicionales del conjunto
+      const products = [item.product, ...item.additionals.map((a) => a.product)]
 
-      // Tamaño del archivo (si no existe en disco, no ofrecer la ficha)
-      let size: number
-      try {
-        const info = await stat(path.join(process.cwd(), 'public', p.technicalSheetUrl))
-        size = info.size
-      } catch {
-        continue
-      }
+      for (const p of products) {
+        if (!p?.technicalSheetUrl || seenProducts.has(p.id)) continue
+        seenProducts.add(p.id)
 
-      const filename = p.technicalSheetName || path.basename(p.technicalSheetUrl)
-      const key = `${filename}|${size}`
-      const existing = byFile.get(key)
-      if (existing) {
-        existing.skus.push(p.sku)
-      } else {
-        byFile.set(key, {
-          productId: p.id,
-          skus: [p.sku],
-          productName: p.name,
-          filename,
-          size,
-        })
+        // Tamaño del archivo (si no existe en disco, no ofrecer la ficha)
+        let size: number
+        try {
+          const info = await stat(path.join(process.cwd(), 'public', p.technicalSheetUrl))
+          size = info.size
+        } catch {
+          continue
+        }
+
+        const filename = p.technicalSheetName || path.basename(p.technicalSheetUrl)
+        const key = `${filename}|${size}`
+        const existing = byFile.get(key)
+        if (existing) {
+          existing.skus.push(p.sku)
+        } else {
+          byFile.set(key, {
+            productId: p.id,
+            skus: [p.sku],
+            productName: p.name,
+            filename,
+            size,
+          })
+        }
       }
     }
 

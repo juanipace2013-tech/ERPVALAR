@@ -20,8 +20,16 @@ const SHEET_CONTENT_TYPES: Record<string, string> = {
  * como adjuntos base64 para el email.
  */
 async function buildFichaAttachments(quoteId: string, productIds: string[]) {
+  // El producto seleccionado puede ser el principal del ítem o un adicional
+  // del conjunto (ej: actuador montado sobre la válvula).
   const items = await prisma.quoteItem.findMany({
-    where: { quoteId, productId: { in: productIds } },
+    where: {
+      quoteId,
+      OR: [
+        { productId: { in: productIds } },
+        { additionals: { some: { productId: { in: productIds } } } },
+      ],
+    },
     select: {
       product: {
         select: {
@@ -31,35 +39,53 @@ async function buildFichaAttachments(quoteId: string, productIds: string[]) {
           technicalSheetName: true,
         },
       },
+      additionals: {
+        select: {
+          product: {
+            select: {
+              id: true,
+              sku: true,
+              technicalSheetUrl: true,
+              technicalSheetName: true,
+            },
+          },
+        },
+      },
     },
   })
 
   const attachments: Array<{ filename: string; contentBase64: string; contentType: string }> = []
+  const selectedIds = new Set(productIds)
   const seenProducts = new Set<string>()
   // Productos de la misma familia comparten la ficha (mismo nombre de
   // archivo): adjuntarla una sola vez aunque vengan varios seleccionados.
   const seenFilenames = new Set<string>()
 
   for (const item of items) {
-    const p = item.product
-    if (!p?.technicalSheetUrl || seenProducts.has(p.id)) continue
-    seenProducts.add(p.id)
+    const products = [item.product, ...item.additionals.map((a) => a.product)]
 
-    try {
-      const filePath = path.join(process.cwd(), 'public', p.technicalSheetUrl)
-      const ext = path.extname(p.technicalSheetUrl).toLowerCase()
-      const filename = p.technicalSheetName || `Ficha-Tecnica-${p.sku}${ext}`
-      if (seenFilenames.has(filename)) continue
-      const buffer = await readFile(filePath)
-      seenFilenames.add(filename)
-      attachments.push({
-        filename,
-        contentBase64: buffer.toString('base64'),
-        contentType: SHEET_CONTENT_TYPES[ext] || 'application/octet-stream',
-      })
-    } catch (err) {
-      // Ficha faltante en disco: avisar en logs pero no frenar el envío
-      logger.error(`[Mail] Ficha técnica no encontrada para producto ${p.sku}:`, err)
+    for (const p of products) {
+      // El ítem puede matchear por su adicional: filtrar por producto seleccionado
+      if (!p || !selectedIds.has(p.id)) continue
+      if (!p.technicalSheetUrl || seenProducts.has(p.id)) continue
+      seenProducts.add(p.id)
+
+      try {
+        const filePath = path.join(process.cwd(), 'public', p.technicalSheetUrl)
+        const ext = path.extname(p.technicalSheetUrl).toLowerCase()
+        const filename = p.technicalSheetName || `Ficha-Tecnica-${p.sku}${ext}`
+        if (seenFilenames.has(filename)) continue
+        const buffer = await readFile(filePath)
+        seenFilenames.add(filename)
+        attachments.push({
+          filename,
+          contentBase64: buffer.toString('base64'),
+          contentType: SHEET_CONTENT_TYPES[ext] || 'application/octet-stream',
+        })
+      } catch (err) {
+        // Ficha faltante en disco: avisar en logs pero no frenar el envío
+        logger.error(`[Mail] Ficha técnica no encontrada para producto ${p.sku}:`, err)
+      }
     }
   }
 

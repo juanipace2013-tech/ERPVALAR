@@ -178,6 +178,7 @@ interface HistorialItem {
   date: string
   colppyRef: string
   quoteNumber: string
+  purchaseOrderNumber: string | null
   customer: { id: string; name: string; cuit: string }
   salesPerson: { id: string; name: string } | null
   currency: string
@@ -234,6 +235,7 @@ export default function FacturacionPage() {
   const [historialLoading, setHistorialLoading] = useState(false)
   const [historialVendedor, setHistorialVendedor] = useState('all')
   const [historialCliente, setHistorialCliente] = useState('')
+  const [historialSearch, setHistorialSearch] = useState('')
   const [historialDateFrom, setHistorialDateFrom] = useState('')
   const [historialDateTo, setHistorialDateTo] = useState('')
   const [historialPage, setHistorialPage] = useState(0)
@@ -284,6 +286,7 @@ export default function FacturacionPage() {
       const params = new URLSearchParams()
       if (historialVendedor !== 'all') params.append('vendedorId', historialVendedor)
       if (historialCliente) params.append('clienteId', historialCliente)
+      if (historialSearch.trim()) params.append('search', historialSearch.trim())
       if (historialDateFrom) params.append('dateFrom', historialDateFrom)
       if (historialDateTo) params.append('dateTo', historialDateTo)
       params.append('page', String(page))
@@ -781,6 +784,22 @@ export default function FacturacionPage() {
 
           {/* Filtros historial */}
           <div className="flex flex-wrap gap-3 items-end border rounded-lg p-3 bg-gray-50 mb-4">
+            <div className="w-56">
+              <Label className="text-xs text-gray-500">Buscar</Label>
+              <Input
+                type="text"
+                placeholder="Cotización, cliente, OC..."
+                value={historialSearch}
+                onChange={(e) => setHistorialSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    setHistorialPage(0)
+                    fetchHistorial(0)
+                  }
+                }}
+                className="h-9"
+              />
+            </div>
             <div className="w-40">
               <Label className="text-xs text-gray-500">Vendedor</Label>
               <Select value={historialVendedor} onValueChange={setHistorialVendedor}>
@@ -830,7 +849,7 @@ export default function FacturacionPage() {
             <Button size="sm" onClick={() => { setHistorialPage(0); fetchHistorial(0) }} className="h-9">
               Filtrar
             </Button>
-            {(historialVendedor !== 'all' || historialCliente || historialDateFrom || historialDateTo) && (
+            {(historialVendedor !== 'all' || historialCliente || historialSearch || historialDateFrom || historialDateTo) && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -838,6 +857,7 @@ export default function FacturacionPage() {
                 onClick={() => {
                   setHistorialVendedor('all')
                   setHistorialCliente('')
+                  setHistorialSearch('')
                   setHistorialDateFrom('')
                   setHistorialDateTo('')
                   setHistorialPage(0)
@@ -868,6 +888,7 @@ export default function FacturacionPage() {
                       <TableHead>Fecha</TableHead>
                       <TableHead>Nº Factura / Remito</TableHead>
                       <TableHead>Cotización</TableHead>
+                      <TableHead>OC Cliente</TableHead>
                       <TableHead>Cliente</TableHead>
                       <TableHead>CUIT</TableHead>
                       <TableHead>Vendedor</TableHead>
@@ -899,6 +920,9 @@ export default function FacturacionPage() {
                           >
                             {item.quoteNumber}
                           </Link>
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">
+                          {item.purchaseOrderNumber || '—'}
                         </TableCell>
                         <TableCell className="text-sm font-medium max-w-[200px] truncate" title={item.customer.name}>
                           {item.customer.name}

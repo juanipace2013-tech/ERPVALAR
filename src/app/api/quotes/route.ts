@@ -43,6 +43,7 @@ export async function GET(request: NextRequest) {
       where.OR = [
         { quoteNumber: { contains: search, mode: 'insensitive' } },
         { customer: { name: { contains: search, mode: 'insensitive' } } },
+        { purchaseOrderNumber: { contains: search, mode: 'insensitive' } },
       ]
     }
 

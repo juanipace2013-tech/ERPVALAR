@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const vendedorId = searchParams.get('vendedorId')
     const clienteId = searchParams.get('clienteId')
+    const search = searchParams.get('search')
     const dateFrom = searchParams.get('dateFrom')
     const dateTo = searchParams.get('dateTo')
     const page = parseInt(searchParams.get('page') || '0', 10)
@@ -29,6 +30,13 @@ export async function GET(request: NextRequest) {
       colppySyncedAt: { not: null },
       ...(vendedorId && { salesPersonId: vendedorId }),
       ...(clienteId && { customerId: clienteId }),
+      ...(search && {
+        OR: [
+          { quoteNumber: { contains: search, mode: 'insensitive' } },
+          { customer: { name: { contains: search, mode: 'insensitive' } } },
+          { purchaseOrderNumber: { contains: search, mode: 'insensitive' } },
+        ],
+      }),
       ...((dateFrom || dateTo) && {
         colppySyncedAt: {
           not: null,
@@ -63,6 +71,7 @@ export async function GET(request: NextRequest) {
         date: q.colppySyncedAt!.toISOString(),
         colppyRef: q.colppyInvoiceId || '—',
         quoteNumber: q.quoteNumber,
+        purchaseOrderNumber: q.purchaseOrderNumber,
         customer: q.customer,
         salesPerson: q.salesPerson,
         currency: q.currency,

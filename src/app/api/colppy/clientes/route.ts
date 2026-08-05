@@ -292,10 +292,19 @@ export async function GET(request: NextRequest) {
     }
 
     // Buscar localmente (instantáneo)
-    // Soporta búsqueda por múltiples términos (ej: "dist buenos aires")
+    // Soporta búsqueda por múltiples términos (ej: "dist buenos aires").
+    // Para CUIT: si el término tiene dígitos, también se compara la versión
+    // solo-números contra el searchText (que incluye el CUIT normalizado),
+    // así "30-71888774-3", "30718887743" o "30 71888774 3" matchean igual.
     const searchTerms = search.split(/\s+/);
     const results = allCustomers
-      .filter((c) => searchTerms.every((term) => c.searchText.includes(term)))
+      .filter((c) =>
+        searchTerms.every((term) => {
+          if (c.searchText.includes(term)) return true;
+          const digits = term.replace(/\D/g, '');
+          return digits.length >= 2 && c.searchText.includes(digits);
+        })
+      )
       .slice(0, limit);
 
     return NextResponse.json({

@@ -96,6 +96,28 @@ async function anularFacturasPorNC(vendedorId: string, anio: number, mes: number
     })
     if (ncs.length === 0) return
 
+    // Ventas (FAV) de esos clientes para detectar REFACTURACIONES: patrón
+    // "factura → NC → factura nueva por el mismo importe" (típico pedido
+    // burocrático del cliente). En ese caso la venta sigue viva y la NC NO
+    // debe anularla de comisiones. La refactura hecha directo en Colppy no
+    // genera CotizacionFactura, así que no hay doble conteo.
+    const favs = await prisma.invoice.findMany({
+      where: {
+        transactionType: 'SALE',
+        customerId: { in: customerIds },
+        currency: 'USD',
+        status: { not: 'CANCELLED' },
+      },
+      select: {
+        id: true,
+        invoiceNumber: true,
+        customerId: true,
+        subtotal: true,
+        total: true,
+        issueDate: true,
+      },
+    })
+
     // NCs que ya anularon otra factura (marcadas en errorMessage)
     const yaUsadas = await prisma.cotizacionFactura.findMany({
       where: { errorMessage: { startsWith: MARCA_ANULADA_POR_NC } },
@@ -120,6 +142,28 @@ async function anularFacturasPorNC(vendedorId: string, anio: number, mes: number
         )
       })
       if (!nc) continue
+
+      // ¿Es una refacturación? Buscar una FAV del mismo cliente, por el mismo
+      // neto que la NC, emitida el mismo día o después de la NC (excluyendo la
+      // factura original que la NC vino a reemplazar). Si existe, saltear la
+      // NC: la venta original sigue contando para comisiones.
+      const netoNC = Number(nc.subtotal) > 0 ? Number(nc.subtotal) : Number(nc.total)
+      const tolRefact = Math.max(1, netoNC * 0.005)
+      const refactura = favs.find((f) => {
+        const netoFav = Number(f.subtotal) > 0 ? Number(f.subtotal) : Number(f.total)
+        return (
+          f.id !== factura.invoiceId &&
+          f.customerId === nc.customerId &&
+          f.issueDate.getTime() >= nc.issueDate.getTime() &&
+          Math.abs(netoFav - netoNC) <= tolRefact
+        )
+      })
+      if (refactura) {
+        logger.info(
+          `[COMISIONES_NC] NC ${nc.invoiceNumber} salteada: refacturación detectada (FAV ${refactura.invoiceNumber} posterior por el mismo importe) — la factura ${factura.numeroFactura} (${factura.cotizacion.quoteNumber}) sigue contando`
+        )
+        continue
+      }
 
       ncIdsUsados.add(nc.id)
       await prisma.cotizacionFactura.update({

@@ -369,7 +369,14 @@ export async function syncColppyFacturas(dateFrom: Date, dateTo: Date): Promise<
       where: {
         colppyId: { not: null },
         status: 'PENDING',
-        invoiceNumber: { not: { startsWith: '0003-0000' } },
+        AND: [
+          { invoiceNumber: { not: { startsWith: '0003-0000' } } },
+          // Nunca borrar los borradores creados por el ERP: al importarse la
+          // factura emitida (mismo colppyId) pasan a PENDING y esta limpieza
+          // los eliminaba, destruyendo los InvoiceItems que vinculan la
+          // factura con los items de la cotización (caso VAL-2026-2331).
+          { invoiceNumber: { not: { startsWith: 'BORRADOR-COLPPY-' } } },
+        ],
       },
     })
     if (deletedDrafts.count > 0) {
@@ -645,6 +652,12 @@ export async function syncColppyFacturas(dateFrom: Date, dateTo: Date): Promise<
         await prisma.invoice.update({
           where: { id: existing.id },
           data: {
+            // Graduar el borrador del ERP al número real del comprobante
+            // cuando Colppy lo emite (mismo colppyId). Mantiene quoteId e
+            // InvoiceItems del envío original.
+            ...(existing.invoiceNumber.startsWith('BORRADOR-COLPPY-') && {
+              invoiceNumber: invoiceData.invoiceNumber,
+            }),
             transactionType: invoiceData.transactionType,
             status: invoiceData.status,
             paymentStatus: invoiceData.paymentStatus,

@@ -192,9 +192,14 @@ export async function GET(request: NextRequest) {
     for (const quote of quotes) {
       // Calcular cantidad facturada por ítem
       const processedItems: ProcessedItem[] = quote.items.map((item) => {
-        const invoicedQuantity = item.invoiceItems
+        // Facturado efectivo = max(InvoiceItems vigentes, cantidadFacturada) —
+        // misma regla que generate-invoice. La columna cantidadFacturada
+        // sobrevive aunque la Invoice borrador se pierda o el sync de Colppy
+        // la reimporte sin items (caso VAL-2026-2331).
+        const fromInvoiceItems = item.invoiceItems
           .filter((ii) => ii.invoice.status !== 'CANCELLED')
           .reduce((sum, ii) => sum + Number(ii.quantity), 0)
+        const invoicedQuantity = Math.max(fromInvoiceItems, Number(item.cantidadFacturada))
 
         const remainingQuantity = item.quantity - invoicedQuantity
 

@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 
-const TERMINAL_STATUSES = ['DELIVERED', 'NOT_DELIVERED', 'PICKED_UP']
+const TERMINAL_STATUSES = ['DELIVERED', 'NOT_DELIVERED', 'PICKED_UP', 'NOT_PICKED_UP']
 const VALID_STATUSES = ['PLANNING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']
 
 export async function POST(
@@ -26,7 +26,7 @@ export async function POST(
     const route = await prisma.deliveryRoute.findUnique({
       where: { id },
       include: {
-        stops: { select: { id: true, status: true, deliveryNoteId: true } },
+        stops: { select: { id: true, status: true, deliveryNoteId: true, type: true } },
       },
     })
 
@@ -65,7 +65,7 @@ export async function POST(
           await tx.deliveryStop.update({
             where: { id: stop.id },
             data: {
-              status: 'NOT_DELIVERED',
+              status: stop.type === 'PICKUP' ? 'NOT_PICKED_UP' : 'NOT_DELIVERED',
               completedAt: new Date(),
               ...(stop.deliveryNoteId ? { deliveryNoteId: null } : {}),
             },

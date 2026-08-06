@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 
-const TERMINAL_STATUSES = ['DELIVERED', 'NOT_DELIVERED', 'PICKED_UP']
+const TERMINAL_STATUSES = ['DELIVERED', 'NOT_DELIVERED', 'PICKED_UP', 'NOT_PICKED_UP']
 const VALID_STATUSES = ['PENDING', 'PREPARING', 'IN_ROUTE', ...TERMINAL_STATUSES]
 
 export async function POST(

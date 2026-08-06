@@ -26,6 +26,7 @@ export interface RutaPDFData {
     finalDestination?: string | null
     observations?: string | null
     deliveryNumber?: string | null
+    trackingNumber?: string | null
   }>
 }
 
@@ -167,6 +168,8 @@ export function generateRutaPDF(data: RutaPDFData): Blob {
         if (stop.transportAddress) transportParts.push(stop.transportAddress)
         if (stop.transportPhone) transportParts.push(`Tel: ${stop.transportPhone}`)
       }
+      // N° de guía del expreso (ej: Ternium): el conductor lo necesita impreso.
+      if (stop.trackingNumber) transportParts.push(`Guía N°: ${stop.trackingNumber}`)
       const transport = transportParts.join('\n')
 
       const contact = [stop.contactName, stop.contactPhone]

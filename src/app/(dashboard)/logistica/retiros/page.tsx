@@ -454,6 +454,8 @@ export default function RetirosPage() {
                         <TableCell>
                           {r.status === 'PICKED_UP' ? (
                             <Badge className="bg-green-100 text-green-800 text-xs">Completado</Badge>
+                          ) : r.status === 'NOT_PICKED_UP' ? (
+                            <Badge className="bg-red-100 text-red-800 text-xs">No retirado</Badge>
                           ) : (
                             <Badge className="bg-gray-100 text-gray-800 text-xs">Pendiente</Badge>
                           )}

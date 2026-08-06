@@ -113,6 +113,7 @@ const stopStatusLabels: Record<string, string> = {
   DELIVERED: 'Entregado',
   NOT_DELIVERED: 'No Entregado',
   PICKED_UP: 'Retirado',
+  NOT_PICKED_UP: 'No Retirado',
 }
 
 const stopStatusColors: Record<string, string> = {
@@ -122,6 +123,7 @@ const stopStatusColors: Record<string, string> = {
   DELIVERED: 'bg-green-100 text-green-800',
   NOT_DELIVERED: 'bg-red-100 text-red-800',
   PICKED_UP: 'bg-purple-100 text-purple-800',
+  NOT_PICKED_UP: 'bg-red-100 text-red-800',
 }
 
 const zoneLabels: Record<string, string> = {
@@ -138,7 +140,7 @@ const zoneBgColors: Record<string, string> = {
   OESTE: 'bg-yellow-500',
 }
 
-const TERMINAL_STATUSES = ['DELIVERED', 'NOT_DELIVERED', 'PICKED_UP']
+const TERMINAL_STATUSES = ['DELIVERED', 'NOT_DELIVERED', 'PICKED_UP', 'NOT_PICKED_UP']
 
 export default function RutaDetailPage() {
   const params = useParams()
@@ -270,6 +272,7 @@ export default function RutaDetailPage() {
           finalDestination: s.finalDestination,
           observations: s.observations,
           deliveryNumber: s.deliveryNote?.deliveryNumber || null,
+          trackingNumber: s.trackingNumber,
         })),
       }
       const blob = generateRutaPDF(pdfData)
@@ -519,7 +522,7 @@ export default function RutaDetailPage() {
                     className={
                       stop.status === 'DELIVERED' || stop.status === 'PICKED_UP'
                         ? 'bg-green-50/50'
-                        : stop.status === 'NOT_DELIVERED'
+                        : stop.status === 'NOT_DELIVERED' || stop.status === 'NOT_PICKED_UP'
                           ? 'bg-red-50/50'
                           : ''
                     }
@@ -617,14 +620,25 @@ export default function RutaDetailPage() {
                       {route.status === 'IN_PROGRESS' && !TERMINAL_STATUSES.includes(stop.status) && (
                         <div className="flex gap-1 justify-end">
                           {stop.type === 'PICKUP' ? (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-purple-600 border-purple-300 hover:bg-purple-50"
-                              onClick={() => openStopStatusDialog(stop, 'PICKED_UP')}
-                            >
-                              Retirado
-                            </Button>
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-purple-600 border-purple-300 hover:bg-purple-50"
+                                onClick={() => openStopStatusDialog(stop, 'PICKED_UP')}
+                              >
+                                Retirado
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-red-600 border-red-300 hover:bg-red-50"
+                                onClick={() => openStopStatusDialog(stop, 'NOT_PICKED_UP')}
+                              >
+                                <XCircle className="h-3 w-3 mr-1" />
+                                No Ret.
+                              </Button>
+                            </>
                           ) : (
                             <>
                               <Button
@@ -649,7 +663,7 @@ export default function RutaDetailPage() {
                           )}
                         </div>
                       )}
-                      {stop.status === 'NOT_DELIVERED' && stop.observations && (
+                      {(stop.status === 'NOT_DELIVERED' || stop.status === 'NOT_PICKED_UP') && stop.observations && (
                         <p className="text-xs text-red-600 mt-1">{stop.observations}</p>
                       )}
                       {TERMINAL_STATUSES.includes(stop.status) && stop.completedAt && (
@@ -707,15 +721,17 @@ export default function RutaDetailPage() {
                 'Se marcara esta parada como no entregada. El remito vinculado volvera a pendiente de entrega.'}
               {newStopStatus === 'PICKED_UP' &&
                 'Se marcara este retiro como completado.'}
+              {newStopStatus === 'NOT_PICKED_UP' &&
+                'Se marcara este retiro como NO realizado. Podes volver a agendarlo en otra hoja de ruta.'}
             </p>
-            {newStopStatus === 'NOT_DELIVERED' && (
+            {(newStopStatus === 'NOT_DELIVERED' || newStopStatus === 'NOT_PICKED_UP') && (
               <div className="space-y-1">
                 <Label htmlFor="stopObservations">Motivo (opcional)</Label>
                 <input
                   id="stopObservations"
                   type="text"
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
-                  placeholder="Ej: Cliente cerrado, dirección incorrecta..."
+                  placeholder="Ej: Cliente cerrado, no llegamos, dirección incorrecta..."
                   value={stopObservations}
                   onChange={(e) => setStopObservations(e.target.value)}
                 />

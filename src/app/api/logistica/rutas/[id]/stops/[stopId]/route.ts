@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 
 /** Solo se pueden eliminar paradas en estos estados */
-const DELETABLE_STATUSES = ['PENDING', 'NOT_DELIVERED']
+const DELETABLE_STATUSES = ['PENDING', 'NOT_DELIVERED', 'NOT_PICKED_UP']
 
 export async function DELETE(
   _request: NextRequest,

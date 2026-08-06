@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
 import {
   Table,
   TableBody,
@@ -21,9 +20,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Loader2, Percent, TrendingUp, DollarSign, FileClock, AlertTriangle } from 'lucide-react'
+import { Loader2, Percent, TrendingUp, FileClock, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
-import { formatCurrency, formatNumber, parseDecimalAR } from '@/lib/utils'
+import { formatCurrency, formatNumber } from '@/lib/utils'
 
 const MESES = [
   'Enero',
@@ -100,9 +99,6 @@ export default function ComisionesPage() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [abriendo, setAbriendo] = useState(false)
-  const [tcBillete, setTcBillete] = useState('')
-  const [tcDivisa, setTcDivisa] = useState('')
-  const [guardandoTc, setGuardandoTc] = useState(false)
 
   const cargar = useCallback(async () => {
     setLoading(true)
@@ -114,9 +110,6 @@ export default function ComisionesPage() {
       const json: DashboardData = await res.json()
       setData(json)
       if (!vendedorId && json.vendedorId) setVendedorId(json.vendedorId)
-      // Precargar el TC guardado del mes (coma decimal, formato argentino)
-      setTcBillete(json.tipoCambio?.billete != null ? String(json.tipoCambio.billete).replace('.', ',') : '')
-      setTcDivisa(json.tipoCambio?.divisa != null ? String(json.tipoCambio.divisa).replace('.', ',') : '')
     } catch {
       toast.error('No se pudo cargar el dashboard de comisiones')
     } finally {
@@ -143,30 +136,6 @@ export default function ComisionesPage() {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'No se pudo abrir la liquidación')
       setAbriendo(false)
-    }
-  }
-
-  const guardarTc = async () => {
-    const billete = parseDecimalAR(tcBillete)
-    const divisa = parseDecimalAR(tcDivisa)
-    if (billete <= 0 || divisa <= 0) {
-      toast.error('Cargá ambos tipos de cambio (billete y divisa)')
-      return
-    }
-    setGuardandoTc(true)
-    try {
-      const res = await fetch('/api/comisiones/tipo-cambio', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ anio, mes, billete, divisa }),
-      })
-      if (!res.ok) throw new Error()
-      toast.success(`TC de ${MESES[mes - 1]} guardado`)
-      await cargar()
-    } catch {
-      toast.error('No se pudo guardar el tipo de cambio')
-    } finally {
-      setGuardandoTc(false)
     }
   }
 
@@ -274,7 +243,7 @@ export default function ComisionesPage() {
                 </div>
                 {!resumen?.tcCargado && (
                   <p className="text-xs text-amber-600 flex items-center gap-1">
-                    <AlertTriangle className="h-3 w-3" /> Falta el TC del mes
+                    <AlertTriangle className="h-3 w-3" /> Falta el TC del mes (se carga en la liquidación)
                   </p>
                 )}
               </CardContent>
@@ -312,34 +281,6 @@ export default function ComisionesPage() {
                 {data ? `${MESES[data.inicio.mes - 1]} ${data.inicio.anio}` : 'Agosto 2026'}.
               </p>
             )}
-            <div className="flex items-end gap-2 ml-auto">
-              <div>
-                <label className="text-xs text-muted-foreground flex items-center gap-1">
-                  <DollarSign className="h-3 w-3" /> TC billete {MESES[mes - 1]}
-                </label>
-                <Input
-                  className="w-28"
-                  placeholder="sin cargar"
-                  value={tcBillete}
-                  onChange={(e) => setTcBillete(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground flex items-center gap-1">
-                  <DollarSign className="h-3 w-3" /> TC divisa
-                </label>
-                <Input
-                  className="w-28"
-                  placeholder="sin cargar"
-                  value={tcDivisa}
-                  onChange={(e) => setTcDivisa(e.target.value)}
-                />
-              </div>
-              <Button variant="outline" onClick={guardarTc} disabled={guardandoTc}>
-                {guardandoTc && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                Guardar TC
-              </Button>
-            </div>
           </div>
 
           <div className="grid gap-6 lg:grid-cols-2">

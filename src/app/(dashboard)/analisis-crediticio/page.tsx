@@ -50,6 +50,7 @@ import {
   RefreshCw,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useTipoCambioUsd } from '@/hooks/useTipoCambioUsd'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -157,6 +158,22 @@ function formatMonto(n: number): string {
   return n.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 }
 
+// Los montos de deudas del BCRA vienen en MILES de pesos (los de cheques ya
+// vienen en pesos). Se muestran multiplicados x1000 para que los vendedores
+// lean valores reales, con equivalente aproximado en USD al TC vigente del ERP.
+const milesAPesos = (miles: number) => miles * 1000
+
+function formatUsd(pesos: number, tc: number): string {
+  return (pesos / tc).toLocaleString('es-AR', { maximumFractionDigits: 0 })
+}
+
+function formatCompacto(pesos: number): string {
+  return new Intl.NumberFormat('es-AR', {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(pesos)
+}
+
 const SITUACION_LABEL: Record<number, string> = {
   0: 'Sin deudas',
   1: 'Normal',
@@ -228,6 +245,7 @@ export default function AnalisisCrediticioPage() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<BcraResult | null>(null)
   const [error, setError] = useState('')
+  const tcUsd = useTipoCambioUsd()
 
   // ─── Estado historial ────────────────────────────────────────────────────────
   const [history, setHistory] = useState<SearchHistoryItem[]>([])
@@ -398,7 +416,7 @@ export default function AnalisisCrediticioPage() {
       }
       for (const e of p.entidades) {
         const name = e.entidadNombre || `Entidad ${e.entidad}`
-        row[name] = e.monto ?? 0
+        row[name] = milesAPesos(e.monto ?? 0)
       }
       return row
     })
@@ -749,10 +767,18 @@ export default function AnalisisCrediticioPage() {
                 </div>
                 <div className="text-right space-y-1">
                   <div>
-                    <p className="text-xs text-gray-500">Deuda total <span className="text-gray-400">(en miles de $)</span></p>
+                    <p className="text-xs text-gray-500">Deuda total</p>
                     <p className="text-lg font-bold text-gray-800">
-                      ${formatMonto(result.resumen.montoTotalDeuda)}
+                      ${formatMonto(milesAPesos(result.resumen.montoTotalDeuda))}
                     </p>
+                    {tcUsd && (
+                      <>
+                        <p className="text-sm font-semibold text-blue-700">
+                          ≈ USD {formatUsd(milesAPesos(result.resumen.montoTotalDeuda), tcUsd)}
+                        </p>
+                        <p className="text-[10px] text-gray-400">TC ${formatMonto(tcUsd)}</p>
+                      </>
+                    )}
                   </div>
                   <div>
                     <p className="text-xs text-gray-500">Entidades</p>
@@ -805,7 +831,8 @@ export default function AnalisisCrediticioPage() {
                     <TableRow>
                       <TableHead>Entidad</TableHead>
                       <TableHead>Situación</TableHead>
-                      <TableHead className="text-right">Monto (miles $)</TableHead>
+                      <TableHead className="text-right">Monto ($)</TableHead>
+                      <TableHead className="text-right">≈ USD</TableHead>
                       <TableHead className="text-right">Días atraso</TableHead>
                       <TableHead>Observaciones</TableHead>
                     </TableRow>
@@ -828,7 +855,12 @@ export default function AnalisisCrediticioPage() {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right font-mono">
-                            {e.monto != null ? formatMonto(e.monto) : '—'}
+                            {e.monto != null ? formatMonto(milesAPesos(e.monto)) : '—'}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-blue-700">
+                            {e.monto != null && tcUsd
+                              ? formatUsd(milesAPesos(e.monto), tcUsd)
+                              : '—'}
                           </TableCell>
                           <TableCell className="text-right">
                             {e.diasAtrasoPago != null ? (
@@ -936,7 +968,7 @@ export default function AnalisisCrediticioPage() {
                       />
                       <YAxis
                         tick={{ fontSize: 10, fill: '#9ca3af' }}
-                        tickFormatter={(v) => formatMonto(v)}
+                        tickFormatter={(v) => `$${formatCompacto(v)}`}
                       />
                       <Tooltip
                         contentStyle={{

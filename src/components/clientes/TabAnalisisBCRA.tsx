@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useTipoCambioUsd } from '@/hooks/useTipoCambioUsd'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -107,6 +108,15 @@ function formatMonto(n: number): string {
   return n.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 }
 
+// Los montos de deudas del BCRA vienen en MILES de pesos (los de cheques ya
+// vienen en pesos). Se muestran multiplicados x1000 para que los vendedores
+// lean valores reales, con equivalente aproximado en USD al TC vigente del ERP.
+const milesAPesos = (miles: number) => miles * 1000
+
+function formatUsd(pesos: number, tc: number): string {
+  return (pesos / tc).toLocaleString('es-AR', { maximumFractionDigits: 0 })
+}
+
 const SITUACION_LABEL: Record<number, string> = {
   0: 'Sin deudas',
   1: 'Normal',
@@ -153,6 +163,7 @@ export default function TabAnalisisBCRA({ cuit }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState<BcraResult | null>(null)
+  const tcUsd = useTipoCambioUsd()
 
   const fetchBCRA = useCallback(async (refresh = false) => {
     if (!cuit) return
@@ -248,8 +259,13 @@ export default function TabAnalisisBCRA({ cuit }: Props) {
               <div>
                 <p className="text-xs text-gray-500">Deuda total</p>
                 <p className="text-lg font-bold text-gray-800">
-                  ${formatMonto(result.resumen.montoTotalDeuda)}
+                  ${formatMonto(milesAPesos(result.resumen.montoTotalDeuda))}
                 </p>
+                {tcUsd && (
+                  <p className="text-xs font-semibold text-blue-700">
+                    ≈ USD {formatUsd(milesAPesos(result.resumen.montoTotalDeuda), tcUsd)}
+                  </p>
+                )}
               </div>
               <div>
                 <p className="text-xs text-gray-500">Entidades</p>
@@ -287,6 +303,7 @@ export default function TabAnalisisBCRA({ cuit }: Props) {
                   <TableHead>Entidad</TableHead>
                   <TableHead>Situación</TableHead>
                   <TableHead className="text-right">Monto ($)</TableHead>
+                  <TableHead className="text-right">≈ USD</TableHead>
                   <TableHead className="text-right">Días atraso</TableHead>
                   <TableHead>Observaciones</TableHead>
                 </TableRow>
@@ -309,7 +326,12 @@ export default function TabAnalisisBCRA({ cuit }: Props) {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right font-mono">
-                        {e.monto != null ? formatMonto(e.monto) : '—'}
+                        {e.monto != null ? formatMonto(milesAPesos(e.monto)) : '—'}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-blue-700">
+                        {e.monto != null && tcUsd
+                          ? formatUsd(milesAPesos(e.monto), tcUsd)
+                          : '—'}
                       </TableCell>
                       <TableCell className="text-right">
                         {e.diasAtrasoPago != null ? (

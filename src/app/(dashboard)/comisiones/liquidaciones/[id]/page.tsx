@@ -109,6 +109,10 @@ export default function LiquidacionPage() {
   const [ncNumero, setNcNumero] = useState('')
   const [ncFecha, setNcFecha] = useState('')
   const [ncMonto, setNcMonto] = useState('')
+  const [vsfCliente, setVsfCliente] = useState('')
+  const [vsfRef, setVsfRef] = useState('')
+  const [vsfFecha, setVsfFecha] = useState('')
+  const [vsfMonto, setVsfMonto] = useState('')
   const [basico, setBasico] = useState('')
   const [efectivo, setEfectivo] = useState('')
   const [ml, setMl] = useState('')
@@ -231,10 +235,37 @@ export default function LiquidacionPage() {
     )
   }
 
-  const eliminarLineaNC = (lineaId: string) =>
+  const agregarVentaSF = () => {
+    const montoNum = parseDecimalAR(vsfMonto)
+    if (!vsfCliente.trim() || montoNum <= 0) {
+      toast.error('Cliente y monto USD de la venta (positivo: suma solo)')
+      return
+    }
+    setVsfCliente('')
+    setVsfRef('')
+    setVsfFecha('')
+    setVsfMonto('')
+    accion(
+      () =>
+        fetch(`/api/comisiones/liquidaciones/${params.id}/lineas`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tipo: 'VENTA_SIN_FACTURA',
+            clienteNombre: vsfCliente.trim(),
+            numeroNota: vsfRef.trim() || undefined,
+            fecha: vsfFecha || undefined,
+            montoUsd: montoNum,
+          }),
+        }),
+      'Venta S/F agregada: suma al facturado del mes'
+    )
+  }
+
+  const eliminarLineaManual = (lineaId: string) =>
     accion(
       () => fetch(`/api/comisiones/lineas/${lineaId}`, { method: 'DELETE' }),
-      'NC eliminada'
+      'Línea eliminada'
     )
 
   const cambiarTipoOperacion = (lineaId: string, tipo: string) =>
@@ -486,6 +517,8 @@ export default function LiquidacionPage() {
                   )}
                   {lineasVisibles.map((l) => {
                     const esNC = Number(l.importeFacturadoUsd ?? 0) < 0
+                    const esVentaSF = l.presupuesto === 'VENTA S/F'
+                    const esManual = l.facturaParcialId === null && (esNC || esVentaSF)
                     const rojo = esNC ? 'text-red-600' : ''
                     return (
                       <TableRow key={l.id}>
@@ -493,7 +526,18 @@ export default function LiquidacionPage() {
                           {formatDateAR(l.facturaParcial?.fecha ?? l.fecha)}
                         </TableCell>
                         <TableCell className="max-w-52 truncate">{l.clienteNombre}</TableCell>
-                        <TableCell>{l.presupuesto}</TableCell>
+                        <TableCell>
+                          {esVentaSF ? (
+                            <Badge
+                              variant="outline"
+                              className="bg-amber-50 text-amber-800 border-amber-300 whitespace-nowrap"
+                            >
+                              Venta S/F
+                            </Badge>
+                          ) : (
+                            l.presupuesto
+                          )}
+                        </TableCell>
                         <TableCell>{l.numeroFactura || 'S/F'}</TableCell>
                         <TableCell className={`text-right ${rojo}`}>
                           {formatCurrency(l.importeFacturadoUsd ?? 0, 'USD')}
@@ -523,12 +567,12 @@ export default function LiquidacionPage() {
                           {l.comisionArs != null ? formatCurrency(l.comisionArs, 'ARS') : '—'}
                         </TableCell>
                         <TableCell>
-                          {abierta && esNC && l.facturaParcialId === null && (
+                          {abierta && esManual && (
                             <Button
                               variant="ghost"
                               size="icon"
                               className="h-7 w-7"
-                              onClick={() => eliminarLineaNC(l.id)}
+                              onClick={() => eliminarLineaManual(l.id)}
                               disabled={accionando}
                             >
                               <Trash2 className="h-4 w-4 text-muted-foreground" />
@@ -575,6 +619,43 @@ export default function LiquidacionPage() {
                   />
                   <Button variant="outline" onClick={agregarNC} disabled={accionando}>
                     <Plus className="h-4 w-4 mr-2" /> Agregar NC
+                  </Button>
+                </div>
+              </div>
+            )}
+            {abierta && (
+              <div className="mt-4 space-y-1 border-t pt-4">
+                <p className="text-xs text-muted-foreground">
+                  Venta sin factura (S/F): suma al facturado del mes y comisiona como una venta
+                  más. Queda marcada aparte en la planilla.
+                </p>
+                <div className="flex gap-2 pt-1">
+                  <Input
+                    placeholder="Cliente"
+                    value={vsfCliente}
+                    onChange={(e) => setVsfCliente(e.target.value)}
+                  />
+                  <Input
+                    placeholder="Referencia"
+                    className="w-36"
+                    value={vsfRef}
+                    onChange={(e) => setVsfRef(e.target.value)}
+                  />
+                  <Input
+                    type="date"
+                    title="Fecha de la venta"
+                    className="w-40"
+                    value={vsfFecha}
+                    onChange={(e) => setVsfFecha(e.target.value)}
+                  />
+                  <Input
+                    placeholder="Monto USD"
+                    className="w-28"
+                    value={vsfMonto}
+                    onChange={(e) => setVsfMonto(e.target.value)}
+                  />
+                  <Button variant="outline" onClick={agregarVentaSF} disabled={accionando}>
+                    <Plus className="h-4 w-4 mr-2" /> Agregar venta S/F
                   </Button>
                 </div>
               </div>

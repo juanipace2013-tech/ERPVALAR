@@ -57,8 +57,8 @@ export async function PATCH(
   }
 }
 
-// DELETE /api/comisiones/lineas/[id] — elimina una línea de NC manual
-// (importe negativo, sin factura de origen). Las líneas que vienen de una
+// DELETE /api/comisiones/lineas/[id] — elimina una línea manual (NC o venta
+// sin factura, sin factura de origen). Las líneas que vienen de una
 // CotizacionFactura no se borran a mano: las gestiona la sincronización.
 export async function DELETE(
   _request: NextRequest,
@@ -84,10 +84,12 @@ export async function DELETE(
         { status: 400 }
       )
     }
-    const esNcManual = linea.facturaParcialId === null && Number(linea.importeFacturadoUsd ?? 0) < 0
-    if (!esNcManual) {
+    const esManual =
+      linea.facturaParcialId === null &&
+      (linea.presupuesto === 'NC' || linea.presupuesto === 'VENTA S/F')
+    if (!esManual) {
       return NextResponse.json(
-        { error: 'Solo se pueden eliminar líneas de NC cargadas a mano' },
+        { error: 'Solo se pueden eliminar líneas cargadas a mano (NC o venta S/F)' },
         { status: 400 }
       )
     }

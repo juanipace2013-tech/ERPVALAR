@@ -116,6 +116,8 @@ export default function LiquidacionPage() {
   const [basico, setBasico] = useState('')
   const [efectivo, setEfectivo] = useState('')
   const [ml, setMl] = useState('')
+  const [tcBillete, setTcBillete] = useState('')
+  const [tcDivisa, setTcDivisa] = useState('')
   const [filtroCliente, setFiltroCliente] = useState('')
   const [ordenCampo, setOrdenCampo] = useState<OrdenCampo | null>(null)
   const [ordenAsc, setOrdenAsc] = useState(true)
@@ -129,6 +131,21 @@ export default function LiquidacionPage() {
       setBasico(formatNumber(Number(json.liquidacion.basicoArs)))
       setEfectivo(json.liquidacion.efectivoArs ? formatNumber(Number(json.liquidacion.efectivoArs)) : '')
       setMl(json.liquidacion.mlArs ? formatNumber(Number(json.liquidacion.mlArs)) : '')
+
+      // TC del mes de ESTA liquidación (editable acá para poder cerrar el mes
+      // sin pasar por el dashboard, que solo maneja el mes corriente).
+      try {
+        const tcRes = await fetch(`/api/comisiones/tipo-cambio?anio=${json.liquidacion.anio}`)
+        if (tcRes.ok) {
+          const tcJson = await tcRes.json()
+          const tcMes = (tcJson.tipos as Array<{ mes: number; billete: string; divisa: string }>)
+            .find((t) => t.mes === json.liquidacion.mes)
+          setTcBillete(tcMes ? formatNumber(Number(tcMes.billete)) : '')
+          setTcDivisa(tcMes ? formatNumber(Number(tcMes.divisa)) : '')
+        }
+      } catch {
+        // sin TC cargado: los inputs quedan vacíos
+      }
     } catch {
       toast.error('No se pudo cargar la liquidación')
     } finally {
@@ -262,6 +279,26 @@ export default function LiquidacionPage() {
     )
   }
 
+  const guardarTC = () => {
+    if (!liq) return
+    const billete = parseDecimalAR(tcBillete)
+    const divisa = parseDecimalAR(tcDivisa)
+    if (billete <= 0 || divisa <= 0) {
+      toast.error('Cargá ambos tipos de cambio (billete y divisa)')
+      return
+    }
+    accion(async () => {
+      const res = await fetch('/api/comisiones/tipo-cambio', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ anio: liq.anio, mes: liq.mes, billete, divisa }),
+      })
+      if (!res.ok) return res
+      // Refrescar para que el TC nuevo impacte en las líneas y el neto.
+      return fetch(`/api/comisiones/liquidaciones/${params.id}/refrescar`, { method: 'POST' })
+    }, 'TC guardado y liquidación recalculada')
+  }
+
   const eliminarLineaManual = (lineaId: string) =>
     accion(
       () => fetch(`/api/comisiones/lineas/${lineaId}`, { method: 'DELETE' }),
@@ -383,8 +420,8 @@ export default function LiquidacionPage() {
       {tcFaltante && (
         <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800">
           <AlertTriangle className="h-4 w-4" />
-          Falta cargar el tipo de cambio de {MESES[liq.mes - 1]} {liq.anio} (se carga desde el
-          dashboard de Comisiones). Sin TC no se puede cerrar.
+          Falta cargar el tipo de cambio de {MESES[liq.mes - 1]} {liq.anio}: cargalo en el panel
+          &quot;Tipo de cambio del mes&quot;. Sin TC no se puede cerrar.
         </div>
       )}
 
@@ -664,6 +701,50 @@ export default function LiquidacionPage() {
         </Card>
 
         <div className="space-y-6">
+          <Card className={tcFaltante ? 'border-amber-300' : ''}>
+            <CardHeader>
+              <CardTitle className="text-base">
+                Tipo de cambio del mes — {MESES[liq.mes - 1]} {liq.anio}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="text-xs text-muted-foreground">TC billete</label>
+                  <Input
+                    placeholder="sin cargar"
+                    value={tcBillete}
+                    onChange={(e) => setTcBillete(e.target.value)}
+                    disabled={!abierta}
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs text-muted-foreground">TC divisa</label>
+                  <Input
+                    placeholder="sin cargar"
+                    value={tcDivisa}
+                    onChange={(e) => setTcDivisa(e.target.value)}
+                    disabled={!abierta}
+                  />
+                </div>
+              </div>
+              {abierta && (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={guardarTC}
+                  disabled={accionando}
+                >
+                  Guardar TC y recalcular
+                </Button>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Se usa para pasar las comisiones USD a ARS según el tipo de cada línea
+                (billete/divisa). Con la liquidación cerrada queda congelado.
+              </p>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Ajustes</CardTitle>

@@ -19,6 +19,7 @@ import {
   Plus,
   FileDown,
   Pencil,
+  Trash2,
   Loader2,
   Gauge,
 } from 'lucide-react'
@@ -63,6 +64,21 @@ export default function CalculadoraVaporHistorialPage() {
       toast.success('PDF descargado')
     } catch {
       toast.error('No se pudo generar el PDF')
+    }
+  }
+
+  const handleEliminar = async (c: CalculoHistorial) => {
+    const etiqueta = c.cliente ?? c.referencia ?? `${fmtFechaHora(c.createdAt)} (${c.user.name})`
+    if (!confirm(`¿Eliminar el cálculo de ${etiqueta}?\nEsta acción no se puede deshacer.`)) return
+    try {
+      const res = await fetch(`/api/herramientas/calculadora-vapor/${c.id}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) throw new Error()
+      setHistorial((prev) => prev.filter((x) => x.id !== c.id))
+      toast.success('Cálculo eliminado del historial')
+    } catch {
+      toast.error('No se pudo eliminar el cálculo')
     }
   }
 
@@ -196,6 +212,15 @@ export default function CalculadoraVaporHistorialPage() {
                           <Link href={urlNuevaDesdeCalculo(c)}>
                             <Pencil className="h-4 w-4" />
                           </Link>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleEliminar(c)}
+                          title="Eliminar del historial"
+                          className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-900/30"
+                        >
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
                     </TableCell>

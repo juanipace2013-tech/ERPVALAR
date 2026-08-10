@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { LOGO_BASE64 } from '@/lib/logo-base64'
+import { getLogo } from '@/lib/logo-base64'
 import type { ResultadoCalculo } from '@/lib/calculoReguladoraVapor'
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
@@ -52,36 +52,38 @@ function pdfSafe(s: string): string {
 }
 
 // ── Generador ─────────────────────────────────────────────────────────────────
-export function generateReguladoraVaporPDF(data: ReguladoraVaporPDFData): Blob {
+export async function generateReguladoraVaporPDF(
+  data: ReguladoraVaporPDFData
+): Promise<Blob> {
   const { resultado: r, cliente, referencia, fecha } = data
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
 
-  let y = 10
-
-  // ═══ CABECERA ═══
-  try {
-    doc.addImage(LOGO_BASE64, 'PNG', ML, y, 30, 20)
-  } catch {
-    // Fallback if logo fails
+  // ═══ CABECERA (mismo estilo que el PDF de presupuestos) ═══
+  const logoBase64 = await getLogo()
+  if (logoBase64) {
+    try {
+      doc.addImage(logoBase64, 'PNG', ML, 10, 45, 13.5)
+    } catch {
+      // Fallback if logo fails
+    }
   }
-
-  doc.setFontSize(10)
-  doc.setTextColor(...DARK)
-  doc.setFont('helvetica', 'bold')
-  doc.text('VAL ARG S.R.L.', ML + 34, y + 5)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(7)
-  doc.setTextColor(...GRAY)
-  doc.text('14 de Julio 175, C.P: 1427 - C.A.B.A.', ML + 34, y + 10)
-  doc.text('Tel: +54 11 4551-3343 / 4552-2874', ML + 34, y + 14)
 
   const rightX = PAGE_W - MR
   doc.setFontSize(10)
   doc.setTextColor(...DARK)
-  doc.setFont('helvetica', 'bold')
-  doc.text(`Fecha: ${fmtDate(fecha)}`, rightX, y + 5, { align: 'right' })
+  doc.setFont('helvetica', 'normal')
+  doc.text(fmtDate(fecha), rightX, 15, { align: 'right' })
 
-  y += 26
+  doc.setFontSize(9)
+  doc.text('14 de Julio 175, C.P: 1427 - C.A.B.A.', ML, 30)
+  doc.text('Teléfono: + 54 11 4551-3343 | 4552-2874', ML, 35)
+  doc.text('VAL ARG S.R.L. CUIT: 30-71537357-9', ML, 40)
+
+  doc.setDrawColor(200, 200, 200)
+  doc.setLineWidth(0.3)
+  doc.line(ML, 44, PAGE_W - MR, 44)
+
+  let y = 51
   doc.setFontSize(14)
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(...DARK)
@@ -141,23 +143,24 @@ export function generateReguladoraVaporPDF(data: ReguladoraVaporPDFData): Blob {
   doc.setFont('helvetica', 'normal')
   doc.text(`CV calculado: ${fmt(r.cvCalculado)}`, ML + 4, y + 6)
   if (r.seleccion) {
+    doc.setTextColor(...DARK)
+    doc.text(
+      `CV elegido: ${fmt(r.seleccion.cv)}  |  % de trabajo: ${fmtPct(r.seleccion.porcentajeTrabajo)} (banda recomendada 20%–80%)`,
+      rightX - 4,
+      y + 6,
+      { align: 'right' }
+    )
     doc.setFontSize(13)
     doc.setFont('helvetica', 'bold')
     doc.setTextColor(...BLUE)
     doc.text(
       `Medida recomendada: ${r.seleccion.medida} (DN${r.seleccion.dn})`,
       ML + 4,
-      y + 14
+      y + 14.5
     )
     doc.setFontSize(9)
     doc.setTextColor(...DARK)
     doc.setFont('helvetica', 'normal')
-    doc.text(
-      `CV elegido: ${fmt(r.seleccion.cv)}  |  % de trabajo: ${fmtPct(r.seleccion.porcentajeTrabajo)} (banda recomendada 20%–80%)`,
-      rightX - 4,
-      y + 14,
-      { align: 'right' }
-    )
   } else {
     doc.setFontSize(12)
     doc.setFont('helvetica', 'bold')

@@ -89,10 +89,10 @@ export default function CalculadoraVaporPage() {
     }
   }
 
-  const handleDescargarPDF = () => {
+  const handleDescargarPDF = async () => {
     if (!resultado) return
     try {
-      const blob = generateReguladoraVaporPDF({
+      const blob = await generateReguladoraVaporPDF({
         resultado,
         cliente: cliente.trim() || undefined,
         referencia: referencia.trim() || undefined,

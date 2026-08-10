@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -32,6 +32,8 @@ import {
   Copy,
   Info,
   FileDown,
+  History,
+  ArrowUpToLine,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -51,12 +53,46 @@ const fmt = (n: number, decimales = 2) =>
 
 const fmtPct = (fraccion: number, decimales = 2) => `${fmt(fraccion * 100, decimales)}%`
 
+interface CalculoHistorial {
+  id: string
+  p1: number
+  p2: number
+  q: number
+  cliente: string | null
+  referencia: string | null
+  regimen: string
+  cvCalculado: number
+  medida: string | null
+  porcentajeTrabajo: number | null
+  createdAt: string
+  user: { id: string; name: string }
+}
+
+const fmtFechaHora = (iso: string) =>
+  new Intl.DateTimeFormat('es-AR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(iso))
+
 export default function CalculadoraVaporPage() {
   const [p1Str, setP1Str] = useState('4')
   const [p2Str, setP2Str] = useState('2')
   const [qStr, setQStr] = useState('300')
   const [cliente, setCliente] = useState('')
   const [referencia, setReferencia] = useState('')
+  const [historial, setHistorial] = useState<CalculoHistorial[]>([])
+
+  useEffect(() => {
+    fetch('/api/herramientas/calculadora-vapor')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (Array.isArray(data)) setHistorial(data)
+      })
+      .catch(() => {})
+  }, [])
 
   const { resultado, error } = useMemo<{
     resultado: ResultadoCalculo | null
@@ -89,30 +125,76 @@ export default function CalculadoraVaporPage() {
     }
   }
 
+  const descargarPDF = async (
+    r: ResultadoCalculo,
+    clientePDF: string | null,
+    referenciaPDF: string | null,
+    fecha: Date
+  ) => {
+    const blob = await generateReguladoraVaporPDF({
+      resultado: r,
+      cliente: clientePDF ?? undefined,
+      referencia: referenciaPDF ?? undefined,
+      fecha,
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    const sufijo = clientePDF ? `-${clientePDF.replace(/[^\p{L}\p{N}]+/gu, '-')}` : ''
+    a.download = `Reguladora-Vapor${sufijo}-${fecha.toISOString().slice(0, 10)}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   const handleDescargarPDF = async () => {
     if (!resultado) return
     try {
-      const blob = await generateReguladoraVaporPDF({
-        resultado,
-        cliente: cliente.trim() || undefined,
-        referencia: referencia.trim() || undefined,
-        fecha: new Date(),
+      await descargarPDF(resultado, cliente.trim() || null, referencia.trim() || null, new Date())
+      toast.success('PDF descargado')
+    } catch {
+      toast.error('No se pudo generar el PDF')
+      return
+    }
+    // Guardar en el historial compartido (si falla, el PDF ya se descargó igual)
+    try {
+      const res = await fetch('/api/herramientas/calculadora-vapor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          p1: resultado.p1,
+          p2: resultado.p2,
+          q: resultado.q,
+          cliente: cliente.trim() || null,
+          referencia: referencia.trim() || null,
+        }),
       })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      const sufijo = cliente.trim()
-        ? `-${cliente.trim().replace(/[^\p{L}\p{N}]+/gu, '-')}`
-        : ''
-      a.download = `Reguladora-Vapor${sufijo}-${new Date().toISOString().slice(0, 10)}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      if (!res.ok) throw new Error()
+      const guardado: CalculoHistorial = await res.json()
+      setHistorial((prev) => [guardado, ...prev])
+    } catch {
+      toast.error('El cálculo no se pudo guardar en el historial')
+    }
+  }
+
+  const handleDescargarDeHistorial = async (c: CalculoHistorial) => {
+    try {
+      const r = calcularReguladoraVapor(c.p1, c.p2, c.q)
+      await descargarPDF(r, c.cliente, c.referencia, new Date(c.createdAt))
       toast.success('PDF descargado')
     } catch {
       toast.error('No se pudo generar el PDF')
     }
+  }
+
+  const handleCargarDeHistorial = (c: CalculoHistorial) => {
+    setP1Str(String(c.p1))
+    setP2Str(String(c.p2))
+    setQStr(String(c.q))
+    setCliente(c.cliente ?? '')
+    setReferencia(c.referencia ?? '')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const chartData = resultado
@@ -484,6 +566,91 @@ export default function CalculadoraVaporPage() {
           </Card>
         </>
       )}
+
+      {/* Historial compartido */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <History className="h-5 w-5 text-blue-600" />
+            Historial de cálculos
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {historial.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Todavía no hay cálculos guardados. Al descargar un PDF, el cálculo queda
+              registrado acá para todo el equipo.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Usuario</TableHead>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>Licitación / Ref.</TableHead>
+                  <TableHead className="text-right">P1</TableHead>
+                  <TableHead className="text-right">P2</TableHead>
+                  <TableHead className="text-right">Q (kg/h)</TableHead>
+                  <TableHead>Medida</TableHead>
+                  <TableHead className="text-right">% trabajo</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {historial.map((c) => (
+                  <TableRow key={c.id}>
+                    <TableCell className="whitespace-nowrap">
+                      {fmtFechaHora(c.createdAt)}
+                    </TableCell>
+                    <TableCell>{c.user.name}</TableCell>
+                    <TableCell>{c.cliente ?? '—'}</TableCell>
+                    <TableCell>{c.referencia ?? '—'}</TableCell>
+                    <TableCell className="text-right">{fmt(c.p1)}</TableCell>
+                    <TableCell className="text-right">{fmt(c.p2)}</TableCell>
+                    <TableCell className="text-right">{fmt(c.q, 0)}</TableCell>
+                    <TableCell>
+                      {c.medida ? (
+                        <Badge variant="outline">{c.medida}</Badge>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className="border-red-300 text-red-700 dark:border-red-700 dark:text-red-300"
+                        >
+                          Fuera de rango
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {c.porcentajeTrabajo !== null ? fmtPct(c.porcentajeTrabajo) : '—'}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDescargarDeHistorial(c)}
+                          title="Descargar PDF"
+                        >
+                          <FileDown className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleCargarDeHistorial(c)}
+                          title="Cargar en el formulario"
+                        >
+                          <ArrowUpToLine className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Nota de instalación */}
       <Card>

@@ -96,6 +96,9 @@ model User {
   comisionLineas        ComisionLinea[]
   comisionLiquidaciones ComisionLiquidacion[]
 
+  // Herramientas técnicas
+  calculosReguladoraVapor CalculoReguladoraVapor[]
+
   @@index([email])
   @@index([role])
   @@index([status])
@@ -3173,4 +3176,32 @@ model ComisionAjuste {
 
   @@index([liquidacionId])
   @@map("comision_ajustes")
+}
+
+// ========================================
+// HERRAMIENTAS TÉCNICAS
+// ========================================
+
+// Historial compartido de cálculos de la calculadora de reguladora de
+// vapor (GENEBRE 2274/2275). Se guardan las entradas y un resumen del
+// resultado; el detalle completo (tablas, banda) se recalcula al vuelo
+// porque la fórmula es determinística.
+model CalculoReguladoraVapor {
+  id                String   @id @default(cuid())
+  p1                Float
+  p2                Float
+  q                 Float
+  cliente           String?
+  referencia        String?
+  regimen           String // SUBCRÍTICO | CRÍTICO
+  cvCalculado       Float
+  medida            String? // null = fuera de rango
+  porcentajeTrabajo Float?
+  userId            String
+  user              User     @relation(fields: [userId], references: [id])
+  createdAt         DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([userId])
+  @@map("calculos_reguladora_vapor")
 }

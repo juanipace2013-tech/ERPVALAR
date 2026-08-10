@@ -29,6 +29,8 @@ import {
   Inbox,
   Gavel,
   Percent,
+  Wrench,
+  Gauge,
 } from 'lucide-react'
 
 interface SubNavItem {
@@ -177,6 +179,19 @@ const navItems: NavItem[] = [
     href: '/leads',
     icon: Sparkles,
     roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
+  },
+  {
+    title: 'Herramientas',
+    icon: Wrench,
+    roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
+    subItems: [
+      {
+        title: 'Calculadora de Vapor',
+        href: '/herramientas/calculadora-vapor',
+        icon: Gauge,
+        roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
+      },
+    ],
   },
 ]
 

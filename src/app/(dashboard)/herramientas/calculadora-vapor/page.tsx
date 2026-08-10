@@ -31,6 +31,7 @@ import {
   AlertTriangle,
   Copy,
   Info,
+  FileDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -38,6 +39,7 @@ import {
   resumenTexto,
   type ResultadoCalculo,
 } from '@/lib/calculoReguladoraVapor'
+import { generateReguladoraVaporPDF } from '@/lib/pdf/reguladora-vapor-generator'
 
 // ─── Helpers de formato (es-AR: coma decimal) ───────────────────────────────
 
@@ -53,6 +55,8 @@ export default function CalculadoraVaporPage() {
   const [p1Str, setP1Str] = useState('4')
   const [p2Str, setP2Str] = useState('2')
   const [qStr, setQStr] = useState('300')
+  const [cliente, setCliente] = useState('')
+  const [referencia, setReferencia] = useState('')
 
   const { resultado, error } = useMemo<{
     resultado: ResultadoCalculo | null
@@ -85,6 +89,32 @@ export default function CalculadoraVaporPage() {
     }
   }
 
+  const handleDescargarPDF = () => {
+    if (!resultado) return
+    try {
+      const blob = generateReguladoraVaporPDF({
+        resultado,
+        cliente: cliente.trim() || undefined,
+        referencia: referencia.trim() || undefined,
+        fecha: new Date(),
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const sufijo = cliente.trim()
+        ? `-${cliente.trim().replace(/[^\p{L}\p{N}]+/gu, '-')}`
+        : ''
+      a.download = `Reguladora-Vapor${sufijo}-${new Date().toISOString().slice(0, 10)}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast.success('PDF descargado')
+    } catch {
+      toast.error('No se pudo generar el PDF')
+    }
+  }
+
   const chartData = resultado
     ? resultado.banda.map((p) => ({
         caudal: p.caudal,
@@ -108,14 +138,20 @@ export default function CalculadoraVaporPage() {
             saturado)
           </p>
         </div>
-        <Button
-          onClick={handleCopiarResumen}
-          disabled={!resultado}
-          className="bg-blue-600 hover:bg-blue-700"
-        >
-          <Copy className="mr-2 h-4 w-4" />
-          Copiar resumen
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleCopiarResumen} disabled={!resultado}>
+            <Copy className="mr-2 h-4 w-4" />
+            Copiar resumen
+          </Button>
+          <Button
+            onClick={handleDescargarPDF}
+            disabled={!resultado}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            <FileDown className="mr-2 h-4 w-4" />
+            Descargar PDF
+          </Button>
+        </div>
       </div>
 
       {/* Datos de servicio + Resultado */}
@@ -162,6 +198,24 @@ export default function CalculadoraVaporPage() {
                 min="0"
                 value={qStr}
                 onChange={(e) => setQStr(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2 border-t pt-4">
+              <Label htmlFor="cliente">Cliente (para el PDF)</Label>
+              <Input
+                id="cliente"
+                placeholder="Nombre del cliente"
+                value={cliente}
+                onChange={(e) => setCliente(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="referencia">Licitación / N° de referencia</Label>
+              <Input
+                id="referencia"
+                placeholder="Ej: Licitación 123/2026 u orden de compra"
+                value={referencia}
+                onChange={(e) => setReferencia(e.target.value)}
               />
             </div>
             {error && (

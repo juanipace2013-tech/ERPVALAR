@@ -51,6 +51,106 @@ function pdfSafe(s: string): string {
   return s.replace(/Δ/g, 'Delta ').replace(/≤/g, '<=').replace(/≥/g, '>=')
 }
 
+/** Gráfico de % de apertura vs caudal, dibujado vectorial (sin depender del DOM). */
+function drawBandaChart(
+  doc: jsPDF,
+  r: ResultadoCalculo,
+  x: number,
+  y: number,
+  w: number,
+  h: number
+): void {
+  const puntos = r.banda
+    .filter((p) => p.porcentajeApertura !== null)
+    .map((p) => ({ caudal: p.caudal, apertura: p.porcentajeApertura! * 100, esDiseno: p.esDiseno }))
+  if (puntos.length < 2) return
+
+  const padL = 13
+  const padB = 9
+  const padT = 4
+  const padR = 3
+  const px = x + padL
+  const py = y + padT
+  const pw = w - padL - padR
+  const ph = h - padT - padB
+
+  const maxApertura = Math.max(...puntos.map((p) => p.apertura))
+  const maxY = Math.max(100, Math.ceil(maxApertura / 20) * 20)
+  const x0 = puntos[0].caudal
+  const x1 = puntos[puntos.length - 1].caudal
+  const sx = (c: number) => px + ((c - x0) / (x1 - x0)) * pw
+  const sy = (v: number) => py + ph - (v / maxY) * ph
+
+  // Grilla horizontal + etiquetas del eje Y (cada 40%)
+  doc.setDrawColor(220, 220, 220)
+  doc.setLineWidth(0.15)
+  doc.setFontSize(5.5)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(...GRAY)
+  for (let v = 0; v <= maxY; v += 40) {
+    doc.line(px, sy(v), px + pw, sy(v))
+    doc.text(`${v}%`, px - 1.5, sy(v) + 0.8, { align: 'right' })
+  }
+
+  // Etiquetas del eje X (caudales)
+  for (const p of puntos) {
+    doc.text(fmt(p.caudal, 0), sx(p.caudal), py + ph + 3, { align: 'center' })
+  }
+  doc.setFontSize(6)
+  doc.text('Caudal (kg/h)', px + pw / 2, py + ph + 7, { align: 'center' })
+  doc.text('% apertura', x + 2.5, py + ph / 2, { angle: 90, align: 'center' })
+
+  // Líneas de referencia 20% y 80% (banda recomendada)
+  doc.setDrawColor(...AMBER)
+  doc.setLineWidth(0.25)
+  doc.setLineDashPattern([1.2, 1.2], 0)
+  for (const v of [20, 80]) {
+    if (v <= maxY) {
+      doc.line(px, sy(v), px + pw, sy(v))
+      doc.setFontSize(5.5)
+      doc.setTextColor(...AMBER)
+      doc.text(`${v}%`, px + pw + 0.8, sy(v) + 0.8)
+    }
+  }
+  doc.setLineDashPattern([], 0)
+
+  // Ejes
+  doc.setDrawColor(120, 120, 120)
+  doc.setLineWidth(0.25)
+  doc.line(px, py, px, py + ph)
+  doc.line(px, py + ph, px + pw, py + ph)
+
+  // Línea de % de apertura
+  doc.setDrawColor(...BLUE)
+  doc.setLineWidth(0.5)
+  for (let i = 1; i < puntos.length; i++) {
+    doc.line(
+      sx(puntos[i - 1].caudal),
+      sy(puntos[i - 1].apertura),
+      sx(puntos[i].caudal),
+      sy(puntos[i].apertura)
+    )
+  }
+
+  // Puntos (el de diseño más grande y con etiqueta)
+  for (const p of puntos) {
+    doc.setFillColor(...BLUE)
+    if (p.esDiseno) {
+      doc.circle(sx(p.caudal), sy(p.apertura), 1.1, 'F')
+      doc.setFontSize(6)
+      doc.setTextColor(...BLUE)
+      doc.setFont('helvetica', 'bold')
+      doc.text('Diseño', sx(p.caudal), sy(p.apertura) - 2, { align: 'center' })
+      doc.setFont('helvetica', 'normal')
+    } else {
+      doc.setDrawColor(...BLUE)
+      doc.setFillColor(255, 255, 255)
+      doc.circle(sx(p.caudal), sy(p.apertura), 0.7, 'FD')
+    }
+  }
+  doc.setTextColor(...DARK)
+}
+
 // ── Generador ─────────────────────────────────────────────────────────────────
 export async function generateReguladoraVaporPDF(
   data: ReguladoraVaporPDFData
@@ -200,20 +300,23 @@ export async function generateReguladoraVaporPDF(
   })
   y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 4
 
-  // ═══ BANDA DE OPERACIÓN ═══
+  // ═══ BANDA DE OPERACIÓN (tabla + gráfico lado a lado) ═══
   doc.setFontSize(10)
   doc.setFont('helvetica', 'bold')
   doc.text('Banda de operación (20% a 200% del caudal de diseño)', ML, y)
   y += 2
+  const bandaStartY = y
+  const tieneGrafico = r.seleccion !== null
+  const anchoTabla = tieneGrafico ? 88 : PAGE_W - ML - MR
   autoTable(doc, {
     startY: y,
     margin: { left: ML, right: MR },
-    head: [['Caudal (kg/h)', 'CV requerido', '% de apertura', '']],
+    tableWidth: anchoTabla,
+    head: [['Caudal (kg/h)', 'CV requerido', '% de apertura']],
     body: r.banda.map((p) => [
-      fmt(p.caudal, 0),
+      p.esDiseno ? `${fmt(p.caudal, 0)} (diseño)` : fmt(p.caudal, 0),
       fmt(p.cv),
       p.porcentajeApertura !== null ? fmtPct(p.porcentajeApertura) : '—',
-      p.esDiseno ? 'CAUDAL DE DISEÑO' : '',
     ]),
     theme: 'grid',
     styles: { fontSize: 7.5, halign: 'center', cellPadding: 1 },
@@ -225,7 +328,12 @@ export async function generateReguladoraVaporPDF(
       }
     },
   })
-  y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 4
+  y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY
+  if (tieneGrafico) {
+    const chartX = ML + anchoTabla + 4
+    drawBandaChart(doc, r, chartX, bandaStartY, PAGE_W - MR - chartX, y - bandaStartY)
+  }
+  y += 4
 
   // ═══ VERIFICACIONES ═══
   doc.setFontSize(10)

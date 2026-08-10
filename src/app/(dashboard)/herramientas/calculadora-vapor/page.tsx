@@ -1,10 +1,10 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import {
   Table,
@@ -15,197 +15,56 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  ReferenceLine,
-  ReferenceDot,
-} from 'recharts'
-import {
-  Gauge,
-  CheckCircle2,
-  AlertTriangle,
-  Copy,
-  Info,
+  Search,
+  Plus,
   FileDown,
-  History,
-  ArrowUpToLine,
+  Pencil,
+  Loader2,
+  Gauge,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
-  calcularReguladoraVapor,
-  resumenTexto,
-  type ResultadoCalculo,
-} from '@/lib/calculoReguladoraVapor'
-import { generateReguladoraVaporPDF } from '@/lib/pdf/reguladora-vapor-generator'
+  descargarPDFDeCalculo,
+  fmt,
+  fmtPct,
+  fmtFechaHora,
+  urlNuevaDesdeCalculo,
+  type CalculoHistorial,
+} from './historial'
 
-// ─── Helpers de formato (es-AR: coma decimal) ───────────────────────────────
-
-const fmt = (n: number, decimales = 2) =>
-  n.toLocaleString('es-AR', {
-    minimumFractionDigits: decimales,
-    maximumFractionDigits: decimales,
-  })
-
-const fmtPct = (fraccion: number, decimales = 2) => `${fmt(fraccion * 100, decimales)}%`
-
-interface CalculoHistorial {
-  id: string
-  p1: number
-  p2: number
-  q: number
-  cliente: string | null
-  referencia: string | null
-  regimen: string
-  cvCalculado: number
-  medida: string | null
-  porcentajeTrabajo: number | null
-  createdAt: string
-  user: { id: string; name: string }
-}
-
-const fmtFechaHora = (iso: string) =>
-  new Intl.DateTimeFormat('es-AR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(iso))
-
-export default function CalculadoraVaporPage() {
-  const [p1Str, setP1Str] = useState('4')
-  const [p2Str, setP2Str] = useState('2')
-  const [qStr, setQStr] = useState('300')
-  const [cliente, setCliente] = useState('')
-  const [referencia, setReferencia] = useState('')
+export default function CalculadoraVaporHistorialPage() {
   const [historial, setHistorial] = useState<CalculoHistorial[]>([])
+  const [cargando, setCargando] = useState(true)
+  const [busqueda, setBusqueda] = useState('')
 
   useEffect(() => {
-    fetch('/api/herramientas/calculadora-vapor')
+    fetch('/api/herramientas/calculadora-vapor?limit=200')
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (Array.isArray(data)) setHistorial(data)
       })
       .catch(() => {})
+      .finally(() => setCargando(false))
   }, [])
 
-  const { resultado, error } = useMemo<{
-    resultado: ResultadoCalculo | null
-    error: string | null
-  }>(() => {
-    const p1 = parseFloat(p1Str.replace(',', '.'))
-    const p2 = parseFloat(p2Str.replace(',', '.'))
-    const q = parseFloat(qStr.replace(',', '.'))
+  const filtrados = useMemo(() => {
+    const q = busqueda.trim().toLowerCase()
+    if (!q) return historial
+    return historial.filter((c) =>
+      [c.cliente, c.referencia, c.user.name, c.medida]
+        .filter(Boolean)
+        .some((campo) => campo!.toLowerCase().includes(q))
+    )
+  }, [historial, busqueda])
 
-    if (!Number.isFinite(p1) || !Number.isFinite(p2) || !Number.isFinite(q)) {
-      return { resultado: null, error: 'Completá los tres valores para calcular.' }
-    }
+  const handleDescargar = async (c: CalculoHistorial) => {
     try {
-      return { resultado: calcularReguladoraVapor(p1, p2, q), error: null }
-    } catch {
-      return {
-        resultado: null,
-        error: 'Parámetros inválidos: se requiere P1 > P2 > 0 y Q > 0.',
-      }
-    }
-  }, [p1Str, p2Str, qStr])
-
-  const handleCopiarResumen = async () => {
-    if (!resultado) return
-    try {
-      await navigator.clipboard.writeText(resumenTexto(resultado))
-      toast.success('Resumen copiado al portapapeles')
-    } catch {
-      toast.error('No se pudo copiar al portapapeles')
-    }
-  }
-
-  const descargarPDF = async (
-    r: ResultadoCalculo,
-    clientePDF: string | null,
-    referenciaPDF: string | null,
-    fecha: Date
-  ) => {
-    const blob = await generateReguladoraVaporPDF({
-      resultado: r,
-      cliente: clientePDF ?? undefined,
-      referencia: referenciaPDF ?? undefined,
-      fecha,
-    })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    const sufijo = clientePDF ? `-${clientePDF.replace(/[^\p{L}\p{N}]+/gu, '-')}` : ''
-    a.download = `Reguladora-Vapor${sufijo}-${fecha.toISOString().slice(0, 10)}.pdf`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-  }
-
-  const handleDescargarPDF = async () => {
-    if (!resultado) return
-    try {
-      await descargarPDF(resultado, cliente.trim() || null, referencia.trim() || null, new Date())
-      toast.success('PDF descargado')
-    } catch {
-      toast.error('No se pudo generar el PDF')
-      return
-    }
-    // Guardar en el historial compartido (si falla, el PDF ya se descargó igual)
-    try {
-      const res = await fetch('/api/herramientas/calculadora-vapor', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          p1: resultado.p1,
-          p2: resultado.p2,
-          q: resultado.q,
-          cliente: cliente.trim() || null,
-          referencia: referencia.trim() || null,
-        }),
-      })
-      if (!res.ok) throw new Error()
-      const guardado: CalculoHistorial = await res.json()
-      setHistorial((prev) => [guardado, ...prev])
-    } catch {
-      toast.error('El cálculo no se pudo guardar en el historial')
-    }
-  }
-
-  const handleDescargarDeHistorial = async (c: CalculoHistorial) => {
-    try {
-      const r = calcularReguladoraVapor(c.p1, c.p2, c.q)
-      await descargarPDF(r, c.cliente, c.referencia, new Date(c.createdAt))
+      await descargarPDFDeCalculo(c)
       toast.success('PDF descargado')
     } catch {
       toast.error('No se pudo generar el PDF')
     }
   }
-
-  const handleCargarDeHistorial = (c: CalculoHistorial) => {
-    setP1Str(String(c.p1))
-    setP2Str(String(c.p2))
-    setQStr(String(c.q))
-    setCliente(c.cliente ?? '')
-    setReferencia(c.referencia ?? '')
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
-
-  const chartData = resultado
-    ? resultado.banda.map((p) => ({
-        caudal: p.caudal,
-        apertura: p.porcentajeApertura !== null ? p.porcentajeApertura * 100 : null,
-        esDiseno: p.esDiseno,
-      }))
-    : []
-
-  const puntoDiseno = chartData.find((p) => p.esDiseno)
 
   return (
     <div className="space-y-6">
@@ -216,371 +75,57 @@ export default function CalculadoraVaporPage() {
             Calculadora de Reguladora de Vapor
           </h1>
           <p className="text-muted-foreground">
-            Selección de válvulas reductoras de presión GENEBRE 2274 / 2274N / 2275 (vapor
-            saturado)
+            Historial de cálculos del equipo — GENEBRE 2274 / 2274N / 2275
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={handleCopiarResumen} disabled={!resultado}>
-            <Copy className="mr-2 h-4 w-4" />
-            Copiar resumen
-          </Button>
-          <Button
-            onClick={handleDescargarPDF}
-            disabled={!resultado}
-            className="bg-blue-600 hover:bg-blue-700"
-          >
-            <FileDown className="mr-2 h-4 w-4" />
-            Descargar PDF
-          </Button>
-        </div>
+        <Button asChild className="bg-blue-600 hover:bg-blue-700">
+          <Link href="/herramientas/calculadora-vapor/nueva">
+            <Plus className="mr-2 h-4 w-4" />
+            Nueva Simulación
+          </Link>
+        </Button>
       </div>
 
-      {/* Datos de servicio + Resultado */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Gauge className="h-5 w-5 text-blue-600" />
-              Condiciones de servicio
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="p1">P1 — Presión de entrada (bar g)</Label>
-              <Input
-                id="p1"
-                type="number"
-                inputMode="decimal"
-                step="0.1"
-                min="0"
-                value={p1Str}
-                onChange={(e) => setP1Str(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="p2">P2 — Presión regulada (bar g)</Label>
-              <Input
-                id="p2"
-                type="number"
-                inputMode="decimal"
-                step="0.1"
-                min="0"
-                value={p2Str}
-                onChange={(e) => setP2Str(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="q">Q — Caudal de vapor (kg/h)</Label>
-              <Input
-                id="q"
-                type="number"
-                inputMode="decimal"
-                step="10"
-                min="0"
-                value={qStr}
-                onChange={(e) => setQStr(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2 border-t pt-4">
-              <Label htmlFor="cliente">Cliente (para el PDF)</Label>
-              <Input
-                id="cliente"
-                placeholder="Nombre del cliente"
-                value={cliente}
-                onChange={(e) => setCliente(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="referencia">Licitación / N° de referencia</Label>
-              <Input
-                id="referencia"
-                placeholder="Ej: Licitación 123/2026 u orden de compra"
-                value={referencia}
-                onChange={(e) => setReferencia(e.target.value)}
-              />
-            </div>
-            {error && (
-              <p className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
-                <AlertTriangle className="h-4 w-4 shrink-0" />
-                {error}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Resultado</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {resultado ? (
-              <div className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <div>
-                    <p className="text-sm text-muted-foreground">ΔP (P1 − P2)</p>
-                    <p className="text-lg font-semibold">{fmt(resultado.deltaP)} bar</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">P1/2</p>
-                    <p className="text-lg font-semibold">{fmt(resultado.p1Medio)} bar</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Régimen de flujo</p>
-                    <Badge
-                      variant="outline"
-                      className={
-                        resultado.regimen === 'SUBCRÍTICO'
-                          ? 'border-blue-300 text-blue-700 dark:border-blue-700 dark:text-blue-300'
-                          : 'border-orange-300 text-orange-700 dark:border-orange-700 dark:text-orange-300'
-                      }
-                    >
-                      {resultado.regimen}
-                    </Badge>
-                  </div>
-                </div>
-
-                <div className="border-t pt-4">
-                  <p className="text-sm text-muted-foreground">CV calculado</p>
-                  <p className="text-2xl font-bold">{fmt(resultado.cvCalculado)}</p>
-                </div>
-
-                {resultado.seleccion ? (
-                  <div className="rounded-lg bg-blue-50 p-4 dark:bg-blue-900/30">
-                    <div className="flex flex-wrap items-center gap-4">
-                      <Badge className="bg-blue-600 px-4 py-2 text-2xl font-bold hover:bg-blue-600">
-                        {resultado.seleccion.medida}
-                      </Badge>
-                      <div>
-                        <p className="font-semibold text-blue-900 dark:text-blue-100">
-                          Tamaño recomendado — DN{resultado.seleccion.dn}
-                        </p>
-                        <p className="text-sm text-blue-800 dark:text-blue-200">
-                          CV elegido: <strong>{fmt(resultado.seleccion.cv)}</strong> · % de
-                          trabajo:{' '}
-                          <strong>{fmtPct(resultado.seleccion.porcentajeTrabajo)}</strong>
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-3 rounded-lg bg-red-50 p-4 text-red-700 dark:bg-red-900/30 dark:text-red-300">
-                    <AlertTriangle className="h-6 w-6 shrink-0" />
-                    <p className="font-semibold">
-                      FUERA DE RANGO — evaluar válvula mayor o dos en paralelo
-                    </p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <p className="text-muted-foreground">Ingresá las condiciones de servicio.</p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {resultado && (
-        <>
-          {/* Tabla de medidas */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Medidas disponibles</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Medida</TableHead>
-                    <TableHead>DN</TableHead>
-                    <TableHead className="text-right">Kv (m³/h)</TableHead>
-                    <TableHead className="text-right">CV</TableHead>
-                    <TableHead className="text-right">% de trabajo</TableHead>
-                    <TableHead></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {resultado.medidas.map((m) => {
-                    const seleccionada = resultado.seleccion?.medida === m.medida
-                    return (
-                      <TableRow
-                        key={m.medida}
-                        className={
-                          seleccionada ? 'bg-blue-50 font-semibold dark:bg-blue-900/30' : ''
-                        }
-                      >
-                        <TableCell>{m.medida}</TableCell>
-                        <TableCell>DN{m.dn}</TableCell>
-                        <TableCell className="text-right">{fmt(m.kv, 1)}</TableCell>
-                        <TableCell className="text-right">{fmt(m.cv)}</TableCell>
-                        <TableCell className="text-right">
-                          {fmtPct(m.porcentajeTrabajo)}
-                        </TableCell>
-                        <TableCell>
-                          {seleccionada && (
-                            <Badge className="bg-blue-600 hover:bg-blue-600">Seleccionada</Badge>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-
-          {/* Banda de operación */}
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Banda de operación (20%–200% del caudal)</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-right">Caudal (kg/h)</TableHead>
-                      <TableHead className="text-right">CV requerido</TableHead>
-                      <TableHead className="text-right">% de apertura</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {resultado.banda.map((p) => (
-                      <TableRow
-                        key={p.caudal}
-                        className={
-                          p.esDiseno ? 'bg-blue-50 font-semibold dark:bg-blue-900/30' : ''
-                        }
-                      >
-                        <TableCell className="text-right">
-                          {fmt(p.caudal, 0)}
-                          {p.esDiseno && (
-                            <Badge variant="outline" className="ml-2">
-                              Diseño
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">{fmt(p.cv)}</TableCell>
-                        <TableCell className="text-right">
-                          {p.porcentajeApertura !== null ? fmtPct(p.porcentajeApertura) : '—'}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>% de apertura vs caudal</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {resultado.seleccion ? (
-                  <ResponsiveContainer width="100%" height={340}>
-                    <LineChart data={chartData} margin={{ top: 10, right: 20, bottom: 10, left: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis
-                        dataKey="caudal"
-                        tickFormatter={(v: number) => fmt(v, 0)}
-                        label={{ value: 'Caudal (kg/h)', position: 'insideBottom', offset: -5 }}
-                      />
-                      <YAxis
-                        tickFormatter={(v: number) => `${fmt(v, 0)}%`}
-                        label={{ value: '% apertura', angle: -90, position: 'insideLeft' }}
-                      />
-                      <Tooltip
-                        formatter={(value) => [`${fmt(Number(value))}%`, '% apertura']}
-                        labelFormatter={(label) => `${fmt(Number(label), 0)} kg/h`}
-                      />
-                      <ReferenceLine
-                        y={20}
-                        stroke="#f59e0b"
-                        strokeDasharray="4 4"
-                        label={{ value: '20%', position: 'right', fill: '#f59e0b' }}
-                      />
-                      <ReferenceLine
-                        y={80}
-                        stroke="#f59e0b"
-                        strokeDasharray="4 4"
-                        label={{ value: '80%', position: 'right', fill: '#f59e0b' }}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="apertura"
-                        stroke="#2563eb"
-                        strokeWidth={2}
-                        dot={{ r: 3 }}
-                      />
-                      {puntoDiseno && puntoDiseno.apertura !== null && (
-                        <ReferenceDot
-                          x={puntoDiseno.caudal}
-                          y={puntoDiseno.apertura}
-                          r={6}
-                          fill="#2563eb"
-                          stroke="#fff"
-                          strokeWidth={2}
-                          label={{ value: 'Diseño', position: 'top', fill: '#2563eb' }}
-                        />
-                      )}
-                    </LineChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <p className="text-muted-foreground">
-                    Sin medida seleccionada: no se puede graficar el % de apertura.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Verificaciones */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Verificaciones (manual GENEBRE)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="space-y-3">
-                {resultado.verificaciones.map((v) => (
-                  <li key={v.descripcion} className="flex items-start gap-3">
-                    {v.ok ? (
-                      <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-600" />
-                    ) : (
-                      <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
-                    )}
-                    <div>
-                      <p className="font-medium">{v.descripcion}</p>
-                      <p
-                        className={
-                          v.ok
-                            ? 'text-sm text-muted-foreground'
-                            : 'text-sm font-medium text-amber-600 dark:text-amber-400'
-                        }
-                      >
-                        {v.detalle}
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        </>
-      )}
-
-      {/* Historial compartido */}
+      {/* Buscador */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <History className="h-5 w-5 text-blue-600" />
-            Historial de cálculos
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {historial.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Todavía no hay cálculos guardados. Al descargar un PDF, el cálculo queda
-              registrado acá para todo el equipo.
-            </p>
+        <CardContent className="pt-6">
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por cliente, licitación, usuario o medida..."
+              className="pl-9"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Tabla de historial */}
+      <Card>
+        <CardContent className="pt-6">
+          {cargando ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              Cargando historial...
+            </div>
+          ) : filtrados.length === 0 ? (
+            <div className="flex flex-col items-center gap-4 py-12 text-center">
+              <Gauge className="h-10 w-10 text-muted-foreground" />
+              <p className="text-muted-foreground">
+                {historial.length === 0
+                  ? 'Todavía no hay cálculos guardados. Al descargar el PDF de una simulación, el cálculo queda registrado acá para todo el equipo.'
+                  : 'No hay cálculos que coincidan con la búsqueda.'}
+              </p>
+              {historial.length === 0 && (
+                <Button asChild className="bg-blue-600 hover:bg-blue-700">
+                  <Link href="/herramientas/calculadora-vapor/nueva">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Hacer la primera simulación
+                  </Link>
+                </Button>
+              )}
+            </div>
           ) : (
             <Table>
               <TableHeader>
@@ -589,29 +134,42 @@ export default function CalculadoraVaporPage() {
                   <TableHead>Usuario</TableHead>
                   <TableHead>Cliente</TableHead>
                   <TableHead>Licitación / Ref.</TableHead>
-                  <TableHead className="text-right">P1</TableHead>
-                  <TableHead className="text-right">P2</TableHead>
+                  <TableHead className="text-right">P1 (bar)</TableHead>
+                  <TableHead className="text-right">P2 (bar)</TableHead>
                   <TableHead className="text-right">Q (kg/h)</TableHead>
+                  <TableHead>Régimen</TableHead>
                   <TableHead>Medida</TableHead>
                   <TableHead className="text-right">% trabajo</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {historial.map((c) => (
+                {filtrados.map((c) => (
                   <TableRow key={c.id}>
                     <TableCell className="whitespace-nowrap">
                       {fmtFechaHora(c.createdAt)}
                     </TableCell>
                     <TableCell>{c.user.name}</TableCell>
-                    <TableCell>{c.cliente ?? '—'}</TableCell>
+                    <TableCell className="font-medium">{c.cliente ?? '—'}</TableCell>
                     <TableCell>{c.referencia ?? '—'}</TableCell>
                     <TableCell className="text-right">{fmt(c.p1)}</TableCell>
                     <TableCell className="text-right">{fmt(c.p2)}</TableCell>
                     <TableCell className="text-right">{fmt(c.q, 0)}</TableCell>
                     <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={
+                          c.regimen === 'SUBCRÍTICO'
+                            ? 'border-blue-300 text-blue-700 dark:border-blue-700 dark:text-blue-300'
+                            : 'border-orange-300 text-orange-700 dark:border-orange-700 dark:text-orange-300'
+                        }
+                      >
+                        {c.regimen}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
                       {c.medida ? (
-                        <Badge variant="outline">{c.medida}</Badge>
+                        <Badge className="bg-blue-600 hover:bg-blue-600">{c.medida}</Badge>
                       ) : (
                         <Badge
                           variant="outline"
@@ -629,18 +187,15 @@ export default function CalculadoraVaporPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleDescargarDeHistorial(c)}
+                          onClick={() => handleDescargar(c)}
                           title="Descargar PDF"
                         >
                           <FileDown className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleCargarDeHistorial(c)}
-                          title="Cargar en el formulario"
-                        >
-                          <ArrowUpToLine className="h-4 w-4" />
+                        <Button variant="ghost" size="sm" asChild title="Abrir en la calculadora">
+                          <Link href={urlNuevaDesdeCalculo(c)}>
+                            <Pencil className="h-4 w-4" />
+                          </Link>
                         </Button>
                       </div>
                     </TableCell>
@@ -649,19 +204,6 @@ export default function CalculadoraVaporPage() {
               </TableBody>
             </Table>
           )}
-        </CardContent>
-      </Card>
-
-      {/* Nota de instalación */}
-      <Card>
-        <CardContent className="flex items-start gap-3 pt-6">
-          <Info className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
-          <p className="text-sm text-muted-foreground">
-            Instalación recomendada por GENEBRE: separador de gotas + trampa de vapor, filtro Y
-            aguas arriba, manómetros y válvulas de corte a ambos lados, bypass, y válvula de
-            seguridad a la salida tarada con margen sobre la presión regulada. Tramos rectos ≥ 10
-            diámetros aguas arriba y abajo.
-          </p>
         </CardContent>
       </Card>
     </div>

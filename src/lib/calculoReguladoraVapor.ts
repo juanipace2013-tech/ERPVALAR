@@ -135,6 +135,14 @@ export function calcularReguladoraVapor(p1: number, p2: number, q: number): Resu
               : "OK",
     },
     {
+      descripcion: "Régimen de flujo subcrítico",
+      ok: regimen === "SUBCRÍTICO",
+      detalle:
+        regimen === "SUBCRÍTICO"
+          ? "OK"
+          : "CRÍTICO (ΔP > P1/2): recomendación GENEBRE, evaluar la reducción en dos etapas con dos reguladoras en serie (bajar a una presión intermedia y de ahí a la regulada). Menos ruido y desgaste, mejor regulación.",
+    },
+    {
       descripcion: "P1 ≤ 17 bar (máx. aguas arriba, vapor saturado)",
       ok: p1 <= 17,
       detalle: p1 <= 17 ? "OK" : "Excede la presión máxima de trabajo aguas arriba",
@@ -184,6 +192,11 @@ export function resumenTexto(r: ResultadoCalculo): string {
       ? `Medida recomendada: ${r.seleccion.medida} (DN${r.seleccion.dn}) — CV ${fmt(r.seleccion.cv)} — ${fmt(r.seleccion.porcentajeTrabajo * 100)}% de trabajo (banda 20%–80%)`
       : "FUERA DE RANGO: el caudal excede la capacidad de 2\" — evaluar válvula mayor o dos en paralelo",
   ];
+  if (r.regimen === "CRÍTICO") {
+    lineas.push(
+      "Recomendación GENEBRE (régimen crítico): evaluar la reducción en dos etapas con dos reguladoras en serie, bajando a una presión intermedia y de ahí a la regulada.",
+    );
+  }
   return lineas.join("\n");
 }
 

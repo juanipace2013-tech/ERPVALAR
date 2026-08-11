@@ -47,6 +47,7 @@ import { useSession } from 'next-auth/react'
 import { formatNumber, getLocalDateString } from '@/lib/utils'
 import { useColppyStock, refreshInventoryCache } from '@/hooks/useColppyStock'
 import { StockBadge, StockWarning } from '@/components/StockBadge'
+import { getConjuntosGenebre, type ConjuntoOpcion } from '@/lib/genebre-conjuntos'
 
 interface Product {
   id: string
@@ -257,6 +258,11 @@ export default function QuoteDetailPage() {
   const [showManualAddlForm, setShowManualAddlForm] = useState(false)
   const [manualAddlDescription, setManualAddlDescription] = useState('')
   const [manualAddlPrice, setManualAddlPrice] = useState('')
+
+  // Conjuntos armados GENEBRE (actuador + dados según tabla)
+  const [conjuntoLoading, setConjuntoLoading] = useState<string | null>(null)
+  // SKUs agregados por el último conjunto elegido: al elegir otro, se reemplazan
+  const [lastConjuntoSkus, setLastConjuntoSkus] = useState<string[]>([])
 
   // Product search
   const [productSearch, setProductSearch] = useState('')
@@ -888,6 +894,7 @@ export default function QuoteDetailPage() {
     setEditingItemId(item.id)
     const isManual = !item.productId
     setSelectedProduct(item.product)
+    setLastConjuntoSkus([])
     setItemFormData({
       productId: item.productId || '',
       quantity: item.quantity,
@@ -1065,6 +1072,63 @@ export default function QuoteDetailPage() {
     setShowManualAddlForm(false)
   }
 
+  // Agrega el kit de un conjunto armado GENEBRE (actuador + dados) como adicionales.
+  // Si ya se había agregado otro conjunto, sus componentes se reemplazan por los del nuevo.
+  const handleAddConjunto = async (opcion: ConjuntoOpcion) => {
+    if (opcion.cotizar || !opcion.actuadorSku) return
+    const kitSkus = [opcion.actuadorSku, ...(opcion.dadoSkus || [])]
+    setConjuntoLoading(opcion.tipo)
+    try {
+      const resultados = await Promise.all(
+        kitSkus.map(async (sku) => {
+          const params = new URLSearchParams({ search: sku, limit: '10', status: 'ACTIVE' })
+          const response = await fetch(`/api/productos?${params.toString()}`)
+          if (!response.ok) return { sku, product: null }
+          const data = await response.json()
+          const exact = (data.products || []).find((p: Product) => p.sku === sku)
+          return { sku, product: (exact as Product) || null }
+        })
+      )
+
+      const encontrados = resultados.filter((r) => r.product).map((r) => r.product!)
+      const faltantes = resultados.filter((r) => !r.product).map((r) => r.sku)
+
+      // Conservar adicionales ajenos al conjunto anterior
+      const restantes = itemFormData.additionals.filter(
+        (a) => !a.productSku || !lastConjuntoSkus.includes(a.productSku)
+      )
+      const nuevos = encontrados.map((p) => ({
+        productId: p.id,
+        listPrice: p.listPriceUSD ? Number(p.listPriceUSD) : 0,
+        productName: p.name,
+        productSku: p.sku,
+      }))
+
+      if (restantes.length + nuevos.length > 5) {
+        toast.error(
+          `El conjunto necesita ${nuevos.length} adicionales y ya hay ${restantes.length} — supera el máximo de 5. Eliminá adicionales primero.`
+        )
+        return
+      }
+
+      setItemFormData({ ...itemFormData, additionals: [...restantes, ...nuevos] })
+      setLastConjuntoSkus(encontrados.map((p) => p.sku))
+
+      if (faltantes.length > 0) {
+        toast.warning(`Componentes no encontrados en el catálogo: ${faltantes.join(', ')}`)
+      } else {
+        toast.success(`Conjunto ${opcion.label} agregado (${nuevos.map((n) => n.productSku).join(' + ')})`)
+      }
+      if (opcion.nota) {
+        toast.info(opcion.nota, { duration: 10000 })
+      }
+    } catch {
+      toast.error('Error al buscar los componentes del conjunto')
+    } finally {
+      setConjuntoLoading(null)
+    }
+  }
+
   const handleUpdateAdditional = (index: number, product: Product) => {
     const listPrice = product.listPriceUSD ? Number(product.listPriceUSD) : 0
 
@@ -1106,6 +1170,8 @@ export default function QuoteDetailPage() {
     setShowManualAddlForm(false)
     setManualAddlDescription('')
     setManualAddlPrice('')
+    setConjuntoLoading(null)
+    setLastConjuntoSkus([])
   }
 
   const handleOpenAlternativeDialog = (parentItemId: string) => {
@@ -1792,6 +1858,7 @@ export default function QuoteDetailPage() {
                                   description: product.name,
                                   brandDiscountOverride: autoDiscount,
                                 })
+                                setLastConjuntoSkus([])
                                 setProductSearch('')
                               }}
                             >
@@ -1938,6 +2005,43 @@ export default function QuoteDetailPage() {
                           <Label className="text-sm font-semibold">Adicionales</Label>
                           <span className="text-xs text-muted-foreground">{itemFormData.additionals.length}/5</span>
                         </div>
+
+                        {/* Conjuntos armados GENEBRE: actuador + dados según tabla de aplicación */}
+                        {!itemFormData.isManual && selectedProduct && (() => {
+                          const conjuntos = getConjuntosGenebre(selectedProduct.sku)
+                          if (conjuntos.length === 0) return null
+                          return (
+                            <div className="rounded-md border border-blue-200 bg-blue-50/60 p-2 space-y-1.5">
+                              <p className="text-xs font-semibold text-blue-800">
+                                ⚙ Conjunto armado GENEBRE
+                              </p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {conjuntos.map((opcion) => (
+                                  <Button
+                                    key={opcion.tipo}
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={!!opcion.cotizar || conjuntoLoading !== null}
+                                    title={
+                                      opcion.cotizar
+                                        ? 'La tabla GENEBRE indica COTIZAR para esta combinación'
+                                        : [opcion.actuadorSku, ...(opcion.dadoSkus || [])].join(' + ')
+                                    }
+                                    className="h-7 text-xs bg-white border-blue-300 text-blue-700 hover:bg-blue-100"
+                                    onClick={() => handleAddConjunto(opcion)}
+                                  >
+                                    {conjuntoLoading === opcion.tipo && (
+                                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                    )}
+                                    {opcion.label}
+                                    {opcion.cotizar ? ' (cotizar)' : ''}
+                                  </Button>
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        })()}
 
                         {/* Buscador de adicionales — siempre visible si < 5 */}
                         {itemFormData.additionals.length < 5 && (

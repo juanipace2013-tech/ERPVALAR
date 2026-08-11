@@ -3,7 +3,7 @@
  * Consulta el stock disponible en Colppy para uno o varios SKUs
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface StockItem {
   found: boolean;
@@ -21,11 +21,16 @@ export function useColppyStock(skus: string[], enabled: boolean = true) {
   const [stockData, setStockData] = useState<Record<string, StockItem>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Identifica la consulta más reciente: las respuestas de consultas viejas
+  // que llegan tarde no deben pisar datos más nuevos ni el estado de loading
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     if (!enabled || skus.length === 0) {
       return;
     }
+
+    const requestId = ++requestIdRef.current;
 
     const fetchStock = async () => {
       try {
@@ -40,12 +45,22 @@ export function useColppyStock(skus: string[], enabled: boolean = true) {
         }
 
         const data: StockResponse = await response.json();
-        setStockData(data.items || {});
+        const items = data.items || {};
+        // Merge en vez de reemplazo: cada SKU consultado se acumula. Si esta
+        // respuesta quedó vieja (hay una consulta más nueva en vuelo), solo
+        // aporta SKUs que aún no están, sin sobreescribir los existentes.
+        setStockData((prev) =>
+          requestId === requestIdRef.current ? { ...prev, ...items } : { ...items, ...prev }
+        );
       } catch (err: any) {
         console.error('Error fetching stock:', err);
-        setError(err.message);
+        if (requestId === requestIdRef.current) {
+          setError(err.message);
+        }
       } finally {
-        setLoading(false);
+        if (requestId === requestIdRef.current) {
+          setLoading(false);
+        }
       }
     };
 

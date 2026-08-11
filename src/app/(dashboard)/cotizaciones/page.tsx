@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -55,6 +55,7 @@ import { toast } from 'sonner'
 import { getLocalDateString } from '@/lib/utils'
 import * as XLSX from 'xlsx'
 import { DuplicateQuoteDialog } from '@/components/quotes/DuplicateQuoteDialog'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 
 interface Quote {
   id: string
@@ -145,7 +146,15 @@ export default function CotizacionesPage() {
       .catch(() => {})
   }, [])
 
+  const debouncedSearch = useDebouncedValue(search, 300)
+  const abortRef = useRef<AbortController | null>(null)
+
   const fetchQuotes = useCallback(async () => {
+    // Cancelar la búsqueda anterior si sigue en vuelo (evita respuestas fuera de orden)
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     try {
       setLoading(true)
       const params = new URLSearchParams()
@@ -154,7 +163,7 @@ export default function CotizacionesPage() {
       } else if (statusFilter !== 'ALL') {
         params.append('status', statusFilter)
       }
-      if (search) params.append('search', search)
+      if (debouncedSearch) params.append('search', debouncedSearch)
       if (dateFrom) params.append('dateFrom', dateFrom)
       if (dateTo) params.append('dateTo', dateTo)
       if (salesPersonId !== 'ALL') params.append('salesPersonId', salesPersonId)
@@ -163,7 +172,7 @@ export default function CotizacionesPage() {
       params.append('pageSize', String(PAGE_SIZE))
 
       const url = `/api/quotes?${params.toString()}`
-      const response = await fetch(url)
+      const response = await fetch(url, { signal: controller.signal })
 
       if (!response.ok) {
         throw new Error('Error al cargar cotizaciones')
@@ -172,13 +181,14 @@ export default function CotizacionesPage() {
       const data = await response.json()
       setQuotes(data.quotes || [])
       setTotalCount(data.totalCount || 0)
+      setLoading(false)
     } catch (error) {
+      if (controller.signal.aborted) return
       console.error('Error:', error)
       toast.error('Error al cargar cotizaciones')
-    } finally {
       setLoading(false)
     }
-  }, [statusFilter, search, dateFrom, dateTo, salesPersonId, seguimientoFilter, page])
+  }, [statusFilter, debouncedSearch, dateFrom, dateTo, salesPersonId, seguimientoFilter, page])
 
   useEffect(() => {
     fetchQuotes()
@@ -187,7 +197,7 @@ export default function CotizacionesPage() {
   // Persistir filtros en URL (query params) para que se conserven al volver con el botón atrás
   useEffect(() => {
     const params = new URLSearchParams()
-    if (search) params.set('search', search)
+    if (debouncedSearch) params.set('search', debouncedSearch)
     if (statusFilter !== 'ACTIVE') params.set('status', statusFilter)
     if (dateFrom) params.set('dateFrom', dateFrom)
     if (dateTo) params.set('dateTo', dateTo)
@@ -195,7 +205,7 @@ export default function CotizacionesPage() {
     if (seguimientoFilter !== 'ALL') params.set('seguimiento', seguimientoFilter)
     const qs = params.toString()
     router.replace(qs ? `/cotizaciones?${qs}` : '/cotizaciones', { scroll: false })
-  }, [search, statusFilter, dateFrom, dateTo, salesPersonId, seguimientoFilter, router])
+  }, [debouncedSearch, statusFilter, dateFrom, dateTo, salesPersonId, seguimientoFilter, router])
 
   const handleSearch = () => {
     fetchQuotes()
@@ -204,7 +214,7 @@ export default function CotizacionesPage() {
   // Reset page when filters change
   useEffect(() => {
     setPage(1)
-  }, [statusFilter, search, dateFrom, dateTo, salesPersonId, seguimientoFilter])
+  }, [statusFilter, debouncedSearch, dateFrom, dateTo, salesPersonId, seguimientoFilter])
 
   const handleClearFilters = () => {
     setSearch('')
@@ -599,11 +609,11 @@ export default function CotizacionesPage() {
       {/* Table */}
       <Card className="border-blue-200">
         <CardContent className="p-6">
-          {loading ? (
+          {loading && quotes.length === 0 ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
             </div>
-          ) : quotes.length === 0 ? (
+          ) : !loading && quotes.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <FileText className="h-12 w-12 text-muted-foreground mb-4" />
               <p className="text-muted-foreground text-lg">
@@ -620,7 +630,7 @@ export default function CotizacionesPage() {
             </div>
           ) : (
             <>
-            <div className="rounded-lg border border-blue-100 overflow-hidden overflow-x-auto">
+            <div className={`rounded-lg border border-blue-100 overflow-hidden overflow-x-auto transition-opacity ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
               <Table className="min-w-[1100px]">
                 <TableHeader>
                   <TableRow className="bg-blue-50 hover:bg-blue-50">

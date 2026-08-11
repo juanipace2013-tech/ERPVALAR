@@ -65,6 +65,7 @@ export function ColppyCustomerSearch({
 
   const searchRef = useRef<HTMLDivElement>(null);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   // Cerrar dropdown al hacer clic fuera
   useEffect(() => {
@@ -85,8 +86,10 @@ export function ColppyCustomerSearch({
       clearTimeout(debounceTimer.current);
     }
 
-    // Si el search term es muy corto, no buscar
+    // Si el search term es muy corto, no buscar (y cancelar cualquier búsqueda en vuelo)
     if (searchTerm.length < 2) {
+      abortRef.current?.abort();
+      setLoading(false);
       setResults([]);
       setShowDropdown(false);
       return;
@@ -106,11 +109,19 @@ export function ColppyCustomerSearch({
 
   // Realizar búsqueda
   const performSearch = async (search: string) => {
+    // Cancelar la búsqueda anterior si sigue en vuelo (evita respuestas fuera de orden)
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       setLoading(true);
       setError(null);
 
-      const response = await fetch(`/api/colppy/clientes?search=${encodeURIComponent(search)}&limit=20`);
+      const response = await fetch(
+        `/api/colppy/clientes?search=${encodeURIComponent(search)}&limit=20`,
+        { signal: controller.signal }
+      );
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -120,11 +131,12 @@ export function ColppyCustomerSearch({
       const data = await response.json();
       setResults(data.customers || []);
       setShowDropdown(true);
+      setLoading(false);
     } catch (err: any) {
+      if (controller.signal.aborted) return;
       console.error('Error buscando clientes:', err);
       setError(err.message);
       setResults([]);
-    } finally {
       setLoading(false);
     }
   };

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -18,6 +18,7 @@ import { Package, Plus, Search, AlertTriangle, CheckCircle2, Loader2, ChevronUp,
 import { toast } from 'sonner'
 import { formatNumber } from '@/lib/utils'
 import { useColppyStock, refreshInventoryCache } from '@/hooks/useColppyStock'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 
 interface Product {
   id: string
@@ -66,11 +67,19 @@ export default function ProductosPage() {
   const productSkus = products.map(p => p.sku)
   const { stockData, loading: stockLoading } = useColppyStock(productSkus, products.length > 0)
 
+  const debouncedSearch = useDebouncedValue(search, 300)
+  const abortRef = useRef<AbortController | null>(null)
+
   useEffect(() => {
     fetchProducts()
-  }, [page, search, letterFilter, orderBy, order])
+  }, [page, debouncedSearch, letterFilter, orderBy, order])
 
   const fetchProducts = async () => {
+    // Cancelar la búsqueda anterior si sigue en vuelo (evita respuestas fuera de orden)
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     try {
       setLoading(true)
 
@@ -82,15 +91,17 @@ export default function ProductosPage() {
         order: order,
       })
 
-      if (search) {
-        params.append('search', search)
+      if (debouncedSearch) {
+        params.append('search', debouncedSearch)
       }
 
       if (letterFilter) {
         params.append('letter', letterFilter)
       }
 
-      const response = await fetch(`/api/productos?${params.toString()}`)
+      const response = await fetch(`/api/productos?${params.toString()}`, {
+        signal: controller.signal,
+      })
 
       if (!response.ok) {
         throw new Error('Error al cargar productos')
@@ -100,10 +111,11 @@ export default function ProductosPage() {
       setProducts(data.products || [])
       setTotalProducts(data.pagination.total)
       setTotalPages(data.pagination.totalPages)
+      setLoading(false)
     } catch (error) {
+      if (controller.signal.aborted) return
       console.error('Error:', error)
       toast.error('Error al cargar productos')
-    } finally {
       setLoading(false)
     }
   }
@@ -371,17 +383,17 @@ export default function ProductosPage() {
           </div>
 
           {/* Contador de resultados */}
-          {!loading && totalProducts > 0 && (
+          {totalProducts > 0 && (
             <div className="mb-4 text-sm text-muted-foreground">
               Mostrando {((page - 1) * ITEMS_PER_PAGE) + 1}-{Math.min(page * ITEMS_PER_PAGE, totalProducts)} de {totalProducts.toLocaleString()} productos
             </div>
           )}
 
-          {loading ? (
+          {loading && filteredProducts.length === 0 ? (
             <div className="flex items-center justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             </div>
-          ) : filteredProducts.length === 0 ? (
+          ) : !loading && filteredProducts.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-center">
               <Package className="h-12 w-12 text-muted-foreground mb-4" />
               <p className="text-muted-foreground">
@@ -397,7 +409,7 @@ export default function ProductosPage() {
               )}
             </div>
           ) : (
-            <div className="rounded-md border overflow-x-auto">
+            <div className={`rounded-md border overflow-x-auto transition-opacity ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -473,7 +485,7 @@ export default function ProductosPage() {
           )}
 
           {/* Paginación */}
-          {!loading && totalPages > 1 && (
+          {totalPages > 1 && (
             <div className="mt-4 flex items-center justify-center gap-2">
               <Button
                 variant="outline"

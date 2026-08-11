@@ -105,6 +105,7 @@ export default function ClientesPage() {
   // Filters
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
+  const fetchAbortRef = useRef<AbortController | null>(null)
   const [filtroIva, setFiltroIva] = useState('todas')
   const [filtroSaldo, setFiltroSaldo] = useState('todos')
   const [filtroCotizaciones, setFiltroCotizaciones] = useState(false)
@@ -132,6 +133,11 @@ export default function ClientesPage() {
   // ─── Fetch customers from local DB ────────────────────────────────────────
 
   const fetchCustomers = useCallback(async () => {
+    // Cancelar la búsqueda anterior si sigue en vuelo (evita respuestas fuera de orden)
+    fetchAbortRef.current?.abort()
+    const controller = new AbortController()
+    fetchAbortRef.current = controller
+
     setLoading(true)
     try {
       const params = new URLSearchParams({
@@ -146,14 +152,15 @@ export default function ClientesPage() {
       if (filtroSaldo !== 'todos') params.set('balanceFilter', filtroSaldo)
       if (filtroVendedor !== 'todos') params.set('salesPersonId', filtroVendedor)
 
-      const res = await fetch(`/api/clientes?${params}`)
+      const res = await fetch(`/api/clientes?${params}`, { signal: controller.signal })
       if (!res.ok) throw new Error('Error al cargar clientes')
       const data = await res.json()
       setCustomers(data.customers || [])
       setTotal(data.pagination?.total || 0)
+      setLoading(false)
     } catch (e: any) {
+      if (controller.signal.aborted) return
       toast.error(e.message || 'Error al cargar clientes')
-    } finally {
       setLoading(false)
     }
   }, [page, PAGE_SIZE, sortField, sortDir, debouncedSearch, filtroIva, filtroSaldo, filtroVendedor])
@@ -464,19 +471,19 @@ export default function ClientesPage() {
       {/* Tabla */}
       <Card className="border-blue-200">
         <CardContent className="p-0">
-          {loading ? (
+          {loading && displayCustomers.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16">
               <Loader2 className="h-10 w-10 animate-spin text-blue-600 mb-3" />
               <p className="text-gray-500">Cargando clientes...</p>
             </div>
-          ) : displayCustomers.length === 0 ? (
+          ) : !loading && displayCustomers.length === 0 ? (
             <div className="text-center py-16 text-gray-500">
               <Users className="h-10 w-10 text-gray-300 mx-auto mb-3" />
               <p>No se encontraron clientes con los filtros aplicados</p>
             </div>
           ) : (
             <>
-              <div className="overflow-x-auto">
+              <div className={`overflow-x-auto transition-opacity ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-blue-50/50">

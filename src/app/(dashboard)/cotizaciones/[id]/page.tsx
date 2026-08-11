@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -264,6 +264,9 @@ export default function QuoteDetailPage() {
   const [searchResults, setSearchResults] = useState<typeof products>([])
   const [searchLoading, setSearchLoading] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+  const searchAbortRef = useRef<AbortController | null>(null)
+  const addlSearchAbortRef = useRef<Record<number, AbortController | null>>({})
+  const addlSingleAbortRef = useRef<AbortController | null>(null)
 
   // Stock data hook - consultar stock de productos filtrados (main + adicionales + seleccionados)
   const filteredProductSkus = [...new Set([
@@ -316,6 +319,8 @@ export default function QuoteDetailPage() {
       }, 300)
       return () => clearTimeout(timeoutId)
     } else {
+      searchAbortRef.current?.abort()
+      setSearchLoading(false)
       setSearchResults([])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -342,23 +347,33 @@ export default function QuoteDetailPage() {
   // Debounce para búsqueda de adicionales — input único
   useEffect(() => {
     if (addlSearchTerm.length < 2) {
+      addlSingleAbortRef.current?.abort()
+      setAddlSearchLoading(false)
       setAddlSearchResults([])
       return
     }
     const timeout = setTimeout(async () => {
+      // Cancelar la búsqueda anterior si sigue en vuelo (evita respuestas fuera de orden)
+      addlSingleAbortRef.current?.abort()
+      const controller = new AbortController()
+      addlSingleAbortRef.current = controller
+
       setAddlSearchLoading(true)
       try {
         const params = new URLSearchParams({ search: addlSearchTerm, limit: '20', status: 'ACTIVE' })
-        const response = await fetch(`/api/productos?${params.toString()}`)
+        const response = await fetch(`/api/productos?${params.toString()}`, {
+          signal: controller.signal,
+        })
         if (response.ok) {
           const data = await response.json()
           setAddlSearchResults(data.products || [])
         } else {
           setAddlSearchResults([])
         }
+        setAddlSearchLoading(false)
       } catch {
+        if (controller.signal.aborted) return
         setAddlSearchResults([])
-      } finally {
         setAddlSearchLoading(false)
       }
     }, 300)
@@ -458,6 +473,11 @@ export default function QuoteDetailPage() {
   }
 
   const searchProducts = async (query: string) => {
+    // Cancelar la búsqueda anterior si sigue en vuelo (evita respuestas fuera de orden)
+    searchAbortRef.current?.abort()
+    const controller = new AbortController()
+    searchAbortRef.current = controller
+
     try {
       setSearchLoading(true)
       const params = new URLSearchParams({
@@ -465,17 +485,20 @@ export default function QuoteDetailPage() {
         limit: '20',
         status: 'ACTIVE',
       })
-      const response = await fetch(`/api/productos?${params.toString()}`)
+      const response = await fetch(`/api/productos?${params.toString()}`, {
+        signal: controller.signal,
+      })
       if (response.ok) {
         const data = await response.json()
         setSearchResults(data.products || [])
       } else {
         setSearchResults([])
       }
+      setSearchLoading(false)
     } catch (error) {
+      if (controller.signal.aborted) return
       console.error('Error buscando productos:', error)
       setSearchResults([])
-    } finally {
       setSearchLoading(false)
     }
   }
@@ -485,6 +508,11 @@ export default function QuoteDetailPage() {
       setAdditionalSearchResults(prev => ({ ...prev, [index]: [] }))
       return
     }
+    // Cancelar la búsqueda anterior de este índice si sigue en vuelo
+    addlSearchAbortRef.current[index]?.abort()
+    const controller = new AbortController()
+    addlSearchAbortRef.current[index] = controller
+
     try {
       setAdditionalSearchLoading(prev => ({ ...prev, [index]: true }))
       const params = new URLSearchParams({
@@ -492,17 +520,20 @@ export default function QuoteDetailPage() {
         limit: '20',
         status: 'ACTIVE',
       })
-      const response = await fetch(`/api/productos?${params.toString()}`)
+      const response = await fetch(`/api/productos?${params.toString()}`, {
+        signal: controller.signal,
+      })
       if (response.ok) {
         const data = await response.json()
         setAdditionalSearchResults(prev => ({ ...prev, [index]: data.products || [] }))
       } else {
         setAdditionalSearchResults(prev => ({ ...prev, [index]: [] }))
       }
+      setAdditionalSearchLoading(prev => ({ ...prev, [index]: false }))
     } catch (error) {
+      if (controller.signal.aborted) return
       console.error('Error buscando adicionales:', error)
       setAdditionalSearchResults(prev => ({ ...prev, [index]: [] }))
-    } finally {
       setAdditionalSearchLoading(prev => ({ ...prev, [index]: false }))
     }
   }

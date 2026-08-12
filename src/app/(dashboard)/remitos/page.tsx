@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -49,6 +49,7 @@ import {
   ChevronsRight,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { DuplicateDeliveryNoteDialog } from '@/components/remitos/DuplicateDeliveryNoteDialog'
 
 interface DeliveryNote {
@@ -120,20 +121,30 @@ export default function RemitosPage() {
   const [page, setPage] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
 
+  const debouncedSearch = useDebouncedValue(searchTerm, 300)
+  const abortRef = useRef<AbortController | null>(null)
+
   const fetchDeliveryNotes = useCallback(async () => {
+    // Cancelar la búsqueda anterior si sigue en vuelo (evita respuestas fuera de orden)
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     try {
       setLoading(true)
       const params = new URLSearchParams()
       if (statusFilter !== 'all') {
         params.append('status', statusFilter)
       }
-      if (searchTerm) {
-        params.append('search', searchTerm)
+      if (debouncedSearch) {
+        params.append('search', debouncedSearch)
       }
       params.append('page', String(page - 1))
       params.append('pageSize', String(PAGE_SIZE))
 
-      const response = await fetch(`/api/delivery-notes?${params.toString()}`)
+      const response = await fetch(`/api/delivery-notes?${params.toString()}`, {
+        signal: controller.signal,
+      })
 
       if (!response.ok) {
         throw new Error('Error al cargar remitos')
@@ -142,13 +153,14 @@ export default function RemitosPage() {
       const data = await response.json()
       setDeliveryNotes(data.deliveryNotes || data)
       setTotalCount(data.totalCount || 0)
+      setLoading(false)
     } catch (error) {
+      if (controller.signal.aborted) return
       console.error('Error:', error)
       toast.error('Error al cargar remitos')
-    } finally {
       setLoading(false)
     }
-  }, [statusFilter, searchTerm, page])
+  }, [statusFilter, debouncedSearch, page])
 
   useEffect(() => {
     fetchDeliveryNotes()
@@ -157,11 +169,16 @@ export default function RemitosPage() {
   // Persistir filtros en URL (query params) para que se conserven al volver con el botón atrás
   useEffect(() => {
     const params = new URLSearchParams()
-    if (searchTerm) params.set('search', searchTerm)
+    if (debouncedSearch) params.set('search', debouncedSearch)
     if (statusFilter !== 'all') params.set('status', statusFilter)
     const qs = params.toString()
     router.replace(qs ? `/remitos?${qs}` : '/remitos', { scroll: false })
-  }, [searchTerm, statusFilter, router])
+  }, [debouncedSearch, statusFilter, router])
+
+  // Volver a página 1 cuando cambia la búsqueda
+  useEffect(() => {
+    setPage(1)
+  }, [debouncedSearch])
 
   const handleSearch = () => {
     setPage(1)
@@ -381,17 +398,17 @@ export default function RemitosPage() {
       {/* Table */}
       <Card>
         <CardContent className="p-0">
-          {loading ? (
+          {loading && filteredDeliveryNotes.length === 0 ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
             </div>
-          ) : filteredDeliveryNotes.length === 0 ? (
+          ) : !loading && filteredDeliveryNotes.length === 0 ? (
             <div className="text-center py-12">
               <Package className="h-12 w-12 text-gray-300 mx-auto mb-4" />
               <p className="text-gray-600">No se encontraron remitos</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className={`overflow-x-auto transition-opacity ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
               <Table>
                 <TableHeader>
                   <TableRow>

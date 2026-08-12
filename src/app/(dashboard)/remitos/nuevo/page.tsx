@@ -232,6 +232,7 @@ export default function NuevoRemitoPage() {
   const [searchLoading, setSearchLoading] = useState(false)
   const [showProductDropdown, setShowProductDropdown] = useState(false)
   const productSearchRef = useRef<HTMLDivElement>(null)
+  const searchAbortRef = useRef<AbortController | null>(null)
 
   // Manual item fields
   const [manualSku, setManualSku] = useState('')
@@ -311,6 +312,9 @@ export default function NuevoRemitoPage() {
   // ── Product search debounce ──
   useEffect(() => {
     if (productSearch.length < 2) {
+      // Cancelar la búsqueda en vuelo para que no reaparezcan resultados viejos
+      searchAbortRef.current?.abort()
+      setSearchLoading(false)
       setProductResults([])
       setShowProductDropdown(false)
       return
@@ -379,6 +383,11 @@ export default function NuevoRemitoPage() {
   }
 
   const searchProducts = async (query: string) => {
+    // Cancelar la búsqueda anterior si sigue en vuelo (evita respuestas fuera de orden)
+    searchAbortRef.current?.abort()
+    const controller = new AbortController()
+    searchAbortRef.current = controller
+
     try {
       setSearchLoading(true)
       const params = new URLSearchParams({
@@ -386,15 +395,18 @@ export default function NuevoRemitoPage() {
         limit: '15',
         status: 'ACTIVE',
       })
-      const res = await fetch(`/api/productos?${params.toString()}`)
+      const res = await fetch(`/api/productos?${params.toString()}`, {
+        signal: controller.signal,
+      })
       if (res.ok) {
         const data = await res.json()
         setProductResults(data.products || [])
         setShowProductDropdown(true)
       }
+      setSearchLoading(false)
     } catch {
+      if (controller.signal.aborted) return
       setProductResults([])
-    } finally {
       setSearchLoading(false)
     }
   }

@@ -161,12 +161,13 @@ export default function RutaDetailPage() {
   const [showCancelDialog, setShowCancelDialog] = useState(false)
 
   useEffect(() => {
-    fetchRoute()
+    fetchRoute({ silent: false })
   }, [id])
 
-  const fetchRoute = async () => {
+  // silent=true: refresca datos sin desmontar la página (sin spinner de carga completa)
+  const fetchRoute = async ({ silent = true }: { silent?: boolean } = {}) => {
     try {
-      setLoading(true)
+      if (!silent) setLoading(true)
       const response = await fetch(`/api/logistica/rutas/${id}`)
       if (!response.ok) throw new Error('Error al cargar ruta')
       const data = await response.json()

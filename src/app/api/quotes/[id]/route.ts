@@ -239,7 +239,10 @@ export async function PUT(
       // recalcular: el precio neto se escala por 1.21 para que siga incluyendo IVA.
       const ivaFactor = quote.pricesIncludeTax ? 1.21 : 1
 
-      for (const item of quote.items) {
+      // Todos los updates van en una sola transacción y el subtotal se calcula
+      // en memoria (antes era un round-trip a la DB por cada item + relecturas)
+      let subtotal = 0
+      const itemUpdates = quote.items.map((item) => {
         // Items con multiplierOverride mantienen su multiplicador personalizado
         const hasOverride = item.multiplierOverride !== null
         const effectiveMultiplier = hasOverride ? Number(item.multiplierOverride) : newMultiplier
@@ -256,7 +259,9 @@ export async function PUT(
         const unitPrice = afterDiscount * effectiveMultiplier * ivaFactor
         const totalPrice = unitPrice * item.quantity
 
-        await prisma.quoteItem.update({
+        if (!item.isAlternative) subtotal += totalPrice
+
+        return prisma.quoteItem.update({
           where: { id: item.id },
           data: {
             customerMultiplier: effectiveMultiplier,
@@ -264,19 +269,17 @@ export async function PUT(
             totalPrice,
           },
         })
-      }
-
-      // Recalcular totales de la cotización
-      const mainItems = await prisma.quoteItem.findMany({
-        where: { quoteId: id, isAlternative: false },
       })
-      const subtotal = mainItems.reduce((sum, item) => sum + Number(item.totalPrice), 0)
+
       const bonif = Number(quote.bonification) || 0
       const total = subtotal * (1 - bonif / 100)
-      await prisma.quote.update({
-        where: { id },
-        data: { subtotal, total },
-      })
+      await prisma.$transaction([
+        ...itemUpdates,
+        prisma.quote.update({
+          where: { id },
+          data: { subtotal, total },
+        }),
+      ])
     }
 
     // Guardar el multiplicador en el Customer para futuras cotizaciones.
@@ -300,33 +303,38 @@ export async function PUT(
     // Esto permite toggle reversible sin perder precisión si no se vuelven a tocar.
     if (pricesIncludeTaxChanged && !multiplierChanged && quote.items.length > 0) {
       const factor = quote.pricesIncludeTax ? 1.21 : 1 / 1.21
-      for (const item of quote.items) {
-        await prisma.quoteItem.update({
+      // Updates en batch y subtotal en memoria (sin round-trip por item)
+      let subtotal = 0
+      const itemUpdates = quote.items.map((item) => {
+        const totalPrice = Number(item.totalPrice) * factor
+        if (!item.isAlternative) subtotal += totalPrice
+        return prisma.quoteItem.update({
           where: { id: item.id },
           data: {
             unitPrice: Number(item.unitPrice) * factor,
-            totalPrice: Number(item.totalPrice) * factor,
+            totalPrice,
           },
         })
-      }
-      const mainItems = await prisma.quoteItem.findMany({
-        where: { quoteId: id, isAlternative: false },
       })
-      const subtotal = mainItems.reduce((sum, item) => sum + Number(item.totalPrice), 0)
       const bonif = Number(quote.bonification) || 0
       const total = subtotal * (1 - bonif / 100)
-      await prisma.quote.update({
-        where: { id },
-        data: { subtotal, total },
-      })
+      await prisma.$transaction([
+        ...itemUpdates,
+        prisma.quote.update({
+          where: { id },
+          data: { subtotal, total },
+        }),
+      ])
     }
 
-    // Si la bonificación cambió (sin cambio de multiplicador), recalcular total
+    // Si la bonificación cambió (sin cambio de multiplicador), recalcular total.
+    // Si además cambió pricesIncludeTax, los totales de los items ya fueron
+    // reescalados arriba, así que se aplica el mismo factor en memoria.
     if (body.bonification !== undefined && !multiplierChanged) {
-      const mainItems = await prisma.quoteItem.findMany({
-        where: { quoteId: id, isAlternative: false },
-      })
-      const subtotal = mainItems.reduce((sum, item) => sum + Number(item.totalPrice), 0)
+      const ivaAdjust = pricesIncludeTaxChanged ? (quote.pricesIncludeTax ? 1.21 : 1 / 1.21) : 1
+      const subtotal = quote.items
+        .filter((item) => !item.isAlternative)
+        .reduce((sum, item) => sum + Number(item.totalPrice) * ivaAdjust, 0)
       const bonif = Number(body.bonification) || 0
       const total = subtotal * (1 - bonif / 100)
       await prisma.quote.update({

@@ -151,9 +151,10 @@ export default function ProductoDetallePage() {
     purchasePrice: '',
   })
 
-  const fetchProduct = useCallback(async () => {
+  // silent=true: refresca datos sin desmontar la página (sin spinner de carga completa)
+  const fetchProduct = useCallback(async ({ silent = true }: { silent?: boolean } = {}) => {
     try {
-      setLoading(true)
+      if (!silent) setLoading(true)
       setError('')
       const response = await fetch(`/api/productos/${id}`)
       if (!response.ok) {
@@ -170,7 +171,7 @@ export default function ProductoDetallePage() {
   }, [id])
 
   useEffect(() => {
-    if (id) fetchProduct()
+    if (id) fetchProduct({ silent: false })
   }, [id, fetchProduct])
 
   const populateForm = (p: Product) => {

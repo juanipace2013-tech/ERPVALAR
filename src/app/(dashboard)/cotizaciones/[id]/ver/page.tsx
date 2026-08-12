@@ -234,12 +234,13 @@ export default function QuoteViewPage() {
   const bcraFetched = useRef(false)
 
   useEffect(() => {
-    fetchQuote()
+    fetchQuote({ silent: false })
   }, [id])
 
-  const fetchQuote = async () => {
+  // silent=true: refresca datos sin desmontar la página (sin spinner de carga completa)
+  const fetchQuote = async ({ silent = true }: { silent?: boolean } = {}) => {
     try {
-      setLoading(true)
+      if (!silent) setLoading(true)
       const response = await fetch(`/api/quotes/${id}`)
 
       if (!response.ok) {

@@ -219,13 +219,14 @@ export default function PurchaseInvoiceDetailPage() {
 
   useEffect(() => {
     if (params.id) {
-      fetchInvoice()
+      fetchInvoice({ silent: false })
     }
   }, [params.id])
 
-  const fetchInvoice = async () => {
+  // silent=true: refresca datos sin desmontar la página (sin spinner de carga completa)
+  const fetchInvoice = async ({ silent = true }: { silent?: boolean } = {}) => {
     try {
-      setLoading(true)
+      if (!silent) setLoading(true)
       const response = await fetch(`/api/purchase-invoices/${params.id}`)
 
       if (!response.ok) {

@@ -59,11 +59,9 @@ interface PurchaseOrder {
     taxId: string | null
   }
   total: number
-  items: Array<{
-    id: string
-    quantity: number
-    receivedQty: number
-  }>
+  _count: {
+    items: number
+  }
 }
 
 const statusLabels: Record<string, string> = {
@@ -326,7 +324,7 @@ export default function PurchaseOrdersPage() {
                         {formatCurrency(order.total)}
                       </TableCell>
                       <TableCell className="text-center">
-                        <Badge variant="outline">{order.items.length}</Badge>
+                        <Badge variant="outline">{order._count.items}</Badge>
                       </TableCell>
                       <TableCell>
                         <Badge className={statusColors[order.status]}>

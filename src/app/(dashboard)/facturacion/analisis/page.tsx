@@ -175,8 +175,14 @@ export default function AnalisisFacturacionPage() {
   const [syncing, setSyncing] = useState(false)
   const [salesPersons, setSalesPersons] = useState<User[]>([])
 
-  // Filtros
-  const [dateFrom, setDateFrom] = useState('')
+  // Filtros. dateFrom arranca en "hace 12 meses": sin cota, la primera carga
+  // bajaba la tabla Invoice completa. "Limpiar filtros" lo vacía si se
+  // necesita el histórico total.
+  const [dateFrom, setDateFrom] = useState(() => {
+    const d = new Date()
+    d.setMonth(d.getMonth() - 12)
+    return getLocalDateString(d)
+  })
   const [dateTo, setDateTo] = useState('')
   const [salesPersonId, setSalesPersonId] = useState('ALL')
   const [search, setSearch] = useState('')

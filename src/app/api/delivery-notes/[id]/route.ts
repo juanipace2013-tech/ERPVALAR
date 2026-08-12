@@ -21,13 +21,13 @@ export async function GET(
       include: {
         customer: true,
         supplier: true,
+        // Solo los 3 campos que usa la pantalla de detalle: antes se traía la
+        // cotización completa con todos sus items y el modelo Product entero.
         quote: {
-          include: {
-            items: {
-              include: {
-                product: true
-              }
-            }
+          select: {
+            id: true,
+            quoteNumber: true,
+            currency: true,
           }
         },
         cotizacionFactura: {

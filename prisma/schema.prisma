@@ -241,6 +241,7 @@ model Customer {
   @@index([status])
   @@index([province])
   @@index([salesPersonId])
+  @@index([balance]) // orden default del listado de clientes
   @@map("customers")
 }
 
@@ -1214,6 +1215,7 @@ model QuoteSeguimiento {
   createdAt DateTime @default(now())
 
   @@index([quoteId])
+  @@index([quoteId, fecha]) // subquery "ultimo seguimiento" del listado de cotizaciones
   @@map("quote_seguimientos")
 }
 
@@ -2655,6 +2657,7 @@ model CotizacionFactura {
 
   @@index([cotizacionId])
   @@index([colppyInvoiceId])
+  @@index([fecha]) // filtros por mes en comisiones/liquidacion
   @@map("cotizacion_facturas")
 }
 

@@ -45,23 +45,10 @@ export async function GET(request: NextRequest) {
               taxId: true,
             },
           },
-          items: {
-            include: {
-              product: {
-                select: {
-                  id: true,
-                  name: true,
-                  sku: true,
-                },
-              },
-            },
-          },
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
+          // La tabla del listado solo muestra la CANTIDAD de items:
+          // antes se bajaban todos los items con sus productos.
+          _count: {
+            select: { items: true },
           },
         },
         orderBy: {

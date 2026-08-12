@@ -78,12 +78,31 @@ export async function GET(
                 position: 'asc',
               },
             },
+            // Mismo select acotado que los items principales: antes las
+            // alternativas bajaban el modelo Product completo (~35 columnas
+            // con description/notes Text e images[]).
             alternatives: {
               include: {
-                product: true,
+                product: {
+                  select: {
+                    id: true,
+                    sku: true,
+                    name: true,
+                    brand: true,
+                    listPriceUSD: true,
+                    unit: true,
+                  },
+                },
                 additionals: {
                   include: {
-                    product: true,
+                    product: {
+                      select: {
+                        id: true,
+                        sku: true,
+                        name: true,
+                        listPriceUSD: true,
+                      },
+                    },
                   },
                 },
               },

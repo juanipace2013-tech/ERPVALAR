@@ -40,19 +40,27 @@ export async function GET(request: NextRequest) {
     const [purchaseInvoices, totalCount] = await Promise.all([
       prisma.purchaseInvoice.findMany({
         where,
-        include: {
+        // select con SOLO los campos de la tabla del listado: el modelo
+        // PurchaseInvoice completo tiene ~45 columnas (con campos Text) y los
+        // items no se usaban en la pantalla.
+        select: {
+          id: true,
+          invoiceNumber: true,
+          invoiceDate: true,
+          voucherType: true,
+          total: true,
+          balance: true,
+          status: true,
+          requiresReview: true,
+          reviewReason: true,
+          stockImpact: true,
+          cae: true,
+          colppyInvoiceId: true,
           supplier: {
             select: {
               id: true,
               name: true,
               taxId: true,
-            },
-          },
-          items: {
-            select: {
-              id: true,
-              quantity: true,
-              total: true,
             },
           },
         },

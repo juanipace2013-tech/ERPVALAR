@@ -31,16 +31,29 @@ export async function GET(
       )
     }
 
-    // Obtener todas las facturas del cliente
+    // Obtener todas las facturas del cliente. select con SOLO los campos que
+    // usa el mapeo de abajo: el modelo Invoice completo tiene ~45 columnas
+    // (incluyendo campos Text de AFIP/notas) y esta query trae el histórico entero.
     const invoices = await prisma.invoice.findMany({
       where: { customerId },
       orderBy: { issueDate: 'desc' },
-      include: {
+      select: {
+        id: true,
+        invoiceNumber: true,
+        invoiceType: true,
+        issueDate: true,
+        dueDate: true,
+        paidDate: true,
+        status: true,
+        currency: true,
+        total: true,
         items: {
-          include: {
+          select: {
+            quantity: true,
+            unitPrice: true,
+            subtotal: true,
             product: {
               select: {
-                sku: true,
                 name: true,
               },
             },
@@ -49,7 +62,6 @@ export async function GET(
         user: {
           select: {
             name: true,
-            email: true,
           },
         },
       },

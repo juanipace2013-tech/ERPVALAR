@@ -48,6 +48,7 @@ import { formatNumber, getLocalDateString } from '@/lib/utils'
 import { useColppyStock, refreshInventoryCache } from '@/hooks/useColppyStock'
 import { StockBadge, StockWarning } from '@/components/StockBadge'
 import { getConjuntosGenebre, type ConjuntoOpcion } from '@/lib/genebre-conjuntos'
+import { getBobinasElectrovalvula, type BobinaKit } from '@/lib/genebre-electrovalvulas'
 
 interface Product {
   id: string
@@ -263,6 +264,11 @@ export default function QuoteDetailPage() {
   const [conjuntoLoading, setConjuntoLoading] = useState<string | null>(null)
   // SKUs agregados por el último conjunto elegido: al elegir otro, se reemplazan
   const [lastConjuntoSkus, setLastConjuntoSkus] = useState<string[]>([])
+
+  // Kits bobina + conector para electroválvulas GENEBRE (según tensión)
+  const [bobinaKitLoading, setBobinaKitLoading] = useState<string | null>(null)
+  // SKUs agregados por el último kit de bobina elegido: al elegir otra tensión, se reemplazan
+  const [lastBobinaKitSkus, setLastBobinaKitSkus] = useState<string[]>([])
 
   // Product search
   const [productSearch, setProductSearch] = useState('')
@@ -896,6 +902,7 @@ export default function QuoteDetailPage() {
     const isManual = !item.productId
     setSelectedProduct(item.product)
     setLastConjuntoSkus([])
+    setLastBobinaKitSkus([])
     setItemFormData({
       productId: item.productId || '',
       quantity: item.quantity,
@@ -1130,6 +1137,62 @@ export default function QuoteDetailPage() {
     }
   }
 
+  // Agrega bobina + conector de una electroválvula GENEBRE como adicionales,
+  // según la tensión elegida. Si ya se había elegido otra tensión, se reemplaza.
+  const handleAddBobinaKit = async (kit: BobinaKit) => {
+    const kitSkus = [kit.bobinaSku, kit.conectorSku]
+    setBobinaKitLoading(kit.tension)
+    try {
+      const resultados = await Promise.all(
+        kitSkus.map(async (sku) => {
+          const params = new URLSearchParams({ search: sku, limit: '10', status: 'ACTIVE' })
+          const response = await fetch(`/api/productos?${params.toString()}`)
+          if (!response.ok) return { sku, product: null }
+          const data = await response.json()
+          const exact = (data.products || []).find((p: Product) => p.sku === sku)
+          return { sku, product: (exact as Product) || null }
+        })
+      )
+
+      const encontrados = resultados.filter((r) => r.product).map((r) => r.product!)
+      const faltantes = resultados.filter((r) => !r.product).map((r) => r.sku)
+
+      // Conservar adicionales ajenos al kit de bobina anterior
+      const restantes = itemFormData.additionals.filter(
+        (a) => !a.productSku || !lastBobinaKitSkus.includes(a.productSku)
+      )
+      const nuevos = encontrados.map((p) => ({
+        productId: p.id,
+        listPrice: p.listPriceUSD ? Number(p.listPriceUSD) : 0,
+        productName: p.name,
+        productSku: p.sku,
+      }))
+
+      if (restantes.length + nuevos.length > 5) {
+        toast.error(
+          `El kit necesita ${nuevos.length} adicionales y ya hay ${restantes.length} — supera el máximo de 5. Eliminá adicionales primero.`
+        )
+        return
+      }
+
+      setItemFormData({ ...itemFormData, additionals: [...restantes, ...nuevos] })
+      setLastBobinaKitSkus(encontrados.map((p) => p.sku))
+
+      if (faltantes.length > 0) {
+        toast.warning(`Componentes no encontrados en el catálogo: ${faltantes.join(', ')}`)
+      } else {
+        toast.success(`Kit ${kit.tension} agregado (${nuevos.map((n) => n.productSku).join(' + ')})`)
+      }
+      if (kit.nota) {
+        toast.info(kit.nota, { duration: 10000 })
+      }
+    } catch {
+      toast.error('Error al buscar los componentes del kit')
+    } finally {
+      setBobinaKitLoading(null)
+    }
+  }
+
   const handleUpdateAdditional = (index: number, product: Product) => {
     const listPrice = product.listPriceUSD ? Number(product.listPriceUSD) : 0
 
@@ -1173,6 +1236,8 @@ export default function QuoteDetailPage() {
     setManualAddlPrice('')
     setConjuntoLoading(null)
     setLastConjuntoSkus([])
+    setBobinaKitLoading(null)
+    setLastBobinaKitSkus([])
   }
 
   const handleOpenAlternativeDialog = (parentItemId: string) => {
@@ -1860,6 +1925,7 @@ export default function QuoteDetailPage() {
                                   brandDiscountOverride: autoDiscount,
                                 })
                                 setLastConjuntoSkus([])
+                                setLastBobinaKitSkus([])
                                 setProductSearch('')
                               }}
                             >
@@ -2037,6 +2103,38 @@ export default function QuoteDetailPage() {
                                     )}
                                     {opcion.label}
                                     {opcion.cotizar ? ' (cotizar)' : ''}
+                                  </Button>
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        })()}
+
+                        {/* Kits bobina + conector para electroválvulas GENEBRE sin bobina */}
+                        {!itemFormData.isManual && selectedProduct && (() => {
+                          const kits = getBobinasElectrovalvula(selectedProduct.sku)
+                          if (kits.length === 0) return null
+                          return (
+                            <div className="rounded-md border border-amber-200 bg-amber-50/60 p-2 space-y-1.5">
+                              <p className="text-xs font-semibold text-amber-800">
+                                🔌 Bobina + conector (elegir tensión)
+                              </p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {kits.map((kit) => (
+                                  <Button
+                                    key={kit.tension}
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={bobinaKitLoading !== null}
+                                    title={`${kit.bobinaSku} + ${kit.conectorSku}`}
+                                    className="h-7 text-xs bg-white border-amber-300 text-amber-700 hover:bg-amber-100"
+                                    onClick={() => handleAddBobinaKit(kit)}
+                                  >
+                                    {bobinaKitLoading === kit.tension && (
+                                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                    )}
+                                    {kit.tension}
                                   </Button>
                                 ))}
                               </div>

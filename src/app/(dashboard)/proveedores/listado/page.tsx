@@ -80,24 +80,45 @@ export default function ProveedoresPage() {
       setSyncing(true)
       toast.info('Sincronizando proveedores desde Colppy...')
 
+      // El sync corre en background en el server: el POST responde al instante
+      // y acá se hace polling del estado hasta que termine.
       const response = await fetch('/api/proveedores/sync-colppy', {
         method: 'POST',
       })
 
-      const data = await response.json()
+      const started = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || 'Error al sincronizar')
+        throw new Error(started.error || 'Error al sincronizar')
+      }
+      if (started.status === 'already_running') {
+        toast.info('Ya hay una sincronización en progreso, esperando que termine...')
       }
 
-      toast.success(
-        `Sync completada: ${data.creados} creados, ${data.actualizados} actualizados` +
-        (data.omitidos > 0 ? `, ${data.omitidos} omitidos` : '') +
-        ` (${(data.tiempoMs / 1000).toFixed(1)}s)`
-      )
+      // Polling cada 2.5s, tope 10 minutos
+      const maxAttempts = 240
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 2500))
+        const statusRes = await fetch('/api/proveedores/sync-colppy')
+        if (!statusRes.ok) continue
+        const status = await statusRes.json()
 
-      // Refrescar listado
-      fetchSuppliers()
+        if (status.status === 'done') {
+          const data = status.result
+          toast.success(
+            `Sync completada: ${data.creados} creados, ${data.actualizados} actualizados` +
+            (data.omitidos > 0 ? `, ${data.omitidos} omitidos` : '') +
+            ` (${(data.tiempoMs / 1000).toFixed(1)}s)`
+          )
+          fetchSuppliers()
+          return
+        }
+        if (status.status === 'error') {
+          throw new Error(status.error || 'Error al sincronizar')
+        }
+        // 'running' → seguir esperando
+      }
+      throw new Error('La sincronización sigue corriendo en el servidor; recargá en unos minutos')
     } catch (error: any) {
       console.error('Error sync Colppy:', error)
       toast.error(error.message || 'Error al sincronizar proveedores')

@@ -221,7 +221,7 @@ export default function AsientosPage() {
             </Select>
           </div>
 
-          {loading ? (
+          {loading && filteredEntries.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-gray-500">Cargando...</p>
             </div>

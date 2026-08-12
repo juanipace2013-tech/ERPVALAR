@@ -473,7 +473,7 @@ export default function TipoCambioPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {loading ? (
+          {loading && exchangeRates.length === 0 ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
             </div>
@@ -488,7 +488,7 @@ export default function TipoCambioPage() {
               </p>
             </div>
           ) : (
-            <div className="rounded-lg border border-blue-100 overflow-hidden">
+            <div className={`rounded-lg border border-blue-100 overflow-hidden ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
               <Table>
                 <TableHeader>
                   <TableRow className="bg-blue-50 hover:bg-blue-50">

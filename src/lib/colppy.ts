@@ -250,6 +250,27 @@ export async function callColppyAPI<T>(
 /**
  * Inicia sesión en Colppy y obtiene claveSesion
  */
+// ── Sesión cacheada en memoria (module scope) ──────────────────────────────
+// Evita un login + logout contra Colppy por cada facturación. Mismo TTL de
+// 20 min que usan los caches de sesión de api/colppy/* y colppy-inventory.
+// No se hace logout de la sesión cacheada: se reutiliza hasta vencer y el
+// retry ante ColppySessionExpiredError la renueva si Colppy la invalidó antes.
+let cachedColppySession: { session: ColppySession; expiresAt: number } | null = null
+const COLPPY_SESSION_TTL_MS = 20 * 60 * 1000
+
+export function invalidateColppySessionCache(): void {
+  cachedColppySession = null
+}
+
+export async function getCachedColppySession(): Promise<ColppySession> {
+  if (cachedColppySession && cachedColppySession.expiresAt > Date.now()) {
+    return cachedColppySession.session
+  }
+  const session = await colppyLogin()
+  cachedColppySession = { session, expiresAt: Date.now() + COLPPY_SESSION_TTL_MS }
+  return session
+}
+
 export async function colppyLogin(): Promise<ColppySession> {
   const config = getColppyConfig();
   const passwordMD5 = md5Hash(config.password);
@@ -1265,7 +1286,8 @@ export async function sendQuoteToColppy(
     } catch (error: any) {
       if (error instanceof ColppySessionExpiredError) {
         logger.info('[Colppy] Sesión expirada, re-autenticando...');
-        session = await colppyLogin();
+        invalidateColppySessionCache();
+        session = await getCachedColppySession();
         return await fn(session);
       }
       throw error;
@@ -1273,8 +1295,8 @@ export async function sendQuoteToColppy(
   }
 
   try {
-    // 1. Iniciar sesión
-    session = await colppyLogin();
+    // 1. Sesión cacheada (antes: login + logout contra Colppy en cada envío)
+    session = await getCachedColppySession();
 
     // 2. Buscar o crear cliente (con retry automático ante sesión expirada)
     let customer = await withRetry((s) => colppyFindCustomerByCUIT(s, quote.customer.cuit));
@@ -1595,10 +1617,8 @@ export async function sendQuoteToColppy(
       success: false,
       error: error.message,
     };
-  } finally {
-    // Siempre cerrar sesión
-    if (session) {
-      await colppyLogout(session);
-    }
   }
+  // Nota: no se hace logout — la sesión queda cacheada para el próximo envío
+  // (ver getCachedColppySession). El logout bloqueaba la respuesta al usuario
+  // después de que la factura ya estaba emitida.
 }

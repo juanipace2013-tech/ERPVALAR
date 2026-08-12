@@ -8,8 +8,8 @@
  *   AZURE_MAIL_FROM     — Email del remitente (ej: ventas@val-ar.com.ar)
  */
 
-import { ConfidentialClientApplication } from '@azure/msal-node'
 import { logger } from '@/lib/logger'
+import { getGraphToken } from '@/lib/inbox/graph-mail'
 
 // ── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -44,37 +44,12 @@ export interface SendMailOptions {
 export async function sendMail(options: SendMailOptions): Promise<{ success: boolean; messageId?: string }> {
   const { to, subject, html, text, attachments, cc, replyTo } = options
 
-  // Leer variables en runtime, NO a nivel de módulo
-  const TENANT_ID = process.env.AZURE_TENANT_ID || ''
-  const CLIENT_ID = process.env.AZURE_CLIENT_ID || ''
-  const CLIENT_SECRET = process.env.AZURE_CLIENT_SECRET || ''
   const MAIL_FROM = process.env.AZURE_MAIL_FROM || 'ventas@val-ar.com.ar'
 
-  if (!TENANT_ID || !CLIENT_ID || !CLIENT_SECRET) {
-    throw new Error(
-      'Azure credentials no configuradas. Configurar AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET en .env'
-    )
-  }
-
-  // Crear MSAL client en runtime
-  const msalClient = new ConfidentialClientApplication({
-    auth: {
-      clientId: CLIENT_ID,
-      authority: `https://login.microsoftonline.com/${TENANT_ID}`,
-      clientSecret: CLIENT_SECRET,
-    },
-  })
-
-  // Obtener access token
-  const tokenResult = await msalClient.acquireTokenByClientCredential({
-    scopes: ['https://graph.microsoft.com/.default'],
-  })
-
-  if (!tokenResult?.accessToken) {
-    throw new Error('No se pudo obtener access token de Azure AD')
-  }
-
-  const token = tokenResult.accessToken
+  // Token cacheado en memoria (mismas credenciales y scope que el inbox).
+  // Antes se creaba un cliente MSAL nuevo y se pedía un token a Azure AD
+  // en CADA envío, sumando un round-trip externo por email.
+  const token = await getGraphToken()
 
   // Construir recipients
   const toRecipients = (Array.isArray(to) ? to : [to]).map((email) => ({

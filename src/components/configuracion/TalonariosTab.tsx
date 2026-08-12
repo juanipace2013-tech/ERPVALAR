@@ -53,12 +53,13 @@ export function TalonariosTab() {
   const [isNew, setIsNew] = useState(false)
 
   useEffect(() => {
-    loadTalonarios()
+    loadTalonarios({ silent: false })
   }, [])
 
-  const loadTalonarios = async () => {
+  // silent=true: recarga sin desmontar la pestaña (sin spinner de carga completa)
+  const loadTalonarios = async ({ silent = true }: { silent?: boolean } = {}) => {
     try {
-      setLoading(true)
+      if (!silent) setLoading(true)
       const response = await fetch('/api/configuracion/talonarios')
       if (response.ok) {
         const data = await response.json()

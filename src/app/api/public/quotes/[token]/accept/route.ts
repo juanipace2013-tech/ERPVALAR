@@ -37,15 +37,16 @@ export async function POST(
       }
     );
 
-    // Notificar al vendedor por email (no bloquea el cambio de estado)
-    try {
+    // Notificar al vendedor por email en background: el estado ya se persistió
+    // y el cliente final no necesita esperar los round-trips a Graph.
+    {
       const customerName = quote.customer?.name || 'Cliente';
       const customerCuit = quote.customer?.cuit || 'N/A';
       const totalFormatted = Number(quote.total).toLocaleString('es-AR', { minimumFractionDigits: 2 });
       const dateFormatted = new Date(quote.date).toLocaleDateString('es-AR');
       const quoteUrl = `https://crm.val-ar.com.ar/cotizaciones/${quote.id}`;
 
-      await sendMail({
+      sendMail({
         to: quote.salesPerson.email,
         cc: 'stejedor@val-ar.com.ar',
         subject: `✅ Cotización ${quote.quoteNumber} ACEPTADA por ${customerName}`,
@@ -64,9 +65,9 @@ export async function POST(
             <p><a href="${quoteUrl}" style="display: inline-block; padding: 10px 20px; background-color: #16a34a; color: white; text-decoration: none; border-radius: 6px;">Ver Cotización</a></p>
           </div>
         `,
+      }).catch((emailError) => {
+        logger.error('Error enviando email de notificación de aceptación:', emailError);
       });
-    } catch (emailError) {
-      logger.error('Error enviando email de notificación de aceptación:', emailError);
     }
 
     return NextResponse.json({

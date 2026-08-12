@@ -340,16 +340,17 @@ export default function EntregasKanbanPage() {
         </CardContent>
       </Card>
 
-      {/* Loading */}
-      {loading && (
+      {/* Loading: spinner solo en la carga inicial; los refetch mantienen el
+          kanban visible con opacidad */}
+      {loading && stops.length === 0 && (
         <div className="flex justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
         </div>
       )}
 
       {/* Kanban Board */}
-      {!loading && (
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+      {!(loading && stops.length === 0) && (
+        <div className={`grid grid-cols-1 lg:grid-cols-5 gap-4 ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
           {COLUMNS.map((col) => (
             <div key={col.key} className="flex flex-col">
               {/* Column header */}

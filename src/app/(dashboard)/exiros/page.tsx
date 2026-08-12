@@ -420,7 +420,7 @@ export default function ExirosPage() {
       {/* Tabla */}
       <Card className="border-blue-200">
         <CardContent className="p-0">
-          {loading ? (
+          {loading && display.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16">
               <Loader2 className="h-10 w-10 animate-spin text-blue-600 mb-3" />
               <p className="text-gray-500">Cargando licitaciones...</p>
@@ -431,7 +431,7 @@ export default function ExirosPage() {
               <p>No hay licitaciones con los filtros aplicados</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className={`overflow-x-auto ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
               <Table>
                 <TableHeader>
                   <TableRow>

@@ -95,12 +95,13 @@ export function TesoreriaTab({ settings, onUpdate }: TesoreriaTabProps) {
   })
 
   useEffect(() => {
-    loadChequeras()
+    loadChequeras({ silent: false })
   }, [])
 
-  const loadChequeras = async () => {
+  // silent=true: recarga sin desmontar la pestaña (sin spinner de carga completa)
+  const loadChequeras = async ({ silent = true }: { silent?: boolean } = {}) => {
     try {
-      setLoading(true)
+      if (!silent) setLoading(true)
       const response = await fetch('/api/configuracion/chequeras')
       if (response.ok) {
         const data = await response.json()

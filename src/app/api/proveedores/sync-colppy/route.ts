@@ -58,19 +58,32 @@ const IVA_CONDITION_MAP: Record<string, string> = {
   '6': 'Responsable No Inscripto',
 }
 
+interface SyncProveedoresResult {
+  total: number
+  creados: number
+  actualizados: number
+  omitidos: number
+  errores: string[]
+  totalErrores: number
+  tiempoMs: number
+}
+
+interface SyncStatus {
+  running: boolean
+  startedAt: number | null
+  result: SyncProveedoresResult | null
+  error: string | null
+}
+
+// Estado en module scope (se reinicia al reiniciar PM2, aceptable)
+let syncStatus: SyncStatus = { running: false, startedAt: null, result: null, error: null }
+
 /**
- * POST /api/proveedores/sync-colppy
  * Sincroniza TODOS los proveedores de Colppy a la tabla Supplier local.
  * Upsert por CUIT normalizado: crea si no existe, actualiza si existe.
  * NO sobreescribe campos locales (notes, internalNotes, brands, category, etc).
  */
-export async function POST() {
-  try {
-    const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-    }
-
+async function runSyncProveedores(): Promise<SyncProveedoresResult> {
     logger.info('[Sync Proveedores] Iniciando sincronización de proveedores...')
     const startTime = Date.now()
     let colppySession: ColppySession | null = null
@@ -219,7 +232,7 @@ export async function POST() {
     const elapsed = Date.now() - startTime
     logger.info(`[Sync Proveedores] Completado en ${elapsed}ms: ${creados} creados, ${actualizados} actualizados, ${omitidos} omitidos, ${errores.length} errores`)
 
-    return NextResponse.json({
+    return {
       total: colppySuppliers.length,
       creados,
       actualizados,
@@ -227,12 +240,56 @@ export async function POST() {
       errores: errores.slice(0, 50),
       totalErrores: errores.length,
       tiempoMs: elapsed,
-    })
+    }
     } finally {
       if (colppySession) {
         await colppyLogout(colppySession).catch(() => {})
       }
     }
+}
+
+/**
+ * POST /api/proveedores/sync-colppy
+ * Inicia la sincronización en background y responde inmediatamente
+ * (antes bloqueaba el request hasta 2 minutos). GET devuelve el estado
+ * para polling — mismo patrón que /api/clientes/sync-colppy.
+ */
+export async function POST() {
+  try {
+    const session = await auth()
+    if (!session?.user) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    }
+
+    if (syncStatus.running) {
+      return NextResponse.json({
+        status: 'already_running',
+        message: 'Sincronización ya en progreso',
+        startedAt: syncStatus.startedAt,
+      })
+    }
+
+    syncStatus = { running: true, startedAt: Date.now(), result: null, error: null }
+
+    // Disparar sync en background (sin await)
+    runSyncProveedores()
+      .then((result) => {
+        syncStatus = { running: false, startedAt: null, result, error: null }
+      })
+      .catch((error: any) => {
+        logger.error('[Sync Proveedores] Error:', error)
+        syncStatus = {
+          running: false,
+          startedAt: null,
+          result: null,
+          error: error.message || 'Error al sincronizar proveedores',
+        }
+      })
+
+    return NextResponse.json({
+      status: 'syncing',
+      message: 'Sincronización iniciada en background',
+    })
   } catch (error: any) {
     logger.error('[Sync Proveedores] Error:', error)
     return NextResponse.json(
@@ -240,4 +297,33 @@ export async function POST() {
       { status: 500 }
     )
   }
+}
+
+/**
+ * GET /api/proveedores/sync-colppy
+ * Devuelve el estado actual del sync (para polling desde la UI).
+ */
+export async function GET() {
+  const session = await auth()
+  if (!session?.user) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+  }
+
+  if (syncStatus.running) {
+    return NextResponse.json({
+      status: 'running',
+      startedAt: syncStatus.startedAt,
+      elapsedMs: Date.now() - (syncStatus.startedAt || Date.now()),
+    })
+  }
+
+  if (syncStatus.error) {
+    return NextResponse.json({ status: 'error', error: syncStatus.error })
+  }
+
+  if (syncStatus.result) {
+    return NextResponse.json({ status: 'done', result: syncStatus.result })
+  }
+
+  return NextResponse.json({ status: 'idle' })
 }

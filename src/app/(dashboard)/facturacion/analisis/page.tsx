@@ -247,6 +247,8 @@ export default function AnalisisFacturacionPage() {
       setSyncing(true)
       setSyncResult(null)
 
+      // El sync ahora corre en background en el server: el POST responde al
+      // instante y acá se hace polling del estado hasta que termine.
       const res = await fetch('/api/facturacion/sync-colppy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -261,13 +263,33 @@ export default function AnalisisFacturacionPage() {
         throw new Error(err.error || 'Error al sincronizar')
       }
 
-      const result = await res.json()
-      setSyncResult(result.resumen)
-      const r = result.resumen
-      toast.success(
-        `Sincronización completada: ${r.created} nuevas, ${r.updated} actualizadas`
-      )
-      fetchData()
+      const started = await res.json()
+      if (started.status === 'already_running') {
+        toast.info('Ya hay una sincronización en progreso, esperando que termine...')
+      }
+
+      // Polling cada 2.5s, tope 10 minutos
+      const maxAttempts = 240
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 2500))
+        const statusRes = await fetch('/api/facturacion/sync-colppy')
+        if (!statusRes.ok) continue
+        const status = await statusRes.json()
+
+        if (status.status === 'done') {
+          setSyncResult(status.resumen)
+          toast.success(
+            `Sincronización completada: ${status.resumen.created} nuevas, ${status.resumen.updated} actualizadas`
+          )
+          fetchData()
+          return
+        }
+        if (status.status === 'error') {
+          throw new Error(status.error || 'Error al sincronizar')
+        }
+        // 'running' → seguir esperando
+      }
+      throw new Error('La sincronización sigue corriendo en el servidor; recargá en unos minutos')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error al sincronizar desde Colppy')
     } finally {

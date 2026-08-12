@@ -155,12 +155,12 @@ export function CheckManagementDialog({ open, onOpenChange }: CheckManagementDia
         </div>
 
         <div className="flex-1 overflow-auto border rounded-lg">
-          {loading ? (
+          {loading && checks.length === 0 ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
             </div>
           ) : (
-            <Table>
+            <Table className={loading ? 'opacity-50 pointer-events-none' : ''}>
               <TableHeader className="sticky top-0 bg-gray-50 z-10">
                 <TableRow>
                   <TableHead className="font-semibold">Tipo</TableHead>

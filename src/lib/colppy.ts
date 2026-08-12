@@ -10,6 +10,7 @@
 
 import * as crypto from 'crypto';
 import { logger } from '@/lib/logger';
+import { prisma } from '@/lib/prisma';
 
 // ============================================================================
 // CONFIGURACIÓN
@@ -1447,11 +1448,30 @@ export async function sendQuoteToColppy(
       fechaVtoDate.setDate(fechaVtoDate.getDate() + diasVto);
       const fechaVto = formatDateColppy(fechaVtoDate);
 
-      // Buscar idItem de Colppy para cada producto por SKU (incluye adicionales)
+      // Buscar idItem de Colppy para cada producto por SKU (incluye adicionales).
+      // Primero desde la DB local (Product.colppyItemId, sincronizado desde el
+      // inventario de Colppy): antes esto era una llamada a Colppy POR CADA SKU.
+      // Solo va a Colppy para los SKUs sin mapeo local (manuales o sin sync).
       const colppyItemIds: Record<string, string> = {};
-      for (const item of preparedItems) {
-        if (item.productSku && !colppyItemIds[item.productSku]) {
-          colppyItemIds[item.productSku] = await withRetry((s) => getColppyItemId(s, item.productSku));
+      const skusFactura = Array.from(
+        new Set(
+          preparedItems
+            .map((i) => i.productSku)
+            .filter((s): s is string => !!s)
+        )
+      );
+      if (skusFactura.length > 0) {
+        const localProducts = await prisma.product.findMany({
+          where: { sku: { in: skusFactura }, colppyItemId: { not: null } },
+          select: { sku: true, colppyItemId: true },
+        });
+        for (const p of localProducts) {
+          colppyItemIds[p.sku] = String(p.colppyItemId);
+        }
+        for (const sku of skusFactura) {
+          if (!colppyItemIds[sku]) {
+            colppyItemIds[sku] = await withRetry((s) => getColppyItemId(s, sku));
+          }
         }
       }
 

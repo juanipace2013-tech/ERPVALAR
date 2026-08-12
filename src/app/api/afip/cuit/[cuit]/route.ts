@@ -40,22 +40,7 @@ async function consultarAFIP(cuit: string): Promise<AFIPData | null> {
       // AFIP tiene un servicio público de consulta de constancia
       // URL: https://www.afip.gob.ar/sitio/externos/default.asp
 
-      // Opción 1: Servicio público de AFIP (requiere parsing HTML o usar API pública)
-      // Por ahora usaremos una API pública de terceros que consulta AFIP
-
-      await fetch(
-        `https://api.argentinadatos.com/v1/cotizaciones/dolares`,
-        {
-          method: 'GET',
-          headers: {
-            'Accept': 'application/json',
-            'User-Agent': 'CRM-Valarg/1.0',
-          },
-          signal: AbortSignal.timeout(10000), // 10 segundos timeout
-        }
-      )
-
-      // NOTA: Este es un endpoint de prueba. Para producción real con AFIP:
+      // NOTA sobre integración AFIP: para producción real con AFIP:
       // 1. Usar una API de terceros confiable (ej: API de datos fiscales)
       // 2. O implementar scraping del sitio público de AFIP
       // 3. O usar los Web Services oficiales con certificados

@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { sendQuoteToColppy, type SendToColppyOptions, buildSplitItem, calcComponentPrice, splitItemUnitTotal } from '@/lib/colppy';
-import { QuoteStatus } from '@prisma/client';
+import { Prisma, QuoteStatus } from '@prisma/client';
 import { calcDueDate } from '@/lib/quote-workflow';
 import { logAudit } from '@/lib/audit';
 import { logger } from '@/lib/logger'
@@ -406,33 +406,33 @@ export async function POST(
           },
         });
 
-        // Incrementar cantidadFacturada por item enviado
-        for (const [itemId, qty] of sentQtyByItemId.entries()) {
-          await tx.quoteItem.update({
-            where: { id: itemId },
-            data: { cantidadFacturada: { increment: qty } },
-          });
+        // Incrementar cantidadFacturada por item enviado, en UN solo UPDATE
+        // (antes: una query por item)
+        if (sentQtyByItemId.size > 0) {
+          const values = Array.from(sentQtyByItemId.entries()).map(
+            ([itemId, qty]) => Prisma.sql`(${itemId}, ${qty}::numeric)`
+          );
+          await tx.$executeRaw`
+            UPDATE quote_items AS qi
+            SET "cantidadFacturada" = qi."cantidadFacturada" + v.qty,
+                "updatedAt" = NOW()
+            FROM (VALUES ${Prisma.join(values)}) AS v(id, qty)
+            WHERE qi.id = v.id
+          `;
         }
       }
 
       // Determinar nuevo estado: CONVERTED si todo está facturado, sino FACTURADA_PARCIAL.
-      // Para la verificación post-incremento volvemos a leer cantidadFacturada.
-      const refreshedItems = await tx.quoteItem.findMany({
-        where: { quoteId: quote.id, isAlternative: false },
-        include: {
-          invoiceItems: {
-            include: { invoice: { select: { status: true } } },
-          },
-        },
-      });
-
-      const isFullyInvoiced = action.includes('factura') && refreshedItems.every((item) => {
-        const fromInvoiceItems = item.invoiceItems
-          .filter((ii) => ii.invoice.status !== 'CANCELLED')
-          .reduce((sum, ii) => sum + Number(ii.quantity), 0);
-        const fromColumn = Number(item.cantidadFacturada);
-        return Math.max(fromInvoiceItems, fromColumn) >= item.quantity;
-      });
+      // Calculado en memoria en lugar de releer de la DB: alreadyInvoicedByItem ya
+      // tiene max(invoiceItems no cancelados, cantidadFacturada) previo, y la Invoice
+      // DRAFT creada arriba suma sentQtyByItemId a ambas fuentes por igual.
+      const isFullyInvoiced = action.includes('factura') && quote.items
+        .filter((item) => !item.isAlternative)
+        .every((item) => {
+          const already = alreadyInvoicedByItem.get(item.id) ?? 0;
+          const sent = sentQtyByItemId.get(item.id) || 0;
+          return already + sent >= item.quantity;
+        });
 
       const updateData: any = {
         colppySyncedAt: now,
@@ -556,10 +556,16 @@ export async function POST(
     }
 
     // 11c. Impactar la facturación en la liquidación de comisiones del mes
-    // del vendedor (crea la liquidación ABIERTA si no existe). Best-effort:
-    // nunca bloquea la facturación.
+    // del vendedor (crea la liquidación ABIERTA si no existe). Best-effort en
+    // background: son decenas de queries que el usuario no necesita esperar.
     if (action.includes('factura')) {
-      await sincronizarComisionesDeQuote(quote.id, { crearLiquidacion: true });
+      sincronizarComisionesDeQuote(quote.id, { crearLiquidacion: true }).catch((err) =>
+        logger.error('[COMISIONES_POST_BILLING] Error sincronizando comisiones', {
+          quoteId: quote.id,
+          quoteNumber: quote.quoteNumber,
+          error: err?.message,
+        })
+      );
     }
 
     // 13. Registrar auditoría

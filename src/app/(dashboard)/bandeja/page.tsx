@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -150,6 +151,9 @@ export default function BandejaPage() {
   const [unreadOnly, setUnreadOnly] = useState(false)
   const [search, setSearch] = useState('')
 
+  // Debounce: sin esto se disparaba una request por cada tecla del buscador
+  const debouncedSearch = useDebouncedValue(search, 300)
+
   const fetchConversations = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -158,7 +162,7 @@ export default function BandejaPage() {
       if (channel !== 'all') params.set('channel', channel)
       if (status !== 'all') params.set('status', status)
       if (unreadOnly) params.set('unread', '1')
-      if (search.trim()) params.set('q', search.trim())
+      if (debouncedSearch.trim()) params.set('q', debouncedSearch.trim())
 
       const res = await fetch(`/api/inbox/conversations?${params}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -169,7 +173,7 @@ export default function BandejaPage() {
     } finally {
       setLoading(false)
     }
-  }, [channel, status, unreadOnly, search])
+  }, [channel, status, unreadOnly, debouncedSearch])
 
   const fetchDetail = useCallback(async (id: string) => {
     setDetailLoading(true)

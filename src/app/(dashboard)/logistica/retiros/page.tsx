@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -128,6 +129,9 @@ export default function RetirosPage() {
 
   // ─── Fetch retiros ─────────────────────────────────────────────────────────
 
+  // Debounce: sin esto se disparaba una request por cada tecla del buscador
+  const debouncedFilterSearch = useDebouncedValue(filterSearch, 300)
+
   const fetchRetiros = useCallback(async () => {
     try {
       setLoading(true)
@@ -135,7 +139,7 @@ export default function RetirosPage() {
       if (filterStatus !== 'ALL') params.append('status', filterStatus)
       if (filterDateFrom) params.append('dateFrom', filterDateFrom)
       if (filterDateTo) params.append('dateTo', filterDateTo)
-      if (filterSearch) params.append('search', filterSearch)
+      if (debouncedFilterSearch) params.append('search', debouncedFilterSearch)
 
       const res = await fetch(`/api/logistica/retiros?${params.toString()}`)
       if (!res.ok) throw new Error('Error')
@@ -146,7 +150,7 @@ export default function RetirosPage() {
     } finally {
       setLoading(false)
     }
-  }, [filterStatus, filterDateFrom, filterDateTo, filterSearch])
+  }, [filterStatus, filterDateFrom, filterDateTo, debouncedFilterSearch])
 
   useEffect(() => {
     fetchRetiros()
@@ -394,16 +398,17 @@ export default function RetirosPage() {
         </CardContent>
       </Card>
 
-      {/* Loading */}
-      {loading && (
+      {/* Loading: solo pantalla de spinner en la carga inicial; los refetch
+          mantienen la tabla visible con opacidad */}
+      {loading && retiros.length === 0 && (
         <div className="flex justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
         </div>
       )}
 
       {/* Tabla */}
-      {!loading && (
-        <Card>
+      {!(loading && retiros.length === 0) && (
+        <Card className={loading ? 'opacity-50 pointer-events-none' : ''}>
           <CardContent className="pt-4">
             {retiros.length === 0 ? (
               <div className="text-center py-12 text-gray-500">

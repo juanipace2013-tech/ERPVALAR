@@ -241,13 +241,14 @@ export default function FacturacionPage() {
   const [historialPage, setHistorialPage] = useState(0)
 
   useEffect(() => {
-    fetchBoard()
+    fetchBoard({ silent: false })
     fetchHistorial()
   }, [])
 
-  const fetchBoard = async () => {
+  // silent=true: refresca el tablero sin desmontarlo (sin spinner de pantalla completa)
+  const fetchBoard = async ({ silent = true }: { silent?: boolean } = {}) => {
     try {
-      setLoading(true)
+      if (!silent) setLoading(true)
       const params = new URLSearchParams()
       if (vendedorFilter !== 'all') params.append('vendedorId', vendedorFilter)
       if (clienteFilter) params.append('clienteId', clienteFilter)

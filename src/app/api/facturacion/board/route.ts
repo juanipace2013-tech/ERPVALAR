@@ -81,45 +81,93 @@ export async function GET(request: NextRequest) {
 
     // Buscar cotizaciones facturables: ACCEPTED (sin facturar) y FACTURADA_PARCIAL
     // (ya tienen al menos una factura parcial enviada a Colppy y quedan items pendientes).
-    const quotes = await prisma.quote.findMany({
-      where: {
-        status: { in: ['ACCEPTED', 'FACTURADA_PARCIAL'] },
-        ...(vendedorId && { salesPersonId: vendedorId }),
-        ...(clienteId && { customerId: clienteId }),
-        ...(moneda && { currency: moneda as 'USD' | 'ARS' }),
-        ...((dateFrom || dateTo) && {
-          date: {
-            ...(dateFrom && { gte: new Date(dateFrom) }),
-            ...(dateTo && { lte: new Date(dateTo + 'T23:59:59.999Z') }),
+    // select acotado en todos los niveles: los modelos completos (Quote/QuoteItem/
+    // InvoiceItem) tienen muchas columnas que el tablero no usa y esta query trae
+    // todas las cotizaciones facturables, así que el ancho de fila importa.
+    // Vendedores y clientes para los filtros no dependen de las quotes → misma tanda.
+    const [quotes, vendedores, clientes] = await Promise.all([
+      prisma.quote.findMany({
+        where: {
+          status: { in: ['ACCEPTED', 'FACTURADA_PARCIAL'] },
+          ...(vendedorId && { salesPersonId: vendedorId }),
+          ...(clienteId && { customerId: clienteId }),
+          ...(moneda && { currency: moneda as 'USD' | 'ARS' }),
+          ...((dateFrom || dateTo) && {
+            date: {
+              ...(dateFrom && { gte: new Date(dateFrom) }),
+              ...(dateTo && { lte: new Date(dateTo + 'T23:59:59.999Z') }),
+            },
+          }),
+        },
+        select: {
+          id: true,
+          quoteNumber: true,
+          status: true,
+          currency: true,
+          total: true,
+          exchangeRate: true,
+          bonification: true,
+          terms: true,
+          notes: true,
+          date: true,
+          colppySyncedAt: true,
+          colppyInvoiceId: true,
+          billingTargetDate: true,
+          billingNote: true,
+          billingNoteUpdatedAt: true,
+          billingNoteUpdatedBy: true,
+          customer: {
+            select: { id: true, name: true, cuit: true, taxCondition: true, paymentTerms: true, exchangeRateType: true },
           },
-        }),
-      },
-      include: {
-        customer: {
-          select: { id: true, name: true, cuit: true, taxCondition: true, paymentTerms: true, exchangeRateType: true },
-        },
-        salesPerson: {
-          select: { id: true, name: true },
-        },
-        items: {
-          where: { isAlternative: false },
-          include: {
-            product: { select: { sku: true, name: true, stockQuantity: true, trackInventory: true } },
-            additionals: {
-              include: {
-                product: { select: { sku: true, name: true, stockQuantity: true } },
+          salesPerson: {
+            select: { id: true, name: true },
+          },
+          items: {
+            where: { isAlternative: false },
+            select: {
+              id: true,
+              itemNumber: true,
+              description: true,
+              manualSku: true,
+              quantity: true,
+              cantidadFacturada: true,
+              unitPrice: true,
+              totalPrice: true,
+              deliveryTime: true,
+              isAlternative: true,
+              product: { select: { sku: true, name: true, stockQuantity: true, trackInventory: true } },
+              additionals: {
+                select: {
+                  description: true,
+                  product: { select: { sku: true, name: true, stockQuantity: true } },
+                },
+              },
+              invoiceItems: {
+                select: {
+                  quantity: true,
+                  invoice: { select: { status: true, notes: true } },
+                },
               },
             },
-            invoiceItems: {
-              include: {
-                invoice: { select: { status: true, notes: true, createdAt: true } },
-              },
-            },
           },
         },
-      },
-      orderBy: { date: 'desc' },
-    })
+        orderBy: { date: 'desc' },
+      }),
+      prisma.user.findMany({
+        where: VENDEDOR_SELECCIONABLE,
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.customer.findMany({
+        where: {
+          quotes: {
+            some: { status: { in: ['ACCEPTED', 'FACTURADA_PARCIAL'] } },
+          },
+        },
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+      }),
+    ])
 
     // Procesar cada cotización
     interface AdditionalStockInfo {
@@ -362,24 +410,6 @@ export async function GET(request: NextRequest) {
         .filter((c) => c.currency === 'ARS')
         .reduce((sum, c) => sum + c.total, 0),
     })
-
-    // Obtener vendedores y clientes para filtros
-    const [vendedores, clientes] = await Promise.all([
-      prisma.user.findMany({
-        where: VENDEDOR_SELECCIONABLE,
-        select: { id: true, name: true },
-        orderBy: { name: 'asc' },
-      }),
-      prisma.customer.findMany({
-        where: {
-          quotes: {
-            some: { status: { in: ['ACCEPTED', 'FACTURADA_PARCIAL'] } },
-          },
-        },
-        select: { id: true, name: true },
-        orderBy: { name: 'asc' },
-      }),
-    ])
 
     return NextResponse.json({
       columns: {

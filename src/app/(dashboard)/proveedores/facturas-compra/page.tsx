@@ -47,6 +47,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { reviewReasonLabel } from '@/lib/review-reasons'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 
 interface PurchaseInvoice {
   id: string
@@ -104,6 +105,8 @@ export default function PurchaseInvoicesPage() {
   const [invoices, setInvoices] = useState<PurchaseInvoice[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  // Debounce: sin esto se disparaba una request por cada tecla del buscador
+  const debouncedSearch = useDebouncedValue(searchTerm, 300)
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [page, setPage] = useState(0)
   const [totalCount, setTotalCount] = useState(0)
@@ -115,8 +118,8 @@ export default function PurchaseInvoicesPage() {
       if (statusFilter !== 'all') {
         params.append('status', statusFilter)
       }
-      if (searchTerm) {
-        params.append('search', searchTerm)
+      if (debouncedSearch) {
+        params.append('search', debouncedSearch)
       }
       params.append('page', String(page))
       params.append('pageSize', String(PAGE_SIZE))
@@ -136,7 +139,7 @@ export default function PurchaseInvoicesPage() {
     } finally {
       setLoading(false)
     }
-  }, [statusFilter, searchTerm, page])
+  }, [statusFilter, debouncedSearch, page])
 
   useEffect(() => {
     fetchInvoices()
@@ -306,7 +309,7 @@ export default function PurchaseInvoicesPage() {
       {/* Table */}
       <Card>
         <CardContent className="p-0">
-          {loading ? (
+          {loading && invoices.length === 0 ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
             </div>
@@ -322,7 +325,7 @@ export default function PurchaseInvoicesPage() {
               </Button>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className={`overflow-x-auto ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
               <Table>
                 <TableHeader>
                   <TableRow>

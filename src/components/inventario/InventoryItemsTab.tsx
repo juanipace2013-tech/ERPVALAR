@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
@@ -81,12 +82,15 @@ export default function InventoryItemsTab() {
   const [editingMinStock, setEditingMinStock] = useState<string | null>(null)
   const [editMinValue, setEditMinValue] = useState('')
 
+  // Debounce: sin esto se disparaba una request por cada tecla del buscador
+  const debouncedSearch = useDebouncedValue(search, 300)
+
   const fetchProducts = useCallback(async () => {
     try {
       setLoading(true)
       let url = `/api/productos?page=${page}&limit=${limit}`
       if (typeFilter !== 'ALL') url += `&type=${typeFilter}`
-      if (search) url += `&search=${encodeURIComponent(search)}`
+      if (debouncedSearch) url += `&search=${encodeURIComponent(debouncedSearch)}`
       if (belowMinFilter) url += `&belowMin=true`
 
       const response = await fetch(url)
@@ -99,7 +103,7 @@ export default function InventoryItemsTab() {
     } finally {
       setLoading(false)
     }
-  }, [page, typeFilter, belowMinFilter, search])
+  }, [page, typeFilter, belowMinFilter, debouncedSearch])
 
   useEffect(() => {
     fetchProducts()
@@ -229,8 +233,8 @@ export default function InventoryItemsTab() {
             </Button>
           </div>
 
-          {/* Table */}
-          {loading ? (
+          {/* Table: spinner solo en la carga inicial; los refetch mantienen la tabla visible */}
+          {loading && products.length === 0 ? (
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
             </div>
@@ -241,7 +245,7 @@ export default function InventoryItemsTab() {
             </div>
           ) : (
             <>
-              <div className="rounded-lg border border-blue-100 overflow-hidden">
+              <div className={`rounded-lg border border-blue-100 overflow-hidden ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-blue-50 hover:bg-blue-50">

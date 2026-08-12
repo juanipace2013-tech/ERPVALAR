@@ -276,24 +276,35 @@ export default function EditarRemitoPage() {
     setItems(updated)
   }
 
-  const searchProducts = async (query: string) => {
-    if (query.length < 2) {
+  // Búsqueda de productos con debounce + abort (antes disparaba una request
+  // por cada tecla y las respuestas podían llegar fuera de orden)
+  useEffect(() => {
+    if (productSearch.length < 2) {
       setProductResults([])
       return
     }
-    try {
-      setSearchLoading(true)
-      const res = await fetch(`/api/products?search=${encodeURIComponent(query)}&limit=10`)
-      if (res.ok) {
-        const data = await res.json()
-        setProductResults(Array.isArray(data) ? data : data.products || [])
+    const controller = new AbortController()
+    const timeout = setTimeout(async () => {
+      try {
+        setSearchLoading(true)
+        const res = await fetch(
+          `/api/products?search=${encodeURIComponent(productSearch)}&limit=10`,
+          { signal: controller.signal }
+        )
+        if (res.ok) {
+          const data = await res.json()
+          setProductResults(Array.isArray(data) ? data : data.products || [])
+        }
+        setSearchLoading(false)
+      } catch {
+        if (!controller.signal.aborted) setSearchLoading(false)
       }
-    } catch {
-      // ignore
-    } finally {
-      setSearchLoading(false)
+    }, 300)
+    return () => {
+      controller.abort()
+      clearTimeout(timeout)
     }
-  }
+  }, [productSearch])
 
   const addProduct = (product: any) => {
     setItems([
@@ -531,10 +542,7 @@ export default function EditarRemitoPage() {
                 <Input
                   placeholder="Buscar producto..."
                   value={productSearch}
-                  onChange={(e) => {
-                    setProductSearch(e.target.value)
-                    searchProducts(e.target.value)
-                  }}
+                  onChange={(e) => setProductSearch(e.target.value)}
                   className="pl-10 w-64"
                 />
                 {productResults.length > 0 && (

@@ -189,9 +189,13 @@ export async function GET(
 
   try {
     ;({ deudas, historicas, cheques } = await enqueue(async () => {
-      const d = await fetchBCRAWithRetry(`${BCRA_BASE}/Deudas/${cuit}`)
-      const h = await fetchBCRAWithRetry(`${BCRA_BASE}/Deudas/Historicas/${cuit}`)
-      const c = await fetchBCRAWithRetry(`${BCRA_BASE}/Deudas/ChequesRechazados/${cuit}`)
+      // Las 3 consultas son independientes → en paralelo dentro del mismo turno
+      // de la cola (el cooldown global se aplica una sola vez al grupo)
+      const [d, h, c] = await Promise.all([
+        fetchBCRAWithRetry(`${BCRA_BASE}/Deudas/${cuit}`),
+        fetchBCRAWithRetry(`${BCRA_BASE}/Deudas/Historicas/${cuit}`),
+        fetchBCRAWithRetry(`${BCRA_BASE}/Deudas/ChequesRechazados/${cuit}`),
+      ])
       return { deudas: d, historicas: h, cheques: c }
     }))
   } catch (error) {

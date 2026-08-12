@@ -75,57 +75,68 @@ export default function NuevaCotizacionPage() {
 
   const fetchInitialData = async () => {
     try {
-      // Obtener próximo número
-      const nextNumRes = await fetch('/api/quotes/next-number')
-      if (nextNumRes.ok) {
-        const data = await nextNumRes.json()
-        setQuoteNumber(data.quoteNumber)
-      }
-
-      // Obtener tipo de cambio (de la DB o del BCRA como fallback)
-      let tcLoaded = false
-      const tcRes = await fetch('/api/tipo-cambio?from=USD&to=ARS')
-      if (tcRes.ok) {
-        const data = await tcRes.json()
-        if (data.rates && data.rates.length > 0) {
-          setExchangeRate(Number(data.rates[0].rate))
-          tcLoaded = true
-        }
-      }
-      if (!tcLoaded) {
-        try {
-          const bcraRes = await fetch('/api/tipo-cambio/bcra')
-          if (bcraRes.ok) {
-            const bcraData = await bcraRes.json()
-            if (bcraData.exchangeRate?.rate) {
-              setExchangeRate(Number(bcraData.exchangeRate.rate))
+      // Las 5 cargas son independientes → en paralelo (antes eran secuenciales
+      // y la página tardaba la suma de todas). Solo el fallback BCRA depende
+      // del resultado de tipo-cambio, así que queda encadenado adentro.
+      await Promise.all([
+        // Próximo número
+        (async () => {
+          const nextNumRes = await fetch('/api/quotes/next-number')
+          if (nextNumRes.ok) {
+            const data = await nextNumRes.json()
+            setQuoteNumber(data.quoteNumber)
+          }
+        })(),
+        // Tipo de cambio (de la DB o del BCRA como fallback)
+        (async () => {
+          let tcLoaded = false
+          const tcRes = await fetch('/api/tipo-cambio?from=USD&to=ARS')
+          if (tcRes.ok) {
+            const data = await tcRes.json()
+            if (data.rates && data.rates.length > 0) {
+              setExchangeRate(Number(data.rates[0].rate))
+              tcLoaded = true
             }
           }
-        } catch (e) {
-          console.error('Error obteniendo TC del BCRA:', e)
-        }
-      }
-
-      // Obtener productos
-      const prodRes = await fetch('/api/productos?limit=100')
-      if (prodRes.ok) {
-        const data = await prodRes.json()
-        setProducts(data.products || [])
-      }
-
-      // Obtener descuentos de marca
-      const brandRes = await fetch('/api/brands/discounts')
-      if (brandRes.ok) {
-        const data = await brandRes.json()
-        setBrandDiscounts(data.discounts || [])
-      }
-
-      // Obtener usuarios para selector de vendedor
-      const usersRes = await fetch('/api/users?vendedores=true')
-      if (usersRes.ok) {
-        const data = await usersRes.json()
-        setUsers(data.users || [])
-      }
+          if (!tcLoaded) {
+            try {
+              const bcraRes = await fetch('/api/tipo-cambio/bcra')
+              if (bcraRes.ok) {
+                const bcraData = await bcraRes.json()
+                if (bcraData.exchangeRate?.rate) {
+                  setExchangeRate(Number(bcraData.exchangeRate.rate))
+                }
+              }
+            } catch (e) {
+              console.error('Error obteniendo TC del BCRA:', e)
+            }
+          }
+        })(),
+        // Productos
+        (async () => {
+          const prodRes = await fetch('/api/productos?limit=100')
+          if (prodRes.ok) {
+            const data = await prodRes.json()
+            setProducts(data.products || [])
+          }
+        })(),
+        // Descuentos de marca
+        (async () => {
+          const brandRes = await fetch('/api/brands/discounts')
+          if (brandRes.ok) {
+            const data = await brandRes.json()
+            setBrandDiscounts(data.discounts || [])
+          }
+        })(),
+        // Usuarios para selector de vendedor
+        (async () => {
+          const usersRes = await fetch('/api/users?vendedores=true')
+          if (usersRes.ok) {
+            const data = await usersRes.json()
+            setUsers(data.users || [])
+          }
+        })(),
+      ])
     } catch (error) {
       console.error('Error cargando datos:', error)
       toast.error('Error al cargar datos iniciales')

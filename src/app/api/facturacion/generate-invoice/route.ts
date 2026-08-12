@@ -11,6 +11,7 @@
 
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { sendQuoteToColppy, type SendToColppyOptions, buildSplitItem, calcComponentPrice, splitItemUnitTotal, splitItemLineTotal } from '@/lib/colppy'
 import { calcDueDate } from '@/lib/quote-workflow'
@@ -366,42 +367,44 @@ export async function POST(request: NextRequest) {
         updateData.colppyDeliveryNoteId = colppyResult.remitoId
       }
 
-      await tx.quote.update({
-        where: { id: quoteId },
-        data: updateData,
-      })
-
       // Incrementar cantidadFacturada por la cantidad realmente enviada a Colppy
       // (split.quantity = misma cantidad del payload, no la solicitada cruda).
+      // Agregado por ítem y aplicado en UN solo UPDATE (antes: una query por ítem).
+      const sentByItemId = new Map<string, number>()
       for (const l of lineItems) {
         if (!l.quoteItem) continue
-        await tx.quoteItem.update({
-          where: { id: l.quoteItem.id },
-          data: { cantidadFacturada: { increment: l.split.quantity } },
-        })
+        sentByItemId.set(
+          l.quoteItem.id,
+          (sentByItemId.get(l.quoteItem.id) || 0) + l.split.quantity
+        )
+      }
+
+      if (sentByItemId.size > 0) {
+        const values = Array.from(sentByItemId.entries()).map(
+          ([id, qty]) => Prisma.sql`(${id}, ${qty}::numeric)`
+        )
+        await tx.$executeRaw`
+          UPDATE quote_items AS qi
+          SET "cantidadFacturada" = qi."cantidadFacturada" + v.qty,
+              "updatedAt" = NOW()
+          FROM (VALUES ${Prisma.join(values)}) AS v(id, qty)
+          WHERE qi.id = v.id
+        `
       }
 
       // Verificar si TODOS los ítems están ahora completamente facturados.
       // Considera dos fuentes para compatibilidad: cantidadFacturada (nuevo flow)
       // y suma de InvoiceItems no cancelados (flow legacy / quotes anteriores al fix).
-      const allQuoteItems = await tx.quoteItem.findMany({
-        where: { quoteId: quote.id, isAlternative: false },
-        include: {
-          invoiceItems: {
-            include: {
-              invoice: { select: { status: true } },
-            },
-          },
-        },
-      })
-
-      const isFullyInvoiced = allQuoteItems.every((item) => {
+      // Calculado en memoria: quote.items ya trae ambas fuentes previas, y la
+      // Invoice DRAFT creada arriba les suma exactamente sentByItemId a las dos,
+      // así que max(a, b) + enviado equivale a releer de la DB.
+      const isFullyInvoiced = quote.items.every((item) => {
         const fromInvoiceItems = item.invoiceItems
           .filter((ii) => ii.invoice.status !== 'CANCELLED')
           .reduce((sum, ii) => sum + Number(ii.quantity), 0)
         const fromColumn = Number(item.cantidadFacturada)
-        const effective = Math.max(fromInvoiceItems, fromColumn)
-        return effective >= item.quantity
+        const sent = sentByItemId.get(item.id) || 0
+        return Math.max(fromInvoiceItems, fromColumn) + sent >= item.quantity
       })
 
       const fromStatus = quote.status
@@ -409,9 +412,11 @@ export async function POST(request: NextRequest) {
         ? 'CONVERTED'
         : 'FACTURADA_PARCIAL'
 
+      // Datos de Colppy + cambio de estado en un solo update (eran dos sobre la misma fila)
       await tx.quote.update({
         where: { id: quoteId },
         data: {
+          ...updateData,
           status: toStatus,
           statusUpdatedAt: now,
           statusUpdatedBy: session.user!.id!,
@@ -506,9 +511,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Impactar la facturación en la liquidación de comisiones del mes del
-    // vendedor (crea la liquidación ABIERTA si no existe). Best-effort:
-    // nunca bloquea la facturación.
-    await sincronizarComisionesDeQuote(quote.id, { crearLiquidacion: true })
+    // vendedor (crea la liquidación ABIERTA si no existe). Best-effort en
+    // background: son decenas de queries que el usuario no necesita esperar.
+    sincronizarComisionesDeQuote(quote.id, { crearLiquidacion: true }).catch((err) =>
+      logger.error('[COMISIONES_POST_BILLING] Error sincronizando comisiones', {
+        quoteId: quote.id,
+        quoteNumber: quote.quoteNumber,
+        error: err?.message,
+      })
+    )
 
     // Registrar auditoría
     logAudit({

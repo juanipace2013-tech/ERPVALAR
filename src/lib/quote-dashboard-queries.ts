@@ -326,13 +326,16 @@ export async function getTopClientesMes(): Promise<TopCliente[]> {
   const inicioMes = startOfMonth(new Date())
   const finMes = endOfMonth(new Date())
 
+  // select mínimo: solo se usan el total y el nombre del cliente
+  // (antes bajaba el modelo Customer completo por cada cotización del mes)
   const cotizaciones = await prisma.quote.findMany({
     where: {
       date: { gte: inicioMes, lte: finMes },
       status: { not: 'CANCELLED' }
     },
-    include: {
-      customer: true
+    select: {
+      total: true,
+      customer: { select: { name: true } }
     }
   })
 
@@ -366,8 +369,13 @@ export async function getCotizacionesRecientes(): Promise<CotizacionReciente[]> 
   const cotizaciones = await prisma.quote.findMany({
     take: 10,
     orderBy: { date: 'desc' },
-    include: {
-      customer: true
+    select: {
+      id: true,
+      quoteNumber: true,
+      total: true,
+      status: true,
+      date: true,
+      customer: { select: { name: true } }
     }
   })
 
@@ -401,8 +409,12 @@ export async function getCotizacionesPorVencer(): Promise<CotizacionPorVencer[]>
         lte: mas5Dias,
       },
     },
-    include: {
-      customer: true,
+    select: {
+      id: true,
+      quoteNumber: true,
+      total: true,
+      validUntil: true,
+      customer: { select: { name: true } },
     },
     orderBy: {
       validUntil: 'asc',
@@ -437,6 +449,9 @@ export async function getCotizacionesPorVencer(): Promise<CotizacionPorVencer[]>
 export async function getProductosMasCotizados(): Promise<ProductoMasCotizado[]> {
   const inicioMes = startOfMonth(new Date())
 
+  // select mínimo: es la query más pesada del dashboard — trae un item por
+  // cada línea cotizada en el mes y antes bajaba el modelo Product completo
+  // (~35 columnas con description/notes Text) por cada uno.
   const items = await prisma.quoteItem.findMany({
     where: {
       quote: {
@@ -444,8 +459,10 @@ export async function getProductosMasCotizados(): Promise<ProductoMasCotizado[]>
         status: { not: 'CANCELLED' }
       }
     },
-    include: {
-      product: true
+    select: {
+      productId: true,
+      quantity: true,
+      product: { select: { sku: true, name: true } }
     }
   })
 

@@ -3,11 +3,18 @@ import { prisma } from '@/lib/prisma'
 import { Card, CardContent } from '@/components/ui/card'
 import { Sparkles, ArrowRight } from 'lucide-react'
 
+export interface NewLeadsData {
+  last7Days: number
+  nuevos: number
+}
+
 /**
- * Card del dashboard con la cantidad de leads recibidos en los últimos 7 días.
- * Server component — consulta la DB directamente.
+ * Cuenta leads de los últimos 7 días y sin contactar. Se llama desde el
+ * Promise.all del dashboard para que corra junto al resto de las queries
+ * (antes la card las disparaba sola DESPUÉS de esa tanda, sumando una
+ * ronda secuencial extra contra la DB).
  */
-export async function NewLeadsCard() {
+export async function getNewLeadsData(): Promise<NewLeadsData> {
   const since = new Date()
   since.setDate(since.getDate() - 7)
 
@@ -15,6 +22,15 @@ export async function NewLeadsCard() {
     prisma.googleAdsLead.count({ where: { createdAt: { gte: since } } }),
     prisma.googleAdsLead.count({ where: { status: 'NUEVO' } }),
   ])
+
+  return { last7Days, nuevos }
+}
+
+/**
+ * Card del dashboard con la cantidad de leads recibidos en los últimos 7 días.
+ */
+export function NewLeadsCard({ data }: { data: NewLeadsData }) {
+  const { last7Days, nuevos } = data
 
   return (
     <Link href="/leads" className="block">

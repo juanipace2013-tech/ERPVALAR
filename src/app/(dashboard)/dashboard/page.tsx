@@ -2,7 +2,7 @@ import { auth } from '@/auth'
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { DashboardClient } from '@/components/dashboard/DashboardClient'
-import { NewLeadsCard } from '@/components/dashboard/NewLeadsCard'
+import { NewLeadsCard, getNewLeadsData } from '@/components/dashboard/NewLeadsCard'
 import {
   getQuoteDashboardMetrics,
   getCotizacionesPorMes,
@@ -32,7 +32,8 @@ async function DashboardContent() {
     productosMasCotizados,
     tipoCambio,
     rankingVendedores,
-    sinSeguimiento
+    sinSeguimiento,
+    newLeads
   ] = await Promise.all([
     getQuoteDashboardMetrics(),
     getCotizacionesPorMes(),
@@ -42,7 +43,8 @@ async function DashboardContent() {
     getProductosMasCotizados(),
     getTipoCambioActual(),
     getRankingVendedores(),
-    getCotizacionesSinSeguimiento()
+    getCotizacionesSinSeguimiento(),
+    getNewLeadsData()
   ])
 
   const data = {
@@ -60,7 +62,7 @@ async function DashboardContent() {
   return (
     <>
       <div className="container mx-auto px-6 pt-6">
-        <NewLeadsCard />
+        <NewLeadsCard data={newLeads} />
       </div>
       <DashboardClient
         userName={session.user?.name || 'Usuario'}

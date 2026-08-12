@@ -47,8 +47,8 @@ import { useSession } from 'next-auth/react'
 import { formatNumber, getLocalDateString } from '@/lib/utils'
 import { useColppyStock, refreshInventoryCache } from '@/hooks/useColppyStock'
 import { StockBadge, StockWarning } from '@/components/StockBadge'
-import { getConjuntosGenebre, type ConjuntoOpcion } from '@/lib/genebre-conjuntos'
-import { getBobinasElectrovalvula, type BobinaKit } from '@/lib/genebre-electrovalvulas'
+import { getConjuntosGenebre, type ConjuntoOpcion, type ConjuntoTipo } from '@/lib/genebre-conjuntos'
+import { getBobinasElectrovalvula, type BobinaKit, ELECTROVALVULAS_NAMUR, type NamurKit } from '@/lib/genebre-electrovalvulas'
 
 interface Product {
   id: string
@@ -264,6 +264,13 @@ export default function QuoteDetailPage() {
   const [conjuntoLoading, setConjuntoLoading] = useState<string | null>(null)
   // SKUs agregados por el último conjunto elegido: al elegir otro, se reemplazan
   const [lastConjuntoSkus, setLastConjuntoSkus] = useState<string[]>([])
+  // Tipo del último conjunto agregado: si es neumático se ofrece la NAMUR
+  const [lastConjuntoTipo, setLastConjuntoTipo] = useState<ConjuntoTipo | null>(null)
+
+  // Electroválvula NAMUR para conjuntos neumáticos (según tensión)
+  const [namurLoading, setNamurLoading] = useState<string | null>(null)
+  // SKU agregado por la última NAMUR elegida: al elegir otra tensión, se reemplaza
+  const [lastNamurSku, setLastNamurSku] = useState<string | null>(null)
 
   // Kits bobina + conector para electroválvulas GENEBRE (según tensión)
   const [bobinaKitLoading, setBobinaKitLoading] = useState<string | null>(null)
@@ -902,7 +909,9 @@ export default function QuoteDetailPage() {
     const isManual = !item.productId
     setSelectedProduct(item.product)
     setLastConjuntoSkus([])
+    setLastConjuntoTipo(null)
     setLastBobinaKitSkus([])
+    setLastNamurSku(null)
     setItemFormData({
       productId: item.productId || '',
       quantity: item.quantity,
@@ -1101,9 +1110,14 @@ export default function QuoteDetailPage() {
       const encontrados = resultados.filter((r) => r.product).map((r) => r.product!)
       const faltantes = resultados.filter((r) => !r.product).map((r) => r.sku)
 
-      // Conservar adicionales ajenos al conjunto anterior
+      // Conservar adicionales ajenos al conjunto anterior. Si el nuevo conjunto
+      // no es neumático, la electroválvula NAMUR ya no aplica: se saca también.
+      const esNeumatico = opcion.tipo === 'DOBLE_EFECTO' || opcion.tipo === 'SIMPLE_EFECTO'
       const restantes = itemFormData.additionals.filter(
-        (a) => !a.productSku || !lastConjuntoSkus.includes(a.productSku)
+        (a) =>
+          !a.productSku ||
+          (!lastConjuntoSkus.includes(a.productSku) &&
+            (esNeumatico || a.productSku !== lastNamurSku))
       )
       const nuevos = encontrados.map((p) => ({
         productId: p.id,
@@ -1121,6 +1135,8 @@ export default function QuoteDetailPage() {
 
       setItemFormData({ ...itemFormData, additionals: [...restantes, ...nuevos] })
       setLastConjuntoSkus(encontrados.map((p) => p.sku))
+      setLastConjuntoTipo(opcion.tipo)
+      if (!esNeumatico) setLastNamurSku(null)
 
       if (faltantes.length > 0) {
         toast.warning(`Componentes no encontrados en el catálogo: ${faltantes.join(', ')}`)
@@ -1193,6 +1209,52 @@ export default function QuoteDetailPage() {
     }
   }
 
+  // Agrega la electroválvula NAMUR de la tensión elegida como adicional del
+  // conjunto neumático. Si ya se había elegido otra tensión, se reemplaza.
+  const handleAddNamur = async (kit: NamurKit) => {
+    setNamurLoading(kit.tension)
+    try {
+      const params = new URLSearchParams({ search: kit.sku, limit: '10', status: 'ACTIVE' })
+      const response = await fetch(`/api/productos?${params.toString()}`)
+      const data = response.ok ? await response.json() : { products: [] }
+      const product = ((data.products || []) as Product[]).find((p) => p.sku === kit.sku)
+
+      if (!product) {
+        toast.warning(`Electroválvula no encontrada en el catálogo: ${kit.sku}`)
+        return
+      }
+
+      // Conservar adicionales ajenos a la NAMUR anterior
+      const restantes = itemFormData.additionals.filter(
+        (a) => !a.productSku || a.productSku !== lastNamurSku
+      )
+
+      if (restantes.length + 1 > 5) {
+        toast.error('Ya hay 5 adicionales — eliminá uno para agregar la electroválvula NAMUR.')
+        return
+      }
+
+      setItemFormData({
+        ...itemFormData,
+        additionals: [
+          ...restantes,
+          {
+            productId: product.id,
+            listPrice: product.listPriceUSD ? Number(product.listPriceUSD) : 0,
+            productName: product.name,
+            productSku: product.sku,
+          },
+        ],
+      })
+      setLastNamurSku(product.sku)
+      toast.success(`Electroválvula NAMUR ${kit.tension} agregada (${product.sku})`)
+    } catch {
+      toast.error('Error al buscar la electroválvula NAMUR')
+    } finally {
+      setNamurLoading(null)
+    }
+  }
+
   const handleUpdateAdditional = (index: number, product: Product) => {
     const listPrice = product.listPriceUSD ? Number(product.listPriceUSD) : 0
 
@@ -1236,8 +1298,11 @@ export default function QuoteDetailPage() {
     setManualAddlPrice('')
     setConjuntoLoading(null)
     setLastConjuntoSkus([])
+    setLastConjuntoTipo(null)
     setBobinaKitLoading(null)
     setLastBobinaKitSkus([])
+    setNamurLoading(null)
+    setLastNamurSku(null)
   }
 
   const handleOpenAlternativeDialog = (parentItemId: string) => {
@@ -1925,7 +1990,9 @@ export default function QuoteDetailPage() {
                                   brandDiscountOverride: autoDiscount,
                                 })
                                 setLastConjuntoSkus([])
+                                setLastConjuntoTipo(null)
                                 setLastBobinaKitSkus([])
+                                setLastNamurSku(null)
                                 setProductSearch('')
                               }}
                             >
@@ -2109,6 +2176,35 @@ export default function QuoteDetailPage() {
                             </div>
                           )
                         })()}
+
+                        {/* Electroválvula NAMUR para conjuntos neumáticos (elegir tensión) */}
+                        {!itemFormData.isManual &&
+                          (lastConjuntoTipo === 'DOBLE_EFECTO' || lastConjuntoTipo === 'SIMPLE_EFECTO') && (
+                            <div className="rounded-md border border-violet-200 bg-violet-50/60 p-2 space-y-1.5">
+                              <p className="text-xs font-semibold text-violet-800">
+                                ⚡ Electroválvula NAMUR (opcional, elegir tensión)
+                              </p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {ELECTROVALVULAS_NAMUR.map((kit) => (
+                                  <Button
+                                    key={kit.tension}
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={namurLoading !== null}
+                                    title={kit.sku}
+                                    className="h-7 text-xs bg-white border-violet-300 text-violet-700 hover:bg-violet-100"
+                                    onClick={() => handleAddNamur(kit)}
+                                  >
+                                    {namurLoading === kit.tension && (
+                                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                    )}
+                                    {kit.tension}
+                                  </Button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
 
                         {/* Kits bobina + conector para electroválvulas GENEBRE sin bobina */}
                         {!itemFormData.isManual && selectedProduct && (() => {

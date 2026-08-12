@@ -112,3 +112,27 @@ for (const [serie, regla] of Object.entries(SERIES)) {
 export function getBobinasElectrovalvula(sku: string): BobinaKit[] {
   return KITS_POR_SKU.get(sku.trim()) ?? []
 }
+
+// ── Electroválvula NAMUR (Art. 4519) para actuadores neumáticos ─────────────
+// Al armar un conjunto neumático (simple o doble efecto) se ofrece agregar la
+// electroválvula NAMUR 5/2 y 3/2 vías en la tensión elegida. Bobina incluida.
+// Fuente: mismo listado GENEBRE de electroválvulas (Art. 4519).
+
+export interface NamurKit {
+  tension: TensionBobina
+  sku: string
+}
+
+// El sufijo de tensión del 4519 no coincide con el de las bobinas 4808/4814
+// (usa "220"/"110" completos en AC).
+const SUFIJO_TENSION_NAMUR: Record<TensionBobina, string> = {
+  '220V AC': '220',
+  '110V AC': '110',
+  '24V AC': '24',
+  '12V DC': 'C12',
+  '24V DC': 'C24',
+}
+
+export const ELECTROVALVULAS_NAMUR: NamurKit[] = [...TENSIONES_AC, ...TENSIONES_DC].map(
+  (tension) => ({ tension, sku: `4519 02 ${SUFIJO_TENSION_NAMUR[tension]}` })
+)

@@ -306,7 +306,7 @@ export default function QuoteDetailPage() {
   })
 
   useEffect(() => {
-    fetchQuoteData()
+    fetchQuoteData({ silent: false })
     fetchBrandDiscounts()
     fetchAuditLogs()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -386,9 +386,10 @@ export default function QuoteDetailPage() {
     return () => clearTimeout(timeout)
   }, [addlSearchTerm])
 
-  const fetchQuoteData = async () => {
+  // silent=true: refresca datos sin desmontar la página (sin spinner de carga completa)
+  const fetchQuoteData = async ({ silent = true }: { silent?: boolean } = {}) => {
     try {
-      setLoading(true)
+      if (!silent) setLoading(true)
       const response = await fetch(`/api/quotes/${quoteId}`)
       if (!response.ok) {
         throw new Error('Error al cargar cotización')

@@ -23,14 +23,43 @@ export async function POST(
 
     logger.info('📥 Agregando item a cotización:', quoteId, body)
 
-    // Verificar que la cotización existe
-    const quote = await prisma.quote.findUnique({
-      where: { id: quoteId },
-      include: {
-        customer: true,
-        items: true,
-      },
-    })
+    // Los IDs de adicionales de catálogo se resuelven en una sola query
+    const additionalProductIds: string[] = (body.additionals || [])
+      .map((add: { productId?: string | null }) => add.productId)
+      .filter(Boolean)
+
+    // Quote, producto y productos de adicionales se buscan en paralelo
+    const [quote, product, additionalProducts] = await Promise.all([
+      prisma.quote.findUnique({
+        where: { id: quoteId },
+        select: {
+          id: true,
+          multiplier: true,
+          pricesIncludeTax: true,
+          bonification: true,
+          items: {
+            select: {
+              id: true,
+              itemNumber: true,
+              isAlternative: true,
+              totalPrice: true,
+            },
+          },
+        },
+      }),
+      body.productId
+        ? prisma.product.findUnique({
+            where: { id: body.productId },
+            include: { category: true },
+          })
+        : Promise.resolve(null),
+      additionalProductIds.length > 0
+        ? prisma.product.findMany({
+            where: { id: { in: additionalProductIds } },
+            select: { id: true, listPriceUSD: true },
+          })
+        : Promise.resolve([]),
+    ])
 
     if (!quote) {
       return NextResponse.json(
@@ -57,6 +86,12 @@ export async function POST(
       }
     }
 
+    // Subtotal de los items principales ya existentes (el nuevo se suma después)
+    const existingSubtotal = quote.items
+      .filter((i) => !i.isAlternative)
+      .reduce((sum, i) => sum + Number(i.totalPrice), 0)
+    const bonif = Number(quote.bonification) || 0
+
     // ── ITEM MANUAL (sin producto del catálogo) ──
     if (!body.productId) {
       if (!body.description) {
@@ -75,6 +110,7 @@ export async function POST(
       // debe incluir el 21% de IVA para que cuadre con el total que factura AFIP.
       const ivaFactor = quote.pricesIncludeTax ? 1.21 : 1
       const manualUnitPrice = manualPrice * customerMultiplier * ivaFactor
+      const manualTotalPrice = manualUnitPrice * quantity
 
       const manualData: any = {
         quote: { connect: { id: quoteId } },
@@ -88,7 +124,7 @@ export async function POST(
         customerMultiplier,
         multiplierOverride,
         unitPrice: manualUnitPrice,
-        totalPrice: manualUnitPrice * quantity,
+        totalPrice: manualTotalPrice,
         deliveryTime: body.deliveryTime || 'A confirmar',
         isAlternative: body.isAlternative || false,
       }
@@ -96,25 +132,26 @@ export async function POST(
         manualData.alternativeToItem = { connect: { id: body.alternativeToItemId } }
       }
 
-      const item = await prisma.quoteItem.create({
-        data: manualData,
-        include: {
-          product: true,
-          additionals: { include: { product: true } },
-        },
-      })
+      const subtotal = existingSubtotal + (manualData.isAlternative ? 0 : manualTotalPrice)
+      const [item] = await prisma.$transaction([
+        prisma.quoteItem.create({
+          data: manualData,
+          include: {
+            product: true,
+            additionals: { include: { product: true } },
+          },
+        }),
+        prisma.quote.update({
+          where: { id: quoteId },
+          data: { subtotal, total: subtotal * (1 - bonif / 100) },
+        }),
+      ])
 
-      await recalculateQuoteTotals(quoteId)
       logger.info('✅ Item manual agregado:', item.id)
       return NextResponse.json(item, { status: 201 })
     }
 
     // ── ITEM DE CATÁLOGO ──
-    const product = await prisma.product.findUnique({
-      where: { id: body.productId },
-      include: { category: true },
-    })
-
     if (!product) {
       return NextResponse.json(
         { error: 'Producto no encontrado' },
@@ -130,19 +167,20 @@ export async function POST(
       brandDiscount = Math.max(0, Math.min(1, Number(body.brandDiscount)))
     } else if (product.brand) {
       // Prioridad: 1) match exacto brand+productType, 2) match genérico brand
-      let brandDiscountData = await prisma.brandDiscount.findUnique({
-        where: {
-          brand_productType: {
-            brand: product.brand,
-            productType: product.category?.name || ''
+      const [exactMatch, genericMatch] = await Promise.all([
+        prisma.brandDiscount.findUnique({
+          where: {
+            brand_productType: {
+              brand: product.brand,
+              productType: product.category?.name || ''
+            }
           }
-        }
-      })
-      if (!brandDiscountData) {
-        brandDiscountData = await prisma.brandDiscount.findFirst({
+        }),
+        prisma.brandDiscount.findFirst({
           where: { brand: product.brand }
-        })
-      }
+        }),
+      ])
+      const brandDiscountData = exactMatch || genericMatch
       if (brandDiscountData) {
         brandDiscount = Number(brandDiscountData.discountPercent) / 100
       }
@@ -152,15 +190,13 @@ export async function POST(
     let additionalsPrices = 0
 
     if (body.additionals && body.additionals.length > 0) {
+      const addPriceById = new Map(
+        additionalProducts.map((p) => [p.id, Number(p.listPriceUSD || 0)])
+      )
       for (const add of body.additionals) {
         if (add.productId) {
-          // Adicional de catálogo: buscar precio del producto
-          const addProduct = await prisma.product.findUnique({
-            where: { id: add.productId },
-          })
-          if (addProduct && addProduct.listPriceUSD) {
-            additionalsPrices += Number(addProduct.listPriceUSD)
-          }
+          // Adicional de catálogo: precio del producto (ya resuelto arriba)
+          additionalsPrices += addPriceById.get(add.productId) || 0
         } else {
           // Adicional manual: usar listPrice del request directo
           additionalsPrices += Number(add.listPrice || 0)
@@ -180,42 +216,49 @@ export async function POST(
     const quantity = body.quantity || 1
     const totalPrice = unitPrice * quantity
 
-    const item = await prisma.quoteItem.create({
-      data: {
-        quoteId,
-        itemNumber,
-        productId: body.productId,
-        description: body.description,
-        quantity,
-        listPrice,
-        brandDiscount,
-        customerMultiplier,
-        multiplierOverride: catMultiplierOverride,
-        unitPrice,
-        totalPrice,
-        deliveryTime: body.deliveryTime || 'Inmediato',
-        isAlternative: body.isAlternative || false,
-        ...(body.alternativeToItemId ? { alternativeToItemId: body.alternativeToItemId } : {}),
-        additionals: body.additionals
-          ? {
-              create: body.additionals.map((add: { productId?: string | null; description?: string; listPrice: number }, index: number) => ({
-                productId: add.productId || null,
-                description: add.description || null,
-                position: index + 1,
-                listPrice: add.listPrice,
-              })),
-            }
-          : undefined,
-      },
-      include: {
-        product: true,
-        additionals: {
-          include: { product: true },
-        },
-      },
-    })
+    const isAlternative = body.isAlternative || false
+    const subtotal = existingSubtotal + (isAlternative ? 0 : totalPrice)
 
-    await recalculateQuoteTotals(quoteId)
+    const [item] = await prisma.$transaction([
+      prisma.quoteItem.create({
+        data: {
+          quoteId,
+          itemNumber,
+          productId: body.productId,
+          description: body.description,
+          quantity,
+          listPrice,
+          brandDiscount,
+          customerMultiplier,
+          multiplierOverride: catMultiplierOverride,
+          unitPrice,
+          totalPrice,
+          deliveryTime: body.deliveryTime || 'Inmediato',
+          isAlternative,
+          ...(body.alternativeToItemId ? { alternativeToItemId: body.alternativeToItemId } : {}),
+          additionals: body.additionals
+            ? {
+                create: body.additionals.map((add: { productId?: string | null; description?: string; listPrice: number }, index: number) => ({
+                  productId: add.productId || null,
+                  description: add.description || null,
+                  position: index + 1,
+                  listPrice: add.listPrice,
+                })),
+              }
+            : undefined,
+        },
+        include: {
+          product: true,
+          additionals: {
+            include: { product: true },
+          },
+        },
+      }),
+      prisma.quote.update({
+        where: { id: quoteId },
+        data: { subtotal, total: subtotal * (1 - bonif / 100) },
+      }),
+    ])
 
     logger.info('✅ Item agregado:', item.id)
 
@@ -230,33 +273,4 @@ export async function POST(
       { status: 500 }
     )
   }
-}
-
-/**
- * Recalcula los totales de la cotización
- */
-async function recalculateQuoteTotals(quoteId: string) {
-  const items = await prisma.quoteItem.findMany({
-    where: {
-      quoteId,
-      isAlternative: false,
-    },
-  })
-
-  const subtotal = items.reduce((sum, item) => sum + Number(item.totalPrice), 0)
-
-  const quote = await prisma.quote.findUnique({
-    where: { id: quoteId },
-    select: { bonification: true },
-  })
-  const bonif = Number(quote?.bonification) || 0
-  const total = subtotal * (1 - bonif / 100)
-
-  await prisma.quote.update({
-    where: { id: quoteId },
-    data: {
-      subtotal,
-      total,
-    },
-  })
 }

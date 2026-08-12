@@ -28,8 +28,9 @@ export async function PATCH(
       where: { id: itemId },
       include: {
         quote: {
-          include: {
-            customer: true,
+          select: {
+            multiplier: true,
+            pricesIncludeTax: true,
           },
         },
         product: true,
@@ -114,14 +115,22 @@ export async function PATCH(
       let additionalsPrices = 0
 
       if (body.additionals && body.additionals.length > 0) {
+        // Adicionales de catálogo: una sola query para todos los productos
+        const addIds = body.additionals
+          .map((add: { productId?: string | null }) => add.productId)
+          .filter(Boolean)
+        const addProducts = addIds.length > 0
+          ? await prisma.product.findMany({
+              where: { id: { in: addIds } },
+              select: { id: true, listPriceUSD: true },
+            })
+          : []
+        const addPriceById = new Map(
+          addProducts.map((p) => [p.id, Number(p.listPriceUSD || 0)])
+        )
         for (const add of body.additionals) {
           if (add.productId) {
-            const addProduct = await prisma.product.findUnique({
-              where: { id: add.productId },
-            })
-            if (addProduct && addProduct.listPriceUSD) {
-              additionalsPrices += Number(addProduct.listPriceUSD)
-            }
+            additionalsPrices += addPriceById.get(add.productId) || 0
           } else {
             // Adicional manual: usar listPrice del request
             additionalsPrices += Number(add.listPrice || 0)
@@ -282,19 +291,21 @@ async function renumberQuoteItems(quoteId: string) {
  * Recalcula los totales de la cotización
  */
 async function recalculateQuoteTotals(quoteId: string) {
-  const items = await prisma.quoteItem.findMany({
-    where: {
-      quoteId,
-      isAlternative: false,
-    },
-  })
+  const [items, quote] = await Promise.all([
+    prisma.quoteItem.findMany({
+      where: {
+        quoteId,
+        isAlternative: false,
+      },
+      select: { totalPrice: true },
+    }),
+    prisma.quote.findUnique({
+      where: { id: quoteId },
+      select: { bonification: true },
+    }),
+  ])
 
   const subtotal = items.reduce((sum, item) => sum + Number(item.totalPrice), 0)
-
-  const quote = await prisma.quote.findUnique({
-    where: { id: quoteId },
-    select: { bonification: true },
-  })
   const bonif = Number(quote?.bonification) || 0
   const total = subtotal * (1 - bonif / 100)
 

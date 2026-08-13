@@ -248,7 +248,7 @@ export default function NuevaCotizacionPage() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => router.push('/cotizaciones')}
+            onClick={() => (window.history.length > 1 ? router.back() : router.push('/cotizaciones'))}
             className="text-blue-600 hover:text-blue-700"
           >
             <ArrowLeft className="h-5 w-5" />

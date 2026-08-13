@@ -612,10 +612,12 @@ export default function DeliveryNoteDetailPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" asChild>
-            <Link href="/remitos">
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => (window.history.length > 1 ? router.back() : router.push('/remitos'))}
+          >
+            <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
             <h1 className="text-3xl font-bold text-gray-900">

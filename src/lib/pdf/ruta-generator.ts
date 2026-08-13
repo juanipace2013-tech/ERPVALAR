@@ -85,7 +85,7 @@ export function generateRutaPDF(data: RutaPDFData): Blob {
 
   // Logo
   try {
-    doc.addImage(LOGO_BASE64, 'PNG', ML, y, 30, 20)
+    doc.addImage(LOGO_BASE64, 'PNG', ML, y, 30, 20, undefined, 'SLOW')
   } catch {
     // Fallback if logo fails
   }

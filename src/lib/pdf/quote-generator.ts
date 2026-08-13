@@ -106,7 +106,7 @@ const RIGHT_COL = 108 // X start for right column (vendedor)
 /** Dibuja header de primera página: logo, datos empresa, cliente + vendedor */
 function drawFirstPageHeader(doc: jsPDF, data: QuotePDFData): number {
   // Logo
-  doc.addImage(LOGO_BASE64, 'PNG', MARGIN_LEFT, 10, 45, 13.5)
+  doc.addImage(LOGO_BASE64, 'PNG', MARGIN_LEFT, 10, 45, 13.5, undefined, 'SLOW')
 
   // Header derecho
   doc.setFontSize(10)
@@ -435,7 +435,7 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
   doc.addPage()
 
   // Logo (only on T&C page and page 1)
-  doc.addImage(LOGO_BASE64, 'PNG', MARGIN_LEFT, 10, 45, 13.5)
+  doc.addImage(LOGO_BASE64, 'PNG', MARGIN_LEFT, 10, 45, 13.5, undefined, 'SLOW')
 
   // Header
   doc.setFontSize(11)

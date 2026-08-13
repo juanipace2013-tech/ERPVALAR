@@ -162,7 +162,7 @@ export async function generateReguladoraVaporPDF(
   const logoBase64 = await getLogo()
   if (logoBase64) {
     try {
-      doc.addImage(logoBase64, 'PNG', ML, 10, 45, 13.5)
+      doc.addImage(logoBase64, 'PNG', ML, 10, 45, 13.5, undefined, 'SLOW')
     } catch {
       // Fallback if logo fails
     }

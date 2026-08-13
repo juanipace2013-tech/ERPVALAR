@@ -67,7 +67,7 @@ function drawLabel(
 
   // Logo VAL ARG
   try {
-    doc.addImage(LOGO_BASE64, 'PNG', margin + 2, y, 40, 12)
+    doc.addImage(LOGO_BASE64, 'PNG', margin + 2, y, 40, 12, undefined, 'SLOW')
   } catch {
     doc.setFontSize(14)
     doc.setFont('helvetica', 'bold')

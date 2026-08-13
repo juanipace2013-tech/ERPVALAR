@@ -126,7 +126,7 @@ function drawRemitoCopy(doc: jsPDF, data: RemitoPDFData, copyLabel: string, logo
   // ── Columna izquierda: Logo + datos empresa ──
   if (logoBase64) {
     try {
-      doc.addImage(logoBase64, 'PNG', ML + 4, headerY + 3, 38, 11)
+      doc.addImage(logoBase64, 'PNG', ML + 4, headerY + 3, 38, 11, undefined, 'SLOW')
     } catch {
       // Si falla el logo, texto fallback
       doc.setFont('helvetica', 'bold')

@@ -641,10 +641,16 @@ export default function DeliveryNoteDetailPage() {
         <CardContent>
           <div className="flex flex-wrap gap-2">
             {deliveryNote.status === 'PENDING' && (
-              <Button onClick={() => handleChangeStatus('PREPARING')} disabled={actionLoading}>
-                <Package className="h-4 w-4 mr-2" />
-                Iniciar Preparación
-              </Button>
+              <>
+                <Button onClick={() => handleChangeStatus('PREPARING')} disabled={actionLoading}>
+                  <Package className="h-4 w-4 mr-2" />
+                  Iniciar Preparación
+                </Button>
+                <Button variant="outline" onClick={() => handleChangeStatus('READY')} disabled={actionLoading}>
+                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                  Marcar como Listo
+                </Button>
+              </>
             )}
 
             {deliveryNote.status === 'PREPARING' && (
@@ -1114,7 +1120,9 @@ export default function DeliveryNoteDetailPage() {
             <DialogDescription>
               {newStatus === 'DELIVERED' && deliveryNote?.status === 'READY'
                 ? `¿Confirmar entrega directa del remito ${deliveryNote?.deliveryNumber}? Se salteará el estado Despachado.`
-                : `Complete la información adicional del cambio de estado del remito ${deliveryNote?.deliveryNumber}.`}
+                : newStatus === 'READY' && deliveryNote?.status === 'PENDING'
+                  ? `¿Marcar el remito ${deliveryNote?.deliveryNumber} directamente como Listo? Se salteará el estado En Preparación.`
+                  : `Complete la información adicional del cambio de estado del remito ${deliveryNote?.deliveryNumber}.`}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">

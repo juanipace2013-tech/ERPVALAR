@@ -310,8 +310,29 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
   }
 
   // Coordenadas X: columna "Precio Total" va de x≈147 a x≈170
-  const totalsLeft = 124
   const totalsRight = 170
+
+  // Ancho dinámico: con montos grandes el importe (alineado a la derecha)
+  // crecía hacia la izquierda y se pisaba con la etiqueta
+  const bonifAmount = data.subtotal * data.bonification / 100
+  const bonifPct = data.bonification % 1 === 0
+    ? data.bonification.toFixed(0)
+    : data.bonification.toFixed(2).replace('.', ',')
+  const GAP = 4 // espacio mínimo entre etiqueta e importe
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  let rowsWidth = doc.getTextWidth('Subtotal:') + GAP + doc.getTextWidth(fmtUSD(data.subtotal))
+  if (data.bonification > 0) {
+    rowsWidth = Math.max(
+      rowsWidth,
+      doc.getTextWidth(`Bonif. (${bonifPct}%):`) + GAP + doc.getTextWidth(`- ${fmtUSD(bonifAmount)}`)
+    )
+  }
+  doc.setFontSize(11)
+  doc.setFont('helvetica', 'bold')
+  rowsWidth = Math.max(rowsWidth, doc.getTextWidth('Total:') + GAP + doc.getTextWidth(fmtUSD(data.total)))
+  // +6 de sangría de etiqueta y +1 de margen derecho del importe
+  const totalsLeft = Math.min(124, totalsRight - (rowsWidth + 7))
 
   // Línea separadora bajo la tabla
   doc.setDrawColor(...BLUE)
@@ -330,10 +351,6 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
     doc.setFontSize(9)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0, 128, 0)
-    const bonifAmount = data.subtotal * data.bonification / 100
-    const bonifPct = data.bonification % 1 === 0
-      ? data.bonification.toFixed(0)
-      : data.bonification.toFixed(2).replace('.', ',')
     doc.text(`Bonif. (${bonifPct}%):`, totalsLeft + 6, curY + 14)
     doc.text(`- ${fmtUSD(bonifAmount)}`, totalsRight - 1, curY + 14, { align: 'right' })
     doc.setTextColor(0, 0, 0)

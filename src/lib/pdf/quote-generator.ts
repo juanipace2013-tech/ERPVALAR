@@ -266,8 +266,8 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
       1: { halign: 'center', cellWidth: 22 },
       2: { cellWidth: 62 },
       3: { halign: 'center', cellWidth: 18 },
-      4: { halign: 'right', cellWidth: 23 },
-      5: { halign: 'right', cellWidth: 23 },
+      4: { halign: 'right', cellWidth: 27 },
+      5: { halign: 'right', cellWidth: 27 },
       6: { halign: 'center', cellWidth: 20 }
     },
     // top: space for continuation header text on pages 2+
@@ -309,8 +309,8 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
     curY = CONTINUATION_TOP
   }
 
-  // Coordenadas X: columna "Precio Total" va de x≈147 a x≈170
-  const totalsRight = 170
+  // Coordenadas X: columna "Precio Total" va de x≈151 a x≈178
+  const totalsRight = 178
 
   // Ancho dinámico: con montos grandes el importe (alineado a la derecha)
   // crecía hacia la izquierda y se pisaba con la etiqueta

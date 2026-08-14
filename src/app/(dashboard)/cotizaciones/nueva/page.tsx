@@ -277,7 +277,7 @@ export default function NuevaCotizacionPage() {
                   <ColppyCustomerSearch
                     value={selectedCustomer}
                     onChange={handleCustomerSelect}
-                    placeholder="Buscar cliente por nombre o CUIT en Colppy..."
+                    placeholder="Buscar cliente por nombre, CUIT o email en Colppy..."
                     disabled={loading}
                   />
                 </div>

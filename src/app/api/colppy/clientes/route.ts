@@ -233,7 +233,7 @@ function mapCustomers(data: any[], localMultipliers: Map<string, number>): Cache
       priceMultiplier,
       paymentTerms: paymentTermsMap[idCondicionPago] || 'Contado',
       paymentTermsDays: parseInt(idCondicionPago) || 0,
-      searchText: `${name} ${cuit} ${cuit.replace(/\D/g, '')} ${businessName}`.toLowerCase(),
+      searchText: `${name} ${cuit} ${cuit.replace(/\D/g, '')} ${businessName} ${c.Email || ''}`.toLowerCase(),
     };
   });
 }

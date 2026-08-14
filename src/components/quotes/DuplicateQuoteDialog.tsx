@@ -130,7 +130,7 @@ export function DuplicateQuoteDialog({
               <ColppyCustomerSearch
                 value={selectedCustomer}
                 onChange={setSelectedCustomer}
-                placeholder="Buscar cliente por nombre o CUIT..."
+                placeholder="Buscar cliente por nombre, CUIT o email..."
                 disabled={loading}
               />
             </div>

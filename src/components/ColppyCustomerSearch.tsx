@@ -53,7 +53,7 @@ interface ColppyCustomerSearchProps {
 export function ColppyCustomerSearch({
   value,
   onChange,
-  placeholder = 'Buscar cliente por nombre o CUIT...',
+  placeholder = 'Buscar cliente por nombre, CUIT o email...',
   disabled = false,
 }: ColppyCustomerSearchProps) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -275,6 +275,7 @@ export function ColppyCustomerSearch({
                           </p>
                           <p className="text-xs text-gray-600 mt-0.5">
                             CUIT: {customer.cuit}
+                            {customer.email && ` · ${customer.email}`}
                           </p>
                           <div className="flex items-center gap-2 mt-1">
                             <Badge variant="outline" className="text-xs">

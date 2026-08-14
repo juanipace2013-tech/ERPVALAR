@@ -36,8 +36,27 @@ export async function GET(req: NextRequest) {
   const expectedKey = process.env.GOOGLE_ADS_WEBHOOK_KEY
   const key = req.nextUrl.searchParams.get('key')
 
-  if (!expectedKey || key !== expectedKey) {
-    return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+  // El Gestor de Datos de Google Ads se conecta con HTTP Basic Auth
+  // (usuario "valarg", contraseña = GOOGLE_ADS_WEBHOOK_KEY). El query
+  // param ?key= queda como alternativa para pruebas manuales.
+  let basicOk = false
+  const authHeader = req.headers.get('authorization')
+  if (expectedKey && authHeader?.startsWith('Basic ')) {
+    try {
+      const [user, pass] = Buffer.from(authHeader.slice(6), 'base64')
+        .toString('utf-8')
+        .split(':')
+      basicOk = user === 'valarg' && pass === expectedKey
+    } catch {
+      basicOk = false
+    }
+  }
+
+  if (!expectedKey || (key !== expectedKey && !basicOk)) {
+    return new NextResponse('No autorizado', {
+      status: 401,
+      headers: { 'WWW-Authenticate': 'Basic realm="google-ads"' },
+    })
   }
 
   const leads = await prisma.googleAdsLead.findMany({

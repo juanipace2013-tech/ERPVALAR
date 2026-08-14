@@ -13,7 +13,7 @@ export default auth((req) => {
     pathname.startsWith('/api/webhooks') ||
     // Subida programada de conversiones offline de Google Ads:
     // valida ?key=GOOGLE_ADS_WEBHOOK_KEY en el handler.
-    pathname === '/api/google-ads/offline-conversions' ||
+    pathname === '/api/google-ads/offline-conversions.csv' ||
     // Agente Python de Exiros: validan Bearer EXIROS_AGENT_API_KEY en el
     // handler (src/lib/exiros/agent-auth.ts). Match exacto a propósito:
     // /api/exiros/licitaciones es de la UI y sigue requiriendo sesión.

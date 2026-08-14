@@ -22,13 +22,18 @@ export const dynamic = 'force-dynamic'
 const CONVERSION_NAME = 'Lead ERP calificado'
 const QUALIFIED_STATUSES = ['CONTACTADO', 'COTIZADO', 'CONVERTIDO']
 
-/** Formatea una fecha como "yyyy-MM-dd HH:mm:ss" en hora argentina (GMT-3). */
+/**
+ * Formatea una fecha como "yyyy-MM-dd HH:mm:ss-03:00" (hora argentina con
+ * offset explícito). El Gestor de Datos no entiende la línea
+ * "Parameters:TimeZone=..." del formato clásico de subidas, así que la zona
+ * horaria va en cada valor.
+ */
 function formatConversionTime(date: Date): string {
   const ar = new Date(date.getTime() - 3 * 60 * 60 * 1000)
   const pad = (n: number) => String(n).padStart(2, '0')
   return (
     `${ar.getUTCFullYear()}-${pad(ar.getUTCMonth() + 1)}-${pad(ar.getUTCDate())} ` +
-    `${pad(ar.getUTCHours())}:${pad(ar.getUTCMinutes())}:${pad(ar.getUTCSeconds())}`
+    `${pad(ar.getUTCHours())}:${pad(ar.getUTCMinutes())}:${pad(ar.getUTCSeconds())}-03:00`
   )
 }
 
@@ -68,10 +73,7 @@ export async function GET(req: NextRequest) {
     orderBy: { createdAt: 'asc' },
   })
 
-  const lines = [
-    'Parameters:TimeZone=-0300',
-    'Google Click ID,Conversion Name,Conversion Time',
-  ]
+  const lines = ['Google Click ID,Conversion Name,Conversion Time']
   for (const lead of leads) {
     // +60s para garantizar que la conversión sea posterior al clic
     const time = formatConversionTime(new Date(lead.createdAt.getTime() + 60_000))

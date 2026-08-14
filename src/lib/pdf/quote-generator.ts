@@ -500,11 +500,11 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
     termsY += lines.length * 3.5 + 3
   })
 
-  // Footer T&C
+  // Footer T&C — termina en y=284 para no pisarse con "Página X de Y" (y=289)
   doc.setFontSize(8)
   doc.setFont('helvetica', 'normal')
-  doc.text('14 de Julio 175 - C.P: 1427 - C.A.B.A.', PAGE_WIDTH / 2, 285, { align: 'center' })
-  doc.text('TE:(011) 4551-3343 | 4552-2874', PAGE_WIDTH / 2, 290, { align: 'center' })
+  doc.text('14 de Julio 175 - C.P: 1427 - C.A.B.A.', PAGE_WIDTH / 2, 280, { align: 'center' })
+  doc.text('TE:(011) 4551-3343 | 4552-2874', PAGE_WIDTH / 2, 284, { align: 'center' })
 
   // ═══════════════════════════════════════════════════════════════════════
   // FINAL PASS: page numbers on ALL pages + continuation headers

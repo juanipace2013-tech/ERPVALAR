@@ -57,11 +57,46 @@ export interface ColppyCustomer {
   idCondicionPago?: string;
 }
 
+/**
+ * Datos que sendQuoteToColppy ya calculó para la factura (con la misma lógica
+ * que va a Colppy) y que entrega al emisor externo (ARCA) para pedir el CAE.
+ */
+export interface EmisionExternaDatos {
+  tipoFactura: 'A' | 'B';
+  netoGravado: number;
+  totalIVA: number;
+  totalFactura: number;
+  currency: string; // 'USD' | 'ARS'
+  exchangeRate: number | null;
+  fechaFactura: Date;
+  fechaVto: Date;
+  idCondicionPago: string;
+  descripcion: string;
+}
+
+/** Resultado del emisor externo: número real + CAE ya autorizado. */
+export interface EmisionExternaResultado {
+  puntoVenta: number; // 7
+  numero: number; // correlativo dentro del PV
+  numeroFormateado: string; // 0007-00000001
+  cbteTipo: number;
+  cae: string;
+  caeVencimiento: Date;
+}
+
 export interface SendToColppyOptions {
   action: 'remito' | 'factura-cuenta-corriente' | 'factura-contado' | 'remito-factura';
   condicionPago?: string;
   puntoVenta?: string;
   descripcion?: string;
+  /**
+   * Si está presente, la factura NO se crea como borrador para que Colppy la
+   * emita: primero se llama a este hook (que emite en ARCA y devuelve número +
+   * CAE) y después se carga en Colppy como APROBADA no-electrónica con ese
+   * número, para que mueva CC, stock y asientos sin tocar ARCA.
+   * Si el hook lanza, no se crea nada en Colppy.
+   */
+  emisionExterna?: (datos: EmisionExternaDatos) => Promise<EmisionExternaResultado>;
 }
 
 export interface SendToColppyResult {
@@ -71,7 +106,22 @@ export interface SendToColppyResult {
   facturaId?: string;
   facturaNumber?: string;
   error?: string;
+  /** En qué etapa falló: 'arca' (rechazo/errores al emitir) o 'colppy' (resto). */
+  errorStage?: 'arca' | 'colppy';
   customerPaymentTermsDays?: number; // Días de pago del cliente en Colppy, para sincronizar a DB local
+  /** Presente cuando se emitió con emisor externo (aunque Colppy haya fallado después). */
+  emision?: EmisionExternaResultado;
+  /** Payload de alta_facturaventa enviado a Colppy (para reintentar si falló). */
+  colppyInvoicePayload?: ColppyInvoicePayload;
+}
+
+/** Error lanzado por el hook de emisión externa (rechazo de ARCA). */
+export class EmisionExternaError extends Error {
+  readonly stage = 'arca' as const;
+  constructor(message: string, public readonly detalles?: unknown) {
+    super(message);
+    this.name = 'EmisionExternaError';
+  }
 }
 
 // ============================================================================
@@ -706,9 +756,7 @@ function mapPaymentTerms(paymentTerms: string | number | null | undefined): stri
   return daysMap[terms] || 'Contado';
 }
 
-export async function colppyCreateInvoice(
-  session: ColppySession,
-  invoice: {
+export type ColppyInvoicePayload = {
     descripcion: string; // Ej: "Cotización VAL-2026-005"
     idCliente: string;
     puntoVenta?: string; // Punto de venta (ej: "0003")
@@ -724,6 +772,15 @@ export async function colppyCreateInvoice(
     netoNoGravado: number;
     totalIVA: number;
     totalFactura: number;
+    /**
+     * Estado inicial. 'Borrador' (default): Colppy la emite después.
+     * 'Aprobada': factura YA emitida afuera (ARCA desde el ERP); Colppy la toma
+     * como comprobante no electrónico con el número dado y genera asiento/CC/stock.
+     */
+    estado?: 'Borrador' | 'Aprobada';
+    /** Número real (solo con estado Aprobada): sucursal 4 dígitos y número 8 dígitos. */
+    nroFactura1?: string;
+    nroFactura2?: string;
     items: Array<{
       // Estructura alineada al ejemplo oficial del soporte de Colppy:
       // numéricos como number, subtotal en vez de importeTotal/importeIva,
@@ -746,14 +803,23 @@ export async function colppyCreateInvoice(
       almacen?: string;
       editable?: boolean;
     }>;
-  }
+};
+
+export async function colppyCreateInvoice(
+  session: ColppySession,
+  invoice: ColppyInvoicePayload
 ): Promise<{ idFactura: string; numeroFactura: string }> {
   const config = getColppyConfig();
   const passwordMD5 = md5Hash(config.password);
 
-  // Generar número de factura con timestamp
-  const nroFactura1 = invoice.puntoVenta || '0003'; // Punto de venta
-  const nroFactura2 = String(Date.now()).slice(-8); // Últimos 8 dígitos del timestamp
+  const estado = invoice.estado || 'Borrador';
+  // Borrador: número provisorio (Colppy asigna el definitivo al emitir).
+  // Aprobada: número real del comprobante emitido por el ERP.
+  const nroFactura1 = invoice.nroFactura1 || invoice.puntoVenta || '0003'; // Punto de venta
+  const nroFactura2 = invoice.nroFactura2 || String(Date.now()).slice(-8); // Últimos 8 dígitos del timestamp
+  if (estado === 'Aprobada' && (!invoice.nroFactura1 || !invoice.nroFactura2)) {
+    throw new Error('colppyCreateInvoice: una factura Aprobada requiere nroFactura1 y nroFactura2 reales');
+  }
 
   const payload = {
     auth: {
@@ -775,7 +841,10 @@ export async function colppyCreateInvoice(
       idUsuario: session.usuario,
       descripcion: invoice.descripcion,
       idCliente: invoice.idCliente,
-      idEstadoFactura: 'Borrador', // SIEMPRE crear como borrador
+      // Borrador (flujo clásico: Colppy emite) o Aprobada (emitida por el ERP vía ARCA).
+      // Sin `labelfe: 'Factura Electrónica'`: para Colppy es un comprobante no
+      // electrónico y no intenta pedir CAE.
+      idEstadoFactura: estado,
       idTipoFactura: invoice.tipoFactura,
       idTipoComprobante: '4', // 4=Factura
       nroFactura1: nroFactura1,
@@ -1275,6 +1344,8 @@ export async function sendQuoteToColppy(
   }
 ): Promise<SendToColppyResult> {
   let session: ColppySession | null = null;
+  let emisionRealizada: EmisionExternaResultado | null = null;
+  let payloadEnviado: ColppyInvoicePayload | null = null;
 
   /**
    * Helper: ejecuta una función con la sesión actual.
@@ -1575,7 +1646,7 @@ export async function sendQuoteToColppy(
         );
       }
 
-      const facturaPayload = {
+      const facturaPayload: ColppyInvoicePayload = {
         descripcion: options.descripcion || `Cotización ${quote.quoteNumber}`,
         idCliente: customer.idEntidad,
         puntoVenta: options.puntoVenta,
@@ -1594,12 +1665,39 @@ export async function sendQuoteToColppy(
         items: itemsFactura,
       };
 
+      // Emisión externa (ARCA desde el ERP): pedir CAE con EXACTAMENTE los
+      // totales que va a recibir Colppy, y cargar la factura ya emitida como
+      // Aprobada con su número real. Si ARCA rechaza, el hook lanza y no se
+      // toca Colppy.
+      if (options.emisionExterna) {
+        const emision = await options.emisionExterna({
+          tipoFactura,
+          netoGravado: facturaPayload.netoGravado,
+          totalIVA: facturaPayload.totalIVA,
+          totalFactura: facturaPayload.totalFactura,
+          currency: quote.currency,
+          exchangeRate: quote.currency === 'USD' ? exchangeRate : null,
+          fechaFactura: new Date(),
+          fechaVto: fechaVtoDate,
+          idCondicionPago,
+          descripcion: facturaPayload.descripcion,
+        });
+        result.emision = emision;
+        emisionRealizada = emision;
+        facturaPayload.estado = 'Aprobada';
+        facturaPayload.nroFactura1 = String(emision.puntoVenta).padStart(4, '0');
+        facturaPayload.nroFactura2 = String(emision.numero).padStart(8, '0');
+        facturaPayload.descripcion = `${facturaPayload.descripcion} - CAE ${emision.cae}`.slice(0, 100);
+        result.colppyInvoicePayload = facturaPayload;
+        payloadEnviado = facturaPayload;
+      }
+
       console.log('=== PAYLOAD VENTA COLPPY ===', JSON.stringify(facturaPayload, null, 2));
 
       const factura = await withRetry((s) => colppyCreateInvoice(s, facturaPayload));
 
       result.facturaId = factura.idFactura;
-      result.facturaNumber = factura.numeroFactura;
+      result.facturaNumber = result.emision?.numeroFormateado || factura.numeroFactura;
     }
 
     logger.info('[Colppy] sendQuoteToColppy OK', {
@@ -1613,9 +1711,15 @@ export async function sendQuoteToColppy(
     // Importante: este catch devolvía {success:false, error} sin loguear,
     // por lo que cualquier error interno quedaba invisible en pm2.
     logger.error('[Colppy] sendQuoteToColppy error:', error?.message || String(error), error?.stack);
+    const stage: 'arca' | 'colppy' = error instanceof EmisionExternaError || error?.stage === 'arca' ? 'arca' : 'colppy';
     return {
       success: false,
       error: error.message,
+      errorStage: stage,
+      // Si ARCA ya autorizó y falló Colppy después, el llamador necesita el CAE
+      // y el payload para persistir la factura y reintentar el alta en Colppy.
+      emision: emisionRealizada ?? undefined,
+      colppyInvoicePayload: payloadEnviado ?? undefined,
     };
   }
   // Nota: no se hace logout — la sesión queda cacheada para el próximo envío

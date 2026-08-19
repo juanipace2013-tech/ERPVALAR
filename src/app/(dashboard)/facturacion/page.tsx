@@ -500,9 +500,22 @@ export default function FacturacionPage() {
         successParts.push(`Factura: ${data.facturaNumber}`)
       }
 
-      toast.success('Enviado a Colppy', {
-        description: successParts.join(' | ') || 'Borrador creado exitosamente',
-      })
+      if (data.emisor === 'arca' && data.cae) {
+        // Factura emitida por el ERP (ARCA): ofrecer el PDF con CAE/QR.
+        const pdfUrl: string | undefined = data.pdfUrl
+        toast.success(data.colppyPendiente ? 'Factura emitida (pendiente en Colppy)' : 'Factura emitida', {
+          description: `${successParts.join(' | ')} | CAE ${data.cae}${data.colppyPendiente ? ' — no se pudo registrar en Colppy, reintentar desde la factura' : ''}`,
+          duration: data.colppyPendiente ? 20000 : 12000,
+          action: pdfUrl
+            ? { label: 'Ver PDF', onClick: () => window.open(pdfUrl, '_blank') }
+            : undefined,
+        })
+        if (pdfUrl) window.open(pdfUrl, '_blank')
+      } else {
+        toast.success('Enviado a Colppy', {
+          description: successParts.join(' | ') || 'Borrador creado exitosamente',
+        })
+      }
 
       setSelectedItems(new Map())
     },

@@ -645,9 +645,34 @@ export async function syncColppyFacturas(dateFrom: Date, dateTo: Date): Promise<
     }
 
     try {
-      const existing = await prisma.invoice.findFirst({ where: { colppyId: idFactura } })
+      let existing = await prisma.invoice.findFirst({ where: { colppyId: idFactura } })
+      // Factura emitida por el ERP que quedó sin colppyId (alta fallida y cargada
+      // a mano en Colppy, o reintento aún no corrido): vincular por número real.
+      if (!existing && invoiceData.invoiceNumber) {
+        existing = await prisma.invoice.findFirst({
+          where: { invoiceNumber: invoiceData.invoiceNumber, emitidaPor: 'ARCA' },
+        })
+        if (existing && !existing.colppyId) {
+          await prisma.invoice.update({ where: { id: existing.id }, data: { colppyId: idFactura } })
+          await prisma.cotizacionFactura.updateMany({ where: { invoiceId: existing.id }, data: { colppyInvoiceId: idFactura } })
+        }
+      }
 
-      if (existing) {
+      if (existing && existing.emitidaPor === 'ARCA') {
+        // Factura emitida por el ERP (ARCA) y cargada en Colppy como Aprobada:
+        // el ERP es la fuente de verdad fiscal (número, CAE, importes). De
+        // Colppy solo interesa lo que pasa DESPUÉS: cobros, saldo, estado.
+        await prisma.invoice.update({
+          where: { id: existing.id },
+          data: {
+            status: invoiceData.status,
+            paymentStatus: invoiceData.paymentStatus,
+            balance: invoiceData.balance,
+            colppySyncStatus: 'OK',
+          },
+        })
+        updated++
+      } else if (existing) {
         // Actualizar (NO sobreescribir userId/quoteId para preservar asignación manual)
         await prisma.invoice.update({
           where: { id: existing.id },

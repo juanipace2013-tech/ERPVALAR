@@ -1437,6 +1437,21 @@ model Invoice {
   // Integración con Colppy
   colppyId String? // ID de la factura en Colppy
 
+  // Emisión electrónica propia (ARCA WSFE, PV 7). null/'COLPPY' = la emitió Colppy.
+  emitidaPor        String? // 'ARCA' | 'COLPPY'
+  pointOfSale       Int? // Punto de venta (7)
+  cbteTipo          Int? // Tipo de comprobante ARCA (1=FA, 6=FB, 3=NCA, ...)
+  cbteNumero        Int? // Número dentro del PV
+  docTipo           Int? // 80 CUIT, 96 DNI, 99 CF
+  docNro            String?
+  qrUrl             String? @db.Text // URL del QR (RG 4892)
+  arcaObservaciones String? @db.Text // Observaciones de ARCA al autorizar (si las hubo)
+  // Registro en Colppy de una factura emitida por el ERP (CC/stock/asiento):
+  // 'OK' | 'PENDIENTE' | 'ERROR'. null para facturas emitidas por Colppy.
+  colppySyncStatus  String?
+  colppySyncError   String? @db.Text
+  colppyPayload     Json? // Payload de alta_facturaventa para reintentar
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1459,6 +1474,7 @@ model Invoice {
   // Inventory relations
   stockMovements StockMovement[]
 
+  @@unique([pointOfSale, cbteTipo, cbteNumero])
   @@index([customerId])
   @@index([userId])
   @@index([status])
@@ -1471,6 +1487,7 @@ model Invoice {
   @@index([afipStatus])
   @@index([paymentStatus])
   @@index([colppyId])
+  @@index([colppySyncStatus])
   @@map("invoices")
 }
 

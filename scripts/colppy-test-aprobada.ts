@@ -16,6 +16,8 @@
  *   --nro    número (default 99999001 para que no choque con la numeración real)
  *   --tipo   A | B (default A)
  *   --moneda ARS | USD (default ARS)
+ *   --neto   neto gravado (default 1000); IVA 21% y total se derivan
+ *   --tc     tipo de cambio si USD (default 1495)
  *   --clase  FACTURA | NC (default FACTURA) — NC = nota de credito Aprobada (idTipoComprobante 5)
  *   --almacen nombre del depósito en Colppy (default: env COLPPY_ALMACEN) — sin esto no mueve stock
  */
@@ -42,6 +44,7 @@ async function main() {
   const moneda = arg('moneda', 'ARS')!
   const almacen = arg('almacen', process.env.COLPPY_ALMACEN || '')!
   const clase = (arg('clase', 'FACTURA') as 'FACTURA' | 'NC')
+  const tc = arg('tc', '1495')!
   const apply = process.argv.includes('--apply')
   if (!cuit || !sku) {
     console.error('Faltan --cuit y/o --sku')
@@ -62,9 +65,9 @@ async function main() {
   const fmt = (d: Date) => `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`
   const vto = new Date(hoy.getTime() + 30 * 86400000)
 
-  const neto = 1000
-  const iva = 210
-  const total = 1210
+  const neto = Number(arg('neto', '1000'))
+  const iva = Math.round(neto * 21) / 100
+  const total = Math.round((neto + iva) * 100) / 100
   const payload: ColppyInvoicePayload = {
     descripcion: `PRUEBA ERP - ${clase === 'NC' ? 'NC' : 'factura'} externa Aprobada (ANULAR) - CAE 00000000000000`,
     idCliente: customer.idEntidad,
@@ -74,9 +77,9 @@ async function main() {
     tipoFactura: tipo,
     idCondicionPago: 'a 30 Dias',
     moneda: moneda === 'USD' ? 'Dolar estadounidense' : 'Peso argentino',
-    tipoCambio: moneda === 'USD' ? '1495' : '1',
+    tipoCambio: moneda === 'USD' ? tc : '1',
     currency: moneda,
-    exchangeRate: moneda === 'USD' ? 1495 : null,
+    exchangeRate: moneda === 'USD' ? Number(tc) : null,
     netoGravado: neto,
     netoNoGravado: 0,
     totalIVA: iva,

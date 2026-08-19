@@ -814,9 +814,12 @@ export function colppyTipoComprobante(
   // Comportamiento probado: las facturas B se vienen cargando con '4' (la letra
   // la define idTipoFactura) y Colppy las toma bien. Se mantiene el mismo
   // criterio para NC/ND: 5 = NCV, 8 = NDV.
+  // Segun el propio mensaje de validacion de la API (alta_facturaventa):
+  // "4 para Factura, 6 para ND, 8 para Factura Contado, NCV para Nota de
+  // Credito de venta y 9 para Nota de credito compra".
   void tipoFactura;
-  if (clase === 'NOTA_CREDITO') return '5';
-  if (clase === 'NOTA_DEBITO') return '8';
+  if (clase === 'NOTA_CREDITO') return 'NCV';
+  if (clase === 'NOTA_DEBITO') return '6';
   return '4';
 }
 
@@ -861,7 +864,7 @@ export async function colppyCreateInvoice(
       // electrónico y no intenta pedir CAE.
       idEstadoFactura: estado,
       idTipoFactura: invoice.tipoFactura,
-      // 4 = Factura, 5 = Nota de Credito, 8 = Nota de Debito (la letra va en idTipoFactura)
+      // 4 = Factura, NCV = Nota de Credito, 6 = Nota de Debito (la letra va en idTipoFactura)
       idTipoComprobante: colppyTipoComprobante(invoice.claseComprobante || 'FACTURA', invoice.tipoFactura),
       nroFactura1: nroFactura1,
       nroFactura2: nroFactura2,

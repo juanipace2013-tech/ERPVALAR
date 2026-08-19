@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -405,6 +405,49 @@ export default function FacturacionPage() {
     setColppyQuoteId(quoteId)
     setShowColppyDialog(true)
   }
+
+  // "Repetir factura": /facturacion?repetir=<invoiceId> preselecciona las lineas
+  // de esa factura (las que tengan cantidad pendiente) y abre el dialogo para
+  // volver a facturarlas, editables. Caso tipico: NC por error y re-facturacion.
+  const repetirHandled = useRef(false)
+  useEffect(() => {
+    if (!boardData || repetirHandled.current) return
+    const invoiceId = new URLSearchParams(window.location.search).get('repetir')
+    if (!invoiceId) return
+    repetirHandled.current = true
+    ;(async () => {
+      try {
+        const r = await fetch(`/api/facturas/${invoiceId}`)
+        if (!r.ok) throw new Error('Factura no encontrada')
+        const inv = await r.json()
+        if (!inv.quoteId) throw new Error('La factura no esta vinculada a una cotizacion')
+        const allQuotes = [
+          ...boardData.columns.ready.quotes,
+          ...boardData.columns.partial.quotes,
+          ...boardData.columns.pending.quotes,
+        ]
+        const quote = allQuotes.find((q) => q.id === inv.quoteId)
+        if (!quote) {
+          throw new Error(
+            'La cotizacion no tiene cantidades pendientes de facturar. Si queres volver a facturar, primero emiti la nota de credito de la factura original.'
+          )
+        }
+        const ids = new Set<string>((inv.items as Array<{ quoteItemId?: string | null }>).map((it) => it.quoteItemId || '').filter(Boolean))
+        const selectable = quote.items.filter((i) => ids.has(i.id) && i.remainingQuantity > 0).map((i) => i.id)
+        if (selectable.length === 0) throw new Error('Ninguna linea de esa factura tiene cantidad pendiente de facturar')
+        setSelectedItems(new Map([[quote.id, new Set(selectable)]]))
+        setColppyQuoteId(quote.id)
+        setShowColppyDialog(true)
+        toast.info(`Repetir factura ${inv.invoiceNumber}`, {
+          description: `${selectable.length} linea(s) preseleccionadas. Revisa cantidades, precios y TC antes de emitir.`,
+        })
+      } catch (e) {
+        toast.error((e as Error).message)
+      } finally {
+        window.history.replaceState({}, '', '/facturacion')
+      }
+    })()
+  }, [boardData])
 
   // Build the quote prop for SendToColppyDialog
   const getColppyDialogQuote = useCallback(() => {

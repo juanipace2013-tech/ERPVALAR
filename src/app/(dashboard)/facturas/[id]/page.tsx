@@ -25,7 +25,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { ArrowLeft, Loader2, FileText, Download, RefreshCw, FileMinus, ExternalLink, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, Loader2, FileText, Download, RefreshCw, FileMinus, ExternalLink, AlertTriangle, CheckCircle2, Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatCurrency as formatCurrencyAR } from '@/lib/utils'
 
@@ -298,6 +298,16 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
           <Button variant="destructive" onClick={() => setNcOpen(true)}>
             <FileMinus className="h-4 w-4 mr-2" />
             Emitir nota de crédito
+          </Button>
+        )}
+        {esFactura && invoice.quote && (
+          <Button
+            variant="outline"
+            onClick={() => router.push(`/facturacion?repetir=${invoice.id}`)}
+            title="Volver a facturar las mismas líneas (abre el tablero con las líneas preseleccionadas, editables)"
+          >
+            <Copy className="h-4 w-4 mr-2" />
+            Repetir factura
           </Button>
         )}
       </div>

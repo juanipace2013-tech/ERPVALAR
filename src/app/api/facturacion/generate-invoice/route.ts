@@ -64,6 +64,8 @@ export async function POST(request: NextRequest) {
         condicionPago: string
         puntoVenta: string
         descripcion: string
+        exchangeRate?: number
+        exchangeRateModo?: 'BILLETE' | 'DIVISA'
       }
     }
 
@@ -109,12 +111,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validar exchangeRate si currency = USD
-    if (quote.currency === 'USD' && !quote.exchangeRate) {
+    // TC de la factura (solo USD): el elegido en el dialogo (billete del
+    // sistema por defecto, o divisa/manual); si no vino, el de la cotizacion.
+    const tcFactura =
+      quote.currency === 'USD'
+        ? (Number(editedData?.exchangeRate) > 0 ? Number(editedData!.exchangeRate) : quote.exchangeRate ? Number(quote.exchangeRate) : null)
+        : null
+    if (quote.currency === 'USD' && !tcFactura) {
       return NextResponse.json(
         { error: 'La cotización en USD debe tener un tipo de cambio definido' },
         { status: 400 }
       )
+    }
+    if (quote.currency === 'USD' && tcFactura && quote.exchangeRate && Math.abs(tcFactura - Number(quote.exchangeRate)) > 0.001) {
+      logger.info(`[Generate Invoice] TC de factura ${tcFactura} (${editedData?.exchangeRateModo || 'manual'}) distinto al de la cotizacion ${Number(quote.exchangeRate)} — quote ${quote.quoteNumber}`)
     }
 
     // Cantidad pendiente de facturar de un quoteItem (max entre la columna
@@ -247,7 +257,7 @@ export async function POST(request: NextRequest) {
       id: quote.id,
       quoteNumber: quote.quoteNumber,
       currency: quote.currency,
-      exchangeRate: quote.exchangeRate ? Number(quote.exchangeRate) : null,
+      exchangeRate: tcFactura,
       bonification: Number(quote.bonification ?? 0),
       customer: {
         name: quote.customer.name,
@@ -321,7 +331,7 @@ export async function POST(request: NextRequest) {
     const subtotal = Math.round(
       lineItems.reduce((sum, l) => sum + splitItemLineTotal(l.split), 0) * 100
     ) / 100
-    const tcUsado = quote.exchangeRate ? Number(quote.exchangeRate) : 1
+    const tcUsado = tcFactura ?? (quote.exchangeRate ? Number(quote.exchangeRate) : 1)
     const montoUSD = quote.currency === 'USD' ? subtotal : Math.round((subtotal / (tcUsado || 1)) * 100) / 100
     const montoARS = quote.currency === 'USD' ? Math.round(subtotal * tcUsado * 100) / 100 : subtotal
 
@@ -342,7 +352,7 @@ export async function POST(request: NextRequest) {
           userId: quote.salesPersonId || session.user!.id!,
           status: emisionArca ? 'AUTHORIZED' : 'DRAFT',
           currency: quote.currency,
-          exchangeRate: quote.exchangeRate,
+          exchangeRate: quote.currency === 'USD' ? tcFactura : quote.exchangeRate,
           colppyId: colppyResult.facturaId || null,
           // Emisión ARCA: neto fiscal real (el mismo que fue a ARCA y a Colppy)
           subtotal: emisionArca && payloadColppy ? Number(payloadColppy.netoGravado) : subtotal,

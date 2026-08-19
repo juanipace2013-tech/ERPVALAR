@@ -35,6 +35,8 @@ interface SendToColppyRequest {
     condicionPago: string;
     puntoVenta: string;
     descripcion: string;
+    exchangeRate?: number;
+    exchangeRateModo?: 'BILLETE' | 'DIVISA';
   };
 }
 
@@ -186,7 +188,12 @@ export async function POST(
     let currentExchangeRate = quote.exchangeRate ? Number(quote.exchangeRate) : null;
     let exchangeRateDate: Date | null = null;
 
-    if (quote.currency === 'USD') {
+    const tcElegido = Number(body.editedData?.exchangeRate);
+    if (quote.currency === 'USD' && tcElegido > 0) {
+      // TC elegido en el dialogo (billete del sistema o divisa/manual)
+      currentExchangeRate = tcElegido;
+      logger.info(`[Send to Colppy] Usando TC elegido en el dialogo: ${tcElegido} (${body.editedData?.exchangeRateModo || 'manual'})`);
+    } else if (quote.currency === 'USD') {
       const latestRate = await prisma.exchangeRate.findFirst({
         where: { fromCurrency: 'USD', toCurrency: 'ARS' },
         orderBy: { validFrom: 'desc' },
@@ -325,7 +332,8 @@ export async function POST(
           }, 0) * 100
         ) / 100
       : 0;
-    const tcUsado = quote.exchangeRate ? Number(quote.exchangeRate) : 1;
+    // TC realmente usado en la factura (el enviado a Colppy/ARCA), no el de la cotizacion
+    const tcUsado = (quote.currency === 'USD' && currentExchangeRate) ? currentExchangeRate : (quote.exchangeRate ? Number(quote.exchangeRate) : 1);
     const montoUSDPre = quote.currency === 'USD' ? subtotalPre : Math.round((subtotalPre / (tcUsado || 1)) * 100) / 100;
     const montoARSPre = quote.currency === 'USD' ? Math.round(subtotalPre * tcUsado * 100) / 100 : subtotalPre;
 
@@ -345,7 +353,7 @@ export async function POST(
             userId: quote.salesPersonId || session.user!.id!,
             status: 'DRAFT',
             currency: quote.currency,
-            exchangeRate: quote.exchangeRate,
+            exchangeRate: quote.currency === 'USD' && currentExchangeRate ? currentExchangeRate : quote.exchangeRate,
             colppyId: result.facturaId || null,
             subtotal,
             taxAmount: 0,

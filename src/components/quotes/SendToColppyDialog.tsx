@@ -75,6 +75,8 @@ export interface EditableItem {
   sinStock?: boolean;
 }
 
+export type TipoCambioModo = 'BILLETE' | 'DIVISA';
+
 export interface ColppySendPayload {
   action: ColppyAction;
   editedData: {
@@ -82,6 +84,11 @@ export interface ColppySendPayload {
     condicionPago: string;
     puntoVenta: string;
     descripcion: string;
+    /** Solo cotizaciones en USD: TC con el que se emite la factura
+     *  (cotización del comprobante en ARCA, tipoCambio en Colppy, PDF). */
+    exchangeRate?: number;
+    /** BILLETE = TC del sistema (/tipo-cambio), DIVISA = ingresado a mano. */
+    exchangeRateModo?: TipoCambioModo;
   };
 }
 
@@ -148,9 +155,20 @@ export function SendToColppyDialog({
   const [puntoVenta, setPuntoVenta] = useState('0003');
   const [descripcionFactura, setDescripcionFactura] = useState('');
 
-  // Tipo de cambio actual del ERP
+  // Tipo de cambio actual del ERP (billete, de /tipo-cambio)
   const [latestRate, setLatestRate] = useState<{ rate: number; date: string } | null>(null);
   const [loadingRate, setLoadingRate] = useState(false);
+  // TC con el que se factura: por defecto billete (sistema); "Divisa" habilita
+  // el campo para tipear el TC que usan los clientes grandes.
+  const [tcModo, setTcModo] = useState<TipoCambioModo>('BILLETE');
+  const [tcManual, setTcManual] = useState('');
+  const tcBillete = latestRate?.rate ?? quote.exchangeRate ?? null;
+  const tcEfectivo =
+    quote.currency !== 'USD'
+      ? null
+      : tcModo === 'DIVISA'
+        ? Number(tcManual.replace(',', '.')) || null
+        : tcBillete;
 
   // Mapeo de días a texto de condición de pago
   const condicionMap: Record<string, string> = {
@@ -186,6 +204,8 @@ export function SendToColppyDialog({
   // Inicializar datos cuando se abre el dialog
   useEffect(() => {
     if (open) {
+      setTcModo('BILLETE');
+      setTcManual('');
       // Inicializar items
       const comentarioBase = `Cotización ${quote.quoteNumber}${quote.notes ? ' / ' + quote.notes : ''}`;
       setItems(
@@ -304,11 +324,18 @@ export function SendToColppyDialog({
       condicionPago,
       puntoVenta,
       descripcion: descripcionFactura,
+      ...(quote.currency === 'USD' && tcEfectivo
+        ? { exchangeRate: tcEfectivo, exchangeRateModo: tcModo }
+        : {}),
     },
   });
 
   // Handler para enviar a Colppy
   const handleSend = async () => {
+    if (quote.currency === 'USD' && !(tcEfectivo && tcEfectivo > 0)) {
+      toast.error('Ingresá un tipo de cambio válido');
+      return;
+    }
     setSending(true);
 
     try {
@@ -437,21 +464,19 @@ export function SendToColppyDialog({
             <div className="space-y-2">
               {quote.currency === 'USD' && (
                 <div className="flex justify-between">
-                  <span className="font-medium text-blue-900">Tipo de cambio:</span>
+                  <span className="font-medium text-blue-900">TC de la factura:</span>
                   <span className="text-blue-700">
                     {loadingRate ? (
                       <span className="flex items-center gap-1"><RefreshCw className="h-3 w-3 animate-spin" /> Cargando...</span>
-                    ) : latestRate ? (
-                      <>$ {latestRate.rate.toLocaleString('es-AR', { minimumFractionDigits: 2 })} <span className="text-xs text-blue-500">(del {new Date(latestRate.date).toLocaleDateString('es-AR')})</span></>
-                    ) : quote.exchangeRate ? (
-                      <>$ {quote.exchangeRate.toLocaleString('es-AR', { minimumFractionDigits: 2 })} <span className="text-xs text-blue-500">(cotización)</span></>
+                    ) : tcEfectivo ? (
+                      <>$ {tcEfectivo.toLocaleString('es-AR', { minimumFractionDigits: 2 })} <span className="text-xs text-blue-500">({tcModo === 'DIVISA' ? 'divisa / manual' : latestRate ? `billete del ${new Date(latestRate.date).toLocaleDateString('es-AR')}` : 'de la cotización'})</span></>
                     ) : 'N/A'}
                   </span>
                 </div>
               )}
-              {quote.currency === 'USD' && latestRate && quote.exchangeRate && latestRate.rate !== quote.exchangeRate && (
+              {quote.currency === 'USD' && tcEfectivo && quote.exchangeRate && Math.abs(tcEfectivo - quote.exchangeRate) > 0.001 && (
                 <div className="rounded border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs text-amber-800">
-                  TC actualizado: $ {quote.exchangeRate.toLocaleString('es-AR', { minimumFractionDigits: 2 })} (cotización) → $ {latestRate.rate.toLocaleString('es-AR', { minimumFractionDigits: 2 })} (actual)
+                  La cotización se hizo a $ {quote.exchangeRate.toLocaleString('es-AR', { minimumFractionDigits: 2 })}; la factura sale a $ {tcEfectivo.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                 </div>
               )}
               <div className="flex justify-between">
@@ -463,7 +488,32 @@ export function SendToColppyDialog({
         </div>
 
         {/* Campos editables de configuración */}
-        <div className="grid grid-cols-3 gap-4 p-4 border rounded-lg bg-gray-50">
+        <div className={`grid ${quote.currency === 'USD' ? 'grid-cols-4' : 'grid-cols-3'} gap-4 p-4 border rounded-lg bg-gray-50`}>
+          {quote.currency === 'USD' && (
+            <div className="space-y-2">
+              <Label htmlFor="tc-modo">Tipo de cambio</Label>
+              <Select value={tcModo} onValueChange={(v) => setTcModo(v as TipoCambioModo)}>
+                <SelectTrigger id="tc-modo">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="BILLETE">
+                    Billete (sistema){tcBillete ? ` · $ ${tcBillete.toLocaleString('es-AR', { minimumFractionDigits: 2 })}` : ''}
+                  </SelectItem>
+                  <SelectItem value="DIVISA">Divisa / otro (manual)</SelectItem>
+                </SelectContent>
+              </Select>
+              {tcModo === 'DIVISA' && (
+                <Input
+                  inputMode="decimal"
+                  placeholder={tcBillete ? `Ej. ${tcBillete.toLocaleString('es-AR')}` : 'TC'}
+                  value={tcManual}
+                  onChange={(e) => setTcManual(e.target.value)}
+                  autoFocus
+                />
+              )}
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="condicion-pago">Condición de pago</Label>
             <Select value={condicionPago} onValueChange={setCondicionPago}>

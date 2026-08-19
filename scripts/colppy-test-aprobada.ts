@@ -16,6 +16,7 @@
  *   --nro    número (default 99999001 para que no choque con la numeración real)
  *   --tipo   A | B (default A)
  *   --moneda ARS | USD (default ARS)
+ *   --clase  FACTURA | NC (default FACTURA) — NC = nota de credito Aprobada (idTipoComprobante 5)
  *   --almacen nombre del depósito en Colppy (default: env COLPPY_ALMACEN) — sin esto no mueve stock
  */
 import 'dotenv/config'
@@ -40,6 +41,7 @@ async function main() {
   const tipo = (arg('tipo', 'A') as 'A' | 'B')
   const moneda = arg('moneda', 'ARS')!
   const almacen = arg('almacen', process.env.COLPPY_ALMACEN || '')!
+  const clase = (arg('clase', 'FACTURA') as 'FACTURA' | 'NC')
   const apply = process.argv.includes('--apply')
   if (!cuit || !sku) {
     console.error('Faltan --cuit y/o --sku')
@@ -64,7 +66,7 @@ async function main() {
   const iva = 210
   const total = 1210
   const payload: ColppyInvoicePayload = {
-    descripcion: `PRUEBA ERP - factura externa Aprobada (ANULAR) - CAE 00000000000000`,
+    descripcion: `PRUEBA ERP - ${clase === 'NC' ? 'NC' : 'factura'} externa Aprobada (ANULAR) - CAE 00000000000000`,
     idCliente: customer.idEntidad,
     puntoVenta: pv,
     fechaFactura: fmt(hoy),
@@ -80,6 +82,7 @@ async function main() {
     totalIVA: iva,
     totalFactura: total,
     estado: 'Aprobada',
+    claseComprobante: clase === 'NC' ? 'NOTA_CREDITO' : 'FACTURA',
     nroFactura1: pv,
     nroFactura2: nro.padStart(8, '0'),
     items: [

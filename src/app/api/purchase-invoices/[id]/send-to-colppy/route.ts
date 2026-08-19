@@ -426,7 +426,13 @@ export async function POST(
       logger.info(`[Colppy FC] netoGravado=${netoGravadoCents} netoNoGravado=${netoNoGravadoCents} totalIVA=${totalIvaCents} (21%=${iva21Cents} 10.5%=${iva105Cents} 27%=${iva27Cents}) percIVA=${percIvaCents} percIIBB=${percIibbCents}`)
       logger.info(`[Colppy FC] totalFactura=${totalFacturaCents} (${c2d(totalFacturaCents)}) | DB total=${dbTotal} | diff=${(totalFacturaCents/100 - dbTotal).toFixed(2)}`)
 
-      // 5. Enviar a Colppy
+      // 5. Enviar a Colppy.
+      // Estado: Aprobada (default) para que Colppy la registre directo con
+      // asiento, CC del proveedor y entrada de stock, sin tener que aprobarla a
+      // mano en Colppy. COLPPY_COMPRAS_BORRADOR=1 vuelve al comportamiento
+      // anterior (borrador a aprobar en Colppy).
+      const estadoColppy: 'Borrador' | 'Aprobada' =
+        process.env.COLPPY_COMPRAS_BORRADOR === '1' ? 'Borrador' : 'Aprobada'
       const colppyParams = {
         idProveedor: supplier.idProveedor,
         descripcion: `${invoice.invoiceType === 'NC' ? 'NC' : invoice.invoiceType === 'ND' ? 'ND' : 'FC'} ${invoice.invoiceNumber}`,
@@ -436,7 +442,7 @@ export async function POST(
         idTipoFactura: invoice.voucherType as 'A' | 'B' | 'C',
         idTipoComprobante,
         idCondicionPago,
-        idEstadoFactura: 'Borrador',
+        idEstadoFactura: estadoColppy,
         nroFactura1: invoice.pointOfSale,
         nroFactura2: invoice.invoiceNumberSuffix,
         netoGravado: c2d(netoGravadoCents),
@@ -470,10 +476,12 @@ export async function POST(
         },
       })
 
-      logger.info(`[Colppy] Factura de compra ${invoice.invoiceNumber} enviada como borrador. ID Colppy: ${result.idFactura}`)
+      logger.info(`[Colppy] Factura de compra ${invoice.invoiceNumber} enviada como ${estadoColppy}. ID Colppy: ${result.idFactura}`)
 
       // Mensaje con info de percepciones IIBB
-      let message = `Factura ${invoice.invoiceNumber} creada como BORRADOR en Colppy.`
+      let message = estadoColppy === 'Aprobada'
+        ? `Factura ${invoice.invoiceNumber} registrada en Colppy como APROBADA (asiento, cuenta corriente y stock).`
+        : `Factura ${invoice.invoiceNumber} creada como BORRADOR en Colppy.`
       if (percIibbCents > 0) {
         message += ` Incluye $${c2d(percIibbCents)} en percepciones IIBB (${iibbEntries.length} jurisdicci${iibbEntries.length === 1 ? 'ón' : 'ones'}: ${iibbEntries.map(([j]) => j).join(', ')}).`
       }

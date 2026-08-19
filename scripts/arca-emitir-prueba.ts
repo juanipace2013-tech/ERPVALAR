@@ -13,6 +13,7 @@
  *   --moneda ARS | USD (default ARS)
  *   --cotiz  cotización si USD
  *   --neto   neto gravado (default 1000) — IVA 21% y total se derivan
+ *   --nc <cbteTipo>:<pv>:<nro>   emite NOTA DE CRÉDITO asociada a ese comprobante (ej. --nc 1:1:1)
  */
 import 'dotenv/config'
 import { getArcaConfig } from '@/lib/arca/config'
@@ -37,12 +38,17 @@ async function main() {
   const iva = Math.round(neto * 21) / 100
   const total = Math.round((neto + iva) * 100) / 100
   const cuit = arg('cuit', letra === 'A' ? '30715373579' : undefined)
+  const nc = arg('nc')
+  const asociados = nc
+    ? [{ Tipo: Number(nc.split(':')[0]), PtoVta: Number(nc.split(':')[1]), Nro: Number(nc.split(':')[2]), Cuit: cfg.cuit }]
+    : undefined
   const { receptor } = receptorDesdeCondicion(letra === 'A' ? 'RESPONSABLE_INSCRIPTO' : 'CONSUMIDOR_FINAL', cuit)
 
-  console.log(`ARCA ${cfg.env} PV ${cfg.puntoVenta} — Factura ${letra} ${moneda} neto=${neto} iva=${iva} total=${total}`)
+  console.log(`ARCA ${cfg.env} PV ${cfg.puntoVenta} — ${nc ? 'NOTA DE CRÉDITO' : 'Factura'} ${letra} ${moneda} neto=${neto} iva=${iva} total=${total}${nc ? ` asociada a ${nc}` : ''}`)
   const r = await emitirComprobante({
-    clase: 'FACTURA',
+    clase: nc ? 'NOTA_CREDITO' : 'FACTURA',
     letra,
+    asociados,
     fecha: new Date(),
     receptor,
     moneda,

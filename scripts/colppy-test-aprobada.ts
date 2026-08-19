@@ -16,6 +16,7 @@
  *   --nro    número (default 99999001 para que no choque con la numeración real)
  *   --tipo   A | B (default A)
  *   --moneda ARS | USD (default ARS)
+ *   --almacen nombre del depósito en Colppy (default: env COLPPY_ALMACEN) — sin esto no mueve stock
  */
 import 'dotenv/config'
 import {
@@ -38,6 +39,7 @@ async function main() {
   const nro = arg('nro', '99999001')!
   const tipo = (arg('tipo', 'A') as 'A' | 'B')
   const moneda = arg('moneda', 'ARS')!
+  const almacen = arg('almacen', process.env.COLPPY_ALMACEN || '')!
   const apply = process.argv.includes('--apply')
   if (!cuit || !sku) {
     console.error('Faltan --cuit y/o --sku')
@@ -84,8 +86,8 @@ async function main() {
       {
         idItem: Number(idItem) || 0,
         minimo: '',
-        tipoItem: '',
-        codigo: '',
+        tipoItem: 'P',
+        codigo: sku,
         Descripcion: `PRUEBA ERP ${sku}`,
         ImporteUnitario: tipo === 'A' ? neto : total,
         subtotal: neto,
@@ -97,11 +99,12 @@ async function main() {
         idPlanCuenta: 'Ventas',
         ccosto1: '',
         ccosto2: '',
-        almacen: '',
+        almacen,
         editable: false,
       },
     ],
   }
+  if (!almacen) console.warn('⚠ Sin --almacen (ni COLPPY_ALMACEN): Colppy no va a mover stock')
 
   console.log('\nPayload alta_facturaventa (Aprobada, sin labelfe):')
   console.log(JSON.stringify(payload, null, 2))

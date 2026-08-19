@@ -1685,6 +1685,20 @@ export async function sendQuoteToColppy(
         result.emision = emision;
         emisionRealizada = emision;
         facturaPayload.estado = 'Aprobada';
+        // Al entrar directamente como Aprobada (sin pasar por la pantalla de
+        // Colppy) hay que decirle explícitamente que la línea es un producto de
+        // inventario y de qué depósito sale; si no, no mueve stock ni genera
+        // las líneas de costo (Mercaderías / CMV) del asiento.
+        const almacen = process.env.COLPPY_ALMACEN || '';
+        for (let i = 0; i < facturaPayload.items.length; i++) {
+          const it = facturaPayload.items[i];
+          const prep = preparedItems[i];
+          if (it.idItem && it.idItem !== 0) {
+            it.tipoItem = 'P';
+            it.codigo = prep?.productSku || it.codigo || '';
+            it.almacen = almacen;
+          }
+        }
         facturaPayload.nroFactura1 = String(emision.puntoVenta).padStart(4, '0');
         facturaPayload.nroFactura2 = String(emision.numero).padStart(8, '0');
         facturaPayload.descripcion = `${facturaPayload.descripcion} - CAE ${emision.cae}`.slice(0, 100);

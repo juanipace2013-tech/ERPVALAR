@@ -1451,6 +1451,8 @@ model Invoice {
   colppySyncStatus  String?
   colppySyncError   String? @db.Text
   colppyPayload     Json? // Payload de alta_facturaventa para reintentar
+  // NC/ND emitida por el ERP: factura a la que se asocia
+  relatedInvoiceId  String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1464,6 +1466,10 @@ model Invoice {
 
   // Crosslink al modelo CotizacionFactura (mismo envío a Colppy en el modelo nuevo).
   cotizacionFactura CotizacionFactura?
+
+  // NC/ND <-> factura original (emision propia)
+  relatedInvoice  Invoice?  @relation("InvoiceRelated", fields: [relatedInvoiceId], references: [id])
+  relatedInvoices Invoice[] @relation("InvoiceRelated")
 
   // Accounting relations
   journalEntries   JournalEntry[]
@@ -1488,6 +1494,7 @@ model Invoice {
   @@index([paymentStatus])
   @@index([colppyId])
   @@index([colppySyncStatus])
+  @@index([relatedInvoiceId])
   @@map("invoices")
 }
 

@@ -781,6 +781,8 @@ export type ColppyInvoicePayload = {
     /** Número real (solo con estado Aprobada): sucursal 4 dígitos y número 8 dígitos. */
     nroFactura1?: string;
     nroFactura2?: string;
+    /** Clase de comprobante (default FACTURA). Define idTipoComprobante segun la letra. */
+    claseComprobante?: 'FACTURA' | 'NOTA_CREDITO' | 'NOTA_DEBITO';
     items: Array<{
       // Estructura alineada al ejemplo oficial del soporte de Colppy:
       // numéricos como number, subtotal en vez de importeTotal/importeIva,
@@ -804,6 +806,19 @@ export type ColppyInvoicePayload = {
       editable?: boolean;
     }>;
 };
+
+export function colppyTipoComprobante(
+  clase: 'FACTURA' | 'NOTA_CREDITO' | 'NOTA_DEBITO',
+  tipoFactura: string
+): string {
+  // Comportamiento probado: las facturas B se vienen cargando con '4' (la letra
+  // la define idTipoFactura) y Colppy las toma bien. Se mantiene el mismo
+  // criterio para NC/ND: 5 = NCV, 8 = NDV.
+  void tipoFactura;
+  if (clase === 'NOTA_CREDITO') return '5';
+  if (clase === 'NOTA_DEBITO') return '8';
+  return '4';
+}
 
 export async function colppyCreateInvoice(
   session: ColppySession,
@@ -846,7 +861,8 @@ export async function colppyCreateInvoice(
       // electrónico y no intenta pedir CAE.
       idEstadoFactura: estado,
       idTipoFactura: invoice.tipoFactura,
-      idTipoComprobante: '4', // 4=Factura
+      // 4 = Factura, 5 = Nota de Credito, 8 = Nota de Debito (la letra va en idTipoFactura)
+      idTipoComprobante: colppyTipoComprobante(invoice.claseComprobante || 'FACTURA', invoice.tipoFactura),
       nroFactura1: nroFactura1,
       nroFactura2: nroFactura2,
       fechaFactura: invoice.fechaFactura,

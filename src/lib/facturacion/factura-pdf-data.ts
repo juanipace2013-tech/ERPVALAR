@@ -48,6 +48,7 @@ export async function buildFacturaPdfData(invoiceId: string): Promise<FacturaPDF
       },
       items: { include: { product: { select: { sku: true } } } },
       quote: { select: { quoteNumber: true, bonification: true } },
+      relatedInvoice: { select: { invoiceType: true, pointOfSale: true, cbteNumero: true, cbteTipo: true, issueDate: true, invoiceNumber: true } },
     },
   })
   if (!inv || inv.emitidaPor !== 'ARCA' || !inv.cae || !inv.pointOfSale || !inv.cbteTipo || !inv.cbteNumero) {
@@ -107,7 +108,6 @@ export async function buildFacturaPdfData(invoiceId: string): Promise<FacturaPDF
     cotizacion: inv.currency === 'USD' ? Number(inv.exchangeRate ?? 1) : 1,
     condicionVenta: condicionVentaLabel(payload?.idCondicionPago),
     referencia: inv.quote?.quoteNumber ? `Cotización ${inv.quote.quoteNumber}` : null,
-    observaciones: null,
     receptor: {
       nombre: r.businessName || r.name,
       docTipoLabel: DOC_LABEL[inv.docTipo ?? 80] ?? 'CUIT',
@@ -124,6 +124,12 @@ export async function buildFacturaPdfData(invoiceId: string): Promise<FacturaPDF
       otrosTributos: 0,
       total,
     },
+    asociados: inv.relatedInvoice && inv.relatedInvoice.pointOfSale && inv.relatedInvoice.cbteNumero
+      ? [{
+          descripcion: `Factura ${inv.relatedInvoice.invoiceType} ${String(inv.relatedInvoice.pointOfSale).padStart(4, '0')}-${String(inv.relatedInvoice.cbteNumero).padStart(8, '0')} del ${inv.relatedInvoice.issueDate.toLocaleDateString('es-AR')}`,
+        }]
+      : undefined,
+    observaciones: inv.transactionType === 'CREDIT_NOTE' && inv.notes ? inv.notes.split('\n')[0].replace(/\. CAE .*$/, '') : null,
     isVoided: inv.status === 'CANCELLED',
   }
 }

@@ -87,6 +87,15 @@ const CREDIT_NOTE_TIPOS = new Set(['5', '11', '53'])
 // Notas de Débito (NDV) → transactionType = DEBIT_NOTE, SUMAN al total
 const DEBIT_NOTE_TIPOS = new Set(['8', '12', '52'])
 
+/** Tipo de comprobante ARCA (1/6 FA-FB, 3/8 NC, 2/7 ND) segun clase y letra. */
+function arcaCbteTipo(transactionType: string, letra: string): number | null {
+  const esB = letra === 'B' || letra === 'C'
+  if (transactionType === 'SALE') return esB ? 6 : 1
+  if (transactionType === 'CREDIT_NOTE') return esB ? 8 : 3
+  if (transactionType === 'DEBIT_NOTE') return esB ? 7 : 2
+  return null
+}
+
 function mapInvoiceType(idTipoFactura: string): 'A' | 'B' | 'C' | 'E' {
   const letter = tipoFacturaMap[idTipoFactura] || 'A'
   if (['A', 'B', 'C', 'E'].includes(letter)) return letter as 'A' | 'B' | 'C' | 'E'
@@ -646,12 +655,17 @@ export async function syncColppyFacturas(dateFrom: Date, dateTo: Date): Promise<
 
     try {
       let existing = await prisma.invoice.findFirst({ where: { colppyId: idFactura } })
-      // Factura emitida por el ERP que quedó sin colppyId (alta fallida y cargada
-      // a mano en Colppy, o reintento aún no corrido): vincular por número real.
-      if (!existing && invoiceData.invoiceNumber) {
-        existing = await prisma.invoice.findFirst({
-          where: { invoiceNumber: invoiceData.invoiceNumber, emitidaPor: 'ARCA' },
-        })
+      // Comprobante emitido por el ERP que quedo sin colppyId (alta fallida y
+      // cargado a mano en Colppy, o reintento aun no corrido): vincular por
+      // PV + tipo ARCA + numero.
+      if (!existing) {
+        const m = String(f.nroFactura || '').match(/^(\d{4,5})-(\d{8})$/)
+        const cbteTipoArca = m ? arcaCbteTipo(transactionType, invoiceData.invoiceType) : null
+        if (m && cbteTipoArca) {
+          existing = await prisma.invoice.findFirst({
+            where: { emitidaPor: 'ARCA', pointOfSale: Number(m[1]), cbteTipo: cbteTipoArca, cbteNumero: Number(m[2]) },
+          })
+        }
         if (existing && !existing.colppyId) {
           await prisma.invoice.update({ where: { id: existing.id }, data: { colppyId: idFactura } })
           await prisma.cotizacionFactura.updateMany({ where: { invoiceId: existing.id }, data: { colppyInvoiceId: idFactura } })

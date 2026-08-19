@@ -13,6 +13,7 @@ import path from 'path'
 import forge from 'node-forge'
 import { XMLParser } from 'fast-xml-parser'
 import { getArcaConfig } from './config'
+import { postSoap } from './http'
 import { logger } from '@/lib/logger'
 
 export interface TicketAcceso {
@@ -120,13 +121,13 @@ async function requestTa(service: string): Promise<TicketAcceso> {
     `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:wsaa="http://wsaa.view.sua.dvadac.desein.afip.gov">` +
     `<soapenv:Header/><soapenv:Body><wsaa:loginCms><wsaa:in0>${cms}</wsaa:in0></wsaa:loginCms></soapenv:Body></soapenv:Envelope>`
 
-  const res = await fetch(cfg.wsaaUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: '' },
-    body: envelope,
-    signal: AbortSignal.timeout(30000),
-  })
-  const text = await res.text()
+  const res = await postSoap(
+    cfg.wsaaUrl,
+    envelope,
+    { 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: '' },
+    30000
+  )
+  const text = res.text
 
   const parser = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true })
   const doc = parser.parse(text) as Record<string, unknown>

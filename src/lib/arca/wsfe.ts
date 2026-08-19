@@ -12,6 +12,7 @@
 import { XMLParser } from 'fast-xml-parser'
 import { getArcaConfig } from './config'
 import { getTicketAcceso } from './wsaa'
+import { postSoap } from './http'
 import { logger } from '@/lib/logger'
 
 // ---------------------------------------------------------------------------
@@ -280,13 +281,13 @@ async function call(method: string, bodyXml: string, withAuth = true): Promise<R
     `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ar="${NS}">` +
     `<soapenv:Header/><soapenv:Body><ar:${method}>${auth}${bodyXml}</ar:${method}></soapenv:Body></soapenv:Envelope>`
 
-  const res = await fetch(cfg.wsfeUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: `${NS}${method}` },
-    body: envelope,
-    signal: AbortSignal.timeout(60000),
-  })
-  const text = await res.text()
+  const res = await postSoap(
+    cfg.wsfeUrl,
+    envelope,
+    { 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: `${NS}${method}` },
+    60000
+  )
+  const text = res.text
   const parser = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true, parseTagValue: false })
   const doc = parser.parse(text) as Record<string, unknown>
 

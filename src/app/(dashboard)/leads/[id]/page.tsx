@@ -295,7 +295,7 @@ function Field({
       <div className="text-xs text-gray-500">{label}</div>
       <div
         className={[
-          'text-sm',
+          'text-sm break-all',
           mono ? 'font-mono' : '',
           multiline ? 'whitespace-pre-wrap' : '',
         ].join(' ')}

@@ -42,6 +42,9 @@ export async function GET(
             defaultTransportName: true,
             defaultTransportAddress: true,
             defaultTransportSchedule: true,
+            transports: {
+              orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
+            },
           },
         },
         salesPerson: {

@@ -87,9 +87,38 @@ interface Quote {
     defaultTransportName?: string | null
     defaultTransportAddress?: string | null
     defaultTransportSchedule?: string | null
+    transports?: CustomerTransportOption[]
   }
   items: QuoteItem[]
   exchangeRate?: number | string | null
+}
+
+interface CustomerTransportOption {
+  id?: string
+  name: string
+  address: string | null
+  schedule: string | null
+  isDefault: boolean
+}
+
+// Opciones de transporte del cliente, con fallback al legacy defaultTransport*
+// para clientes sin la lista migrada.
+function buildTransportOptions(c: {
+  transports?: CustomerTransportOption[] | null
+  defaultTransportName?: string | null
+  defaultTransportAddress?: string | null
+  defaultTransportSchedule?: string | null
+}): CustomerTransportOption[] {
+  if (c.transports?.length) return c.transports
+  if (c.defaultTransportName) {
+    return [{
+      name: c.defaultTransportName,
+      address: c.defaultTransportAddress || null,
+      schedule: c.defaultTransportSchedule || null,
+      isDefault: true,
+    }]
+  }
+  return []
 }
 
 interface RemitoItem {
@@ -213,6 +242,7 @@ export default function NuevoRemitoPage() {
   const [carrier, setCarrier] = useState('')
   const [transportAddress, setTransportAddress] = useState('')
   const [customerTransportSchedule, setCustomerTransportSchedule] = useState('')
+  const [customerTransports, setCustomerTransports] = useState<CustomerTransportOption[]>([])
   const [deliveryType, setDeliveryType] = useState('Retira en sucursal')
   const [deliveryTypeCustom, setDeliveryTypeCustom] = useState('')
   const [purchaseOrder, setPurchaseOrder] = useState('')
@@ -271,6 +301,7 @@ export default function NuevoRemitoPage() {
       .then((data) => {
         if (data?.found && data.customer?.id) {
           setLocalCustomerId(data.customer.id)
+          setCustomerTransports(buildTransportOptions(data.customer))
           // Pre-fill transport defaults if carrier is empty
           if (!carrier && data.customer.defaultTransportName) {
             setCarrier(data.customer.defaultTransportName)
@@ -298,6 +329,7 @@ export default function NuevoRemitoPage() {
   useEffect(() => {
     if (!quote?.customer) return
     const c = quote.customer
+    setCustomerTransports(buildTransportOptions(c))
     if (!carrier && c.defaultTransportName) {
       setCarrier(c.defaultTransportName)
     }
@@ -308,6 +340,35 @@ export default function NuevoRemitoPage() {
       setCustomerTransportSchedule(c.defaultTransportSchedule)
     }
   }, [quote?.customer?.id])
+
+  const applyTransport = (t: CustomerTransportOption) => {
+    setCarrier(t.name)
+    setTransportAddress(t.address || '')
+    setCustomerTransportSchedule(t.schedule || '')
+  }
+
+  // Chips para elegir entre los transportes del cliente (visible si hay más
+  // de uno, o si hay uno y el campo quedó vacío)
+  const transportChips = customerTransports.length > 1 || (customerTransports.length === 1 && !carrier) ? (
+    <div className="flex flex-wrap gap-1.5 mt-1.5">
+      {customerTransports.map((t, i) => (
+        <button
+          key={t.id || i}
+          type="button"
+          onClick={() => applyTransport(t)}
+          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors ${
+            carrier === t.name
+              ? 'border-blue-600 bg-blue-50 text-blue-700'
+              : 'border-gray-300 text-gray-600 hover:border-blue-400 hover:text-blue-700'
+          }`}
+        >
+          <Truck className="h-3 w-3" />
+          {t.name}
+          {t.isDefault && customerTransports.length > 1 && ' ★'}
+        </button>
+      ))}
+    </div>
+  ) : null
 
   // ── Product search debounce ──
   useEffect(() => {
@@ -858,6 +919,7 @@ export default function NuevoRemitoPage() {
                   value={carrier}
                   onChange={(e) => setCarrier(e.target.value)}
                 />
+                {transportChips}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="transportAddress">
@@ -1042,6 +1104,7 @@ export default function NuevoRemitoPage() {
                   value={carrier}
                   onChange={(e) => setCarrier(e.target.value)}
                 />
+                {transportChips}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="d-transportAddress">

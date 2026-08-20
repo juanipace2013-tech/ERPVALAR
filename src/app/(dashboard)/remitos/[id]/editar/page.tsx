@@ -80,6 +80,13 @@ interface DeliveryNote {
     defaultTransportName: string | null
     defaultTransportAddress: string | null
     defaultTransportSchedule: string | null
+    transports?: Array<{
+      id: string
+      name: string
+      address: string | null
+      schedule: string | null
+      isDefault: boolean
+    }>
   }
   supplier: {
     id: string
@@ -380,19 +387,44 @@ export default function EditarRemitoPage() {
                 onChange={(e) => setCarrier(e.target.value)}
                 placeholder="Nombre del transporte"
               />
-              {!carrier && deliveryNote?.customer?.defaultTransportName && (
-                <button
-                  type="button"
-                  className="flex items-center gap-1 mt-1 text-xs text-blue-600 hover:text-blue-800"
-                  onClick={() => {
-                    setCarrier(deliveryNote.customer.defaultTransportName || '')
-                    setTransportAddress(deliveryNote.customer.defaultTransportAddress || '')
-                  }}
-                >
-                  <Truck className="h-3 w-3" />
-                  Usar transporte habitual: {deliveryNote.customer.defaultTransportName}
-                </button>
-              )}
+              {(() => {
+                // Transportes del cliente, con fallback al legacy defaultTransport*
+                const options = deliveryNote?.customer?.transports?.length
+                  ? deliveryNote.customer.transports
+                  : deliveryNote?.customer?.defaultTransportName
+                  ? [{
+                      id: 'legacy',
+                      name: deliveryNote.customer.defaultTransportName,
+                      address: deliveryNote.customer.defaultTransportAddress,
+                      schedule: deliveryNote.customer.defaultTransportSchedule,
+                      isDefault: true,
+                    }]
+                  : []
+                if (!options.length || (options.length === 1 && carrier)) return null
+                return (
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {options.map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => {
+                          setCarrier(t.name)
+                          setTransportAddress(t.address || '')
+                        }}
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors ${
+                          carrier === t.name
+                            ? 'border-blue-600 bg-blue-50 text-blue-700'
+                            : 'border-gray-300 text-gray-600 hover:border-blue-400 hover:text-blue-700'
+                        }`}
+                      >
+                        <Truck className="h-3 w-3" />
+                        {t.name}
+                        {t.isDefault && options.length > 1 && ' ★'}
+                      </button>
+                    ))}
+                  </div>
+                )
+              })()}
             </div>
             <div>
               <Label>Dirección del Transporte</Label>
@@ -401,11 +433,20 @@ export default function EditarRemitoPage() {
                 onChange={(e) => setTransportAddress(e.target.value)}
                 placeholder="Dirección del transporte"
               />
-              {deliveryNote?.customer?.defaultTransportSchedule && carrier && (
-                <p className="text-xs text-gray-500 mt-1">
-                  Horario: {deliveryNote.customer.defaultTransportSchedule}
-                </p>
-              )}
+              {(() => {
+                if (!carrier) return null
+                const match = deliveryNote?.customer?.transports?.find((t) => t.name === carrier)
+                const schedule = match?.schedule
+                  || (carrier === deliveryNote?.customer?.defaultTransportName
+                    ? deliveryNote?.customer?.defaultTransportSchedule
+                    : null)
+                if (!schedule) return null
+                return (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Horario: {schedule}
+                  </p>
+                )
+              })()}
             </div>
             {!carrier && (
               <div>

@@ -210,7 +210,9 @@ model Customer {
   salesPersonId String?
   salesPerson   User?   @relation("CustomerSalesPerson", fields: [salesPersonId], references: [id])
 
-  // Transporte habitual
+  // Transporte habitual (espejo del CustomerTransport con isDefault=true;
+  // se mantiene sincronizado para los consumidores existentes: remitos,
+  // quote-workflow, merge Colppy)
   defaultTransportName     String? // Ej: "LOGINTER", "ANDREANI"
   defaultTransportAddress  String? // Ej: "Sucursal Retiro"
   defaultTransportSchedule String? // Ej: "L a V 8:00 a 17:00"
@@ -233,6 +235,7 @@ model Customer {
   receipts          Receipt[]
   customerReceipts  CustomerReceipt[]         @relation("CustomerReceipts")
   deliveryAddresses CustomerDeliveryAddress[]
+  transports        CustomerTransport[]
   googleAdsLeads    GoogleAdsLead[]
   conversations     Conversation[]
 
@@ -273,6 +276,27 @@ model CustomerDeliveryAddress {
   @@index([customerId])
   @@index([customerId, isActive])
   @@map("customer_delivery_addresses")
+}
+
+// Transportes/expresos del cliente. Puede haber varios (según el destino
+// cambia el expreso); el marcado isDefault se espeja en los campos
+// defaultTransport* de Customer.
+model CustomerTransport {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  name     String // "DIEMAR", "CRUZ DEL SUR"
+  address  String? // "Ferré 1687, Nueva Pompeya, CABA"
+  schedule String? // "8 a 17"
+
+  isDefault Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@map("customer_transports")
 }
 
 model Contact {

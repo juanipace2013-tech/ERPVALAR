@@ -74,6 +74,14 @@ const emptyForm = {
   isDefault: false,
 }
 
+interface CustomerTransportRow {
+  id?: string
+  name: string
+  address: string
+  schedule: string
+  isDefault: boolean
+}
+
 interface ColppyCustomer {
   id: string
   colppyId: string
@@ -187,11 +195,8 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
 
   // Transport edit state
   const [isEditingTransport, setIsEditingTransport] = useState(false)
-  const [transportForm, setTransportForm] = useState({
-    defaultTransportName: '',
-    defaultTransportAddress: '',
-    defaultTransportSchedule: '',
-  })
+  const [transports, setTransports] = useState<CustomerTransportRow[]>([])
+  const [transportRows, setTransportRows] = useState<CustomerTransportRow[]>([])
   const [savingTransport, setSavingTransport] = useState(false)
 
   // TC type state
@@ -215,6 +220,34 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
     .join(', ')
 
   const phones = [customer.phone, customer.mobile].filter(Boolean).join(' / ')
+
+  const fetchTransports = async (custId: string) => {
+    try {
+      const res = await fetch(`/api/clientes/${custId}/transportes`)
+      if (res.ok) {
+        const data = await res.json()
+        const list: CustomerTransportRow[] = (data.transports || []).map((t: any) => ({
+          id: t.id,
+          name: t.name || '',
+          address: t.address || '',
+          schedule: t.schedule || '',
+          isDefault: Boolean(t.isDefault),
+        }))
+        // Clientes viejos sin migrar: mostrar el transporte habitual legacy como único ítem
+        if (!list.length && customer.defaultTransportName) {
+          list.push({
+            name: customer.defaultTransportName,
+            address: customer.defaultTransportAddress || '',
+            schedule: customer.defaultTransportSchedule || '',
+            isDefault: true,
+          })
+        }
+        setTransports(list)
+      }
+    } catch {
+      // No crítico
+    }
+  }
 
   const fetchDeliveryAddresses = async (custId: string) => {
     setLoadingAddresses(true)
@@ -249,6 +282,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
       if (customerData?.found && customerData.customer?.id) {
         setLocalCustomerId(customerData.customer.id)
         fetchDeliveryAddresses(customerData.customer.id)
+        fetchTransports(customerData.customer.id)
         const tc = customerData.customer.exchangeRateType || null
         setExchangeRateType(tc)
       }
@@ -328,13 +362,39 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
 
   // ─── Transport edit handlers ───────────────────────────────────────────────
 
+  const emptyTransportRow = (isDefault: boolean): CustomerTransportRow => ({
+    name: '',
+    address: '',
+    schedule: '',
+    isDefault,
+  })
+
   const startEditingTransport = () => {
-    setTransportForm({
-      defaultTransportName: customer.defaultTransportName || '',
-      defaultTransportAddress: customer.defaultTransportAddress || '',
-      defaultTransportSchedule: customer.defaultTransportSchedule || '',
-    })
+    setTransportRows(
+      transports.length
+        ? transports.map((t) => ({ ...t }))
+        : [emptyTransportRow(true)]
+    )
     setIsEditingTransport(true)
+  }
+
+  const updateTransportRow = (index: number, patch: Partial<CustomerTransportRow>) => {
+    setTransportRows((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)))
+  }
+
+  const setTransportRowDefault = (index: number) => {
+    setTransportRows((rows) => rows.map((r, i) => ({ ...r, isDefault: i === index })))
+  }
+
+  const removeTransportRow = (index: number) => {
+    setTransportRows((rows) => {
+      const next = rows.filter((_, i) => i !== index)
+      // Si se borró el habitual, el primero pasa a serlo
+      if (next.length && !next.some((r) => r.isDefault)) {
+        next[0] = { ...next[0], isDefault: true }
+      }
+      return next
+    })
   }
 
   const handleSaveTransport = async () => {
@@ -344,25 +404,31 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
     }
     setSavingTransport(true)
     try {
-      const res = await fetch(`/api/clientes/${localCustomerId}`, {
-        method: 'PATCH',
+      const res = await fetch(`/api/clientes/${localCustomerId}/transportes`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          defaultTransportName: transportForm.defaultTransportName || null,
-          defaultTransportAddress: transportForm.defaultTransportAddress || null,
-          defaultTransportSchedule: transportForm.defaultTransportSchedule || null,
-        }),
+        body: JSON.stringify({ transports: transportRows }),
       })
       if (!res.ok) throw new Error()
-      toast.success('Transporte habitual actualizado')
+      const data = await res.json()
+      const list: CustomerTransportRow[] = (data.transports || []).map((t: any) => ({
+        id: t.id,
+        name: t.name || '',
+        address: t.address || '',
+        schedule: t.schedule || '',
+        isDefault: Boolean(t.isDefault),
+      }))
+      setTransports(list)
+      toast.success('Transportes actualizados')
       setIsEditingTransport(false)
+      const habitual = list.find((t) => t.isDefault)
       onCustomerUpdate?.({
-        defaultTransportName: transportForm.defaultTransportName,
-        defaultTransportAddress: transportForm.defaultTransportAddress,
-        defaultTransportSchedule: transportForm.defaultTransportSchedule,
+        defaultTransportName: habitual?.name || '',
+        defaultTransportAddress: habitual?.address || '',
+        defaultTransportSchedule: habitual?.schedule || '',
       })
     } catch {
-      toast.error('Error al guardar transporte')
+      toast.error('Error al guardar transportes')
     } finally {
       setSavingTransport(false)
     }
@@ -684,14 +750,14 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
         </CardContent>
       </Card>
 
-      {/* Transporte Habitual */}
+      {/* Transportes */}
       {localCustomerId && (
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <Truck className="h-4 w-4 text-blue-600" />
-                <p className="text-xs text-gray-400 uppercase tracking-wider">Transporte Habitual</p>
+                <p className="text-xs text-gray-400 uppercase tracking-wider">Transportes</p>
               </div>
               {!isEditingTransport && (
                 <Button
@@ -701,7 +767,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
                   className="h-7 text-xs"
                 >
                   <Pencil className="h-3.5 w-3.5 mr-1" />
-                  {customer.defaultTransportName ? 'Editar' : 'Agregar'}
+                  {transports.length ? 'Editar' : 'Agregar'}
                 </Button>
               )}
               {isEditingTransport && (
@@ -730,53 +796,94 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
             </div>
 
             {isEditingTransport ? (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <Label className="text-xs text-gray-500">Transporte</Label>
-                  <Input
-                    value={transportForm.defaultTransportName}
-                    onChange={(e) => setTransportForm({ ...transportForm, defaultTransportName: e.target.value })}
-                    placeholder="Ej: LOGINTER, ANDREANI, OCA"
-                    className="h-8 text-sm mt-1"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs text-gray-500">Dirección / Sucursal</Label>
-                  <Input
-                    value={transportForm.defaultTransportAddress}
-                    onChange={(e) => setTransportForm({ ...transportForm, defaultTransportAddress: e.target.value })}
-                    placeholder="Ej: Sucursal Retiro, Terminal de cargas"
-                    className="h-8 text-sm mt-1"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs text-gray-500">Horario</Label>
-                  <Input
-                    value={transportForm.defaultTransportSchedule}
-                    onChange={(e) => setTransportForm({ ...transportForm, defaultTransportSchedule: e.target.value })}
-                    placeholder="Ej: L a V 8:00 a 17:00"
-                    className="h-8 text-sm mt-1"
-                  />
-                </div>
+              <div className="space-y-3">
+                {transportRows.map((row, i) => (
+                  <div key={i} className="flex items-start gap-3 rounded-lg border border-gray-200 p-3">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
+                      <div>
+                        <Label className="text-xs text-gray-500">Transporte</Label>
+                        <Input
+                          value={row.name}
+                          onChange={(e) => updateTransportRow(i, { name: e.target.value })}
+                          placeholder="Ej: LOGINTER, ANDREANI, OCA"
+                          className="h-8 text-sm mt-1"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-gray-500">Dirección / Sucursal</Label>
+                        <Input
+                          value={row.address}
+                          onChange={(e) => updateTransportRow(i, { address: e.target.value })}
+                          placeholder="Ej: Sucursal Retiro, Terminal de cargas"
+                          className="h-8 text-sm mt-1"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-gray-500">Horario</Label>
+                        <Input
+                          value={row.schedule}
+                          onChange={(e) => updateTransportRow(i, { schedule: e.target.value })}
+                          placeholder="Ej: L a V 8:00 a 17:00"
+                          className="h-8 text-sm mt-1"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-2 pt-5 shrink-0">
+                      <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer whitespace-nowrap">
+                        <input
+                          type="radio"
+                          name="transport-default"
+                          checked={row.isDefault}
+                          onChange={() => setTransportRowDefault(i)}
+                          className="accent-blue-600"
+                        />
+                        Habitual
+                      </label>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => removeTransportRow(i)}
+                        className="h-7 w-7 p-0 text-gray-400 hover:text-red-600"
+                        title="Eliminar transporte"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setTransportRows((rows) => [...rows, emptyTransportRow(rows.length === 0)])}
+                  className="h-7 text-xs"
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  Agregar transporte
+                </Button>
               </div>
-            ) : customer.defaultTransportName ? (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <p className="text-xs text-gray-500">Transporte</p>
-                  <p className="text-sm font-medium text-gray-900">{customer.defaultTransportName}</p>
-                </div>
-                {customer.defaultTransportAddress && (
-                  <div>
-                    <p className="text-xs text-gray-500">Dirección / Sucursal</p>
-                    <p className="text-sm font-medium text-gray-900">{customer.defaultTransportAddress}</p>
+            ) : transports.length ? (
+              <div className="divide-y divide-gray-100">
+                {transports.map((t, i) => (
+                  <div key={t.id || i} className="grid grid-cols-1 md:grid-cols-3 gap-4 py-2 first:pt-0 last:pb-0">
+                    <div>
+                      <p className="text-xs text-gray-500">Transporte</p>
+                      <p className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                        {t.name}
+                        {t.isDefault && transports.length > 1 && (
+                          <Badge className="bg-blue-100 text-blue-800 text-[10px] px-1.5 py-0">Habitual</Badge>
+                        )}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Dirección / Sucursal</p>
+                      <p className="text-sm font-medium text-gray-900">{t.address || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Horario</p>
+                      <p className="text-sm font-medium text-gray-900">{t.schedule || '—'}</p>
+                    </div>
                   </div>
-                )}
-                {customer.defaultTransportSchedule && (
-                  <div>
-                    <p className="text-xs text-gray-500">Horario</p>
-                    <p className="text-sm font-medium text-gray-900">{customer.defaultTransportSchedule}</p>
-                  </div>
-                )}
+                ))}
               </div>
             ) : (
               <p className="text-sm text-gray-500 text-center py-2">
@@ -784,9 +891,11 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
               </p>
             )}
 
-            {customer.defaultTransportName && !isEditingTransport && (
+            {transports.length > 0 && !isEditingTransport && (
               <p className="text-xs text-gray-400 mt-3">
-                Se usará como valor por defecto en remitos de este cliente
+                {transports.length > 1
+                  ? 'El habitual se usa por defecto en remitos; los demás se pueden elegir al cargar el remito'
+                  : 'Se usará como valor por defecto en remitos de este cliente'}
               </p>
             )}
           </CardContent>

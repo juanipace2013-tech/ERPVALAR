@@ -42,6 +42,9 @@ export async function GET(
         salesPerson: {
           select: { id: true, name: true, email: true },
         },
+        transports: {
+          orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
+        },
         quotes: {
           select: {
             id: true,
@@ -117,6 +120,7 @@ export async function GET(
         defaultTransportName: customer.defaultTransportName,
         defaultTransportAddress: customer.defaultTransportAddress,
         defaultTransportSchedule: customer.defaultTransportSchedule,
+        transports: customer.transports,
         exchangeRateType: customer.exchangeRateType,
         salesPerson: customer.salesPerson,
         quotes: customer.quotes,

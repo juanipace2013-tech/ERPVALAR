@@ -19,7 +19,13 @@ export async function GET(
     const deliveryNote = await prisma.deliveryNote.findUnique({
       where: { id },
       include: {
-        customer: true,
+        customer: {
+          include: {
+            transports: {
+              orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
+            },
+          },
+        },
         supplier: true,
         // Solo los 3 campos que usa la pantalla de detalle: antes se traía la
         // cotización completa con todos sus items y el modelo Product entero.

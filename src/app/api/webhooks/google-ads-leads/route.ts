@@ -85,18 +85,67 @@ interface GoogleAdsLeadPayload {
 }
 
 /**
- * Extrae un valor de user_column_data por column_name.
- * Google usa nombres en mayúsculas tipo "FULL_NAME", "EMAIL", "PHONE_NUMBER".
+ * Extrae un valor de user_column_data. Los campos estándar llegan con el
+ * identificador en column_id ("FULL_NAME", "EMAIL", "PHONE_NUMBER") y un
+ * column_name legible ("Full Name", "User Email"); se matchean ambos
+ * normalizados (mayúsculas, espacios como guión bajo).
  */
+function normalizeColumnKey(s: string): string {
+  return s.trim().toUpperCase().replace(/[\s-]+/g, '_')
+}
+
 function pickColumn(
   columns: UserColumnData[] | undefined,
   name: string
 ): string | undefined {
   if (!columns) return undefined
+  const wanted = normalizeColumnKey(name)
   const match = columns.find(
-    (c) => c.column_name?.toUpperCase() === name.toUpperCase()
+    (c) =>
+      (c.column_id && normalizeColumnKey(c.column_id) === wanted) ||
+      (c.column_name && normalizeColumnKey(c.column_name) === wanted)
   )
   return match?.string_value?.trim() || undefined
+}
+
+/** column_id estándar de Google que no van al mensaje. */
+const STANDARD_COLUMN_IDS = new Set([
+  'FULL_NAME',
+  'FIRST_NAME',
+  'LAST_NAME',
+  'EMAIL',
+  'WORK_EMAIL',
+  'PHONE_NUMBER',
+  'PHONE_NUMBER_VERIFIED',
+  'COMPANY_NAME',
+  'REGION',
+  'CITY',
+  'COUNTRY',
+  'POSTAL_CODE',
+  'JOB_TITLE',
+  'MESSAGE',
+  'COMMENTS',
+])
+
+/**
+ * Junta las preguntas personalizadas del form (ej. "¿Qué producto le
+ * interesa?") en un texto para el campo mensaje.
+ */
+function pickCustomQuestions(
+  columns: UserColumnData[] | undefined
+): string | undefined {
+  if (!columns) return undefined
+  const parts = columns
+    .filter((c) => {
+      const key = c.column_id ? normalizeColumnKey(c.column_id) : ''
+      return key && !STANDARD_COLUMN_IDS.has(key) && c.string_value?.trim()
+    })
+    .map((c) =>
+      c.column_name
+        ? `${c.column_name.trim()}: ${c.string_value!.trim()}`
+        : c.string_value!.trim()
+    )
+  return parts.length ? parts.join('\n') : undefined
 }
 
 export async function GET() {
@@ -129,14 +178,24 @@ export async function POST(req: NextRequest) {
     }
 
     const columns = payload.user_column_data
-    const fullName = pickColumn(columns, 'FULL_NAME')
-    const email = pickColumn(columns, 'EMAIL')?.toLowerCase()
+    const fullName =
+      pickColumn(columns, 'FULL_NAME') ||
+      [pickColumn(columns, 'FIRST_NAME'), pickColumn(columns, 'LAST_NAME')]
+        .filter(Boolean)
+        .join(' ') ||
+      undefined
+    const email = (
+      pickColumn(columns, 'EMAIL') || pickColumn(columns, 'WORK_EMAIL')
+    )?.toLowerCase()
     const phone = pickColumn(columns, 'PHONE_NUMBER')
     const companyName = pickColumn(columns, 'COMPANY_NAME')
     const message =
-      pickColumn(columns, 'MESSAGE') ||
-      pickColumn(columns, 'COMMENTS') ||
-      undefined
+      [
+        pickColumn(columns, 'MESSAGE') || pickColumn(columns, 'COMMENTS'),
+        pickCustomQuestions(columns),
+      ]
+        .filter(Boolean)
+        .join('\n') || undefined
 
     // Intentar vincular a un Customer existente por email o teléfono.
     let customerId: string | undefined

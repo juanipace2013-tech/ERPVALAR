@@ -22,13 +22,28 @@ import { MlLinkStatus } from '@prisma/client'
 import { syncStockForSkus } from '@/lib/colppy-inventory'
 import { searchMyItemIds, getItemsLite, updateItem, MlApiError, type MlItemLite } from './client'
 
-// "2109-11", "2109 11", "2109.11", "3190 04" -> "2109 11". Evita años tipo "2024 10"? No hay
-// forma segura; el match contra Product.sku filtra falsos positivos.
-const CODE_RE = /\b(\d{4})[\s\-.]?(\d{2})\b/g
+// Códigos Genebre en el título: "2109-11", "2109 11", "2034c 04", "2459a 10",
+// "2835ae 12", "70037 05", "3822 010" -> "2109 11", "2034C 04", ... (formato de
+// Product.sku). Las variantes con cero inicial se prueban también sin el cero.
+const GENEBRE_RE = /\b(\d{4,5}[a-z]{0,2})[\s\-.]?(\d{2,3})\b/gi
+// Modelos alfanuméricos (Winters, Danfoss, CENI...): "LE3150", "TBM20040B36S",
+// "PPC5065", "KPI35", "PLP302R12R99VAC". Se matchean exactos o por prefijo único.
+const MODEL_RE = /\b([A-Z]{2,4}\d{3,}[A-Z0-9+\-]*)\b/gi
 
 export function extractCodesFromTitle(title: string): string[] {
   const out = new Set<string>()
-  for (const m of title.matchAll(CODE_RE)) out.add(`${m[1]} ${m[2]}`)
+  for (const m of title.matchAll(GENEBRE_RE)) {
+    const fam = m[1].toUpperCase()
+    const v = m[2]
+    out.add(`${fam} ${v}`)
+    if (v.length === 3 && v.startsWith('0')) out.add(`${fam} ${v.slice(1)}`)
+  }
+  return [...out]
+}
+
+export function extractModelsFromTitle(title: string): string[] {
+  const out = new Set<string>()
+  for (const m of title.matchAll(MODEL_RE)) out.add(m[1].toUpperCase())
   return [...out]
 }
 
@@ -51,18 +66,35 @@ export async function importListings(): Promise<ImportResult> {
   const items = await getItemsLite(ids)
   logger.info(`[ML Listings] ${items.length} publicaciones (${active.length} activas, ${paused.length} pausadas)`)
 
-  // Candidatos de SKU de todos los ítems en una sola query.
+  // Candidatos de SKU/modelo de todos los ítems en pocas queries.
   const skuCandidates = new Set<string>()
+  const modelCandidates = new Set<string>()
   for (const it of items) {
     const sku = resolveSku(it)
     if (sku) skuCandidates.add(sku)
     for (const c of extractCodesFromTitle(it.title)) skuCandidates.add(c)
+    for (const m of extractModelsFromTitle(it.title)) modelCandidates.add(m)
   }
   const products = await prisma.product.findMany({
-    where: { sku: { in: [...skuCandidates] } },
+    where: { sku: { in: [...skuCandidates], mode: 'insensitive' } },
     select: { id: true, sku: true },
   })
-  const bySku = new Map(products.map((p) => [p.sku, p.id]))
+  const bySku = new Map(products.map((p) => [p.sku.toUpperCase(), p.id]))
+
+  // Modelos: exacto o prefijo. Si un prefijo matchea varios productos, es ambiguo.
+  const modelList = [...modelCandidates]
+  const modelProducts = modelList.length
+    ? await prisma.product.findMany({
+        where: { OR: modelList.map((m) => ({ sku: { startsWith: m, mode: 'insensitive' } })) },
+        select: { id: true, sku: true },
+      })
+    : []
+  const byModel = new Map<string, string[]>()
+  for (const m of modelList) {
+    const exact = modelProducts.filter((p) => p.sku.toUpperCase() === m)
+    const pref = exact.length ? exact : modelProducts.filter((p) => p.sku.toUpperCase().startsWith(m))
+    byModel.set(m, [...new Set(pref.map((p) => p.id))])
+  }
 
   const existing = await prisma.mlItemLink.findMany({
     where: { mlItemId: { in: ids } },
@@ -87,10 +119,15 @@ export async function importListings(): Promise<ImportResult> {
     const prev = existingStatus.get(it.id)
     let match: { productId: string; method: string } | null = null
     if (!prev || prev === MlLinkStatus.UNMATCHED) {
-      if (sku && bySku.has(sku)) match = { productId: bySku.get(sku)!, method: 'sku' }
+      const skuU = sku?.toUpperCase()
+      if (skuU && bySku.has(skuU)) match = { productId: bySku.get(skuU)!, method: 'sku' }
       else {
-        const hits = extractCodesFromTitle(it.title).filter((c) => bySku.has(c))
-        if (hits.length === 1) match = { productId: bySku.get(hits[0])!, method: 'title-code' }
+        const hits = [...new Set(extractCodesFromTitle(it.title).filter((c) => bySku.has(c)).map((c) => bySku.get(c)!))]
+        if (hits.length === 1) match = { productId: hits[0], method: 'title-code' }
+        else if (hits.length === 0) {
+          const mh = [...new Set(extractModelsFromTitle(it.title).flatMap((m) => byModel.get(m) ?? []))]
+          if (mh.length === 1) match = { productId: mh[0], method: 'title-model' }
+        }
       }
     }
 

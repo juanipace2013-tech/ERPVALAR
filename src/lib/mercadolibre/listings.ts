@@ -201,10 +201,12 @@ export async function syncStockToMl(opts: { linkIds?: string[]; skipColppy?: boo
 
   // 1. Colppy -> ERP
   let colppy = { updated: 0, unchanged: 0, notFound: 0 }
+  const notInColppy = new Set<string>()
   if (!opts.skipColppy && links.length) {
     try {
       const r = await syncStockForSkus([...new Set(links.map((l) => l.product!.sku))])
       colppy = { updated: r.updated, unchanged: r.unchanged, notFound: r.notFound }
+      for (const s of r.notFoundSkus) notInColppy.add(s)
     } catch (err) {
       logger.error('[ML Stock] Falló el sync Colppy -> ERP; sigo con el stock actual del ERP', err)
     }
@@ -225,6 +227,15 @@ export async function syncStockToMl(opts: { linkIds?: string[]; skipColppy?: boo
       result.unchanged++
       continue
     }
+    // Colppy es la fuente de verdad: si el SKU no está ahí, no tocamos ML.
+    if (notInColppy.has(link.product!.sku)) {
+      result.errors++
+      await prisma.mlItemLink.update({
+        where: { id: link.id },
+        data: { lastSyncAt: new Date(), lastSyncError: `SKU ${link.product!.sku} no existe en Colppy; no se sincroniza` },
+      })
+      continue
+    }
     const target = computeTarget(link.product!.stockQuantity, link.safetyStock, link.maxPublish)
     const current = item.available_quantity ?? null
 
@@ -239,8 +250,10 @@ export async function syncStockToMl(opts: { linkIds?: string[]; skipColppy?: boo
 
     try {
       const body: Record<string, unknown> = { available_quantity: target }
-      // Si estaba pausada por falta de stock y ahora hay, reactivar.
-      if (item.status === 'paused' && target > 0) body.status = 'active'
+      // Reactivar solo si fue ML quien la pausó por falta de stock (no si la
+      // pausó el vendedor a propósito).
+      const outOfStock = (item.sub_status ?? []).includes('out_of_stock')
+      if (item.status === 'paused' && outOfStock && target > 0) body.status = 'active'
       const updated = await updateItem(link.mlItemId, body)
       result.updated++
       result.changes.push({ mlItemId: link.mlItemId, title: link.title, from: current, to: target })

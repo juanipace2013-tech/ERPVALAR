@@ -382,6 +382,7 @@ export interface MlItemLite {
   id: string
   title: string
   status?: string
+  sub_status?: string[]
   permalink?: string
   price?: number
   available_quantity?: number
@@ -395,7 +396,7 @@ export async function getItemsLite(ids: string[]): Promise<MlItemLite[]> {
   for (let i = 0; i < ids.length; i += 20) {
     const chunk = ids.slice(i, i + 20)
     const res = await mlFetch<{ code: number; body: MlItemLite }[]>(
-      `/items?ids=${chunk.join(',')}&attributes=id,title,status,permalink,price,available_quantity,seller_custom_field,variations`
+      `/items?ids=${chunk.join(',')}&attributes=id,title,status,sub_status,permalink,price,available_quantity,seller_custom_field,variations`
     )
     for (const r of res) if (r.code === 200 && r.body) out.push(r.body)
   }

@@ -847,6 +847,8 @@ model Product {
   warehouseStocks      WarehouseStock[]
   priceListItems       PriceListItem[]
 
+  mlQuestions MlQuestion[]
+
   @@index([sku])
   @@index([name])
   @@index([type])
@@ -2935,6 +2937,14 @@ enum MlPostSaleStatus {
   SKIPPED // no había cap_available para OTHER
 }
 
+enum MlQuestionStatus {
+  PENDING_REVIEW // borrador generado por IA, esperando aprobación
+  ANSWERED // respondida en ML (manual o AUTO)
+  FAILED // error de API al responder — se puede reintentar
+  DISMISSED // descartada desde la UI (se responde por fuera o no aplica)
+  CLOSED // ML la cerró (borrada por el comprador / ítem pausado) antes de responder
+}
+
 // Credenciales OAuth de la cuenta de VAL ARG en ML. Una sola fila.
 // El refresh_token de ML es de un solo uso: cada refresh devuelve uno nuevo
 // que hay que persistir. Ver getValidAccessToken en client.ts.
@@ -3003,6 +3013,38 @@ model MlPostSaleMessage {
   @@index([status])
   @@index([orderId])
   @@map("ml_post_sale_messages")
+}
+
+// Pregunta pre-venta recibida en una publicación. UNIQUE en mlQuestionId =
+// idempotencia. El borrador lo genera Claude con contexto del ítem + producto
+// del ERP; en modo REVIEW queda PENDING_REVIEW hasta que alguien lo aprueba.
+model MlQuestion {
+  id            String           @id @default(cuid())
+  mlQuestionId  BigInt           @unique
+  mlItemId      String // "MLA123..."
+  itemTitle     String?
+  itemSku       String? // seller_sku / seller_custom_field de la publicación
+  productId     String?
+  product       Product?         @relation(fields: [productId], references: [id])
+  buyerId       BigInt?
+  questionText  String           @db.Text
+  askedAt       DateTime? // date_created en ML
+  status        MlQuestionStatus @default(PENDING_REVIEW)
+  draftAnswer   String?          @db.Text // propuesta de la IA (editable)
+  answerText    String?          @db.Text // lo que efectivamente se publicó
+  answeredAt    DateTime?
+  answeredById  String?
+  needsReview   Boolean          @default(false) // la IA pidió revisión humana
+  reviewReason  String?
+  errorDetail   String?
+  aiModel       String?
+  aiCostUsd     Decimal?         @db.Decimal(10, 6)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([status])
+  @@index([mlItemId])
+  @@map("ml_questions")
 }
 
 // ============================================================================

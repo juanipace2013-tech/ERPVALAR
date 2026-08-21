@@ -31,6 +31,7 @@ import {
   Percent,
   Wrench,
   Gauge,
+  MessageCircleQuestion,
 } from 'lucide-react'
 
 interface SubNavItem {
@@ -65,6 +66,12 @@ const navItems: NavItem[] = [
     title: 'Bandeja',
     href: '/bandeja',
     icon: Inbox,
+    roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
+  },
+  {
+    title: 'Preguntas ML',
+    href: '/mercadolibre/preguntas',
+    icon: MessageCircleQuestion,
     roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
   },
   {

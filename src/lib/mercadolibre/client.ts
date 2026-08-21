@@ -273,3 +273,76 @@ export function postActionGuideOption(
     }
   )
 }
+
+// ---------------------------------------------------------------------------
+// Preguntas pre-venta
+// Docs: https://developers.mercadolibre.com.ar/es_ar/preguntas-y-respuestas
+// ---------------------------------------------------------------------------
+
+export interface MlQuestion {
+  id: number
+  text: string
+  status: string // "UNANSWERED" | "ANSWERED" | "CLOSED_UNANSWERED" | "UNDER_REVIEW" | "BANNED" | "DELETED"
+  item_id: string
+  seller_id?: number
+  date_created?: string
+  from?: { id?: number }
+  answer?: { text?: string; status?: string; date_created?: string } | null
+}
+
+export interface MlItem {
+  id: string
+  title: string
+  price?: number
+  currency_id?: string
+  available_quantity?: number
+  status?: string
+  permalink?: string
+  seller_custom_field?: string | null
+  attributes?: { id: string; name?: string; value_name?: string | null }[]
+  variations?: { seller_custom_field?: string | null; attributes?: { id: string; value_name?: string | null }[] }[]
+}
+
+export interface MlItemDescription {
+  plain_text?: string
+}
+
+export interface MlQuestionSearch {
+  total?: number
+  questions: MlQuestion[]
+}
+
+export function getQuestion(questionId: string | number): Promise<MlQuestion> {
+  return mlFetch<MlQuestion>(`/questions/${questionId}?api_version=4`)
+}
+
+export function getItem(itemId: string): Promise<MlItem> {
+  return mlFetch<MlItem>(
+    `/items/${itemId}?attributes=id,title,price,currency_id,available_quantity,status,permalink,seller_custom_field,attributes,variations`
+  )
+}
+
+export function getItemDescription(itemId: string): Promise<MlItemDescription> {
+  return mlFetch<MlItemDescription>(`/items/${itemId}/description`)
+}
+
+/** Preguntas ya respondidas del ítem (sirven de ejemplos para la IA). */
+export function getItemAnsweredQuestions(itemId: string, limit = 15): Promise<MlQuestionSearch> {
+  return mlFetch<MlQuestionSearch>(
+    `/questions/search?item=${itemId}&status=ANSWERED&sort_fields=date_created&sort_types=DESC&limit=${limit}&api_version=4`
+  )
+}
+
+/** Preguntas sin responder de toda la cuenta (para sincronizar/backfill). */
+export function getMyUnansweredQuestions(limit = 50, offset = 0): Promise<MlQuestionSearch> {
+  return mlFetch<MlQuestionSearch>(
+    `/my/received_questions/search?status=UNANSWERED&limit=${limit}&offset=${offset}&api_version=4`
+  )
+}
+
+export function postAnswer(questionId: string | number, text: string): Promise<unknown> {
+  return mlFetch(`/answers`, {
+    method: 'POST',
+    body: JSON.stringify({ question_id: Number(questionId), text }),
+  })
+}

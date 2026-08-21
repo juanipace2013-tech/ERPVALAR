@@ -10,7 +10,7 @@
  *   y disparamos el procesamiento fire-and-forget (mismo patrón que el webhook
  *   de Microsoft Graph). NO procesamos sincrónico antes del 200.
  *
- *   Solo procesamos topics "orders" y "orders_v2".
+ *   Procesamos topics "orders"/"orders_v2" (post-venta) y "questions" (preguntas).
  *
  * Variables de entorno:
  *   ML_WEBHOOK_SECRET — opcional. Si está seteada, exigimos que venga como
@@ -23,6 +23,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { logger } from '@/lib/logger'
 import { prisma } from '@/lib/prisma'
 import { handlePostSale } from '@/lib/mercadolibre/handlePostSale'
+import { handleQuestionNotification } from '@/lib/mercadolibre/handleQuestion'
 
 interface MlNotificationPayload {
   resource?: string
@@ -35,6 +36,7 @@ interface MlNotificationPayload {
 }
 
 const ORDER_TOPICS = new Set(['orders', 'orders_v2'])
+const QUESTION_TOPICS = new Set(['questions'])
 
 export async function POST(req: NextRequest) {
   // Validación opcional de secreto compartido por query string.
@@ -59,8 +61,10 @@ export async function POST(req: NextRequest) {
   const topic = payload.topic ?? ''
   const resource = payload.resource ?? ''
 
-  // Solo nos interesan las órdenes. El resto lo descartamos con 200.
-  if (!ORDER_TOPICS.has(topic) || !resource) {
+  const isOrder = ORDER_TOPICS.has(topic)
+  const isQuestion = QUESTION_TOPICS.has(topic)
+  // Solo órdenes y preguntas. El resto lo descartamos con 200.
+  if ((!isOrder && !isQuestion) || !resource) {
     return NextResponse.json({ ok: true })
   }
 
@@ -78,7 +82,8 @@ export async function POST(req: NextRequest) {
       // Fire-and-forget: el handler trae la orden, matchea regla y procesa.
       // Si falla, queda logueado; ML reintenta la notificación y la
       // idempotencia por packId evita duplicados.
-      await handlePostSale(notif.id)
+      if (isQuestion) await handleQuestionNotification(notif.id)
+      else await handlePostSale(notif.id)
     } catch (e) {
       logger.error('[ML Webhook] Error procesando notificación', e)
     }

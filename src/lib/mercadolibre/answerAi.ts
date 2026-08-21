@@ -6,7 +6,7 @@
  * concreto (ítem, producto del ERP, ejemplos de respuestas previas) va en el
  * user message.
  *
- * Key: ML_QUESTIONS_API_KEY, con fallback a INBOX_AGENT_API_KEY.
+ * Key: ML_QUESTIONS_API_KEY, con fallback a INBOX_AGENT_API_KEY y ANTHROPIC_API_KEY.
  */
 
 import Anthropic from '@anthropic-ai/sdk'
@@ -17,10 +17,14 @@ import type { MlItem, MlQuestion } from './client'
 let cached: { key: string; client: Anthropic } | null = null
 
 function getClient(): Anthropic {
-  const key = process.env.ML_QUESTIONS_API_KEY || process.env.INBOX_AGENT_API_KEY || ''
+  const key =
+    process.env.ML_QUESTIONS_API_KEY ||
+    process.env.INBOX_AGENT_API_KEY ||
+    process.env.ANTHROPIC_API_KEY ||
+    ''
   if (!key) {
     throw new Error(
-      'Falta ML_QUESTIONS_API_KEY (o INBOX_AGENT_API_KEY) para responder preguntas de ML.'
+      'Falta ML_QUESTIONS_API_KEY (o INBOX_AGENT_API_KEY / ANTHROPIC_API_KEY) para responder preguntas de ML.'
     )
   }
   if (cached && cached.key === key) return cached.client

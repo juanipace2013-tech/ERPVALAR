@@ -13,6 +13,10 @@
  *   Procesamos topics "orders"/"orders_v2" (post-venta) y "questions" (preguntas).
  *
  * Variables de entorno:
+ *   ML_FORWARD_WEBHOOK_URL — opcional. Si está seteada, reenviamos TODA
+ *                       notificación (payload crudo) a esa URL, fire-and-forget.
+ *                       Sirve para mantener vivo el bot anterior (Railway) ya
+ *                       que ML admite una sola URL de callback por app.
  *   ML_WEBHOOK_SECRET — opcional. Si está seteada, exigimos que venga como
  *                       ?secret=... en la URL del callback registrada en ML.
  *
@@ -60,6 +64,17 @@ export async function POST(req: NextRequest) {
 
   const topic = payload.topic ?? ''
   const resource = payload.resource ?? ''
+
+  // Reenvío opcional al bot anterior (todas las notificaciones, tal cual llegan).
+  const forwardUrl = process.env.ML_FORWARD_WEBHOOK_URL
+  if (forwardUrl) {
+    fetch(forwardUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10_000),
+    }).catch((e) => logger.warn(`[ML Webhook] Forward a ${forwardUrl} falló: ${String(e)}`))
+  }
 
   const isOrder = ORDER_TOPICS.has(topic)
   const isQuestion = QUESTION_TOPICS.has(topic)

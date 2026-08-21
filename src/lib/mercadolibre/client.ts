@@ -421,14 +421,34 @@ export async function getItemUserProductId(itemId: string): Promise<string | nul
   return r.user_product_id ?? null
 }
 
-export function getUserProductStock(userProductId: string): Promise<MlUserProductStock> {
-  return mlFetch<MlUserProductStock>(`/user-products/${userProductId}/stock`)
-}
+/**
+ * Setea el stock del vendedor (selling_address) de un user product.
+ * ML exige el header X-Version con la versión vigente del stock (control de
+ * concurrencia optimista): la leemos del GET y la mandamos en el PUT.
+ */
+export async function setUserProductSellerStock(userProductId: string, quantity: number): Promise<void> {
+  const token = await getValidAccessToken()
+  const auth = { Authorization: `Bearer ${token}`, Accept: 'application/json' }
 
-/** Setea el stock del vendedor (selling_address) de un user product. */
-export function setUserProductSellerStock(userProductId: string, quantity: number): Promise<unknown> {
-  return mlFetch(`/user-products/${userProductId}/stock`, {
+  const getRes = await fetch(`${ML_API}/user-products/${userProductId}/stock`, { headers: auth })
+  const getBody = await getRes.text()
+  if (!getRes.ok) {
+    throw new MlApiError(`[ML] GET /user-products/${userProductId}/stock -> HTTP ${getRes.status}`, getRes.status, getBody)
+  }
+  const version = getRes.headers.get('x-version')
+  if (!version) throw new Error(`[ML] /user-products/${userProductId}/stock no devolvió x-version`)
+
+  const putRes = await fetch(`${ML_API}/user-products/${userProductId}/stock/type/selling_address`, {
     method: 'PUT',
-    body: JSON.stringify({ locations: [{ type: 'selling_address', quantity }] }),
+    headers: { ...auth, 'Content-Type': 'application/json', 'X-Version': version },
+    body: JSON.stringify({ quantity }),
   })
+  if (!putRes.ok) {
+    const body = await putRes.text().catch(() => '')
+    throw new MlApiError(
+      `[ML] PUT /user-products/${userProductId}/stock/type/selling_address -> HTTP ${putRes.status}`,
+      putRes.status,
+      body
+    )
+  }
 }

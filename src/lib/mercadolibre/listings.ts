@@ -72,7 +72,7 @@ export async function importListings(): Promise<ImportResult> {
 
   let linked = 0
   let newLinks = 0
-  for (const it of items) {
+  const upsertOne = async (it: MlItemLite) => {
     const sku = resolveSku(it)
     const base = {
       title: it.title,
@@ -105,6 +105,12 @@ export async function importListings(): Promise<ImportResult> {
     })
     if (!prev) newLinks++
     if (match || prev === MlLinkStatus.LINKED) linked++
+  }
+
+  // Upserts en lotes paralelos: la DB es remota y de a uno tarda minutos.
+  const BATCH = 25
+  for (let i = 0; i < items.length; i += BATCH) {
+    await Promise.all(items.slice(i, i + BATCH).map(upsertOne))
   }
 
   // Publicaciones que ya no existen en ML (cerradas): marcarlas.

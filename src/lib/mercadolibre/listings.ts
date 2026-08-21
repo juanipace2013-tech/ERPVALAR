@@ -20,7 +20,15 @@ import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { MlLinkStatus } from '@prisma/client'
 import { syncStockForSkus } from '@/lib/colppy-inventory'
-import { searchMyItemIds, getItemsLite, updateItem, MlApiError, type MlItemLite } from './client'
+import {
+  searchMyItemIds,
+  getItemsLite,
+  updateItem,
+  getItemUserProductId,
+  setUserProductSellerStock,
+  MlApiError,
+  type MlItemLite,
+} from './client'
 
 // Códigos Genebre en el título: "2109-11", "2109 11", "2034c 04", "2459a 10",
 // "2835ae 12", "70037 05", "3822 010" -> "2109 11", "2034C 04", ... (formato de
@@ -221,11 +229,11 @@ export async function syncStockToMl(opts: { linkIds?: string[]; skipColppy?: boo
 
   const result: StockSyncResult = { colppy, checked: fresh.length, updated: 0, unchanged: 0, errors: 0, changes: [] }
 
-  for (const link of fresh) {
+  const syncOne = async (link: (typeof fresh)[number]) => {
     const item = live.get(link.mlItemId)
     if (!item || item.status === 'closed') {
       result.unchanged++
-      continue
+      return
     }
     // Colppy es la fuente de verdad: si el SKU no está ahí, no tocamos ML.
     if (notInColppy.has(link.product!.sku)) {
@@ -234,7 +242,7 @@ export async function syncStockToMl(opts: { linkIds?: string[]; skipColppy?: boo
         where: { id: link.id },
         data: { lastSyncAt: new Date(), lastSyncError: `SKU ${link.product!.sku} no existe en Colppy; no se sincroniza` },
       })
-      continue
+      return
     }
     const target = computeTarget(link.product!.stockQuantity, link.safetyStock, link.maxPublish)
     const current = item.available_quantity ?? null
@@ -245,21 +253,35 @@ export async function syncStockToMl(opts: { linkIds?: string[]; skipColppy?: boo
         where: { id: link.id },
         data: { mlQuantity: current, mlStatus: item.status ?? null, lastSyncAt: new Date(), lastSyncQty: target, lastSyncError: null },
       })
-      continue
+      return
     }
 
     try {
-      const body: Record<string, unknown> = { available_quantity: target }
-      // Reactivar solo si fue ML quien la pausó por falta de stock (no si la
-      // pausó el vendedor a propósito).
-      const outOfStock = (item.sub_status ?? []).includes('out_of_stock')
-      if (item.status === 'paused' && outOfStock && target > 0) body.status = 'active'
-      const updated = await updateItem(link.mlItemId, body)
+      let newStatus = item.status ?? null
+      try {
+        const body: Record<string, unknown> = { available_quantity: target }
+        // Reactivar solo si fue ML quien la pausó por falta de stock (no si la
+        // pausó el vendedor a propósito).
+        const outOfStock = (item.sub_status ?? []).includes('out_of_stock')
+        if (item.status === 'paused' && outOfStock && target > 0) body.status = 'active'
+        const updated = await updateItem(link.mlItemId, body)
+        newStatus = updated.status ?? newStatus
+      } catch (err) {
+        // Publicaciones migradas a "user products" (con stock en Full/depósito
+        // ML): available_quantity no es editable; va por /user-products/{id}/stock.
+        const notModifiable =
+          err instanceof MlApiError &&
+          JSON.stringify(err.body).includes('available_quantity.not_modifiable')
+        if (!notModifiable) throw err
+        const upid = await getItemUserProductId(link.mlItemId)
+        if (!upid) throw err
+        await setUserProductSellerStock(upid, target)
+      }
       result.updated++
       result.changes.push({ mlItemId: link.mlItemId, title: link.title, from: current, to: target })
       await prisma.mlItemLink.update({
         where: { id: link.id },
-        data: { mlQuantity: target, mlStatus: updated.status ?? item.status ?? null, lastSyncAt: new Date(), lastSyncQty: target, lastSyncError: null },
+        data: { mlQuantity: target, mlStatus: newStatus, lastSyncAt: new Date(), lastSyncQty: target, lastSyncError: null },
       })
     } catch (err) {
       result.errors++
@@ -270,6 +292,13 @@ export async function syncStockToMl(opts: { linkIds?: string[]; skipColppy?: boo
         data: { lastSyncAt: new Date(), lastSyncError: detail.slice(0, 500) },
       })
     }
+  }
+
+  // De a 5 en paralelo: ML tolera bien esta concurrencia y la DB remota no
+  // se convierte en cuello de botella.
+  const BATCH = 5
+  for (let i = 0; i < fresh.length; i += BATCH) {
+    await Promise.all(fresh.slice(i, i + BATCH).map(syncOne))
   }
 
   logger.info(

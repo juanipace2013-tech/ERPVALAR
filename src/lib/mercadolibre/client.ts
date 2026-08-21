@@ -406,3 +406,29 @@ export async function getItemsLite(ids: string[]): Promise<MlItemLite[]> {
 export function updateItem(itemId: string, body: Record<string, unknown>): Promise<MlItemLite> {
   return mlFetch<MlItemLite>(`/items/${itemId}`, { method: 'PUT', body: JSON.stringify(body) })
 }
+
+// Stock por "user product" (publicaciones migradas al modelo nuevo de ML, con
+// ubicaciones selling_address / meli_facility). Docs: /user-products/{id}/stock
+export interface MlUserProductStock {
+  id: string
+  locations: { type: string; quantity: number; availability_type?: string }[]
+}
+
+export async function getItemUserProductId(itemId: string): Promise<string | null> {
+  const r = await mlFetch<{ user_product_id?: string | null }>(
+    `/items/${itemId}?attributes=id,user_product_id`
+  )
+  return r.user_product_id ?? null
+}
+
+export function getUserProductStock(userProductId: string): Promise<MlUserProductStock> {
+  return mlFetch<MlUserProductStock>(`/user-products/${userProductId}/stock`)
+}
+
+/** Setea el stock del vendedor (selling_address) de un user product. */
+export function setUserProductSellerStock(userProductId: string, quantity: number): Promise<unknown> {
+  return mlFetch(`/user-products/${userProductId}/stock`, {
+    method: 'PUT',
+    body: JSON.stringify({ locations: [{ type: 'selling_address', quantity }] }),
+  })
+}

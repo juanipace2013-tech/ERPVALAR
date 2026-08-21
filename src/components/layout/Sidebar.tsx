@@ -32,6 +32,7 @@ import {
   Wrench,
   Gauge,
   MessageCircleQuestion,
+  Store,
 } from 'lucide-react'
 
 interface SubNavItem {
@@ -69,10 +70,23 @@ const navItems: NavItem[] = [
     roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
   },
   {
-    title: 'Preguntas ML',
-    href: '/mercadolibre/preguntas',
-    icon: MessageCircleQuestion,
+    title: 'Mercado Libre',
+    icon: Store,
     roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
+    subItems: [
+      {
+        title: 'Preguntas',
+        href: '/mercadolibre/preguntas',
+        icon: MessageCircleQuestion,
+        roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
+      },
+      {
+        title: 'Publicaciones y stock',
+        href: '/mercadolibre/publicaciones',
+        icon: Store,
+        roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
+      },
+    ],
   },
   {
     title: 'Licitaciones',

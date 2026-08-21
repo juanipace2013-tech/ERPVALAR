@@ -848,6 +848,7 @@ model Product {
   priceListItems       PriceListItem[]
 
   mlQuestions MlQuestion[]
+  mlItemLinks MlItemLink[]
 
   @@index([sku])
   @@index([name])
@@ -2937,6 +2938,12 @@ enum MlPostSaleStatus {
   SKIPPED // no había cap_available para OTHER
 }
 
+enum MlLinkStatus {
+  UNMATCHED // sin producto del ERP; Santiago lo vincula a mano
+  LINKED // vinculada a un Product
+  IGNORED // no se sincroniza (publicación que no corresponde a un producto del ERP)
+}
+
 enum MlQuestionStatus {
   PENDING_REVIEW // borrador generado por IA, esperando aprobación
   ANSWERED // respondida en ML (manual o AUTO)
@@ -3045,6 +3052,35 @@ model MlQuestion {
   @@index([status])
   @@index([mlItemId])
   @@map("ml_questions")
+}
+
+// Publicación de ML vinculada a un producto del ERP. Base del sync de stock
+// (Colppy -> ERP -> ML). UNIQUE en mlItemId.
+model MlItemLink {
+  id            String       @id @default(cuid())
+  mlItemId      String       @unique // "MLA123..."
+  title         String
+  permalink     String?
+  mlStatus      String? // active | paused | closed
+  mlSku         String? // seller_custom_field leído de ML
+  mlQuantity    Int? // último available_quantity leído de ML
+  price         Decimal?     @db.Decimal(14, 2)
+  productId     String?
+  product       Product?     @relation(fields: [productId], references: [id])
+  status        MlLinkStatus @default(UNMATCHED)
+  matchMethod   String? // "sku" | "title-code" | "manual"
+  syncEnabled   Boolean      @default(true)
+  safetyStock   Int          @default(0) // publicar stock - safetyStock
+  maxPublish    Int? // tope de unidades a publicar
+  lastSyncAt    DateTime?
+  lastSyncQty   Int?
+  lastSyncError String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([status])
+  @@index([productId])
+  @@map("ml_item_links")
 }
 
 // ============================================================================

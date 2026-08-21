@@ -346,3 +346,62 @@ export function postAnswer(questionId: string | number, text: string): Promise<u
     body: JSON.stringify({ question_id: Number(questionId), text }),
   })
 }
+
+// ---------------------------------------------------------------------------
+// Publicaciones / stock
+// ---------------------------------------------------------------------------
+
+/** user_id del seller: ML_USER_ID o el de la credencial cargada. */
+export async function getMlUserId(): Promise<string> {
+  if (process.env.ML_USER_ID) return process.env.ML_USER_ID
+  const cred = await loadCredential()
+  return cred.mlUserId.toString()
+}
+
+export interface MlItemsSearch {
+  results: string[]
+  paging?: { total: number; offset: number; limit: number }
+}
+
+/** IDs de publicaciones del seller con un status dado (active/paused). */
+export async function searchMyItemIds(status: 'active' | 'paused'): Promise<string[]> {
+  const userId = await getMlUserId()
+  const ids: string[] = []
+  const limit = 100
+  for (let offset = 0; offset < 10_000; offset += limit) {
+    const page = await mlFetch<MlItemsSearch>(
+      `/users/${userId}/items/search?status=${status}&limit=${limit}&offset=${offset}`
+    )
+    ids.push(...(page.results ?? []))
+    if ((page.results ?? []).length < limit) break
+  }
+  return ids
+}
+
+export interface MlItemLite {
+  id: string
+  title: string
+  status?: string
+  permalink?: string
+  price?: number
+  available_quantity?: number
+  seller_custom_field?: string | null
+  variations?: { id: number; available_quantity?: number; seller_custom_field?: string | null }[]
+}
+
+/** Multiget de ítems (de a 20, que es el máximo de ML). */
+export async function getItemsLite(ids: string[]): Promise<MlItemLite[]> {
+  const out: MlItemLite[] = []
+  for (let i = 0; i < ids.length; i += 20) {
+    const chunk = ids.slice(i, i + 20)
+    const res = await mlFetch<{ code: number; body: MlItemLite }[]>(
+      `/items?ids=${chunk.join(',')}&attributes=id,title,status,permalink,price,available_quantity,seller_custom_field,variations`
+    )
+    for (const r of res) if (r.code === 200 && r.body) out.push(r.body)
+  }
+  return out
+}
+
+export function updateItem(itemId: string, body: Record<string, unknown>): Promise<MlItemLite> {
+  return mlFetch<MlItemLite>(`/items/${itemId}`, { method: 'PUT', body: JSON.stringify(body) })
+}

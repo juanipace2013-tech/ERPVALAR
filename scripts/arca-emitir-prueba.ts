@@ -14,6 +14,10 @@
  *   --cotiz  cotización si USD
  *   --neto   neto gravado (default 1000) — IVA 21% y total se derivan
  *   --nc <cbteTipo>:<pv>:<nro>   emite NOTA DE CRÉDITO asociada a ese comprobante (ej. --nc 1:1:1)
+ *   --fce    emite como FCE MiPyME (201/206; con --nc: 203/208)
+ *   --cbu    CBU del emisor para FCE (default el de VAL ARG)
+ *   --vto    días hasta el vencimiento de pago FCE (default 30)
+ *   --anula  S | N — Opcional 22 para NC FCE (default S)
  */
 import 'dotenv/config'
 import { getArcaConfig } from '@/lib/arca/config'
@@ -44,10 +48,19 @@ async function main() {
     : undefined
   const { receptor } = receptorDesdeCondicion(letra === 'A' ? 'RESPONSABLE_INSCRIPTO' : 'CONSUMIDOR_FINAL', cuit)
 
-  console.log(`ARCA ${cfg.env} PV ${cfg.puntoVenta} — ${nc ? 'NOTA DE CRÉDITO' : 'Factura'} ${letra} ${moneda} neto=${neto} iva=${iva} total=${total}${nc ? ` asociada a ${nc}` : ''}`)
+  const esFce = process.argv.includes('--fce')
+  const vtoDias = Number(arg('vto', '30'))
+  const fce = esFce
+    ? nc
+      ? { anulacion: (arg('anula', 'S') as 'S' | 'N') }
+      : { vtoPago: new Date(Date.now() + vtoDias * 86400_000), cbu: arg('cbu', '0070363320000001263286') }
+    : undefined
+
+  console.log(`ARCA ${cfg.env} PV ${cfg.puntoVenta} — ${nc ? 'NOTA DE CRÉDITO' : 'Factura'}${esFce ? ' FCE' : ''} ${letra} ${moneda} neto=${neto} iva=${iva} total=${total}${nc ? ` asociada a ${nc}` : ''}`)
   const r = await emitirComprobante({
     clase: nc ? 'NOTA_CREDITO' : 'FACTURA',
     letra,
+    fce,
     asociados,
     fecha: new Date(),
     receptor,

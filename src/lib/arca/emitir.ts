@@ -58,9 +58,24 @@ export interface IvaInput {
   importe: number
 }
 
+/**
+ * Datos FCE MiPyME (RG 4367). Su presencia hace que el comprobante se emita
+ * como FCE (201/206 factura, 203/208 NC, 202/207 ND) en vez del común.
+ */
+export interface FceInput {
+  /** Fecha de vencimiento de pago — obligatoria para facturas FCE */
+  vtoPago?: Date
+  /** CBU del emisor (Opcional 2101) — obligatorio para facturas FCE; no va en NC/ND */
+  cbu?: string
+  /** Solo NC FCE (Opcional 22): 'S' anula la operación completa, 'N' ajuste parcial */
+  anulacion?: 'S' | 'N'
+}
+
 export interface ComprobanteInput {
   clase: ClaseComprobante
   letra: LetraComprobante
+  /** Si está presente, se emite como Factura de Crédito Electrónica MiPyME */
+  fce?: FceInput
   /** Default: PV de la config */
   puntoVenta?: number
   fecha: Date
@@ -123,7 +138,17 @@ const CBTE_MAP: Record<LetraComprobante, Record<ClaseComprobante, number>> = {
   C: { FACTURA: CBTE_TIPO.FACTURA_C, NOTA_CREDITO: CBTE_TIPO.NOTA_CREDITO_C, NOTA_DEBITO: CBTE_TIPO.NOTA_DEBITO_C },
 }
 
-export function cbteTipoFor(letra: LetraComprobante, clase: ClaseComprobante): number {
+const CBTE_MAP_FCE: Partial<Record<LetraComprobante, Record<ClaseComprobante, number>>> = {
+  A: { FACTURA: CBTE_TIPO.FCE_A, NOTA_CREDITO: CBTE_TIPO.FCE_NOTA_CREDITO_A, NOTA_DEBITO: CBTE_TIPO.FCE_NOTA_DEBITO_A },
+  B: { FACTURA: CBTE_TIPO.FCE_B, NOTA_CREDITO: CBTE_TIPO.FCE_NOTA_CREDITO_B, NOTA_DEBITO: CBTE_TIPO.FCE_NOTA_DEBITO_B },
+}
+
+export function cbteTipoFor(letra: LetraComprobante, clase: ClaseComprobante, fce = false): number {
+  if (fce) {
+    const map = CBTE_MAP_FCE[letra]
+    if (!map) throw new Error(`FCE no soportada para letra ${letra}`)
+    return map[clase]
+  }
   return CBTE_MAP[letra][clase]
 }
 
@@ -141,6 +166,9 @@ export function describeCbteTipo(cbteTipo: number): string {
     201: 'FCE A',
     202: 'Nota de Débito FCE A',
     203: 'Nota de Crédito FCE A',
+    206: 'FCE B',
+    207: 'Nota de Débito FCE B',
+    208: 'Nota de Crédito FCE B',
   }
   return names[cbteTipo] ?? `Comprobante ${cbteTipo}`
 }
@@ -232,6 +260,23 @@ export function buildDetalle(input: ComprobanteInput, numero: number): FECAEDetR
     det.FchServHasta = input.servicios.hasta
     det.FchVtoPago = input.servicios.vtoPago
   }
+  if (input.fce) {
+    // FCE MiPyME (RG 4367): la factura lleva vencimiento de pago + CBU del
+    // emisor (Opcional 2101); la NC lleva Opcional 22 (S = anula la operación,
+    // N = ajuste parcial) y NO debe llevar CBU (error 10172). Receptor: solo CUIT.
+    if (input.receptor.docTipo !== DOC_TIPO.CUIT || input.receptor.docNro.length !== 11) {
+      throw new Error('FCE requiere CUIT válido del receptor')
+    }
+    if (input.clase === 'FACTURA') {
+      if (!input.fce.vtoPago) throw new Error('FCE: falta la fecha de vencimiento de pago')
+      const cbu = (input.fce.cbu ?? '').replace(/\D/g, '')
+      if (cbu.length !== 22) throw new Error(`FCE: CBU del emisor inválido ("${input.fce.cbu ?? ''}")`)
+      det.FchVtoPago = toCbteFch(input.fce.vtoPago)
+      det.Opcionales = [{ Id: '2101', Valor: cbu }]
+    } else if (input.clase === 'NOTA_CREDITO') {
+      det.Opcionales = [{ Id: '22', Valor: input.fce.anulacion ?? 'N' }]
+    }
+  }
   if (input.clase !== 'FACTURA' && !input.asociados?.length) {
     throw new Error('Una nota de crédito/débito requiere al menos un comprobante asociado')
   }
@@ -249,7 +294,7 @@ export function buildDetalle(input: ComprobanteInput, numero: number): FECAEDetR
 export async function emitirComprobante(input: ComprobanteInput): Promise<EmisionResult> {
   const cfg = getArcaConfig()
   const pv = input.puntoVenta ?? cfg.puntoVenta
-  const cbteTipo = cbteTipoFor(input.letra, input.clase)
+  const cbteTipo = cbteTipoFor(input.letra, input.clase, !!input.fce)
 
   return withLock(`${pv}:${cbteTipo}`, async () => {
     const ultimo = await feCompUltimoAutorizado(cbteTipo, pv)

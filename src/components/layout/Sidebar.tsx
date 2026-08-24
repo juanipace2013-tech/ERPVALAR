@@ -221,13 +221,20 @@ export function Sidebar() {
   const { data: session } = useSession()
   const [expandedItems, setExpandedItems] = useState<string[]>([])
   const [exirosNuevas, setExirosNuevas] = useState(0)
+  const [mlPendientes, setMlPendientes] = useState(0)
 
-  // Badge de licitaciones NUEVAS. Se refresca al navegar (la query es un count liviano).
+  // Badges del sidebar. Se refrescan al navegar (las queries son counts livianos).
   useEffect(() => {
     fetch('/api/exiros/licitaciones?countOnly=true')
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (typeof data?.nuevasCount === 'number') setExirosNuevas(data.nuevasCount)
+      })
+      .catch(() => {})
+    fetch('/api/mercadolibre/preguntas?countOnly=true')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (typeof data?.pendingCount === 'number') setMlPendientes(data.pendingCount)
       })
       .catch(() => {})
   }, [pathname])
@@ -281,6 +288,11 @@ export function Sidebar() {
                   >
                     <Icon className="h-5 w-5" />
                     <span className="flex-1 text-left">{item.title}</span>
+                    {item.title === 'Mercado Libre' && mlPendientes > 0 && (
+                      <span className="inline-flex items-center justify-center rounded-full px-1.5 py-0.5 text-xs font-semibold min-w-[1.25rem] bg-blue-600 text-white">
+                        {mlPendientes}
+                      </span>
+                    )}
                     {isExpanded ? (
                       <ChevronDown className="h-4 w-4" />
                     ) : (
@@ -319,7 +331,17 @@ export function Sidebar() {
                             )}
                           >
                             <SubIcon className="h-4 w-4" />
-                            {subItem.title}
+                            <span className="flex-1">{subItem.title}</span>
+                            {subItem.href === '/mercadolibre/preguntas' && mlPendientes > 0 && (
+                              <span
+                                className={cn(
+                                  'inline-flex items-center justify-center rounded-full px-1.5 py-0.5 text-xs font-semibold min-w-[1.25rem]',
+                                  isSubActive ? 'bg-white/20 text-white' : 'bg-blue-600 text-white'
+                                )}
+                              >
+                                {mlPendientes}
+                              </span>
+                            )}
                           </Link>
                         )
                       })}

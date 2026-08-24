@@ -19,6 +19,14 @@ export async function GET(req: NextRequest) {
   const status = sp.get('status') ?? 'PENDING_REVIEW'
   const page = Math.max(1, Number(sp.get('page') ?? 1))
 
+  // Modo liviano para el badge del sidebar: solo el count de pendientes.
+  if (sp.get('countOnly') === 'true') {
+    const pendingCount = await prisma.mlQuestion.count({
+      where: { status: MlQuestionStatus.PENDING_REVIEW },
+    })
+    return NextResponse.json({ pendingCount })
+  }
+
   const where: Prisma.MlQuestionWhereInput =
     status === 'ALL' ? {} : { status: status as MlQuestionStatus }
 

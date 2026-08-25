@@ -16,12 +16,18 @@ import { PrismaClient } from '@prisma/client'
 const prisma = new PrismaClient()
 
 // {{nombre}} se reemplaza por el primer nombre del comprador al enviar (y se
-// omite si la orden no lo trae). El formato original (encabezado con emojis)
-// está fingerprinteado por la moderación de ML ("automatic_message", rechazos
-// del 25-08 incluso personalizado): este texto conversacional intenta evitar
-// el filtro. Si ML lo rechaza igual, handlePostSale manda el template
-// REQUEST_VARIANTS de ML como fallback (los templates no se moderan).
-const MESSAGE_TEXT = `Hola {{nombre}}, ¿cómo estás? Antes de preparar tu pedido necesitamos saber qué rango de manómetro preferís para la reductora: 0-2,5 / 0-4 / 0-6 / 0-10 / 0-16 / 0-25 bar. Podés respondernos por acá. Si no recibimos tu respuesta antes de las 12:00 hs, la enviamos con manómetro de 0-6 o 0-10 bar según disponibilidad. ¡Gracias!`
+// omite si la orden no lo trae). Formato original con emojis a pedido de
+// Santiago (2026-08-25): el filtro automatic_message de ML rechaza CUALQUIER
+// texto libre inicial por API (es por origen, no por contenido), así que este
+// texto en la práctica viaja como AUTO-REPLY cuando el comprador responde al
+// template REQUEST_VARIANTS — y en conversación abierta la moderación pasa.
+const MESSAGE_TEXT = `Buen dia {{nombre}}.
+
+📊 SELECCIÓN DEL RANGO DEL MANÓMETRO
+
+A continuación, se detallan los rangos disponibles: 0-2,5 / 0-4 / 0-6 / 0-10 / 0-16 / 0-25 BAR.
+
+Importante ‼️ Necesitamos recibir su respuesta antes de las 12:00 hs. De lo contrario, el paquete se armará con un manómetro de 0-6 BAR o 0-10 BAR, según disponibilidad.`
 
 const RULES = [
   { mlItemId: 'MLA2047850328', nota: 'reductora 3/4"' },

@@ -232,6 +232,10 @@ export interface MlCapsResponse {
   options?: MlActionGuideCap[]
 }
 
+// En producción el endpoint devuelve el array pelado (sin wrapper); las otras
+// dos formas quedan por compatibilidad.
+export type MlCapsRaw = MlCapsResponse | MlActionGuideCap[]
+
 export interface MlPostOptionResponse {
   id?: string // id del mensaje creado
   message_id?: string
@@ -251,10 +255,12 @@ export function getOrder(orderId: string): Promise<MlOrder> {
   return mlFetch<MlOrder>(`/orders/${orderId}`)
 }
 
-export function getActionGuideCaps(packId: string): Promise<MlCapsResponse> {
-  return mlFetch<MlCapsResponse>(
+export async function getActionGuideCaps(packId: string): Promise<MlActionGuideCap[]> {
+  const resp = await mlFetch<MlCapsRaw>(
     `/messages/action_guide/packs/${packId}/caps_available?tag=post_sale`
   )
+  if (Array.isArray(resp)) return resp
+  return resp.caps_available ?? resp.options ?? []
 }
 
 export function postActionGuideOption(

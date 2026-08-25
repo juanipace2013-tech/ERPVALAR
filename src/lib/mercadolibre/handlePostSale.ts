@@ -180,8 +180,7 @@ export async function handlePostSale(notificationId: string): Promise<void> {
   // 6. cap_available para OTHER
   let capOk = false
   try {
-    const caps = await getActionGuideCaps(packId)
-    const list = caps.caps_available ?? caps.options ?? []
+    const list = await getActionGuideCaps(packId)
     const other = list.find(
       (c) => (c.option_id ?? c.id)?.toUpperCase() === OTHER_OPTION_ID
     )
@@ -196,15 +195,21 @@ export async function handlePostSale(notificationId: string): Promise<void> {
 
   if (!capOk) {
     logger.info(`[ML PostSale] Sin cap_available para OTHER pack=${packId}, SKIPPED`)
-    await prisma.mlPostSaleMessage.create({
-      data: {
-        packId,
-        orderId,
-        ruleId: rule.id,
-        status: MlPostSaleStatus.SKIPPED,
-        text: rule.messageText,
-      },
-    })
+    try {
+      await prisma.mlPostSaleMessage.create({
+        data: {
+          packId,
+          orderId,
+          ruleId: rule.id,
+          status: MlPostSaleStatus.SKIPPED,
+          text: rule.messageText,
+        },
+      })
+    } catch {
+      // Carrera entre notificaciones duplicadas de la misma orden: el UNIQUE
+      // de packId ya la selló, es idempotencia y no un error real.
+      logger.info(`[ML PostSale] pack=${packId} creado en paralelo (SKIPPED), skip`)
+    }
     await markProcessed()
     return
   }

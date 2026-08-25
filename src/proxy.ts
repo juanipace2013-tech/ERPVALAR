@@ -43,6 +43,6 @@ export const config = {
      * - favicon.ico (favicon file)
      * - public folder
      */
-    '/((?!_next/static|_next/image|favicon.ico|logo-valarg\\.png|public).*)',
+    '/((?!_next/static|_next/image|favicon.ico|logo-valarg\\.png|logo-valarg-blanco\\.png|public).*)',
   ],
 }

@@ -22,8 +22,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from 'sonner'
 import { getLocalDateString } from '@/lib/utils'
+import { ActividadTab } from './actividad-tab'
 import {
   Shield,
   Search,
@@ -209,19 +211,34 @@ export default function AuditoriaPage() {
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="p-3 bg-blue-100 rounded-full">
-            <Shield className="h-6 w-6 text-blue-600" />
-          </div>
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Auditoría de Acceso</h1>
-            <p className="text-gray-600">
-              Registro de acciones realizadas en el sistema
-              {total > 0 && <span className="ml-2 text-sm text-gray-400">({total} registros)</span>}
-            </p>
-          </div>
+      <div className="flex items-center gap-3">
+        <div className="p-3 bg-blue-100 rounded-full">
+          <Shield className="h-6 w-6 text-blue-600" />
         </div>
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Auditoría</h1>
+          <p className="text-gray-600">
+            Acciones y actividad de los usuarios en el sistema
+          </p>
+        </div>
+      </div>
+
+      <Tabs defaultValue="acciones">
+        <TabsList>
+          <TabsTrigger value="acciones">Acciones</TabsTrigger>
+          <TabsTrigger value="actividad">Actividad</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="actividad" className="mt-4">
+          <ActividadTab />
+        </TabsContent>
+
+        <TabsContent value="acciones" className="mt-4 space-y-6">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-500">
+          Registro de acciones realizadas en el sistema
+          {total > 0 && <span className="ml-2 text-gray-400">({total} registros)</span>}
+        </p>
         <Button onClick={handleExportCsv} variant="outline" className="gap-2">
           <Download className="h-4 w-4" />
           Exportar CSV
@@ -396,6 +413,8 @@ export default function AuditoriaPage() {
           </div>
         )}
       </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

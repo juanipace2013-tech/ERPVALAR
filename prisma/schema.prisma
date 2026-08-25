@@ -50,6 +50,11 @@ model User {
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
 
+  // Presencia: actualizados por el beacon de actividad (/api/track).
+  // lastSeenAt < 5 min => "en línea" en /admin/auditoria.
+  lastSeenAt DateTime?
+  lastPath   String?
+
   // NextAuth relations
   accounts Account[]
   sessions Session[]
@@ -1633,6 +1638,20 @@ model AuditLog {
   @@index([entity])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// Historial de navegación (una fila por vista de página, deduplicado por el
+// cliente). Se purga a los 60 días desde el endpoint de actividad del admin.
+model UserActivity {
+  id        String   @id @default(cuid())
+  userId    String
+  userName  String
+  path      String
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("user_activity")
 }
 
 // ========================================

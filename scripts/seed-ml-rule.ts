@@ -15,12 +15,13 @@ import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
-const MESSAGE_TEXT =
-  'Buen día, gracias por tu compra. SELECCIÓN DEL RANGO DEL MANÓMETRO: los ' +
-  'rangos disponibles son 0-2,5 / 0-4 / 0-6 / 0-10 / 0-16 / 0-25 BAR. ' +
-  'Importante: necesitamos tu respuesta antes de las 12:00 hs. De lo ' +
-  'contrario, el paquete se armará con un manómetro de 0-6 o 0-10 BAR, ' +
-  'según disponibilidad.'
+const MESSAGE_TEXT = `Buen dia.
+
+📊 SELECCIÓN DEL RANGO DEL MANÓMETRO
+
+A continuación, se detallan los rangos disponibles: 0-2,5 / 0-4 / 0-6 / 0-10 / 0-16 / 0-25 BAR.
+
+Importante ‼️ Necesitamos recibir su respuesta antes de las 12:00 hs. De lo contrario, el paquete se armará con un manómetro de 0-6 BAR o 0-10 BAR, según disponibilidad.`
 
 const RULES = [
   { mlItemId: 'MLA2047850328', nota: 'reductora 3/4"' },

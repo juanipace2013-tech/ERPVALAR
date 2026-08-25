@@ -2938,6 +2938,13 @@ enum MlPostSaleStatus {
   SKIPPED // no había cap_available para OTHER
 }
 
+enum MlAutoReplyStatus {
+  SENDING // claim atómico tomado; si queda así, el proceso murió en el medio
+  SENT // texto completo entregado en la conversación abierta
+  MODERATED // ML también moderó el texto en conversación abierta
+  FAILED // error de API — terminal, no se reintenta (un solo intento por pack)
+}
+
 enum MlLinkStatus {
   UNMATCHED // sin producto del ERP; Santiago lo vincula a mano
   LINKED // vinculada a un Product
@@ -3017,8 +3024,18 @@ model MlPostSaleMessage {
   createdAt        DateTime         @default(now())
   sentAt           DateTime?
 
+  // Auto-reply: cuando el envío quedó en fallback template REQUEST_VARIANTS y
+  // el comprador responde (topic "messages"), se le manda el texto completo por
+  // POST /messages/packs. null = todavía no respondió / no aplica. El claim
+  // atómico sobre este campo (null -> SENDING) garantiza un solo reply por pack.
+  autoReplyStatus      MlAutoReplyStatus?
+  autoReplyAt          DateTime?
+  autoReplyMlMessageId String?
+  autoReplyError       String? // reason de moderación o detalle del error de API
+
   @@index([status])
   @@index([orderId])
+  @@index([autoReplyStatus])
   @@map("ml_post_sale_messages")
 }
 

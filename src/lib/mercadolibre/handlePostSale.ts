@@ -97,13 +97,13 @@ export function renderMessageTemplate(
 }
 
 /** Estado de moderación que consideramos rechazo (todo lo que no sea limpio). */
-function isRejectedModerationStatus(status: string | undefined): boolean {
+export function isRejectedModerationStatus(status: string | undefined): boolean {
   const s = (status ?? '').toLowerCase()
   return s !== '' && s !== 'clean' && s !== 'approved'
 }
 
 /** Detecta si ML moderó/rechazó el mensaje a partir de la respuesta del POST. */
-function detectModeration(resp: MlPostOptionResponse): {
+export function detectModeration(resp: MlPostOptionResponse): {
   moderated: boolean
   reason: string | null
 } {

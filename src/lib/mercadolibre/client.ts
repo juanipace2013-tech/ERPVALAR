@@ -239,9 +239,18 @@ export type MlCapsRaw = MlCapsResponse | MlActionGuideCap[]
 export interface MlPostOptionResponse {
   id?: string // id del mensaje creado
   message_id?: string
-  status?: string
+  status?: string // "available" | "moderated"
+  text?: string // contenido efectivamente enviado (en templates, el texto del template)
+  // Campo real de la API (la moderación del envío viene acá, sincrónica).
+  message_moderation?: {
+    status?: string // "clean" | "rejected" | "pending"
+    reason?: string // ej "automatic_message"
+    source?: string
+    moderation_date?: string
+  }
+  // Forma vieja que asumimos por error; se conserva por las dudas.
   moderation?: {
-    status?: string // ej "rejected", "pending", "clean"
+    status?: string
     reason?: string
     moderation_reason?: string
   }
@@ -299,13 +308,18 @@ export async function getPackMessages(packId: string): Promise<MlThreadMessage[]
   return resp.messages ?? []
 }
 
+// Template fijo de ML para pedir características del producto. No pasa por
+// moderación (solo OTHER y SEND_INVOICE_LINK se moderan), entrega garantizada.
+export const REQUEST_VARIANTS_TEMPLATE_ID = 'TEMPLATE___REQUEST_VARIANTS___1'
+
 export function postActionGuideOption(
   packId: string,
   optionId: string,
-  text: string,
+  text?: string,
   templateId?: string
 ): Promise<MlPostOptionResponse> {
-  const body: Record<string, string> = { option_id: optionId, text }
+  const body: Record<string, string> = { option_id: optionId }
+  if (text !== undefined) body.text = text
   if (templateId) body.template_id = templateId
   return mlFetch<MlPostOptionResponse>(
     `/messages/action_guide/packs/${packId}/option?tag=post_sale`,

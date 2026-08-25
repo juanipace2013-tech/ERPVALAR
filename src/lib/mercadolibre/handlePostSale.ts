@@ -24,6 +24,7 @@ import {
   getPackMessages,
   postActionGuideOption,
   MlApiError,
+  REQUEST_VARIANTS_TEMPLATE_ID,
   type MlOrder,
   type MlPostOptionResponse,
 } from './client'
@@ -106,12 +107,18 @@ function detectModeration(resp: MlPostOptionResponse): {
   moderated: boolean
   reason: string | null
 } {
-  const mod = resp.moderation
-  if (!mod) return { moderated: false, reason: null }
+  // La API devuelve la moderación en message_moderation (el status del mensaje
+  // queda "moderated"); resp.moderation era una suposición errónea que dejaba
+  // pasar rechazos como enviados.
+  const mod = resp.message_moderation ?? resp.moderation
+  if (!mod) return { moderated: resp.status === 'moderated', reason: null }
   // "clean"/"approved"/"" => ok. Cualquier otra cosa (rejected, pending,
   // blocked...) la tratamos como moderada para no insistir.
-  const moderated = isRejectedModerationStatus(mod.status)
-  const reason = mod.reason ?? mod.moderation_reason ?? (moderated ? mod.status ?? null : null)
+  const moderated = isRejectedModerationStatus(mod.status) || resp.status === 'moderated'
+  const reason =
+    mod.reason ??
+    ('moderation_reason' in mod ? mod.moderation_reason : null) ??
+    (moderated ? mod.status ?? null : null)
   return { moderated, reason: reason || null }
 }
 
@@ -131,6 +138,39 @@ export async function sendPostSaleMessage(
       logger.warn(
         `[ML PostSale] Mensaje moderado pack=${message.packId} reason=${reason ?? 'desconocido'}`
       )
+      // Fallback: el template REQUEST_VARIANTS no pasa por moderación, así el
+      // comprador al menos recibe el pedido de confirmar características y al
+      // responder se abre la conversación para mandarle el detalle de rangos.
+      try {
+        const tplResp = await postActionGuideOption(
+          message.packId,
+          'REQUEST_VARIANTS',
+          undefined,
+          REQUEST_VARIANTS_TEMPLATE_ID
+        )
+        const tplMod = detectModeration(tplResp)
+        if (!tplMod.moderated) {
+          logger.info(
+            `[ML PostSale] Fallback template REQUEST_VARIANTS enviado pack=${message.packId}`
+          )
+          return prisma.mlPostSaleMessage.update({
+            where: { id: message.id },
+            data: {
+              status: MlPostSaleStatus.SENT,
+              sentAt: new Date(),
+              mlMessageId: tplResp.id ?? tplResp.message_id ?? null,
+              moderationReason: `OTHER rechazado (${reason ?? 'desconocido'}); enviado template REQUEST_VARIANTS`,
+            },
+          })
+        }
+      } catch (tplErr) {
+        const tplDetail =
+          tplErr instanceof MlApiError ? JSON.stringify(tplErr.body) : String(tplErr)
+        logger.error(
+          `[ML PostSale] Fallback template falló pack=${message.packId}`,
+          tplDetail
+        )
+      }
       return prisma.mlPostSaleMessage.update({
         where: { id: message.id },
         data: {

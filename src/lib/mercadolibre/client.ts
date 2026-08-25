@@ -308,6 +308,69 @@ export async function getPackMessages(packId: string): Promise<MlThreadMessage[]
   return resp.messages ?? []
 }
 
+// Detalle de un mensaje puntual (notificaciones topic "messages"). El resource
+// de la notificación es "/messages/{id}"; el GET devuelve el mensaje con
+// message_resources, que incluye el pack ({name: "packs", id: packId}).
+export interface MlMessageDetail {
+  id?: string
+  from?: { user_id?: number | string }
+  to?: { user_id?: number | string }
+  text?: string
+  status?: string
+  message_date?: { created?: string }
+  message_resources?: { id?: string | number; name?: string }[]
+  message_moderation?: {
+    status?: string
+    reason?: string
+    moderation_date?: string
+  }
+}
+
+/**
+ * Trae el detalle de un mensaje por id (para notificaciones topic "messages").
+ * La API a veces devuelve el objeto pelado y a veces {messages: [...]}; se
+ * normaliza a un solo mensaje.
+ */
+export async function getMessage(messageId: string): Promise<MlMessageDetail | null> {
+  const resp = await mlFetch<MlMessageDetail | { messages?: MlMessageDetail[] }>(
+    `/messages/${messageId}?tag=post_sale&mark_as_read=false`
+  )
+  if (resp && typeof resp === 'object' && 'messages' in resp && Array.isArray(resp.messages)) {
+    return resp.messages[0] ?? null
+  }
+  return (resp as MlMessageDetail) ?? null
+}
+
+/**
+ * Envía texto libre en una conversación post-venta ABIERTA (el comprador ya
+ * respondió): POST /messages/packs/{pack_id}/sellers/{seller_id}. A diferencia
+ * del action_guide, acá no hay opción ni template: es texto directo.
+ * Docs: https://developers.mercadolibre.com.ar/es_ar/gestion-de-mensajes
+ */
+export async function sendPackMessage(
+  packId: string,
+  buyerUserId: string | number,
+  text: string
+): Promise<MlPostOptionResponse> {
+  const sellerId = await getSellerMlUserId()
+  const resp = await mlFetch<MlPostOptionResponse | { messages?: MlPostOptionResponse[] }>(
+    `/messages/packs/${packId}/sellers/${sellerId}?tag=post_sale`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        from: { user_id: sellerId },
+        to: { user_id: String(buyerUserId) },
+        text,
+      }),
+    }
+  )
+  // Igual que el GET, la API puede envolver la respuesta en {messages: [...]}.
+  if (resp && typeof resp === 'object' && 'messages' in resp && Array.isArray(resp.messages)) {
+    return resp.messages[0] ?? {}
+  }
+  return (resp as MlPostOptionResponse) ?? {}
+}
+
 // Template fijo de ML para pedir características del producto. No pasa por
 // moderación (solo OTHER y SEND_INVOICE_LINK se moderan), entrega garantizada.
 export const REQUEST_VARIANTS_TEMPLATE_ID = 'TEMPLATE___REQUEST_VARIANTS___1'

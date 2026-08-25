@@ -10,7 +10,11 @@
  *   y disparamos el procesamiento fire-and-forget (mismo patrón que el webhook
  *   de Microsoft Graph). NO procesamos sincrónico antes del 200.
  *
- *   Procesamos topics "orders"/"orders_v2" (post-venta) y "questions" (preguntas).
+ *   Procesamos topics "orders"/"orders_v2" (post-venta), "questions" (preguntas)
+ *   y "messages" (respuestas del comprador -> auto-reply con el texto completo
+ *   cuando el envío original quedó en fallback template REQUEST_VARIANTS).
+ *   OJO: el topic "messages" hay que suscribirlo en la config de la app en el
+ *   DevCenter de ML, si no ML no lo manda.
  *
  * Variables de entorno:
  *   ML_FORWARD_WEBHOOK_URL — opcional. Si está seteada, reenviamos TODA
@@ -28,6 +32,7 @@ import { logger } from '@/lib/logger'
 import { prisma } from '@/lib/prisma'
 import { handlePostSale } from '@/lib/mercadolibre/handlePostSale'
 import { handleQuestionNotification } from '@/lib/mercadolibre/handleQuestion'
+import { handleBuyerReply } from '@/lib/mercadolibre/handleBuyerReply'
 
 interface MlNotificationPayload {
   resource?: string
@@ -41,6 +46,7 @@ interface MlNotificationPayload {
 
 const ORDER_TOPICS = new Set(['orders', 'orders_v2'])
 const QUESTION_TOPICS = new Set(['questions'])
+const MESSAGE_TOPICS = new Set(['messages'])
 
 export async function POST(req: NextRequest) {
   // Validación opcional de secreto compartido por query string.
@@ -78,8 +84,9 @@ export async function POST(req: NextRequest) {
 
   const isOrder = ORDER_TOPICS.has(topic)
   const isQuestion = QUESTION_TOPICS.has(topic)
-  // Solo órdenes y preguntas. El resto lo descartamos con 200.
-  if ((!isOrder && !isQuestion) || !resource) {
+  const isMessage = MESSAGE_TOPICS.has(topic)
+  // Solo órdenes, preguntas y mensajes. El resto lo descartamos con 200.
+  if ((!isOrder && !isQuestion && !isMessage) || !resource) {
     return NextResponse.json({ ok: true })
   }
 
@@ -98,6 +105,7 @@ export async function POST(req: NextRequest) {
       // Si falla, queda logueado; ML reintenta la notificación y la
       // idempotencia por packId evita duplicados.
       if (isQuestion) await handleQuestionNotification(notif.id)
+      else if (isMessage) await handleBuyerReply(notif.id)
       else await handlePostSale(notif.id)
     } catch (e) {
       logger.error('[ML Webhook] Error procesando notificación', e)

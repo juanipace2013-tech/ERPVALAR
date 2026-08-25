@@ -3334,3 +3334,24 @@ model CalculoReguladoraVapor {
   @@index([userId])
   @@map("calculos_reguladora_vapor")
 }
+
+// ========================================
+// ADMINISTRACIÓN - VIANDAS (ALMUERZOS)
+// ========================================
+
+// Conteo diario de viandas del proveedor de almuerzos (ex-planillas
+// "TODO RICO MM-AA"). Un registro por día trabajado; los días sin
+// registro son días que no se pidieron viandas. El precio se guarda
+// por día para que los meses históricos conserven su valor aunque
+// el precio unitario cambie.
+model ViandaDay {
+  id       String   @id @default(cuid())
+  fecha    DateTime @unique @db.Date
+  cantidad Int
+  precio   Decimal  @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("vianda_days")
+}

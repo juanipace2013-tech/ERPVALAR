@@ -33,6 +33,7 @@ import {
   Gauge,
   MessageCircleQuestion,
   Store,
+  UtensilsCrossed,
 } from 'lucide-react'
 
 interface SubNavItem {
@@ -181,6 +182,12 @@ const navItems: NavItem[] = [
     title: 'Inventario',
     href: '/inventario/items',
     icon: ShoppingCart,
+    roles: ['ADMIN', 'GERENTE'],
+  },
+  {
+    title: 'Viandas',
+    href: '/viandas',
+    icon: UtensilsCrossed,
     roles: ['ADMIN', 'GERENTE'],
   },
   {

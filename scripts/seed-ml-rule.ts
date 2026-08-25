@@ -15,7 +15,10 @@ import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
-const MESSAGE_TEXT = `Buen dia.
+// {{nombre}} se reemplaza por el primer nombre del comprador al enviar (y se
+// omite si la orden no lo trae). Personalizar el texto por venta evita el
+// filtro "automatic_message" de ML, que el 25-08 rechazó el template idéntico.
+const MESSAGE_TEXT = `Buen dia {{nombre}}.
 
 📊 SELECCIÓN DEL RANGO DEL MANÓMETRO
 
@@ -29,8 +32,10 @@ const RULES = [
 ]
 
 async function main() {
-  if (MESSAGE_TEXT.length > 350) {
-    throw new Error(`message_text supera 350 chars (${MESSAGE_TEXT.length})`)
+  // Validar el largo con un nombre largo de ejemplo (el límite de ML es 350).
+  const rendered = MESSAGE_TEXT.replace(/\{\{\s*nombre\s*\}\}/g, 'Maximiliano')
+  if (rendered.length > 350) {
+    throw new Error(`message_text renderizado supera 350 chars (${rendered.length})`)
   }
 
   for (const r of RULES) {

@@ -21,6 +21,7 @@ import { MlPostSaleStatus, type MlPostSaleMessage } from '@prisma/client'
 import {
   getOrder,
   getActionGuideCaps,
+  getPackMessages,
   postActionGuideOption,
   MlApiError,
   type MlOrder,
@@ -28,6 +29,11 @@ import {
 } from './client'
 
 const OTHER_OPTION_ID = 'OTHER'
+// Cuánto esperar después de un envío OK para re-chequear la moderación
+// asíncrona de ML (el POST devuelve limpio y el rechazo aparece después).
+const MODERATION_RECHECK_DELAY_MS = 3 * 60 * 1000
+// Ventana del barrido del cron: mensajes SENT de las últimas 48 h.
+const MODERATION_SWEEP_WINDOW_MS = 48 * 60 * 60 * 1000
 
 /** Extrae el id de orden de un resource tipo "/orders/123" -> "123". */
 export function parseOrderId(resource: string): string | null {
@@ -59,6 +65,42 @@ async function findMatchingRule(order: MlOrder) {
   return null
 }
 
+/** "MARIANO" / "mariano gabriel" -> "Mariano" (solo el primer nombre). */
+function formatFirstName(raw?: string | null): string | null {
+  const name = (raw ?? '').trim().split(/\s+/)[0]
+  if (!name) return null
+  return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase()
+}
+
+/**
+ * Renderiza el template de la regla para una orden concreta. Soporta
+ * {{nombre}} (primer nombre del comprador) y {{venta}} (packId). Personalizar
+ * el texto por venta evita el filtro "automatic_message" de ML, que rechaza
+ * mensajes idénticos repetidos entre compradores.
+ */
+export function renderMessageTemplate(
+  template: string,
+  order: MlOrder,
+  packId: string
+): string {
+  const nombre = formatFirstName(order.buyer?.first_name)
+  let text = template.replace(/\{\{\s*venta\s*\}\}/g, packId)
+  if (nombre) {
+    text = text.replace(/\{\{\s*nombre\s*\}\}/g, nombre)
+  } else {
+    // Sin nombre: sacamos el placeholder y el espacio que lo precede
+    // ("Buen dia {{nombre}}." -> "Buen dia.").
+    text = text.replace(/ ?\{\{\s*nombre\s*\}\}/g, '')
+  }
+  return text
+}
+
+/** Estado de moderación que consideramos rechazo (todo lo que no sea limpio). */
+function isRejectedModerationStatus(status: string | undefined): boolean {
+  const s = (status ?? '').toLowerCase()
+  return s !== '' && s !== 'clean' && s !== 'approved'
+}
+
 /** Detecta si ML moderó/rechazó el mensaje a partir de la respuesta del POST. */
 function detectModeration(resp: MlPostOptionResponse): {
   moderated: boolean
@@ -66,11 +108,10 @@ function detectModeration(resp: MlPostOptionResponse): {
 } {
   const mod = resp.moderation
   if (!mod) return { moderated: false, reason: null }
-  const status = (mod.status ?? '').toLowerCase()
   // "clean"/"approved"/"" => ok. Cualquier otra cosa (rejected, pending,
   // blocked...) la tratamos como moderada para no insistir.
-  const moderated = status !== '' && status !== 'clean' && status !== 'approved'
-  const reason = mod.reason ?? mod.moderation_reason ?? (moderated ? status : null)
+  const moderated = isRejectedModerationStatus(mod.status)
+  const reason = mod.reason ?? mod.moderation_reason ?? (moderated ? mod.status ?? null : null)
   return { moderated, reason: reason || null }
 }
 
@@ -101,7 +142,7 @@ export async function sendPostSaleMessage(
     }
 
     logger.info(`[ML PostSale] Mensaje enviado OK pack=${message.packId}`)
-    return prisma.mlPostSaleMessage.update({
+    const sent = await prisma.mlPostSaleMessage.update({
       where: { id: message.id },
       data: {
         status: MlPostSaleStatus.SENT,
@@ -109,6 +150,17 @@ export async function sendPostSaleMessage(
         sentAt: new Date(),
       },
     })
+
+    // La moderación de ML es asíncrona: re-chequear en unos minutos. El cron
+    // de barrido cubre el caso de que el proceso se reinicie antes.
+    const timer = setTimeout(() => {
+      verifySentModeration(sent.id).catch((e) =>
+        logger.error(`[ML PostSale] Re-chequeo de moderación falló pack=${sent.packId}`, e)
+      )
+    }, MODERATION_RECHECK_DELAY_MS)
+    timer.unref?.()
+
+    return sent
   } catch (err) {
     const detail = err instanceof MlApiError ? JSON.stringify(err.body) : String(err)
     logger.error(`[ML PostSale] Error enviando pack=${message.packId}`, detail)
@@ -120,6 +172,58 @@ export async function sendPostSaleMessage(
       },
     })
   }
+}
+
+/**
+ * Re-chequea contra la API si un mensaje SENT fue rechazado por la moderación
+ * asíncrona de ML; si lo fue, lo pasa a MODERATED. Silencioso si el mensaje
+ * ya no está SENT o todavía no aparece en el thread.
+ */
+export async function verifySentModeration(messageId: string): Promise<void> {
+  const message = await prisma.mlPostSaleMessage.findUnique({ where: { id: messageId } })
+  if (!message || message.status !== MlPostSaleStatus.SENT) return
+
+  const thread = await getPackMessages(message.packId)
+  // Preferimos matchear por id de mensaje; si no lo guardamos, por texto.
+  const own = thread.find((m) =>
+    message.mlMessageId ? m.id === message.mlMessageId : m.text === message.text
+  )
+  if (!own) return
+
+  const mod = own.message_moderation
+  if (!isRejectedModerationStatus(mod?.status)) return
+
+  const reason = mod?.reason ?? mod?.status ?? 'moderated'
+  logger.warn(
+    `[ML PostSale] Moderación asíncrona: pack=${message.packId} rechazado (${reason})`
+  )
+  await prisma.mlPostSaleMessage.update({
+    where: { id: message.id },
+    data: { status: MlPostSaleStatus.MODERATED, moderationReason: String(reason).slice(0, 500) },
+  })
+}
+
+/**
+ * Barrido para el cron: re-chequea la moderación de todos los mensajes SENT
+ * de las últimas 48 h. Devuelve cuántos revisó y cuántos pasaron a MODERATED.
+ */
+export async function sweepSentModeration(): Promise<{ checked: number; moderated: number }> {
+  const since = new Date(Date.now() - MODERATION_SWEEP_WINDOW_MS)
+  const sent = await prisma.mlPostSaleMessage.findMany({
+    where: { status: MlPostSaleStatus.SENT, sentAt: { gte: since } },
+  })
+
+  let moderated = 0
+  for (const m of sent) {
+    try {
+      await verifySentModeration(m.id)
+      const after = await prisma.mlPostSaleMessage.findUnique({ where: { id: m.id } })
+      if (after?.status === MlPostSaleStatus.MODERATED) moderated++
+    } catch (e) {
+      logger.error(`[ML PostSale] Sweep de moderación falló pack=${m.packId}`, e)
+    }
+  }
+  return { checked: sent.length, moderated }
 }
 
 /**
@@ -177,6 +281,9 @@ export async function handlePostSale(notificationId: string): Promise<void> {
     return
   }
 
+  // Texto final personalizado para esta venta (ver renderMessageTemplate).
+  const messageText = renderMessageTemplate(rule.messageText, order, packId)
+
   // 6. cap_available para OTHER
   let capOk = false
   try {
@@ -202,7 +309,7 @@ export async function handlePostSale(notificationId: string): Promise<void> {
           orderId,
           ruleId: rule.id,
           status: MlPostSaleStatus.SKIPPED,
-          text: rule.messageText,
+          text: messageText,
         },
       })
     } catch {
@@ -225,7 +332,7 @@ export async function handlePostSale(notificationId: string): Promise<void> {
         orderId,
         ruleId: rule.id,
         status: MlPostSaleStatus.PENDING_REVIEW,
-        text: rule.messageText,
+        text: messageText,
       },
     })
   } catch (err) {

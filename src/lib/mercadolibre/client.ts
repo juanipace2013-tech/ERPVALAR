@@ -215,7 +215,7 @@ export interface MlOrder {
   status: string // "paid", "cancelled", ...
   pack_id?: number | null
   order_items: MlOrderItem[]
-  buyer?: { id?: number; nickname?: string }
+  buyer?: { id?: number; nickname?: string; first_name?: string; last_name?: string }
 }
 
 export interface MlActionGuideCap {
@@ -261,6 +261,42 @@ export async function getActionGuideCaps(packId: string): Promise<MlActionGuideC
   )
   if (Array.isArray(resp)) return resp
   return resp.caps_available ?? resp.options ?? []
+}
+
+export interface MlThreadMessage {
+  id?: string
+  from?: { user_id?: number }
+  text?: string
+  message_date?: { created?: string }
+  // La moderación real llega acá, de forma asíncrona: el POST del envío puede
+  // devolver OK y minutos después el mensaje aparecer "rejected".
+  message_moderation?: {
+    status?: string // "clean" | "rejected" | "pending" | ...
+    reason?: string // ej "automatic_message"
+    moderation_date?: string
+  }
+}
+
+interface MlPackMessagesResponse {
+  messages?: MlThreadMessage[]
+}
+
+/** mlUserId del seller (VAL ARG): env ML_USER_ID o la credencial persistida. */
+async function getSellerMlUserId(): Promise<string> {
+  const envUserId = process.env.ML_USER_ID
+  if (envUserId) return envUserId
+  const cred = await prisma.mlCredential.findFirst()
+  if (!cred?.mlUserId) throw new Error('[ML] No pude resolver el mlUserId del seller.')
+  return String(cred.mlUserId)
+}
+
+/** Mensajes del thread post-venta de un pack, con su estado de moderación. */
+export async function getPackMessages(packId: string): Promise<MlThreadMessage[]> {
+  const sellerId = await getSellerMlUserId()
+  const resp = await mlFetch<MlPackMessagesResponse>(
+    `/messages/packs/${packId}/sellers/${sellerId}?tag=post_sale&mark_as_read=false`
+  )
+  return resp.messages ?? []
 }
 
 export function postActionGuideOption(

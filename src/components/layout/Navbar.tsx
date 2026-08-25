@@ -44,17 +44,12 @@ export function Navbar() {
     <header className="border-b border-blue-200 dark:border-gray-700 bg-gradient-to-r from-blue-600 to-blue-700 dark:from-gray-800 dark:to-gray-900 shadow-md">
       <div className="flex h-16 items-center justify-between px-6">
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/logo-valarg-blanco.png"
-              alt="VAL ARG"
-              className="h-7 object-contain"
-            />
-            <h1 className="text-xl font-bold text-white">
-              ERP VAL ARG
-            </h1>
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo-valarg-blanco.png"
+            alt="VAL ARG"
+            className="h-7 object-contain"
+          />
         </div>
 
         <div className="flex items-center gap-4">

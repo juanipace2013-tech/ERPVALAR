@@ -17,11 +17,11 @@
  *      pack aunque lleguen notificaciones duplicadas o mensajes sucesivos.
  *   6. Envía el texto y registra el resultado (SENT / MODERATED / FAILED).
  *
- * OJO diseño no validado aún: falta confirmar con una venta real que el texto
- * libre en conversación abierta NO sufre la misma moderación automatic_message.
- * Por eso se detecta moderación sincrónica en el POST, se re-chequea a los
- * 3 minutos y el cron barre los auto-replies SENT de las últimas 48 h. Si
- * aparecen MODERATED acá, el diseño no sirve y hay que replantear.
+ * Diseño VALIDADO con venta real (pack 2000014703785113, 2026-08-25): el texto
+ * libre en conversación abierta pasa limpio (HTTP 201, moderation "clean") —
+ * el filtro automatic_message solo aplica al action_guide, no acá. Igual se
+ * detecta moderación sincrónica en el POST, se re-chequea a los 3 minutos y el
+ * cron barre los auto-replies SENT de las últimas 48 h, por si ML cambia.
  */
 
 import { prisma } from '@/lib/prisma'

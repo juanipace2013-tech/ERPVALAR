@@ -31,14 +31,37 @@ export async function GET(request: NextRequest) {
     }
 
     const { desde, hasta } = monthRange(mes)
+    // Historial: 12 meses hacia atrás desde el mes visible (para el gráfico)
+    const [anioV, mesV] = mes.split('-').map(Number)
+    const historialDesde = new Date(Date.UTC(anioV, mesV - 12, 1))
 
-    const [dias, ultimo] = await Promise.all([
+    const [dias, ultimo, historialDias] = await Promise.all([
       prisma.viandaDay.findMany({
         where: { fecha: { gte: desde, lt: hasta } },
         orderBy: { fecha: 'asc' },
       }),
       prisma.viandaDay.findFirst({ orderBy: { fecha: 'desc' } }),
+      prisma.viandaDay.findMany({
+        where: { fecha: { gte: historialDesde, lt: hasta } },
+        select: { fecha: true, cantidad: true, precio: true },
+      }),
     ])
+
+    // Agregar por mes (viandas y total $ con el precio de cada día)
+    const porMes = new Map<string, { viandas: number; total: number }>()
+    for (const d of historialDias) {
+      const key = d.fecha.toISOString().slice(0, 7)
+      const cur = porMes.get(key) ?? { viandas: 0, total: 0 }
+      cur.viandas += d.cantidad
+      cur.total += d.cantidad * Number(d.precio)
+      porMes.set(key, cur)
+    }
+    const historial: { mes: string; viandas: number; total: number }[] = []
+    for (let i = 11; i >= 1; i--) {
+      const dHist = new Date(Date.UTC(anioV, mesV - 1 - i, 1))
+      const key = dHist.toISOString().slice(0, 7)
+      historial.push({ mes: key, viandas: porMes.get(key)?.viandas ?? 0, total: porMes.get(key)?.total ?? 0 })
+    }
 
     return NextResponse.json({
       dias: dias.map((d) => ({
@@ -47,6 +70,7 @@ export async function GET(request: NextRequest) {
         precio: Number(d.precio),
       })),
       precioDefault: ultimo ? Number(ultimo.precio) : null,
+      historial,
     })
   } catch (error) {
     logger.error('[Viandas] Error en GET:', error)

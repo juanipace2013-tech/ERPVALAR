@@ -1,10 +1,16 @@
 'use client'
 
+/**
+ * Viandas — conteo mensual de almuerzos.
+ *
+ * Tiles de resumen (viandas, total $, precio editable, promedio por día),
+ * historial de 12 meses en barras y la grilla semanal de carga.
+ * El mes se maneja como 'YYYY-MM' y las fechas como 'YYYY-MM-DD' en UTC.
+ */
 import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Table,
   TableBody,
@@ -20,6 +26,7 @@ const MESES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ]
+const MESES_INICIAL = ['E', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']
 const DIAS_SEMANA = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie']
 const ORDINALES = ['1ra', '2da', '3ra', '4ta', '5ta', '6ta']
 
@@ -32,6 +39,12 @@ interface DiaGrilla {
 interface SemanaGrilla {
   label: string
   dias: DiaGrilla[] // siempre 5 (lun a vie)
+}
+
+interface MesHistorial {
+  mes: string // YYYY-MM
+  viandas: number
+  total: number
 }
 
 // Arma las semanas (lunes a viernes) que tocan el mes, como en las
@@ -79,12 +92,14 @@ function formatARS(n: number) {
 
 export default function ViandasPage() {
   const hoy = new Date()
+  const hoyIso = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
   const [anio, setAnio] = useState(hoy.getFullYear())
   const [mes, setMes] = useState(hoy.getMonth() + 1)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [precio, setPrecio] = useState('')
   const [cantidades, setCantidades] = useState<Record<string, string>>({})
+  const [historial, setHistorial] = useState<MesHistorial[]>([])
   const [dirty, setDirty] = useState(false)
 
   const mesStr = `${anio}-${String(mes).padStart(2, '0')}`
@@ -101,6 +116,7 @@ export default function ViandasPage() {
         cants[d.fecha] = String(d.cantidad)
       }
       setCantidades(cants)
+      setHistorial(data.historial ?? [])
       // Precio del mes: el de los días ya cargados, o el último conocido
       const precioMes = data.dias.length > 0 ? data.dias[0].precio : data.precioDefault
       setPrecio(precioMes != null ? String(precioMes) : '')
@@ -135,6 +151,15 @@ export default function ViandasPage() {
 
   const totalViandas = semanas.reduce((acc, s) => acc + totalSemana(s), 0)
   const totalMes = totalViandas * precioNum
+  const diasConDatos = semanas.flatMap((s) => s.dias).filter((d) => d.delMes && (parseInt(cantidades[d.fecha] || '') || 0) > 0).length
+  const promedioDia = diasConDatos > 0 ? totalViandas / diasConDatos : 0
+
+  // Historial + mes visible al final (con los valores en pantalla)
+  const serieHistorial: (MesHistorial & { actual?: boolean })[] = [
+    ...historial,
+    { mes: mesStr, viandas: totalViandas, total: totalMes, actual: true },
+  ]
+  const maxViandas = Math.max(1, ...serieHistorial.map((h) => h.viandas))
 
   const handleGuardar = async () => {
     if (!precioNum || precioNum <= 0) {
@@ -169,7 +194,7 @@ export default function ViandasPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <UtensilsCrossed className="h-6 w-6 text-blue-600" />
@@ -179,48 +204,114 @@ export default function ViandasPage() {
             Conteo mensual de almuerzos — cantidad por día y precio unitario
           </p>
         </div>
-        <Button onClick={handleGuardar} disabled={saving || !dirty}>
-          {saving ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-          ) : (
-            <Save className="h-4 w-4 mr-2" />
-          )}
-          Guardar
-        </Button>
-      </div>
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1">
             <Button variant="outline" size="icon" onClick={() => cambiarMes(-1)}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <CardTitle className="w-48 text-center">
-              {MESES[mes - 1]} {anio}
-            </CardTitle>
+            <span className="w-40 text-center font-semibold">{MESES[mes - 1]} {anio}</span>
             <Button variant="outline" size="icon" onClick={() => cambiarMes(1)}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
-          <div className="flex items-center gap-2">
-            <Label htmlFor="precio" className="whitespace-nowrap">
-              Precio vianda
-            </Label>
-            <Input
-              id="precio"
-              type="number"
-              min="0"
-              step="100"
-              className="w-28"
-              value={precio}
-              onChange={(e) => {
-                setPrecio(e.target.value)
-                setDirty(true)
-              }}
-            />
-          </div>
+          <Button onClick={handleGuardar} disabled={saving || !dirty}>
+            {saving ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4 mr-2" />
+            )}
+            Guardar
+          </Button>
+        </div>
+      </div>
+
+      {/* ═══ TILES DE RESUMEN ═══ */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="pt-5 pb-4">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Viandas del mes</p>
+            <p className="text-3xl font-bold tabular-nums mt-1">{totalViandas}</p>
+            <p className="text-xs text-muted-foreground mt-1">{diasConDatos} días con pedido</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-5 pb-4">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Total del mes</p>
+            <p className="text-3xl font-bold tabular-nums mt-1">{formatARS(totalMes)}</p>
+            <p className="text-xs text-muted-foreground mt-1">a {formatARS(precioNum)} por vianda</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-5 pb-4">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Precio vianda</p>
+            <div className="flex items-center gap-1 mt-1.5">
+              <span className="text-xl font-semibold text-muted-foreground">$</span>
+              <Input
+                id="precio"
+                type="number"
+                min="0"
+                step="100"
+                className="w-28 h-9 text-xl font-bold tabular-nums"
+                value={precio}
+                onChange={(e) => {
+                  setPrecio(e.target.value)
+                  setDirty(true)
+                }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">se aplica a todo el mes al guardar</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-5 pb-4">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Promedio por día</p>
+            <p className="text-3xl font-bold tabular-nums mt-1">{promedioDia ? promedioDia.toFixed(1) : '—'}</p>
+            <p className="text-xs text-muted-foreground mt-1">viandas por día con pedido</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ═══ HISTORIAL 12 MESES ═══ */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium text-muted-foreground">
+            Viandas por mes — últimos 12 meses
+          </CardTitle>
         </CardHeader>
         <CardContent>
+          <div className="flex items-end gap-[6px] h-24">
+            {serieHistorial.map((h) => {
+              const [hy, hm] = h.mes.split('-').map(Number)
+              const altura = h.viandas > 0 ? Math.max(6, (h.viandas / maxViandas) * 88) : 2
+              return (
+                <div
+                  key={h.mes}
+                  className="flex-1 flex flex-col items-center justify-end gap-1 group"
+                  title={`${MESES[hm - 1]} ${hy}: ${h.viandas} viandas · ${formatARS(h.total)}`}
+                >
+                  {h.actual && h.viandas > 0 && (
+                    <span className="text-[10px] font-semibold tabular-nums text-gray-700">{h.viandas}</span>
+                  )}
+                  <div
+                    style={{ height: `${altura}px` }}
+                    className={`w-full max-w-[38px] rounded-t-[4px] transition-colors ${
+                      h.actual ? 'bg-blue-600' : 'bg-blue-200 group-hover:bg-blue-300'
+                    }`}
+                  />
+                  <span className={`text-[10px] ${h.actual ? 'font-bold text-gray-900' : 'text-muted-foreground'}`}>
+                    {MESES_INICIAL[hm - 1]}
+                    {hm === 1 ? `'${String(hy).slice(2)}` : ''}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ═══ GRILLA SEMANAL ═══ */}
+      <Card>
+        <CardContent className="pt-6">
           {loading ? (
             <div className="flex justify-center py-12">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -229,7 +320,7 @@ export default function ViandasPage() {
             <>
               <Table>
                 <TableHeader>
-                  <TableRow>
+                  <TableRow className="hover:bg-transparent">
                     <TableHead className="w-52">Semana</TableHead>
                     {DIAS_SEMANA.map((d) => (
                       <TableHead key={d} className="text-center">
@@ -241,16 +332,20 @@ export default function ViandasPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {semanas.map((s) => (
-                    <TableRow key={s.label}>
-                      <TableCell className="font-medium capitalize">{s.label}</TableCell>
+                  {semanas.map((s, i) => (
+                    <TableRow key={s.label} className={i % 2 === 1 ? 'bg-gray-50/60' : ''}>
+                      <TableCell className="font-medium capitalize text-muted-foreground">{s.label}</TableCell>
                       {s.dias.map((d) =>
                         d.delMes ? (
                           <TableCell key={d.fecha} className="text-center p-1.5">
                             <div className="flex flex-col items-center gap-0.5">
-                              <span className="text-[10px] text-muted-foreground">{d.dia}</span>
+                              <span className={`text-[10px] ${d.fecha === hoyIso ? 'font-bold text-blue-600' : 'text-muted-foreground'}`}>
+                                {d.dia}
+                              </span>
                               <Input
-                                className="w-14 h-8 text-center"
+                                className={`w-14 h-9 text-center tabular-nums font-medium ${
+                                  d.fecha === hoyIso ? 'ring-2 ring-blue-400 ring-offset-1' : ''
+                                } ${!(cantidades[d.fecha] ?? '') ? 'text-muted-foreground' : ''}`}
                                 inputMode="numeric"
                                 value={cantidades[d.fecha] ?? ''}
                                 onChange={(e) => setCantidad(d.fecha, e.target.value)}
@@ -261,26 +356,26 @@ export default function ViandasPage() {
                         ) : (
                           <TableCell
                             key={d.fecha}
-                            className="text-center bg-gray-100 dark:bg-gray-800 text-muted-foreground text-xs"
+                            className="text-center bg-gray-100/80 dark:bg-gray-800 text-muted-foreground/50 text-xs"
                           >
                             {d.dia}
                           </TableCell>
                         )
                       )}
-                      <TableCell className="text-right tabular-nums">{totalSemana(s)}</TableCell>
-                      <TableCell className="text-right tabular-nums font-medium">
-                        {formatARS(totalSemana(s) * precioNum)}
+                      <TableCell className="text-right tabular-nums font-semibold">{totalSemana(s) || ''}</TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {totalSemana(s) ? formatARS(totalSemana(s) * precioNum) : ''}
                       </TableCell>
                     </TableRow>
                   ))}
-                  <TableRow className="bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-50 dark:hover:bg-blue-900/20">
+                  <TableRow className="border-t-2 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-50 dark:hover:bg-blue-900/20">
                     <TableCell className="font-bold" colSpan={6}>
                       Total del mes
                     </TableCell>
-                    <TableCell className="text-right font-bold tabular-nums">
+                    <TableCell className="text-right font-bold tabular-nums text-base">
                       {totalViandas}
                     </TableCell>
-                    <TableCell className="text-right font-bold tabular-nums">
+                    <TableCell className="text-right font-bold tabular-nums text-base">
                       {formatARS(totalMes)}
                     </TableCell>
                   </TableRow>

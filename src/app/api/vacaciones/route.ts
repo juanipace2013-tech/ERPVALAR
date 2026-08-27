@@ -44,11 +44,11 @@ export async function GET(request: NextRequest) {
         where: { fecha: { gte: new Date(Date.UTC(anio, 0, 1)), lt: new Date(Date.UTC(anio + 1, 0, 1)) } },
         orderBy: { fecha: 'asc' },
       }),
-      // V desde el año base hasta el año visible (para el saldo)
+      // Todas las V desde el año base (las cargadas a futuro también descuentan)
       prisma.ausencia.findMany({
         where: {
           tipo: 'VACACIONES',
-          fecha: { gte: new Date(Date.UTC(SALDO_ANIO_BASE, 0, 1)), lt: new Date(Date.UTC(anio + 1, 0, 1)) },
+          fecha: { gte: new Date(Date.UTC(SALDO_ANIO_BASE, 0, 1)) },
         },
         select: { empleadoId: true, fecha: true },
       }),
@@ -73,24 +73,24 @@ export async function GET(request: NextRequest) {
       feriados: feriadosDelAnio(anio),
       empleados: empleados.map((e) => {
         const conSaldo = !e.esSocio && !!e.fechaIngreso
+        const vMap = vPorEmpAnio.get(e.id) ?? new Map<number, number>()
         const saldoInfo = conSaldo
           ? computarSaldo({
               fechaIngreso: e.fechaIngreso!,
               ajusteSaldo: e.ajusteSaldo,
-              anioHasta: anio,
-              vTomadasPorAnio: vPorEmpAnio.get(e.id) ?? new Map(),
+              hoy,
+              vTomadasPorAnio: vMap,
             })
           : null
-        // Días del año pasado sin tomar (vencen el 30/4 del año en curso)
+        // Días de años ANTERIORES sin tomar (vencen el 30/4 del año en curso):
+        // ajuste + corresponden de años < actual − todas las V registradas
         let venceAbril: number | null = null
-        if (conSaldo && antesDelVencimiento && anio === anioActual && anioActual - 1 >= SALDO_ANIO_BASE) {
-          const previo = computarSaldo({
-            fechaIngreso: e.fechaIngreso!,
-            ajusteSaldo: e.ajusteSaldo,
-            anioHasta: anioActual - 1,
-            vTomadasPorAnio: vPorEmpAnio.get(e.id) ?? new Map(),
-          })
-          if (previo.saldo > 0) venceAbril = previo.saldo
+        if (conSaldo && antesDelVencimiento) {
+          const desde = Math.max(SALDO_ANIO_BASE, e.fechaIngreso!.getUTCFullYear())
+          let previo = e.ajusteSaldo
+          for (let y = desde; y < anioActual; y++) previo += diasVacacionesLct(e.fechaIngreso!, y)
+          for (const n of vMap.values()) previo -= n
+          if (previo > 0) venceAbril = previo
         }
         return {
           id: e.id,
@@ -101,6 +101,7 @@ export async function GET(request: NextRequest) {
           corresponden: conSaldo ? diasVacacionesLct(e.fechaIngreso!, anio) : null,
           saldo: saldoInfo?.saldo ?? null,
           saldoDetalle: saldoInfo?.detalle ?? null,
+          proximaActivacion: saldoInfo?.proximaActivacion ?? null,
           ajusteSaldo: e.ajusteSaldo,
           venceAbril,
         }
@@ -222,12 +223,11 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Este empleado no lleva saldo (socio o sin fecha de ingreso)' }, { status: 400 })
     }
 
-    const anioActual = new Date().getUTCFullYear()
     const vTomadas = await prisma.ausencia.findMany({
       where: {
         empleadoId,
         tipo: 'VACACIONES',
-        fecha: { gte: new Date(Date.UTC(SALDO_ANIO_BASE, 0, 1)), lt: new Date(Date.UTC(anioActual + 1, 0, 1)) },
+        fecha: { gte: new Date(Date.UTC(SALDO_ANIO_BASE, 0, 1)) },
       },
       select: { fecha: true },
     })
@@ -239,7 +239,7 @@ export async function PATCH(request: NextRequest) {
     const sinAjuste = computarSaldo({
       fechaIngreso: emp.fechaIngreso,
       ajusteSaldo: 0,
-      anioHasta: anioActual,
+      hoy: new Date(),
       vTomadasPorAnio: vPorAnio,
     })
     const ajusteSaldo = saldoObjetivo - sinAjuste.saldo

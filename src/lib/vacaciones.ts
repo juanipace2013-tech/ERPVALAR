@@ -42,27 +42,38 @@ export interface SaldoDetalleAnio {
   anio: number
   corresponden: number
   tomados: number
+  /** false = los días de este año todavía no se activaron (arrancan el 1/10, LCT art. 154) */
+  activado: boolean
 }
 
 /**
- * Saldo de vacaciones = ajuste (arrastre pre-2025 / correcciones manuales)
- * + Σ días que corresponden por LCT − Σ V tomadas, año por año desde
- * max(SALDO_ANIO_BASE, año de ingreso) hasta anioHasta inclusive.
+ * Saldo de vacaciones al día de HOY:
+ *   ajuste (arrastre pre-2025 / correcciones) + Σ corresponden por LCT de los
+ *   años ACTIVADOS − todas las V registradas (pasadas y futuras) desde 2025.
+ *
+ * Los días del año en curso se activan el 1° de octubre (el período legal de
+ * otorgamiento va del 1/10 al 30/4 del año siguiente — LCT art. 154).
  */
 export function computarSaldo(opts: {
   fechaIngreso: Date
   ajusteSaldo: number
-  anioHasta: number
+  hoy: Date
   vTomadasPorAnio: Map<number, number>
-}): { saldo: number; detalle: SaldoDetalleAnio[] } {
+}): { saldo: number; detalle: SaldoDetalleAnio[]; proximaActivacion: { anio: number; dias: number } | null } {
+  const anioActual = opts.hoy.getUTCFullYear()
   const desde = Math.max(SALDO_ANIO_BASE, opts.fechaIngreso.getUTCFullYear())
   const detalle: SaldoDetalleAnio[] = []
   let saldo = opts.ajusteSaldo
-  for (let anio = desde; anio <= opts.anioHasta; anio++) {
+  let proximaActivacion: { anio: number; dias: number } | null = null
+
+  for (let anio = desde; anio <= anioActual; anio++) {
     const corresponden = diasVacacionesLct(opts.fechaIngreso, anio)
-    const tomados = opts.vTomadasPorAnio.get(anio) ?? 0
-    saldo += corresponden - tomados
-    detalle.push({ anio, corresponden, tomados })
+    const activado = anio < anioActual || opts.hoy.getTime() >= Date.UTC(anio, 9, 1)
+    if (activado) saldo += corresponden
+    else proximaActivacion = { anio, dias: corresponden }
+    detalle.push({ anio, corresponden, tomados: opts.vTomadasPorAnio.get(anio) ?? 0, activado })
   }
-  return { saldo, detalle }
+  // Todas las V descuentan (incluidas las cargadas a futuro: ya están comprometidas)
+  for (const n of opts.vTomadasPorAnio.values()) saldo -= n
+  return { saldo, detalle, proximaActivacion }
 }

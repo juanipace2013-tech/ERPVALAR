@@ -44,7 +44,7 @@ const MINI: Record<Tipo, string> = {
   ENFERMEDAD: 'bg-red-500',
 }
 
-interface SaldoDetalleAnio { anio: number; corresponden: number; tomados: number }
+interface SaldoDetalleAnio { anio: number; corresponden: number; tomados: number; activado: boolean }
 interface Empleado {
   id: string
   nombre: string
@@ -55,6 +55,7 @@ interface Empleado {
   saldo: number | null
   saldoDetalle: SaldoDetalleAnio[] | null
   ajusteSaldo: number
+  proximaActivacion: { anio: number; dias: number } | null
   venceAbril: number | null
 }
 interface Solapamiento { nombre: string; desde: string; hasta: string }
@@ -249,7 +250,11 @@ export default function VacacionesPage() {
 
   const saldoTooltip = (emp: Empleado) => {
     if (!emp.saldoDetalle) return undefined
-    const filas = emp.saldoDetalle.map((d) => `${d.anio}: +${d.corresponden} corresponden, −${d.tomados} tomados`)
+    const filas = emp.saldoDetalle.map((d) =>
+      d.activado
+        ? `${d.anio}: +${d.corresponden} corresponden, −${d.tomados} tomados`
+        : `${d.anio}: +${d.corresponden} se activan el 1/10 (tomados: ${d.tomados})`
+    )
     const ajuste = emp.ajusteSaldo ? [`Ajuste/arrastre: ${emp.ajusteSaldo > 0 ? '+' : ''}${emp.ajusteSaldo}`] : []
     return [...ajuste, ...filas, `Ingreso: ${emp.fechaIngreso ? fmtCorta(emp.fechaIngreso) + '/' + emp.fechaIngreso.slice(0, 4) : '-'}`].join('\n')
   }
@@ -395,15 +400,22 @@ export default function VacacionesPage() {
                       <td className="pl-3 text-right whitespace-nowrap" title={saldoTooltip(emp)}>
                         {emp.saldo == null ? (
                           <span className="text-gray-400">—</span>
-                        ) : puedeEditar ? (
-                          <button
-                            className={`underline decoration-dotted ${emp.saldo < 0 ? 'text-red-600' : 'text-blue-600'}`}
-                            onClick={() => ajustarSaldo(emp)}
-                          >
-                            {emp.saldo} días
-                          </button>
                         ) : (
-                          <span className={emp.saldo < 0 ? 'text-red-600' : ''}>{emp.saldo} días</span>
+                          <>
+                            {puedeEditar ? (
+                              <button
+                                className={`underline decoration-dotted ${emp.saldo < 0 ? 'text-red-600' : 'text-blue-600'}`}
+                                onClick={() => ajustarSaldo(emp)}
+                              >
+                                {emp.saldo} días
+                              </button>
+                            ) : (
+                              <span className={emp.saldo < 0 ? 'text-red-600' : ''}>{emp.saldo} días</span>
+                            )}
+                            {emp.proximaActivacion && (
+                              <span className="text-gray-400"> (+{emp.proximaActivacion.dias} el 1/10)</span>
+                            )}
+                          </>
                         )}
                       </td>
                     </tr>
@@ -467,9 +479,9 @@ export default function VacacionesPage() {
       </Card>
 
       <p className="text-xs text-gray-400">
-        "Corresponden": días por LCT (art. 150) según la fecha de ingreso del recibo. "Saldo" se calcula solo:
-        arrastre + corresponden − tomados desde 2025; click sobre el valor para corregirlo si la realidad difiere.
-        Los socios no llevan saldo.
+        "Corresponden": días por LCT (art. 150) según la fecha de ingreso del recibo. "Saldo" se calcula solo
+        (arrastre + corresponden − tomados desde 2025) y los días del año en curso se suman recién el 1/10, cuando
+        arranca el período legal de otorgamiento (art. 154). Click sobre el valor para corregirlo. Los socios no llevan saldo.
       </p>
 
       {/* Dialog: carga por rango */}

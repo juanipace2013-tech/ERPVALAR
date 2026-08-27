@@ -3402,6 +3402,10 @@ model Empleado {
   orden           Int     @default(0)
   // Días de vacaciones pendientes (carga manual, como la planilla)
   saldoVacaciones Int?
+  // Fecha de ingreso (del recibo de sueldo) → días de vacaciones por LCT
+  fechaIngreso    DateTime? @db.Date
+  // Socios: vacaciones sin límite (no se les computa el corresponde LCT)
+  esSocio         Boolean  @default(false)
 
   ausencias Ausencia[]
 

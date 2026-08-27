@@ -13,6 +13,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { puedeEditarVacaciones, diasVacacionesLct } from '@/lib/vacaciones'
 import { z } from 'zod'
 
 function monthRange(mes: string) {
@@ -35,6 +36,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Parámetro mes inválido (YYYY-MM)' }, { status: 400 })
     }
     const { desde, hasta, anioDesde, anioHasta } = monthRange(mes)
+    const anio = Number(mes.slice(0, 4))
 
     const [empleados, ausenciasMes, ausenciasAnio] = await Promise.all([
       prisma.empleado.findMany({ orderBy: [{ orden: 'asc' }, { nombre: 'asc' }] }),
@@ -47,11 +49,16 @@ export async function GET(request: NextRequest) {
     ])
 
     return NextResponse.json({
+      puedeEditar: puedeEditarVacaciones(session.user?.email),
       empleados: empleados.map((e) => ({
         id: e.id,
         nombre: e.nombre,
         activo: e.activo,
         saldoVacaciones: e.saldoVacaciones,
+        esSocio: e.esSocio,
+        fechaIngreso: e.fechaIngreso ? e.fechaIngreso.toISOString().slice(0, 10) : null,
+        // Días que corresponden por LCT para el año que se está mirando
+        corresponden: e.esSocio || !e.fechaIngreso ? null : diasVacacionesLct(e.fechaIngreso, anio),
       })),
       ausencias: ausenciasMes.map((a) => ({
         empleadoId: a.empleadoId,
@@ -80,6 +87,9 @@ export async function POST(request: NextRequest) {
   try {
     const session = await auth()
     if (!session) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
+    if (!puedeEditarVacaciones(session.user?.email)) {
+      return NextResponse.json({ error: 'Solo Santiago y Juan pueden editar la planilla' }, { status: 403 })
+    }
 
     const { empleadoId, fecha, tipo } = postSchema.parse(await request.json())
     const fechaUtc = new Date(`${fecha}T00:00:00.000Z`)
@@ -112,6 +122,9 @@ export async function PATCH(request: NextRequest) {
   try {
     const session = await auth()
     if (!session) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
+    if (!puedeEditarVacaciones(session.user?.email)) {
+      return NextResponse.json({ error: 'Solo Santiago y Juan pueden editar la planilla' }, { status: 403 })
+    }
 
     const { empleadoId, saldoVacaciones } = patchSchema.parse(await request.json())
     await prisma.empleado.update({ where: { id: empleadoId }, data: { saldoVacaciones } })
@@ -129,6 +142,9 @@ export async function PUT(request: NextRequest) {
   try {
     const session = await auth()
     if (!session) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
+    if (!puedeEditarVacaciones(session.user?.email)) {
+      return NextResponse.json({ error: 'Solo Santiago y Juan pueden editar la planilla' }, { status: 403 })
+    }
 
     const { nombre } = z.object({ nombre: z.string().trim().min(1).max(60) }).parse(await request.json())
     const max = await prisma.empleado.aggregate({ _max: { orden: true } })

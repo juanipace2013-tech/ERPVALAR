@@ -195,7 +195,7 @@ const navItems: NavItem[] = [
     title: 'Vacaciones',
     href: '/vacaciones',
     icon: TreePalm,
-    roles: ['ADMIN', 'GERENTE'],
+    roles: ['ADMIN', 'GERENTE', 'VENDEDOR', 'CONTADOR'],
   },
   {
     title: 'Tipo de Cambio',

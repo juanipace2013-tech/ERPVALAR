@@ -32,6 +32,10 @@ interface Empleado {
   nombre: string
   activo: boolean
   saldoVacaciones: number | null
+  esSocio: boolean
+  fechaIngreso: string | null
+  /** Días de vacaciones que corresponden por LCT en el año visible (null = socio o sin fecha de ingreso) */
+  corresponden: number | null
 }
 
 export default function VacacionesPage() {
@@ -42,6 +46,7 @@ export default function VacacionesPage() {
   const [ausencias, setAusencias] = useState<Map<string, Tipo>>(new Map()) // `${empleadoId}|${fecha}`
   const [resumenAnio, setResumenAnio] = useState<Map<string, number>>(new Map()) // `${empleadoId}|${tipo}`
   const [loading, setLoading] = useState(true)
+  const [puedeEditar, setPuedeEditar] = useState(false)
 
   const mesStr = `${anio}-${String(mes).padStart(2, '0')}`
   const diasEnMes = new Date(anio, mes, 0).getDate()
@@ -54,6 +59,7 @@ export default function VacacionesPage() {
       if (!res.ok) throw new Error()
       const data = await res.json()
       setEmpleados(data.empleados)
+      setPuedeEditar(!!data.puedeEditar)
       setAusencias(new Map(data.ausencias.map((a: { empleadoId: string; fecha: string; tipo: Tipo }) => [`${a.empleadoId}|${a.fecha}`, a.tipo])))
       setResumenAnio(new Map(data.resumenAnio.map((r: { empleadoId: string; tipo: Tipo; dias: number }) => [`${r.empleadoId}|${r.tipo}`, r.dias])))
     } catch {
@@ -74,6 +80,7 @@ export default function VacacionesPage() {
   }
 
   const toggleCelda = async (empleadoId: string, dia: number) => {
+    if (!puedeEditar) return
     const fecha = `${mesStr}-${String(dia).padStart(2, '0')}`
     const key = `${empleadoId}|${fecha}`
     const actual = ausencias.get(key) ?? null
@@ -165,9 +172,13 @@ export default function VacacionesPage() {
             <p className="text-sm text-gray-500">Control de ausencias y vacaciones de empleados</p>
           </div>
         </div>
-        <Button variant="outline" size="sm" onClick={nuevoEmpleado}>
-          <Plus className="h-4 w-4 mr-1" /> Empleado
-        </Button>
+        {puedeEditar ? (
+          <Button variant="outline" size="sm" onClick={nuevoEmpleado}>
+            <Plus className="h-4 w-4 mr-1" /> Empleado
+          </Button>
+        ) : (
+          <span className="text-xs text-gray-400">Solo lectura — las vacaciones las aprueban Santiago y Juan</span>
+        )}
       </div>
 
       <Card>
@@ -186,7 +197,7 @@ export default function VacacionesPage() {
               <span><span className="inline-block w-4 h-4 rounded bg-green-500 align-middle mr-1" />V Vacaciones</span>
               <span><span className="inline-block w-4 h-4 rounded bg-amber-400 align-middle mr-1" />P Personal</span>
               <span><span className="inline-block w-4 h-4 rounded bg-red-500 align-middle mr-1" />E Enfermedad</span>
-              <span className="text-gray-400">Click en el día para marcar</span>
+              {puedeEditar && <span className="text-gray-400">Click en el día para marcar</span>}
             </CardDescription>
           </div>
         </CardHeader>
@@ -208,6 +219,7 @@ export default function VacacionesPage() {
                     ))}
                     <th className="pl-3 text-right">Mes</th>
                     <th className="pl-3 text-right">Año V/P/E</th>
+                    <th className="pl-3 text-right">Corresponden</th>
                     <th className="pl-3 text-right">Pendientes</th>
                   </tr>
                   <tr>
@@ -217,7 +229,7 @@ export default function VacacionesPage() {
                         {d}
                       </th>
                     ))}
-                    <th colSpan={3} />
+                    <th colSpan={4} />
                   </tr>
                 </thead>
                 <tbody>
@@ -231,9 +243,10 @@ export default function VacacionesPage() {
                           <td key={d} className={`p-0.5 ${esFinde(d) ? 'bg-gray-100' : ''}`}>
                             <button
                               onClick={() => toggleCelda(emp.id, d)}
+                              disabled={!puedeEditar}
                               className={`w-6 h-6 rounded text-[11px] font-bold leading-none transition-colors ${
-                                tipo ? CELDA[tipo] : 'hover:bg-gray-200 text-transparent hover:text-gray-400'
-                              }`}
+                                tipo ? CELDA[tipo] : puedeEditar ? 'hover:bg-gray-200 text-transparent hover:text-gray-400' : 'text-transparent'
+                              } ${!puedeEditar ? 'cursor-default' : ''}`}
                               title={`${emp.nombre} — ${fecha}`}
                             >
                               {tipo ? LETRA[tipo] : '·'}
@@ -247,10 +260,17 @@ export default function VacacionesPage() {
                         {(resumenAnio.get(`${emp.id}|PERSONAL`) ?? 0)}/
                         {(resumenAnio.get(`${emp.id}|ENFERMEDAD`) ?? 0)}
                       </td>
+                      <td className="pl-3 text-right text-gray-600 whitespace-nowrap" title={emp.fechaIngreso ? `Ingreso: ${emp.fechaIngreso.split('-').reverse().join('/')}` : undefined}>
+                        {emp.esSocio ? 'Libre' : emp.corresponden != null ? `${emp.corresponden} días` : '—'}
+                      </td>
                       <td className="pl-3 text-right">
-                        <button className="underline decoration-dotted text-blue-600" onClick={() => editarSaldo(emp)}>
-                          {emp.saldoVacaciones != null ? `${emp.saldoVacaciones} días` : '—'}
-                        </button>
+                        {puedeEditar ? (
+                          <button className="underline decoration-dotted text-blue-600" onClick={() => editarSaldo(emp)}>
+                            {emp.saldoVacaciones != null ? `${emp.saldoVacaciones} días` : '—'}
+                          </button>
+                        ) : (
+                          <span>{emp.saldoVacaciones != null ? `${emp.saldoVacaciones} días` : '—'}</span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -262,8 +282,8 @@ export default function VacacionesPage() {
       </Card>
 
       <p className="text-xs text-gray-400">
-        "Año V/P/E": días de Vacaciones / Personal / Enfermedad acumulados en {anio}. "Pendientes" se edita a mano
-        (click sobre el valor), igual que en la planilla.
+        "Año V/P/E": días de Vacaciones / Personal / Enfermedad acumulados en {anio}. "Corresponden": días por LCT
+        según la fecha de ingreso del recibo (los socios no tienen límite). "Pendientes" se edita a mano.
       </p>
     </div>
   )

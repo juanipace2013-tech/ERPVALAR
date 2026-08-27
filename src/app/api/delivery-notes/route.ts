@@ -1,7 +1,7 @@
 import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { generateDeliveryNumber, withDeliveryTx } from '@/lib/quote-workflow';
+import { generateDeliveryNumber, assignDeliveryNumberInTx, withDeliveryTx } from '@/lib/quote-workflow';
 import { parseCivilDate } from '@/lib/date-helpers';
 import { logAudit } from '@/lib/audit';
 import { normalizeCuit, buildCuitWhereClause } from '@/lib/cuit-utils';
@@ -131,6 +131,7 @@ export async function POST(request: NextRequest) {
       items,
       colppyCustomer,
       quoteId,
+      deliveryNumber: requestedDeliveryNumber,
     } = body;
 
     let { customerId } = body;
@@ -211,7 +212,9 @@ export async function POST(request: NextRequest) {
     // Si el create falla, el incremento de lastUsedNumber se rollbackea
     // y no queda hueco en la numeración.
     const deliveryNote = await withDeliveryTx(async (tx) => {
-      const { deliveryNumber, caiNumber } = await generateDeliveryNumber(tx);
+      const { deliveryNumber, caiNumber } = typeof requestedDeliveryNumber === 'string' && requestedDeliveryNumber.trim()
+        ? await assignDeliveryNumberInTx(tx, requestedDeliveryNumber)
+        : await generateDeliveryNumber(tx);
 
       return tx.deliveryNote.create({
         data: {
@@ -271,6 +274,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(deliveryNote, { status: 201 });
   } catch (error) {
     logger.error('Error creating delivery note:', error);
+    // Errores de validación del número elegido a mano → mensaje claro al form
+    const msg = error instanceof Error ? error.message : '';
+    if (/número de remito|remito RE /i.test(msg)) {
+      return NextResponse.json({ error: msg }, { status: 400 });
+    }
     return NextResponse.json(
       { error: 'Error al crear remito' },
       { status: 500 }

@@ -31,3 +31,38 @@ export function diasVacacionesLct(fechaIngreso: Date, anio: number): number {
   if (anios > 5) return 21
   return 14
 }
+
+/**
+ * El saldo se calcula desde este año (primer año con historial completo y
+ * confiable en el ERP). Lo anterior entra por Empleado.ajusteSaldo.
+ */
+export const SALDO_ANIO_BASE = 2025
+
+export interface SaldoDetalleAnio {
+  anio: number
+  corresponden: number
+  tomados: number
+}
+
+/**
+ * Saldo de vacaciones = ajuste (arrastre pre-2025 / correcciones manuales)
+ * + Σ días que corresponden por LCT − Σ V tomadas, año por año desde
+ * max(SALDO_ANIO_BASE, año de ingreso) hasta anioHasta inclusive.
+ */
+export function computarSaldo(opts: {
+  fechaIngreso: Date
+  ajusteSaldo: number
+  anioHasta: number
+  vTomadasPorAnio: Map<number, number>
+}): { saldo: number; detalle: SaldoDetalleAnio[] } {
+  const desde = Math.max(SALDO_ANIO_BASE, opts.fechaIngreso.getUTCFullYear())
+  const detalle: SaldoDetalleAnio[] = []
+  let saldo = opts.ajusteSaldo
+  for (let anio = desde; anio <= opts.anioHasta; anio++) {
+    const corresponden = diasVacacionesLct(opts.fechaIngreso, anio)
+    const tomados = opts.vTomadasPorAnio.get(anio) ?? 0
+    saldo += corresponden - tomados
+    detalle.push({ anio, corresponden, tomados })
+  }
+  return { saldo, detalle }
+}

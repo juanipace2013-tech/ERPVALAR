@@ -3400,8 +3400,12 @@ model Empleado {
   nombre          String  @unique
   activo          Boolean @default(true)
   orden           Int     @default(0)
-  // Días de vacaciones pendientes (carga manual, como la planilla)
+  // Días de vacaciones pendientes (LEGACY: la planilla manual; hoy el saldo
+  // se calcula solo — ver ajusteSaldo)
   saldoVacaciones Int?
+  // Ajuste del saldo calculado (arrastre entrante al 1/1/2025 + correcciones
+  // manuales). saldo = ajusteSaldo + Σ corresponden(LCT) − Σ V tomadas, desde 2025.
+  ajusteSaldo     Int      @default(0)
   // Fecha de ingreso (del recibo de sueldo) → días de vacaciones por LCT
   fechaIngreso    DateTime? @db.Date
   // Socios: vacaciones sin límite (no se les computa el corresponde LCT)

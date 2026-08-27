@@ -67,6 +67,12 @@ export interface FceInput {
   vtoPago?: Date
   /** CBU del emisor (Opcional 2101) — obligatorio para facturas FCE; no va en NC/ND */
   cbu?: string
+  /**
+   * Sistema de circulación (Opcional 27, RG 4919) — obligatorio para facturas
+   * FCE: 'SCA' (Sistema de Circulación Abierta, default) o 'ADC' (Agente de
+   * Depósito Colectivo). No va en NC/ND.
+   */
+  transmision?: 'SCA' | 'ADC'
   /** Solo NC FCE (Opcional 22): 'S' anula la operación completa, 'N' ajuste parcial */
   anulacion?: 'S' | 'N'
 }
@@ -262,8 +268,9 @@ export function buildDetalle(input: ComprobanteInput, numero: number): FECAEDetR
   }
   if (input.fce) {
     // FCE MiPyME (RG 4367): la factura lleva vencimiento de pago + CBU del
-    // emisor (Opcional 2101); la NC lleva Opcional 22 (S = anula la operación,
-    // N = ajuste parcial) y NO debe llevar CBU (error 10172). Receptor: solo CUIT.
+    // emisor (Opcional 2101) + sistema de circulación (Opcional 27, obs 10216);
+    // la NC lleva Opcional 22 (S = anula la operación, N = ajuste parcial) y NO
+    // debe llevar CBU (error 10172). Receptor: solo CUIT.
     if (input.receptor.docTipo !== DOC_TIPO.CUIT || input.receptor.docNro.length !== 11) {
       throw new Error('FCE requiere CUIT válido del receptor')
     }
@@ -272,7 +279,10 @@ export function buildDetalle(input: ComprobanteInput, numero: number): FECAEDetR
       const cbu = (input.fce.cbu ?? '').replace(/\D/g, '')
       if (cbu.length !== 22) throw new Error(`FCE: CBU del emisor inválido ("${input.fce.cbu ?? ''}")`)
       det.FchVtoPago = toCbteFch(input.fce.vtoPago)
-      det.Opcionales = [{ Id: '2101', Valor: cbu }]
+      det.Opcionales = [
+        { Id: '2101', Valor: cbu },
+        { Id: '27', Valor: input.fce.transmision ?? 'SCA' },
+      ]
     } else if (input.clase === 'NOTA_CREDITO') {
       det.Opcionales = [{ Id: '22', Valor: input.fce.anulacion ?? 'N' }]
     }

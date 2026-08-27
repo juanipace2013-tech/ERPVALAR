@@ -13,7 +13,8 @@
  *   --moneda ARS | USD (default ARS)
  *   --cotiz  cotización si USD
  *   --neto   neto gravado (default 1000) — IVA 21% y total se derivan
- *   --nc <cbteTipo>:<pv>:<nro>   emite NOTA DE CRÉDITO asociada a ese comprobante (ej. --nc 1:1:1)
+ *   --nc <cbteTipo>:<pv>:<nro>[:<yyyymmdd>]   emite NOTA DE CRÉDITO asociada a ese comprobante
+ *          (ej. --nc 1:1:1). La fecha del asociado es obligatoria para FCE; default hoy.
  *   --fce    emite como FCE MiPyME (201/206; con --nc: 203/208)
  *   --cbu    CBU del emisor para FCE (default el de VAL ARG)
  *   --vto    días hasta el vencimiento de pago FCE (default 30)
@@ -43,8 +44,10 @@ async function main() {
   const total = Math.round((neto + iva) * 100) / 100
   const cuit = arg('cuit', letra === 'A' ? '30715373579' : undefined)
   const nc = arg('nc')
+  // FCE exige la fecha del asociado (obs 10158): tipo:pv:nro[:yyyymmdd], default hoy
+  const hoy = new Date().toISOString().slice(0, 10).replace(/-/g, '')
   const asociados = nc
-    ? [{ Tipo: Number(nc.split(':')[0]), PtoVta: Number(nc.split(':')[1]), Nro: Number(nc.split(':')[2]), Cuit: cfg.cuit }]
+    ? [{ Tipo: Number(nc.split(':')[0]), PtoVta: Number(nc.split(':')[1]), Nro: Number(nc.split(':')[2]), Cuit: cfg.cuit, CbteFch: nc.split(':')[3] ?? hoy }]
     : undefined
   const { receptor } = receptorDesdeCondicion(letra === 'A' ? 'RESPONSABLE_INSCRIPTO' : 'CONSUMIDOR_FINAL', cuit)
 

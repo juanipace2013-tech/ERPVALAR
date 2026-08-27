@@ -9,6 +9,9 @@
  *   ARCA_KEY_PATH       ruta a la clave privada (.key) del CSR
  *   ARCA_PUNTO_VENTA    punto de venta electrónico del ERP (7)
  *   ARCA_TA_DIR         directorio donde cachear el Ticket de Acceso (default: dir del cert)
+ *   ARCA_CBU            CBU del emisor para FCE MiPyME (Opcional 2101; sin él no se emite FCE)
+ *   ARCA_FCE_MONTO_MINIMO  umbral en ARS desde el cual una factura A a cliente
+ *                       obligado sale como FCE (default 5.549.862 — Res 1/2026, se actualiza)
  *
  * En prod los archivos viven en /home/deploy/afip/ (fuera del repo, perms 600).
  */
@@ -25,6 +28,10 @@ export interface ArcaConfig {
   taDir: string
   wsaaUrl: string
   wsfeUrl: string
+  /** CBU del emisor para FCE (null = FCE deshabilitada) */
+  cbu: string | null
+  /** Umbral ARS para FCE a clientes obligados */
+  fceMontoMinimo: number
 }
 
 const URLS: Record<ArcaEnv, { wsaa: string; wsfe: string }> = {
@@ -63,6 +70,13 @@ export function getArcaConfig(): ArcaConfig {
     taDir: process.env.ARCA_TA_DIR || path.dirname(certPath),
     wsaaUrl: URLS[env].wsaa,
     wsfeUrl: URLS[env].wsfe,
+    cbu: (() => {
+      const c = (process.env.ARCA_CBU || '').replace(/\D/g, '')
+      return c.length === 22 ? c : null
+    })(),
+    fceMontoMinimo: Number(process.env.ARCA_FCE_MONTO_MINIMO) > 0
+      ? Number(process.env.ARCA_FCE_MONTO_MINIMO)
+      : 5_549_862,
   }
 }
 

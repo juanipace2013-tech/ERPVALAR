@@ -56,6 +56,8 @@ export interface FacturaPDFData {
   }
   asociados?: Array<{ descripcion: string }>
   isVoided?: boolean
+  /** FCE MiPyME (cbteTipo 201/206): vencimiento de pago y CBU del emisor */
+  fce?: { vtoPago?: Date | null; cbu?: string | null }
 }
 
 // ── Constantes de página / estilo ─────────────────────────────────────────────
@@ -111,6 +113,16 @@ function claseTitulo(clase: FacturaPDFData['clase']): string {
   if (clase === 'FACTURA') return 'Factura'
   if (clase === 'NOTA DE CRÉDITO') return 'Nota de Crédito'
   return 'Nota de Débito'
+}
+
+/** Título del comprobante; los FCE MiPyME (201-208) llevan su denominación RG 4367. */
+function tituloComprobante(data: Pick<FacturaPDFData, 'clase' | 'cbteTipo'>): string {
+  if (data.cbteTipo >= 201 && data.cbteTipo <= 208) {
+    if (data.clase === 'FACTURA') return 'Factura de Crédito MiPyME'
+    if (data.clase === 'NOTA DE CRÉDITO') return 'Nota de Crédito MiPyME'
+    return 'Nota de Débito MiPyME'
+  }
+  return claseTitulo(data.clase)
 }
 
 // ── Número a letras (español) ─────────────────────────────────────────────────
@@ -216,14 +228,23 @@ function drawFactura(doc: jsPDF, data: FacturaPDFData, logoBase64: string, qrBas
 
   // Derecha: título + PV/número + fecha + datos fiscales
   const rx = midX + 12
+  const titulo = tituloComprobante(data)
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(15)
+  doc.setFontSize(titulo.length > 16 ? 11.5 : 15)
   doc.setTextColor(...BLACK)
-  doc.text(claseTitulo(data.clase), rx, headerY + 8)
+  doc.text(titulo, rx, headerY + 8)
   doc.setFontSize(8)
   doc.text(`Punto de Venta: ${String(data.puntoVenta).padStart(4, '0')}`, rx, headerY + 14)
   doc.text(`Comp. Nro: ${String(data.numero).padStart(8, '0')}`, rx + 45, headerY + 14)
   doc.text(`Fecha de Emisión: ${fmtDate(data.fecha)}`, rx, headerY + 19)
+  if (data.fce?.vtoPago) {
+    doc.text(`Vto. de pago FCE: ${fmtDate(data.fce.vtoPago)}`, rx, headerY + 24)
+  }
+  if (data.fce?.cbu) {
+    doc.setFont('helvetica', 'normal')
+    doc.text(`CBU emisor: ${data.fce.cbu}`, rx, headerY + 28.5)
+    doc.setFont('helvetica', 'bold')
+  }
 
   label('CUIT:', EMISOR.cuit, rx, headerY + 34, ML + USABLE_W - 2, 7.5)
   label('Ingresos Brutos:', EMISOR.iibb, rx, headerY + 39, ML + USABLE_W - 2, 7.5)

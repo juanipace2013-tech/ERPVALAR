@@ -106,6 +106,10 @@ export async function emitirNotaCredito(invoiceId: string, opts: EmitirNotaCredi
 
   // Receptor: el mismo de la factura
   const letra = (inv.invoiceType === 'A' || inv.invoiceType === 'B' || inv.invoiceType === 'C' ? inv.invoiceType : 'B') as LetraComprobante
+  // NC sobre una FCE MiPyME (201/206) debe salir como NC FCE (203/208) con
+  // Opcional 22. Anulación 'S' solo procede si el comprador rechazó la FCE en
+  // el registro (error 10154 si no); el camino normal es el ajuste ('N').
+  const esFce = inv.cbteTipo === 201 || inv.cbteTipo === 206
   const { receptor } = receptorDesdeCondicion(inv.customer.taxCondition, inv.docNro || inv.customer.cuit)
   if (inv.docTipo) receptor.docTipo = inv.docTipo
   if (inv.docNro) receptor.docNro = inv.docNro
@@ -119,6 +123,7 @@ export async function emitirNotaCredito(invoiceId: string, opts: EmitirNotaCredi
   const em = await emitirComprobante({
     clase: 'NOTA_CREDITO',
     letra,
+    fce: esFce ? { anulacion: 'N' } : undefined,
     fecha: new Date(),
     receptor,
     moneda: esUsd ? 'USD' : 'ARS',
@@ -158,7 +163,8 @@ export async function emitirNotaCredito(invoiceId: string, opts: EmitirNotaCredi
     nroDocRec: receptor.docNro,
     codAut: em.cae,
   })
-  const numeroErp = `NC${letra}-${em.numeroFormateado}`
+  // La NC FCE (203/208) tiene numeración propia por cbteTipo → prefijo distinto
+  const numeroErp = `NC${esFce ? 'FCE' : ''}${letra}-${em.numeroFormateado}`
   const now = new Date()
   const motivo = (opts.motivo || '').trim()
 

@@ -277,6 +277,7 @@ export async function PATCH(
       'exchangeRateType',
       'notes',
       'taxCondition',
+      'fceObligado',
     ] as const
 
     const updateData: Record<string, any> = {}

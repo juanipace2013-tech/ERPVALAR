@@ -225,6 +225,10 @@ model Customer {
   // Tipo de cambio preferido
   exchangeRateType String? // Ej: "TC Billete SIN IVA", "TC Divisa", "TC MEP"
 
+  // FCE MiPyME: el cliente figura en el padrón ARCA de empresas grandes →
+  // facturas A por encima del monto mínimo vigente salen como FCE (201)
+  fceObligado Boolean @default(false)
+
   // Metadatos
   notes     String?  @db.Text
   createdAt DateTime @default(now())
@@ -1478,6 +1482,7 @@ model Invoice {
   docNro            String?
   qrUrl             String? @db.Text // URL del QR (RG 4892)
   arcaObservaciones String? @db.Text // Observaciones de ARCA al autorizar (si las hubo)
+  fceVtoPago        DateTime? // FCE MiPyME (cbteTipo 201/206): fecha de vto de pago informada a ARCA
   // Registro en Colppy de una factura emitida por el ERP (CC/stock/asiento):
   // 'OK' | 'PENDIENTE' | 'ERROR'. null para facturas emitidas por Colppy.
   colppySyncStatus  String?

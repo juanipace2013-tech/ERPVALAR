@@ -243,6 +243,7 @@ export async function POST(request: NextRequest) {
           name: quote.customer.name,
           cuit: quote.customer.cuit,
           taxCondition: quote.customer.taxCondition,
+          fceObligado: quote.customer.fceObligado,
         })
       : null
     const colppyOptions: SendToColppyOptions = {
@@ -315,12 +316,14 @@ export async function POST(request: NextRequest) {
     // Cálculos previos a la transacción. Los necesitamos también para el
     // breadcrumb del caso COLPPY_ORPHAN (factura emitida + persistencia fallida).
     const invoiceType = emisionArca
-      ? (emisionArca.cbteTipo === 1 ? 'A' : emisionArca.cbteTipo === 11 ? 'C' : 'B')
+      ? ([1, 201].includes(emisionArca.cbteTipo) ? 'A' : emisionArca.cbteTipo === 11 ? 'C' : 'B')
       : quote.customer.taxCondition === 'RESPONSABLE_INSCRIPTO' ? 'A' : 'B'
     // Numero interno unico: la letra va adelante porque A, B y NC comparten
     // numeracion por PV (A-0007-00000001, B-0007-00000001, NCA-0007-00000001).
+    // FCE (201/206) tiene numeracion propia por cbteTipo → prefijo FCEA/FCEB.
+    const esFceEmitida = !!emisionArca && emisionArca.cbteTipo >= 201
     const invoiceNumber = emisionArca
-      ? `${invoiceType}-${emisionArca.numeroFormateado}`
+      ? `${esFceEmitida ? 'FCE' : ''}${invoiceType}-${emisionArca.numeroFormateado}`
       : `BORRADOR-COLPPY-${colppyResult.facturaNumber || colppyResult.remitoNumber || Date.now()}`
     // Totales fiscales reales (solo emisión ARCA): los mismos que recibió Colppy.
     const payloadColppy = colppyResult.colppyInvoicePayload
@@ -379,6 +382,7 @@ export async function POST(request: NextRequest) {
                 docTipo: hookArca?.getReceptor()?.docTipo ?? null,
                 docNro: hookArca?.getReceptor()?.docNro ?? null,
                 qrUrl: hookArca?.getQrUrl() ?? null,
+                fceVtoPago: hookArca?.getFceVtoPago() ?? null,
                 arcaObservaciones: emisionArca.observaciones.length
                   ? emisionArca.observaciones.map((o) => `[${o.Code}] ${o.Msg}`).join(' · ')
                   : null,

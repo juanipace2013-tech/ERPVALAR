@@ -4,6 +4,7 @@
  * envío por email.
  */
 import { prisma } from '@/lib/prisma'
+import { isArcaConfigured, getArcaConfig } from '@/lib/arca/config'
 import type { FacturaPDFData } from '@/lib/pdf/factura-generator'
 
 const CONDICION_IVA_LABEL: Record<string, string> = {
@@ -131,5 +132,13 @@ export async function buildFacturaPdfData(invoiceId: string): Promise<FacturaPDF
       : undefined,
     observaciones: inv.transactionType === 'CREDIT_NOTE' && inv.notes ? inv.notes.split('\n')[0].replace(/\. CAE .*$/, '') : null,
     isVoided: inv.status === 'CANCELLED',
+    // FCE MiPyME: la factura (201/206) muestra vto de pago y CBU del emisor;
+    // la NC/ND FCE solo cambia el título (el tipo ya viene en cbteTipo).
+    fce: inv.cbteTipo === 201 || inv.cbteTipo === 206
+      ? {
+          vtoPago: inv.fceVtoPago,
+          cbu: isArcaConfigured() ? getArcaConfig().cbu : null,
+        }
+      : undefined,
   }
 }

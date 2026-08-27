@@ -47,6 +47,8 @@ export interface ClienteFiscal {
   name: string
   cuit: string | null
   taxCondition: string | null
+  /** Cliente en el padrón ARCA de empresas grandes: factura A ≥ umbral sale como FCE */
+  fceObligado?: boolean
 }
 
 export interface HookEmisionArca {
@@ -55,6 +57,8 @@ export interface HookEmisionArca {
   getEmision: () => EmisionAutorizada | null
   getQrUrl: () => string | null
   getReceptor: () => { docTipo: number; docNro: string } | null
+  /** Vencimiento de pago informado a ARCA si el comprobante salió como FCE */
+  getFceVtoPago: () => Date | null
 }
 
 /**
@@ -65,6 +69,7 @@ export function crearHookEmisionArca(cliente: ClienteFiscal): HookEmisionArca {
   let emision: EmisionAutorizada | null = null
   let qrUrl: string | null = null
   let receptorUsado: { docTipo: number; docNro: string } | null = null
+  let fceVtoPago: Date | null = null
 
   const hook = async (datos: EmisionExternaDatos): Promise<EmisionExternaResultado> => {
     const { letra, receptor } = receptorDesdeCondicion(cliente.taxCondition, cliente.cuit)
@@ -80,9 +85,27 @@ export function crearHookEmisionArca(cliente: ClienteFiscal): HookEmisionArca {
     receptorUsado = { docTipo: receptor.docTipo, docNro: receptor.docNro }
 
     const esUsd = datos.currency === 'USD'
+
+    // FCE MiPyME (RG 4367): cliente obligado (padrón de empresas grandes) +
+    // factura A + total en ARS ≥ umbral vigente → sale como FCE (201) con
+    // vencimiento de pago y CBU del emisor. Sin ARCA_CBU no se puede emitir.
+    const cfg = getArcaConfig()
+    const totalArs = esUsd ? datos.totalFactura * Number(datos.exchangeRate || 0) : datos.totalFactura
+    const esFce = !!cliente.fceObligado && letra === 'A' && totalArs >= cfg.fceMontoMinimo
+    if (esFce && !cfg.cbu) {
+      throw new EmisionExternaError(
+        `${cliente.name} está marcado como obligado a FCE MiPyME y el total (ARS ${Math.round(totalArs)}) supera el umbral, pero falta configurar ARCA_CBU en el servidor`
+      )
+    }
+    if (esFce) {
+      fceVtoPago = datos.fechaVto
+      logger.info(`[Emisión ARCA] Factura a ${cliente.name} sale como FCE MiPyME (total ARS ${Math.round(totalArs)} ≥ ${cfg.fceMontoMinimo}), vto pago ${datos.fechaVto.toISOString().slice(0, 10)}`)
+    }
+
     const resultado = await emitirComprobante({
       clase: 'FACTURA',
       letra: letra === 'C' ? 'B' : letra,
+      fce: esFce ? { vtoPago: datos.fechaVto, cbu: cfg.cbu!, transmision: 'SCA' } : undefined,
       fecha: datos.fechaFactura,
       receptor,
       moneda: esUsd ? 'USD' : 'ARS',
@@ -131,6 +154,7 @@ export function crearHookEmisionArca(cliente: ClienteFiscal): HookEmisionArca {
     getEmision: () => emision,
     getQrUrl: () => qrUrl,
     getReceptor: () => receptorUsado,
+    getFceVtoPago: () => fceVtoPago,
   }
 }
 

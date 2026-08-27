@@ -105,6 +105,7 @@ interface ColppyCustomer {
   defaultTransportAddress: string
   defaultTransportSchedule: string
   exchangeRateType?: string | null
+  fceObligado?: boolean
 }
 
 interface Props {
@@ -199,6 +200,10 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
   const [transportRows, setTransportRows] = useState<CustomerTransportRow[]>([])
   const [savingTransport, setSavingTransport] = useState(false)
 
+  // FCE MiPyME state
+  const [fceObligado, setFceObligado] = useState(false)
+  const [savingFce, setSavingFce] = useState(false)
+
   // TC type state
   const [exchangeRateType, setExchangeRateType] = useState<string | null>(null)
   const [isEditingTC, setIsEditingTC] = useState(false)
@@ -285,6 +290,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
         fetchTransports(customerData.customer.id)
         const tc = customerData.customer.exchangeRateType || null
         setExchangeRateType(tc)
+        setFceObligado(!!customerData.customer.fceObligado)
       }
       if (usersData?.users) {
         setUsers(usersData.users)
@@ -712,6 +718,45 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
 
             {/* Condición de pago — read only (viene de Colppy) */}
             <InfoRow icon={Clock} label="Condición de Pago" value={customer.paymentTerms} />
+
+            {/* FCE MiPyME */}
+            <div className="flex items-start gap-3 py-2">
+              <CreditCard className="h-4 w-4 text-gray-400 mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <p className="text-xs text-gray-500">Factura de Crédito MiPyME (FCE)</p>
+                <label className="flex items-center gap-2 mt-1 cursor-pointer">
+                  <Checkbox
+                    checked={fceObligado}
+                    disabled={savingFce || !localCustomerId}
+                    onCheckedChange={async (checked) => {
+                      if (!localCustomerId) return
+                      const value = checked === true
+                      setSavingFce(true)
+                      try {
+                        const res = await fetch(`/api/clientes/${localCustomerId}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ fceObligado: value }),
+                        })
+                        if (!res.ok) throw new Error()
+                        setFceObligado(value)
+                        toast.success(value
+                          ? 'Cliente marcado como obligado a FCE: las facturas A sobre el monto mínimo saldrán como FCE MiPyME'
+                          : 'FCE desactivada para este cliente')
+                      } catch {
+                        toast.error('Error al guardar el flag FCE')
+                      } finally {
+                        setSavingFce(false)
+                      }
+                    }}
+                  />
+                  <span className="text-sm">
+                    Obligado a recibir FCE (empresa grande del padrón ARCA)
+                  </span>
+                  {savingFce && <Loader2 className="h-3 w-3 animate-spin text-gray-400" />}
+                </label>
+              </div>
+            </div>
 
             {/* Vendedor Asignado */}
             <div className="flex items-start gap-3 py-2">

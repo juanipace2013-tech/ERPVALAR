@@ -122,6 +122,7 @@ export async function GET(
         defaultTransportSchedule: customer.defaultTransportSchedule,
         transports: customer.transports,
         exchangeRateType: customer.exchangeRateType,
+        fceObligado: customer.fceObligado,
         salesPerson: customer.salesPerson,
         quotes: customer.quotes,
         deliveryNotes: customer.deliveryNotes,

@@ -58,6 +58,12 @@ export interface FacturaPDFData {
   isVoided?: boolean
   /** FCE MiPyME (cbteTipo 201/206): vencimiento de pago y CBU del emisor */
   fce?: { vtoPago?: Date | null; cbu?: string | null }
+  /** Orden de compra del cliente (Quote.purchaseOrderNumber) */
+  ordenCompra?: string | null
+  /** Número de cliente (id en Colppy) */
+  clienteNro?: string | null
+  /** Número de remito asociado */
+  remito?: string | null
 }
 
 // ── Constantes de página / estilo ─────────────────────────────────────────────
@@ -189,288 +195,353 @@ function drawFactura(doc: jsPDF, data: FacturaPDFData, logoBase64: string, qrBas
     doc.text(txt, x + w, yy)
   }
 
-  // ═══ CABECERA ═══
-  const headerY = 12
-  const headerH = 52
-  const midX = ML + USABLE_W * 0.47 // separador vertical
-  doc.setDrawColor(...BLACK)
-  doc.setLineWidth(0.5)
-  doc.rect(ML, headerY, USABLE_W, headerH)
-  doc.line(midX, headerY, midX, headerY + headerH)
+  // ── Geometría de página ──
+  const hy = 16.5
+  const hh = 44
+  const midX = PAGE_W / 2
+  const ry = hy + hh + 2
+  const rh = 24
+  const gy = ry + rh + 1.5
+  const rowH = 8
+  const gy2 = gy + rowH
+  const itemsStartY = gy2 + rowH + 1.5
+  const totBoxH = 40
+  const obsH = 10
+  const footTopY = PAGE_H - 36 // arranque del pie QR/CAE
+  const obsY = footTopY - obsH - 6
+  const totY = obsY - totBoxH - 2 // totales SIEMPRE anclados abajo (como el modelo)
+  // Páginas intermedias: los ítems usan toda la hoja; abajo va la banda
+  // "Subtotal" y la página siguiente arranca con "TRANSPORTE" (ese acumulado).
+  const subBandH = 8
+  const subBandY = footTopY - 12
+  const transpH = 7
 
-  // Izquierda: logo + nombre fantasía + datos
-  if (logoBase64) {
-    try {
-      doc.addImage(logoBase64, 'PNG', ML + 28, headerY + 3, 34, 10, undefined, 'SLOW')
-    } catch {
-      /* sin logo */
-    }
-  }
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(10)
-  doc.setTextColor(...BLACK)
-  doc.text(EMISOR.fantasia, ML + 45, headerY + 27, { align: 'center' })
-  label('Razón Social:', EMISOR.razonSocial, ML + 2, headerY + 34, midX - 2, 7.5)
-  label('Domicilio Comercial:', EMISOR.domicilio, ML + 2, headerY + 39, midX - 2, 7.5)
-  label('Condición Frente al IVA:', EMISOR.condicionIva, ML + 2, headerY + 48, midX - 2, 7.5)
-
-  // Letra en recuadro sobre el separador
-  const boxW = 16
-  const boxH = 13
-  const boxX = midX - boxW / 2
-  doc.setFillColor(255, 255, 255)
-  doc.rect(boxX, headerY, boxW, boxH, 'FD')
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(18)
-  doc.text(data.letra, midX, headerY + 8, { align: 'center' })
-  doc.setFontSize(6.5)
-  doc.text(`COD ${CODIGO_CBTE[data.cbteTipo] ?? String(data.cbteTipo)}`, midX, headerY + 12, { align: 'center' })
-
-  // Derecha: título + PV/número + fecha + datos fiscales
-  const rx = midX + 12
-  const titulo = tituloComprobante(data)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(titulo.length > 16 ? 11.5 : 15)
-  doc.setTextColor(...BLACK)
-  doc.text(titulo, rx, headerY + 8)
-  doc.setFontSize(8)
-  doc.text(`Punto de Venta: ${String(data.puntoVenta).padStart(4, '0')}`, rx, headerY + 14)
-  doc.text(`Comp. Nro: ${String(data.numero).padStart(8, '0')}`, rx + 45, headerY + 14)
-  doc.text(`Fecha de Emisión: ${fmtDate(data.fecha)}`, rx, headerY + 19)
-  if (data.fce?.vtoPago) {
-    doc.text(`Vto. de pago FCE: ${fmtDate(data.fce.vtoPago)}`, rx, headerY + 24)
-  }
-  if (data.fce?.cbu) {
-    doc.setFont('helvetica', 'normal')
-    doc.text(`CBU emisor: ${data.fce.cbu}`, rx, headerY + 28.5)
+  // ═══ ENCABEZADO COMPLETO (se repite en cada página) ═══
+  const drawEncabezado = () => {
+    // Banda "ORIGINAL"
+    doc.setDrawColor(...BLACK)
+    doc.setLineWidth(0.5)
+    doc.rect(ML, 8, USABLE_W, 6.5)
     doc.setFont('helvetica', 'bold')
-  }
+    doc.setFontSize(10)
+    doc.setTextColor(...BLACK)
+    doc.text('ORIGINAL', PAGE_W / 2, 12.6, { align: 'center' })
 
-  label('CUIT:', EMISOR.cuit, rx, headerY + 34, ML + USABLE_W - 2, 7.5)
-  label('Ingresos Brutos:', EMISOR.iibb, rx, headerY + 39, ML + USABLE_W - 2, 7.5)
-  label('Fecha de Inicio de Actividades:', EMISOR.inicioActividades, rx, headerY + 44, ML + USABLE_W - 2, 7.5)
-
-  // ═══ RECEPTOR ═══
-  let y = headerY + headerH + 1.5
-  const recH = 22
-  doc.setLineWidth(0.5)
-  doc.rect(ML, y, USABLE_W, recH)
-  const r = data.receptor
-  const colL = ML + 5
-  const colR = ML + 72
-  const docLabel = r.docTipoLabel ? `${r.docTipoLabel} :` : 'Doc :'
-  const docVal = r.docTipoLabel === 'CUIT' ? fmtCuit(r.docNro) : r.docNro || '-'
-  label(docLabel, docVal, colL, y + 6, colR - 2, 7.5)
-  // Razón social: hasta 2 líneas (como el modelo), después recorta
-  {
-    const t = 'Apellido y Nombre / Razón Social:'
-    doc.setFontSize(7.5)
-    doc.setFont('helvetica', 'bold')
-    doc.text(t, colR, y + 6)
-    const w = doc.getTextWidth(t) + 2
-    doc.setFont('helvetica', 'normal')
-    const lines: string[] = doc.splitTextToSize(r.nombre, ML + USABLE_W - 2 - (colR + w))
-    if (lines.length > 2) {
-      lines.length = 2
-      lines[1] = lines[1].replace(/.{2}$/, '…')
+    // Cabecera
+    doc.rect(ML, hy, USABLE_W, hh)
+    doc.line(midX, hy, midX, hy + hh)
+    if (logoBase64) {
+      try {
+        doc.addImage(logoBase64, 'PNG', ML + 26, hy + 2.5, 40, 12, undefined, 'SLOW')
+      } catch {
+        /* sin logo */
+      }
     }
-    doc.text(lines, colR + w, y + (lines.length > 1 ? 4.5 : 6))
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.text(EMISOR.razonSocial, ML + 3, hy + 22)
+    doc.setFontSize(8.5)
+    doc.text(EMISOR.domicilio, ML + 3, hy + 28)
+    doc.text('República Argentina', ML + 3, hy + 33)
+    doc.text('Tel.: +54 11 4551-3343 | 4552-2874', ML + 3, hy + 38)
+    doc.text('IVA RESPONSABLE INSCRIPTO', ML + 3, hy + 42.5)
+
+    // Recuadro de letra sobre el separador
+    const boxW = 16
+    const boxH = 13
+    doc.setFillColor(255, 255, 255)
+    doc.rect(midX - boxW / 2, hy, boxW, boxH, 'FD')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(20)
+    doc.text(data.letra, midX, hy + 8.5, { align: 'center' })
+    doc.setFontSize(6.5)
+    doc.text(`COD.${CODIGO_CBTE[data.cbteTipo] ?? String(data.cbteTipo)}`, midX, hy + 12, { align: 'center' })
+
+    // Derecha: número + título + fecha + datos fiscales
+    const rx = midX + 8
+    const titulo = tituloComprobante(data)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(13)
+    doc.text(`N°:  ${String(data.puntoVenta).padStart(4, '0')}  -  ${String(data.numero).padStart(8, '0')}`, rx, hy + 8)
+    doc.setFontSize(titulo.length > 16 ? 11 : 13)
+    doc.text(titulo.toUpperCase(), rx, hy + 15)
+    doc.setFontSize(9)
+    doc.text(`FECHA: ${fmtDate(data.fecha)}`, rx, hy + 22)
+    label('CUIT:', fmtCuit(EMISOR.cuit.replace(/\D/g, '')), rx, hy + 29, ML + USABLE_W - 2, 8)
+    label('Ingresos Brutos Conv. Multi:', EMISOR.iibb, rx, hy + 34, ML + USABLE_W - 2, 8)
+    label('Fecha de Inicio de actividades:', EMISOR.inicioActividades, rx, hy + 39, ML + USABLE_W - 2, 8)
+
+    // Receptor
+    doc.rect(ML, ry, USABLE_W, rh)
+    const r = data.receptor
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8.5)
+    doc.text('Señores', ML + 3, ry + 6)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9)
+    doc.text(r.nombre.slice(0, 70), ML + 24, ry + 6)
+    label('Cliente Nro:', data.clienteNro || '-', ML + 138, ry + 6, ML + USABLE_W - 2, 8.5)
+    {
+      const lines: string[] = doc.splitTextToSize(r.domicilio || '-', 108)
+      if (lines.length > 2) {
+        lines.length = 2
+        lines[1] = lines[1].replace(/.{2}$/, '…')
+      }
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8)
+      doc.text(lines, ML + 24, ry + 11.5)
+    }
+    label('IVA:', r.condicionIva.toUpperCase(), ML + 3, ry + 21, ML + 110, 8.5)
+    {
+      const docLabel = r.docTipoLabel ? `${r.docTipoLabel}:` : 'Doc:'
+      const docVal = r.docTipoLabel === 'CUIT' ? fmtCuit(r.docNro) : r.docNro || '-'
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(9)
+      doc.text(`${docLabel} ${docVal}`, ML + USABLE_W - 3, ry + 21, { align: 'right' })
+    }
+
+    // Filas OC / condiciones
+    doc.rect(ML, gy, USABLE_W, rowH)
+    doc.line(ML + USABLE_W * 0.55, gy, ML + USABLE_W * 0.55, gy + rowH)
+    label('Orden de Compra N°:', data.ordenCompra || '-', ML + 3, gy + 5.3, ML + USABLE_W * 0.55 - 2, 8.5)
+    label('Referencia:', data.referencia || '-', ML + USABLE_W * 0.55 + 3, gy + 5.3, ML + USABLE_W - 2, 8.5)
+
+    doc.rect(ML, gy2, USABLE_W, rowH)
+    doc.line(ML + USABLE_W * 0.48, gy2, ML + USABLE_W * 0.48, gy2 + rowH)
+    doc.line(ML + USABLE_W * 0.73, gy2, ML + USABLE_W * 0.73, gy2 + rowH)
+    label('Condiciones de Pago:', data.condicionVenta, ML + 3, gy2 + 5.3, ML + USABLE_W * 0.48 - 2, 8.5)
+    label('Vencimiento:', fmtDate(data.fechaVencimiento ?? data.fecha), ML + USABLE_W * 0.48 + 3, gy2 + 5.3, ML + USABLE_W * 0.73 - 2, 8.5)
+    label('Remito N°:', data.remito || '-', ML + USABLE_W * 0.73 + 3, gy2 + 5.3, ML + USABLE_W - 2, 8.5)
   }
-  label('Condición Frente al IVA:', r.condicionIva, colL, y + 12.5, colR - 2, 7.5)
-  label('Domicilio Comercial:', r.domicilio || '-', colR, y + 12.5, ML + USABLE_W - 2, 7.5)
-  label('Condición de Venta:', data.condicionVenta, colL, y + 19, colR - 2, 7.5)
-  label('Fecha Vencimiento:', fmtDate(data.fechaVencimiento ?? data.fecha), colR, y + 19, ML + USABLE_W - 2, 7.5)
-  y += recH + 2
 
-  // ═══ ITEMS ═══
-  const uSuffix = esUsd ? ' (USD)' : ''
-  const head = esA
-    ? ['Producto / Servicio', 'Cantidad', 'U. Medida', `Precio Unit.${uSuffix}`, '% Descuento', 'Alícuota IVA', `Subtotal sin IVA${uSuffix}`]
-    : ['Producto / Servicio', 'Cantidad', 'U. Medida', `Precio Unit.${uSuffix}`, '% Descuento', `Subtotal${uSuffix}`]
+  drawEncabezado()
 
+  // ═══ ITEMS (pagina solo; el encabezado se redibuja en cada página nueva) ═══
+  const head = [['Cantidad', 'Código/Descripción', '', `Precio Unit.${esUsd ? ' (USD)' : ''}`, 'Total', 'Dto', 'Precio Total']]
   const body = data.items.map((it) => {
-    const desc = `${it.codigo ? `${it.codigo} ` : ''}${it.descripcion}${it.detalle ? `\n${it.detalle}` : ''}`
-    const row: string[] = [
+    const desc = `${it.codigo ? `${it.codigo} - ` : ''}${it.descripcion}${it.detalle ? `\n${it.detalle}` : ''}`
+    const bonif = it.bonifPct ?? 0
+    const totalPre = it.cantidad * it.precioUnitario
+    return [
+      fmtNum(it.cantidad, 2),
       desc,
-      fmtNum(it.cantidad, Number.isInteger(it.cantidad) ? 0 : 2),
-      it.unidad || 'Un',
-      `${esUsd ? '' : '$ '}${fmtNum(it.precioUnitario)}`,
-      `${fmtNum(it.bonifPct ?? 0)}%`,
+      esA ? `( ${fmtNum(it.alicuotaIva, 2)} )` : '',
+      fmtNum(it.precioUnitario),
+      fmtNum(totalPre),
+      fmtNum(bonif),
+      fmtNum(it.subtotal),
     ]
-    if (esA) row.push(`${fmtNum(it.alicuotaIva, 0)}%`)
-    row.push(`${esUsd ? '' : '$ '}${fmtNum(it.subtotal)}`)
-    return row
   })
-
-  const colStyles: Record<number, { halign?: 'left' | 'right' | 'center'; cellWidth?: number }> = esA
-    ? {
-        0: { cellWidth: 72 },
-        1: { halign: 'right', cellWidth: 14 },
-        2: { halign: 'left', cellWidth: 16 },
-        3: { halign: 'right', cellWidth: 24 },
-        4: { halign: 'right', cellWidth: 19 },
-        5: { halign: 'right', cellWidth: 18 },
-        6: { halign: 'right', cellWidth: 27 },
-      }
-    : {
-        0: { cellWidth: 90 },
-        1: { halign: 'right', cellWidth: 14 },
-        2: { halign: 'left', cellWidth: 16 },
-        3: { halign: 'right', cellWidth: 26 },
-        4: { halign: 'right', cellWidth: 19 },
-        5: { halign: 'right', cellWidth: 25 },
-      }
-
+  // Acumulado por página para la banda Subtotal / fila TRANSPORTE
+  const lastRowByPage = new Map<number, number>()
   autoTable(doc, {
-    startY: y,
-    head: [head],
+    startY: itemsStartY,
+    head,
     body,
-    margin: { left: ML, right: MR },
+    // top: en páginas de continuación deja la franja para "TRANSPORTE";
+    // bottom: reserva pie + banda "Subtotal" (los ítems usan toda la hoja)
+    margin: { left: ML, right: MR, top: itemsStartY + transpH, bottom: PAGE_H - subBandY + 1 },
     theme: 'plain',
-    styles: { font: 'helvetica', fontSize: 7.5, cellPadding: { top: 2.5, bottom: 2.5, left: 1.5, right: 1.5 }, textColor: DARK, valign: 'middle', overflow: 'linebreak' },
-    headStyles: { fillColor: TABLE_HEAD_BG, textColor: BLACK, fontStyle: 'bold', halign: 'center', lineColor: BLACK, lineWidth: 0.3, fontSize: 7 },
-    columnStyles: colStyles,
+    rowPageBreak: 'avoid',
+    styles: { font: 'helvetica', fontSize: 7.5, cellPadding: { top: 2, bottom: 2, left: 1.5, right: 1.5 }, textColor: DARK, valign: 'top', overflow: 'linebreak' },
+    headStyles: { fillColor: TABLE_HEAD_BG, textColor: BLACK, fontStyle: 'bold', halign: 'center', lineColor: BLACK, lineWidth: 0.3, fontSize: 7.5 },
+    columnStyles: {
+      0: { halign: 'right', cellWidth: 15 },
+      1: { cellWidth: 77 },
+      2: { halign: 'center', cellWidth: 15 },
+      3: { halign: 'right', cellWidth: 24 },
+      4: { halign: 'right', cellWidth: 25 },
+      5: { halign: 'right', cellWidth: 11 },
+      6: { halign: 'right', cellWidth: 23 },
+    },
+    didDrawPage: (d) => {
+      if (d.pageNumber > 1) drawEncabezado()
+    },
+    didDrawCell: (d) => {
+      if (d.section === 'body' && typeof d.row.index === 'number') {
+        const prev = lastRowByPage.get(d.pageNumber) ?? -1
+        lastRowByPage.set(d.pageNumber, Math.max(prev, d.row.index))
+      }
+    },
   })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tableEndY: number = (doc as any).lastAutoTable.finalY
-  // Borde exterior de la tabla hasta la zona de totales (como el modelo)
-  const totBoxH = esUsd ? 50 : 40
-  const footZone = PAGE_H - 40 // QR + CAE
-  const totY = Math.max(tableEndY + 6, footZone - totBoxH - 4)
+
+  // Si los ítems terminan encima de la zona de totales, los totales van en página nueva
+  if (tableEndY + 4 > totY) {
+    doc.addPage()
+    drawEncabezado()
+  }
+
+  // ═══ TOTALES (solo última página, anclados abajo) ═══
+  let y = totY
   doc.setDrawColor(...BLACK)
   doc.setLineWidth(0.4)
-  doc.line(ML, y, ML, totY)
-  doc.line(ML + USABLE_W, y, ML + USABLE_W, totY)
-
-  // ═══ TOTALES ═══
-  y = totY
   doc.rect(ML, y, USABLE_W, totBoxH)
   const t = data.totales
-  const lblX = ML + USABLE_W - 62
+  const lblX = ML + USABLE_W - 42
   const valX = ML + USABLE_W - 3
-  let ty = y + 6
+
+  // Izquierda: importe en letras + Régimen de Transparencia Fiscal
+  const letras = `${importeEnLetras(esUsd ? Math.round(t.total * data.cotizacion * 100) / 100 : t.total).toUpperCase()} ---`
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(6.8)
+  {
+    const lines: string[] = doc.splitTextToSize(letras, 112)
+    doc.text(lines.slice(0, 2), ML + 4, y + 5.5)
+  }
+  const bandY = y + 12
+  doc.setFillColor(200, 200, 200)
+  doc.setLineWidth(0.3)
+  doc.rect(ML + 4, bandY, 112, 6, 'FD')
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(7.5)
-  doc.setTextColor(...BLACK)
-  if (esUsd) {
-    doc.text('Moneda: USD - Dólar estadounidense', valX, ty, { align: 'right' })
-    doc.setLineWidth(0.2)
-    const mw = doc.getTextWidth('Moneda: USD - Dólar estadounidense')
-    doc.line(valX - mw, ty + 0.8, valX, ty + 0.8)
-    ty += 7
-  }
-  const totLine = (lbl: string, val: number, bold = true, size = 7.5) => {
-    doc.setFont('helvetica', bold ? 'bold' : 'normal')
+  doc.text('Régimen de Transparencia Fiscal al Consumidor (Ley 27.743)', ML + 4 + 56, bandY + 4, { align: 'center' })
+  const ivaContenido = t.iva.reduce((s, i) => s + i.importe, 0)
+  doc.rect(ML + 4, bandY + 6, 112, 5.5)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(7.5)
+  doc.text('IVA Contenido', ML + 78, bandY + 10, { align: 'right' })
+  doc.text(fmtNum(ivaContenido), ML + 114, bandY + 10, { align: 'right' })
+
+  // Derecha: totales
+  let ty = y + 6
+  const totLine = (lbl: string, val: number | null, bold = false, size = 8.5) => {
+    doc.setFont('helvetica', 'bold')
     doc.setFontSize(size)
     doc.text(`${lbl}: ${sym}`, lblX, ty, { align: 'right' })
-    doc.text(fmtNum(val), valX, ty, { align: 'right' })
-    ty += 4.5
+    doc.setFont('helvetica', bold ? 'bold' : 'normal')
+    if (val !== null) doc.text(fmtNum(val), valX, ty, { align: 'right' })
+    ty += 5
   }
   if (esA) {
-    totLine('Importe Neto Gravado', t.netoGravado)
-    totLine('Importe Exento / No Gravado', t.exento + t.netoNoGravado)
-    for (const iva of t.iva) totLine(`IVA ${fmtNum(iva.alicuota, 0)}%`, iva.importe)
-    if (t.otrosTributos) totLine('Importe Otros Tributos', t.otrosTributos)
-    totLine('Importe Total', t.total, true, 8)
+    totLine('Subtotal', t.netoGravado)
+    for (const iva of t.iva) totLine(`IVA ${fmtNum(iva.alicuota, 1)}%`, iva.importe)
+    totLine('IVA Exento', t.exento + t.netoNoGravado)
+    totLine('Otros Tributos', t.otrosTributos)
+    ty += 1.5
+    totLine('Importe Total', t.total, true, 9.5)
   } else {
     totLine('Subtotal', t.total - t.otrosTributos)
-    if (t.otrosTributos) totLine('Importe Otros Tributos', t.otrosTributos)
-    totLine('Importe Total', t.total, true, 8)
-    // Régimen de Transparencia Fiscal al Consumidor (Ley 27.743)
-    const ivaContenido = t.iva.reduce((s, i) => s + i.importe, 0)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(6.5)
-    doc.text(`Régimen de Transparencia Fiscal al Consumidor (Ley 27.743) — IVA Contenido: ${sym} ${fmtNum(ivaContenido)} · Otros Impuestos Nacionales Indirectos: ${sym} 0,00`, valX, ty, { align: 'right' })
-    ty += 4.5
+    totLine('Otros Tributos', t.otrosTributos)
+    ty += 1.5
+    totLine('Importe Total', t.total, true, 9.5)
   }
 
-  // Importe en letras (banda inferior del cuadro)
-  const letrasY = y + totBoxH - (esUsd ? 13 : 3.5)
-  doc.setDrawColor(...BLACK)
-  doc.setLineWidth(0.3)
-  doc.line(ML, letrasY - 4.5, ML + USABLE_W, letrasY - 4.5)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(7.5)
-  doc.text(`Importe Total: ${importeEnLetras(esUsd ? Math.round(t.total * data.cotizacion * 100) / 100 : t.total)}`, ML + 2, letrasY)
-
+  // ═══ OBSERVACIONES (última página) ═══
+  const obsParts: string[] = []
   if (esUsd) {
     const enPesos = Math.round(t.total * data.cotizacion * 100) / 100
-    const bandY = letrasY + 2.5
-    doc.setFillColor(235, 235, 235)
-    doc.rect(ML, bandY, USABLE_W, 10, 'FD')
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(7)
-    const leyenda = doc.splitTextToSize(
-      `El total de este comprobante expresado en moneda de curso legal - Pesos Argentinos - considerándose un tipo de cambio consignado de ${fmtNum(data.cotizacion, 5)} asciende a : $`,
-      USABLE_W - 40
-    )
-    doc.text(leyenda, ML + USABLE_W / 2 - 18, bandY + 4, { align: 'center' })
-    doc.setFontSize(8)
-    doc.text(fmtNum(enPesos), valX, bandY + 6, { align: 'right' })
+    obsParts.push(`Importe expresado en Dólares Estadounidenses, equivalente a Pesos ${fmtNum(enPesos)} al Tipo de Cambio ${fmtNum(data.cotizacion, 2)} ---`)
   }
-  y += totBoxH + 3
-
-  // Comprobantes asociados (NC/ND) y observaciones
+  if (data.fce?.cbu || data.fce?.vtoPago) {
+    obsParts.push(`FCE MiPyME${data.fce.vtoPago ? ` - Vto. de pago: ${fmtDate(data.fce.vtoPago)}` : ''}${data.fce.cbu ? ` - CBU emisor: ${data.fce.cbu}` : ''}`)
+  }
+  if (data.asociados?.length) obsParts.push(`Comprobantes asociados: ${data.asociados.map((a) => a.descripcion).join(', ')}`)
+  if (data.observaciones) obsParts.push(data.observaciones)
+  if (esA && /monotrib/i.test(data.receptor.condicionIva)) {
+    obsParts.push('El crédito fiscal discriminado en el presente comprobante sólo podrá ser computado a efectos del Régimen de Sostenimiento e Inclusión Fiscal para Pequeños Contribuyentes de la Ley N° 27.618')
+  }
+  doc.setLineWidth(0.4)
+  doc.rect(ML, obsY, USABLE_W, obsH)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7)
   doc.setTextColor(...DARK)
-  if (data.asociados?.length) {
-    doc.text(`Comprobantes asociados: ${data.asociados.map((a) => a.descripcion).join(', ')}`, ML + 2, y)
-    y += 4
-  }
-  if (data.observaciones) {
-    const lines = doc.splitTextToSize(`Observaciones: ${data.observaciones}`, USABLE_W - 4)
-    doc.text(lines, ML + 2, y)
-    y += lines.length * 3.5
-  }
-  // Leyenda A → Monotributo (RG 5003)
-  if (esA && /monotrib/i.test(data.receptor.condicionIva)) {
-    doc.setFont('helvetica', 'italic')
-    doc.setFontSize(6.5)
-    const leyenda = doc.splitTextToSize(
-      'El crédito fiscal discriminado en el presente comprobante, sólo podrá ser computado a efectos del Régimen de Sostenimiento e Inclusión Fiscal para Pequeños Contribuyentes de la Ley N° 27.618',
-      USABLE_W - 4
-    )
-    doc.text(leyenda, ML + 2, y)
+  {
+    const txt = `Observaciones: ${obsParts.length ? obsParts.join(' · ') : '---'}`
+    const lines: string[] = doc.splitTextToSize(txt, USABLE_W - 8)
+    doc.text(lines.slice(0, 3), ML + 4, obsY + 4)
   }
 
-  // ═══ PIE: QR + CAE ═══
-  const qrY = PAGE_H - 36
-  if (qrBase64) {
-    try {
-      doc.addImage(qrBase64, 'PNG', ML, qrY, 24, 24)
-    } catch {
-      /* sin QR */
+  // ═══ POR PÁGINA: bordes del cuerpo, pie QR/CAE y numeración ═══
+  // Acumulado de la columna Precio Total al final de cada página
+  const cumHasta = (rowIdx: number) => data.items.slice(0, rowIdx + 1).reduce((s, it) => s + it.subtotal, 0)
+  const sumTotalItems = cumHasta(data.items.length - 1)
+  const cumDePagina = (p: number) => {
+    const last = lastRowByPage.get(p)
+    return last === undefined ? sumTotalItems : cumHasta(last)
+  }
+
+  const pages = doc.getNumberOfPages()
+  for (let p = 1; p <= pages; p++) {
+    doc.setPage(p)
+    const esUltima = p === pages
+    // Bordes laterales del cuerpo de ítems
+    doc.setDrawColor(...BLACK)
+    doc.setLineWidth(0.4)
+    const bottom = esUltima ? totY : subBandY
+    doc.line(ML, itemsStartY, ML, bottom)
+    doc.line(ML + USABLE_W, itemsStartY, ML + USABLE_W, bottom)
+
+    // Página de continuación: fila TRANSPORTE con el acumulado que viene
+    if (p > 1) {
+      doc.setLineWidth(0.3)
+      doc.rect(ML, itemsStartY, USABLE_W, transpH)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(8.5)
+      doc.setTextColor(...BLACK)
+      doc.text('TRANSPORTE', ML + USABLE_W - 30, itemsStartY + 4.8, { align: 'right' })
+      doc.text(fmtNum(cumDePagina(p - 1)), ML + USABLE_W - 3, itemsStartY + 4.8, { align: 'right' })
     }
-  }
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(6.5)
-  doc.setTextColor(...DARK)
-  doc.text('Pagina 1', ML, qrY + 28)
 
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(8)
-  doc.setTextColor(...BLACK)
-  doc.text('CAE Nro:', ML + USABLE_W - 52, qrY + 4, { align: 'right' })
-  doc.text('Fecha de Vto. de CAE:', ML + USABLE_W - 52, qrY + 9, { align: 'right' })
-  doc.setFont('helvetica', 'normal')
-  doc.text(data.cae, ML + USABLE_W - 50, qrY + 4)
-  doc.text(fmtDate(data.caeVencimiento), ML + USABLE_W - 50, qrY + 9)
+    // Página intermedia: banda Subtotal con el acumulado hasta acá
+    if (!esUltima) {
+      doc.setLineWidth(0.4)
+      doc.rect(ML, subBandY, USABLE_W, subBandH)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(9)
+      doc.setTextColor(...BLACK)
+      doc.text('Subtotal', ML + USABLE_W - 60, subBandY + 5.3, { align: 'right' })
+      doc.text(sym, ML + USABLE_W - 40, subBandY + 5.3)
+      doc.text(fmtNum(cumDePagina(p)), ML + USABLE_W - 3, subBandY + 5.3, { align: 'right' })
+    }
 
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(6)
-  doc.setTextColor(...GRAY)
-  doc.text('Comprobante Autorizado', ML + USABLE_W - 52, qrY + 14, { align: 'right' })
+    // Página x de y
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7.5)
+    doc.setTextColor(...DARK)
+    doc.text(`Página  ${p}  de  ${pages}`, PAGE_W / 2, obsY + obsH + 4, { align: 'center' })
 
-  if (data.isVoided) {
-    doc.saveGraphicsState()
+    // Pie QR + CAE
+    const fy = footTopY
+    if (qrBase64) {
+      try {
+        doc.addImage(qrBase64, 'PNG', ML, fy, 26, 26)
+      } catch {
+        /* sin QR */
+      }
+    }
+    doc.setFont('helvetica', 'italic')
+    doc.setFontSize(8.5)
+    doc.setTextColor(...BLACK)
+    doc.text('Visite nuestra página web www.val-ar.com.ar', ML + 30, fy + 8)
+    doc.setFont('helvetica', 'bolditalic')
+    doc.setFontSize(9.5)
+    doc.text('Comprobante Autorizado', ML + 30, fy + 17)
+    doc.setFont('helvetica', 'italic')
+    doc.setFontSize(6)
+    doc.setTextColor(...GRAY)
+    doc.text('Esta administración Federal no se responsabiliza por los datos ingresados en el detalle de la operación', ML + 30, fy + 22)
+
+    doc.setTextColor(...BLACK)
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(60)
-    doc.setTextColor(220, 0, 0)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    doc.setGState(new (doc as any).GState({ opacity: 0.25 }))
-    doc.text('ANULADA', PAGE_W / 2, 150, { align: 'center', angle: 35 })
-    doc.restoreGraphicsState()
+    doc.setFontSize(9)
+    doc.text('CAE N°:', ML + USABLE_W - 42, fy + 8, { align: 'right' })
+    doc.text('Fecha de Vto. de CAE:', ML + USABLE_W - 42, fy + 15, { align: 'right' })
+    doc.setFont('helvetica', 'normal')
+    doc.text(data.cae, ML + USABLE_W - 2, fy + 8, { align: 'right' })
+    doc.text(fmtDate(data.caeVencimiento), ML + USABLE_W - 2, fy + 15, { align: 'right' })
+
+    if (data.isVoided) {
+      doc.saveGraphicsState()
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(60)
+      doc.setTextColor(220, 0, 0)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      doc.setGState(new (doc as any).GState({ opacity: 0.25 }))
+      doc.text('ANULADA', PAGE_W / 2, 150, { align: 'center', angle: 35 })
+      doc.restoreGraphicsState()
+    }
   }
 }
 

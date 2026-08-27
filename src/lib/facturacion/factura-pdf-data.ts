@@ -45,10 +45,11 @@ export async function buildFacturaPdfData(invoiceId: string): Promise<FacturaPDF
           address: true,
           city: true,
           province: true,
+          colppyId: true,
         },
       },
       items: { include: { product: { select: { sku: true } } } },
-      quote: { select: { quoteNumber: true, bonification: true } },
+      quote: { select: { quoteNumber: true, bonification: true, purchaseOrderNumber: true } },
       relatedInvoice: { select: { invoiceType: true, pointOfSale: true, cbteNumero: true, cbteTipo: true, issueDate: true, invoiceNumber: true } },
     },
   })
@@ -140,5 +141,10 @@ export async function buildFacturaPdfData(invoiceId: string): Promise<FacturaPDF
           cbu: isArcaConfigured() ? getArcaConfig().cbu : null,
         }
       : undefined,
+    // Fila OC / Cliente Nro / Remito (estilo Winters)
+    ordenCompra: inv.quote?.purchaseOrderNumber ?? null,
+    clienteNro: inv.customer.colppyId ?? null,
+    // El nro de remito queda en las notas al emitir ("Remito: XXXX-XXXXXXXX")
+    remito: inv.notes?.match(/Remito:\s*([\w-]+)/)?.[1] ?? null,
   }
 }

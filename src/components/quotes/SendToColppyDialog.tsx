@@ -84,6 +84,8 @@ export interface ColppySendPayload {
     condicionPago: string;
     puntoVenta: string;
     descripcion: string;
+    /** N° de remito que acompaña la factura (referencia; propuesto = próximo del talonario) */
+    remitoNumero?: string;
     /** Solo cotizaciones en USD: TC con el que se emite la factura
      *  (cotización del comprobante en ARCA, tipoCambio en Colppy, PDF). */
     exchangeRate?: number;
@@ -154,6 +156,8 @@ export function SendToColppyDialog({
   const [condicionPago, setCondicionPago] = useState('Contado');
   const [puntoVenta, setPuntoVenta] = useState('0003');
   const [descripcionFactura, setDescripcionFactura] = useState('');
+  const [remitoNumero, setRemitoNumero] = useState('');
+  const [remitoSugerido, setRemitoSugerido] = useState('');
 
   // Tipo de cambio actual del ERP (billete, de /tipo-cambio)
   const [latestRate, setLatestRate] = useState<{ rate: number; date: string } | null>(null);
@@ -183,6 +187,20 @@ export function SendToColppyDialog({
   };
 
   // Obtener último tipo de cambio del ERP al abrir el dialog
+  // Proponer el N° de remito que acompaña la factura: el próximo del talonario
+  useEffect(() => {
+    if (!open) return;
+    fetch('/api/delivery-notes/next-number')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.next) {
+          setRemitoSugerido(d.next);
+          setRemitoNumero((prev) => prev || d.next);
+        }
+      })
+      .catch(() => {});
+  }, [open]);
+
   useEffect(() => {
     if (open && quote.currency === 'USD') {
       setLoadingRate(true);
@@ -324,6 +342,7 @@ export function SendToColppyDialog({
       condicionPago,
       puntoVenta,
       descripcion: descripcionFactura,
+      remitoNumero: remitoNumero.trim() || undefined,
       ...(quote.currency === 'USD' && tcEfectivo
         ? { exchangeRate: tcEfectivo, exchangeRateModo: tcModo }
         : {}),
@@ -551,6 +570,21 @@ export function SendToColppyDialog({
               onChange={(e) => setDescripcionFactura(e.target.value)}
               placeholder="Cotización VAL-2026-XXX"
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="remito-numero">N° de remito (referencia)</Label>
+            <Input
+              id="remito-numero"
+              value={remitoNumero}
+              onChange={(e) => setRemitoNumero(e.target.value)}
+              placeholder="RE 0004-00000123"
+            />
+            <p className="text-xs text-gray-500">
+              {remitoSugerido
+                ? `Propuesto: ${remitoSugerido} (próximo del talonario). Editalo si la factura acompaña un remito anterior, o dejalo vacío.`
+                : 'Remito que acompaña la factura (opcional).'}
+            </p>
           </div>
         </div>
 

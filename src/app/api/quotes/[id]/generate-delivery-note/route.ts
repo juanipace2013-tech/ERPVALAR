@@ -28,7 +28,6 @@ export async function POST(
       bultos,
       notes,
       cotizacionFacturaId,
-      deliveryNumber,
     } = body;
 
     const deliveryNote = await generateDeliveryNoteFromQuote(id, {
@@ -44,7 +43,6 @@ export async function POST(
       bultos,
       notes,
       cotizacionFacturaId,
-      deliveryNumber,
     });
 
     return NextResponse.json(deliveryNote, { status: 201 });

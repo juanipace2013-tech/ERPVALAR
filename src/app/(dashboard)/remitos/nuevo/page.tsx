@@ -247,25 +247,9 @@ export default function NuevoRemitoPage() {
   const [deliveryTypeCustom, setDeliveryTypeCustom] = useState('')
   const [purchaseOrder, setPurchaseOrder] = useState('')
   const [customerInvoiceNumber, setCustomerInvoiceNumber] = useState('')
-  // N° de remito: se propone el siguiente al ultimo usado, editable
-  const [deliveryNumberInput, setDeliveryNumberInput] = useState('')
-  const [suggestedNumber, setSuggestedNumber] = useState('')
   const [invoiceRef, setInvoiceRef] = useState('')
   const [bultos, setBultos] = useState('')
   const [notes, setNotes] = useState('')
-
-  // Proponer el proximo numero de remito (siguiente al ultimo del talonario)
-  useEffect(() => {
-    fetch('/api/delivery-notes/next-number')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d?.next) {
-          setSuggestedNumber(d.next)
-          setDeliveryNumberInput((prev) => prev || d.next)
-        }
-      })
-      .catch(() => {})
-  }, [])
   const [remitoDate, setRemitoDate] = useState(
     getLocalDateString()
   )
@@ -621,7 +605,6 @@ export default function NuevoRemitoPage() {
             : (deliveryType === 'Otro' ? deliveryTypeCustom || 'Retira en sucursal' : deliveryType),
           purchaseOrder: purchaseOrder || undefined,
           customerInvoiceNumber: customerInvoiceNumber || undefined,
-          deliveryNumber: deliveryNumberInput.trim() || undefined,
           bultos: bultos || undefined,
           notes: notes || undefined,
           deliveryAddress: deliveryAddress || undefined,
@@ -688,7 +671,6 @@ export default function NuevoRemitoPage() {
             : (deliveryType === 'Otro' ? deliveryTypeCustom || 'Retira en sucursal' : deliveryType),
           purchaseOrder: purchaseOrder || undefined,
           customerInvoiceNumber: customerInvoiceNumber || undefined,
-          deliveryNumber: deliveryNumberInput.trim() || undefined,
           invoiceRef: invoiceRef || undefined,
           bultos: bultos || undefined,
           totalAmountARS: totalAmountARS || undefined,
@@ -901,20 +883,6 @@ export default function NuevoRemitoPage() {
               )}
 
               <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="deliveryNumber">N° de remito</Label>
-                <Input
-                  id="deliveryNumber"
-                  placeholder="RE 0004-00000123"
-                  value={deliveryNumberInput}
-                  onChange={(e) => setDeliveryNumberInput(e.target.value)}
-                />
-                <p className="text-xs text-gray-500">
-                  {suggestedNumber
-                    ? `Propuesto: ${suggestedNumber} (siguiente al último usado). Editalo si hace falta.`
-                    : 'Si lo dejás vacío se numera automáticamente.'}
-                </p>
-              </div>
               <div className="space-y-2">
                 <Label htmlFor="purchaseOrder">OC del cliente</Label>
                 <Input
@@ -1177,20 +1145,6 @@ export default function NuevoRemitoPage() {
                   )}
                 </div>
               )}
-              <div className="space-y-2">
-                <Label htmlFor="d-deliveryNumber">N° de remito</Label>
-                <Input
-                  id="d-deliveryNumber"
-                  placeholder="RE 0004-00000123"
-                  value={deliveryNumberInput}
-                  onChange={(e) => setDeliveryNumberInput(e.target.value)}
-                />
-                <p className="text-xs text-gray-500">
-                  {suggestedNumber
-                    ? `Propuesto: ${suggestedNumber} (siguiente al último usado). Editalo si hace falta.`
-                    : 'Si lo dejás vacío se numera automáticamente.'}
-                </p>
-              </div>
               <div className="space-y-2">
                 <Label htmlFor="d-purchaseOrder">
                   O.C. / Pedido Nº{' '}

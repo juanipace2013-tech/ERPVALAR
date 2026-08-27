@@ -392,71 +392,6 @@ export async function peekNextDeliveryNumber(): Promise<{ next: string; caiVigen
 }
 
 /**
- * Usa un número de remito elegido a mano (editado en el formulario).
- * Acepta "RE 0004-00000123", "0004-123" o "123" (toma el PV del CAI activo).
- * Valida formato y duplicados; si el número queda por delante del contador
- * del CAI activo, lo adelanta para que el próximo automático siga desde ahí.
- */
-export async function assignDeliveryNumberInTx(
-  tx: Prisma.TransactionClient,
-  requested: string
-): Promise<{ deliveryNumber: string; caiNumber: string | null }> {
-  const limpio = requested.trim().toUpperCase().replace(/^RE\s*/, '');
-  let pv: number | null = null;
-  let nro: number;
-  const conPv = limpio.match(/^(\d{1,4})\s*-\s*(\d{1,8})$/);
-  const soloNro = limpio.match(/^(\d{1,8})$/);
-  if (conPv) {
-    pv = Number(conPv[1]);
-    nro = Number(conPv[2]);
-  } else if (soloNro) {
-    nro = Number(soloNro[1]);
-  } else {
-    throw new Error(`Número de remito inválido: "${requested}". Usá el formato 0004-00000123.`);
-  }
-  if (!nro || nro < 1) {
-    throw new Error(`Número de remito inválido: "${requested}".`);
-  }
-
-  let caiNumber: string | null = null;
-  try {
-    const cai = await tx.caiConfig.findFirst({
-      where: { active: true },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (cai) {
-      if (pv === null) pv = cai.pointOfSale;
-      if (pv === cai.pointOfSale) {
-        const enRango = nro >= cai.startNumber && nro <= cai.endNumber;
-        const vigente = new Date() <= cai.caiExpirationDate;
-        if (enRango && vigente) caiNumber = cai.caiNumber;
-        // Adelantar el contador si el número elegido quedó por delante,
-        // así el próximo automático continúa después de este.
-        if (enRango && nro > cai.lastUsedNumber) {
-          await tx.caiConfig.update({
-            where: { id: cai.id },
-            data: { lastUsedNumber: nro },
-          });
-        }
-      }
-    }
-  } catch {
-    /* sin tabla CAI */
-  }
-  if (pv === null) pv = 2; // fallback histórico
-
-  const deliveryNumber = `RE ${String(pv).padStart(4, '0')}-${String(nro).padStart(8, '0')}`;
-  const dupe = await tx.deliveryNote.findUnique({
-    where: { deliveryNumber },
-    select: { id: true },
-  });
-  if (dupe) {
-    throw new Error(`El remito ${deliveryNumber} ya existe. Elegí otro número o dejá el propuesto.`);
-  }
-  return { deliveryNumber, caiNumber };
-}
-
-/**
  * Carga una CotizacionFactura con sus items para armar el remito.
  */
 async function loadCotizacionFactura(cotizacionFacturaId: string) {
@@ -487,8 +422,6 @@ export async function generateDeliveryNoteFromQuote(
      *  esta CotizacionFactura (factura parcial), no con la cotización completa.
      *  El DeliveryNote queda vinculado a esa CotizacionFactura. */
     cotizacionFacturaId?: string;
-    /** Número elegido a mano en el formulario; si no viene, numeración automática. */
-    deliveryNumber?: string;
   }
 ) {
   const quote = await prisma.quote.findUnique({
@@ -538,9 +471,7 @@ export async function generateDeliveryNoteFromQuote(
   // Si el create falla, el incremento de lastUsedNumber se rollbackea y no
   // queda hueco en la numeración.
   const deliveryNote = await withDeliveryTx(async (tx) => {
-    const { deliveryNumber, caiNumber } = data?.deliveryNumber?.trim()
-      ? await assignDeliveryNumberInTx(tx, data.deliveryNumber)
-      : await generateDeliveryNumber(tx);
+    const { deliveryNumber, caiNumber } = await generateDeliveryNumber(tx);
 
     // Calcular valor declarado: subtotal USD × tipo de cambio = ARS sin IVA
     const quoteExchangeRate = Number(quote.exchangeRate) || 1;

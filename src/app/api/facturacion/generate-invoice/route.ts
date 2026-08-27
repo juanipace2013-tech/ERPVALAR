@@ -64,6 +64,8 @@ export async function POST(request: NextRequest) {
         condicionPago: string
         puntoVenta: string
         descripcion: string
+        /** N° de remito que acompaña la factura (referencia para notas y PDF) */
+        remitoNumero?: string
         exchangeRate?: number
         exchangeRateModo?: 'BILLETE' | 'DIVISA'
       }
@@ -310,6 +312,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Referencia de remito para las notas y el PDF: la ingresada en el diálogo
+    // (propuesta = próximo del talonario, editable) pisa la que devuelva Colppy.
+    const remitoRef: string | null = (editedData?.remitoNumero || '').trim() || colppyResult.remitoNumber || null
+
     // Registrar en BD: crear InvoiceItems para tracking de cantidades parciales
     const now = new Date()
 
@@ -366,8 +372,8 @@ export async function POST(request: NextRequest) {
           issueDate: now,
           dueDate: calcDueDate(now, quote.customer.paymentTerms),
           notes: emisionArca
-            ? `Emitida por el ERP (ARCA) el ${now.toLocaleString('es-AR')}. CAE ${emisionArca.cae}. ${colppyPendiente ? 'PENDIENTE de registrar en Colppy.' : `Registrada en Colppy (${colppyResult.facturaId}).`} ${colppyResult.remitoNumber ? `Remito: ${colppyResult.remitoNumber}` : ''}`.trim()
-            : `Borrador enviado a Colppy el ${now.toLocaleString('es-AR')}. ${colppyResult.facturaNumber ? `Factura: ${colppyResult.facturaNumber}` : ''} ${colppyResult.remitoNumber ? `Remito: ${colppyResult.remitoNumber}` : ''}`.trim(),
+            ? `Emitida por el ERP (ARCA) el ${now.toLocaleString('es-AR')}. CAE ${emisionArca.cae}. ${colppyPendiente ? 'PENDIENTE de registrar en Colppy.' : `Registrada en Colppy (${colppyResult.facturaId}).`} ${remitoRef ? `Remito: ${remitoRef}` : ''}`.trim()
+            : `Borrador enviado a Colppy el ${now.toLocaleString('es-AR')}. ${colppyResult.facturaNumber ? `Factura: ${colppyResult.facturaNumber}` : ''} ${remitoRef ? `Remito: ${remitoRef}` : ''}`.trim(),
           afipStatus: emisionArca ? 'APPROVED' : 'PENDING',
           paymentStatus: 'UNPAID',
           // Emisión propia (ARCA)
@@ -617,7 +623,7 @@ export async function POST(request: NextRequest) {
       entity: 'INVOICE',
       entityId: colppyResult.facturaId || colppyResult.remitoId || undefined,
       entityRef: colppyResult.facturaNumber || colppyResult.remitoNumber || undefined,
-      description: `Generó factura desde cotización ${quote.quoteNumber} para ${quote.customer.name}. ${colppyResult.facturaNumber ? `Factura: ${colppyResult.facturaNumber}` : ''} ${colppyResult.remitoNumber ? `Remito: ${colppyResult.remitoNumber}` : ''}`.trim(),
+      description: `Generó factura desde cotización ${quote.quoteNumber} para ${quote.customer.name}. ${colppyResult.facturaNumber ? `Factura: ${colppyResult.facturaNumber}` : ''} ${remitoRef ? `Remito: ${remitoRef}` : ''}`.trim(),
     });
 
     // Re-sync de stock asíncrono (fire-and-forget) para SOLO los productos

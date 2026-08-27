@@ -34,6 +34,7 @@ import {
   MessageCircleQuestion,
   Store,
   UtensilsCrossed,
+  TreePalm,
 } from 'lucide-react'
 
 interface SubNavItem {
@@ -188,6 +189,12 @@ const navItems: NavItem[] = [
     title: 'Viandas',
     href: '/viandas',
     icon: UtensilsCrossed,
+    roles: ['ADMIN', 'GERENTE'],
+  },
+  {
+    title: 'Vacaciones',
+    href: '/vacaciones',
+    icon: TreePalm,
     roles: ['ADMIN', 'GERENTE'],
   },
   {

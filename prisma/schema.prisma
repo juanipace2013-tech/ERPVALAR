@@ -3385,6 +3385,45 @@ model CalculoReguladoraVapor {
 // registro son días que no se pidieron viandas. El precio se guarda
 // por día para que los meses históricos conserven su valor aunque
 // el precio unitario cambie.
+// ========================================
+// VACACIONES Y AUSENCIAS DE EMPLEADOS
+// ========================================
+
+enum AusenciaTipo {
+  VACACIONES
+  PERSONAL
+  ENFERMEDAD
+}
+
+model Empleado {
+  id              String  @id @default(cuid())
+  nombre          String  @unique
+  activo          Boolean @default(true)
+  orden           Int     @default(0)
+  // Días de vacaciones pendientes (carga manual, como la planilla)
+  saldoVacaciones Int?
+
+  ausencias Ausencia[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("empleados")
+}
+
+model Ausencia {
+  id         String       @id @default(cuid())
+  empleadoId String
+  empleado   Empleado     @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+  fecha      DateTime     @db.Date
+  tipo       AusenciaTipo
+
+  createdAt DateTime @default(now())
+
+  @@unique([empleadoId, fecha])
+  @@map("ausencias")
+}
+
 model ViandaDay {
   id       String   @id @default(cuid())
   fecha    DateTime @unique @db.Date

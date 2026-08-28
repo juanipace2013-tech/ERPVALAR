@@ -5,7 +5,12 @@
  *
  * Publicaciones (99% del tráfico según Santiago, 2026-08-25):
  *   - MLA2047850328: Válvula Reductora Reguladora Presión 3/4"
- *   - MLA1141588199: Válvula Reductora Reguladora Presión 1/2"
+ *   - MLA1141588199: Válvula Reductora De Presión 1/2" + Manómetro
+ *
+ * Ampliado 2026-08-28: la venta 2000014752412881 (MLA1141588229, kit 3/4" +
+ * manómetro) no matcheó ninguna regla y quedó sin mensaje — las publicaciones
+ * "+ Manómetro" existen en 3/4", 1", 1 1/2" y 2" además de la 1/2". Se cubren
+ * todas (las pausadas también, para cuando se reactiven).
  *
  * Idempotente: se puede correr las veces que haga falta.
  *   npx tsx scripts/seed-ml-rule.ts
@@ -31,7 +36,11 @@ Importante ‼️ Necesitamos recibir su respuesta antes de las 12:00 hs. De lo 
 
 const RULES = [
   { mlItemId: 'MLA2047850328', nota: 'reductora 3/4"' },
-  { mlItemId: 'MLA1141588199', nota: 'reductora 1/2"' },
+  { mlItemId: 'MLA1141588199', nota: 'reductora 1/2" + manómetro' },
+  { mlItemId: 'MLA1141588229', nota: 'reductora 3/4" + manómetro' },
+  { mlItemId: 'MLA1141599793', nota: 'reductora 1" + manómetro' },
+  { mlItemId: 'MLA1829591850', nota: 'reductora 1 1/2" + manómetro (pausada)' },
+  { mlItemId: 'MLA1538647270', nota: 'reductora 2" + manómetro (pausada)' },
 ]
 
 async function main() {

@@ -215,7 +215,7 @@ async function main() {
   const brand = brandIdx !== -1 ? args[brandIdx + 1] : null
   const mapIdx = args.indexOf('--map')
   const mapFile = mapIdx !== -1 ? args[mapIdx + 1] : null
-  const sourceDir = args.find((a, i) => !a.startsWith('--') && i !== brandIdx + 1 && i !== mapIdx + 1)
+  const sourceDir = args.find((a, i) => !a.startsWith('--') && (brandIdx === -1 || i !== brandIdx + 1) && (mapIdx === -1 || i !== mapIdx + 1))
 
   if (!sourceDir) {
     throw new Error('Falta la carpeta de PDFs. Uso: npx tsx scripts/cargar-fichas-tecnicas.ts <carpeta> [--brand MARCA] [--map mapa.json] [--apply] [--overwrite]')

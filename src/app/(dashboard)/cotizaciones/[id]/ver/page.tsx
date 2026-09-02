@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { QuoteSeguimientos } from '@/components/quotes/QuoteSeguimientos'
+import { CertificadosDialog } from '@/components/quotes/CertificadosDialog'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -53,6 +54,7 @@ import {
   Trash2,
   Save,
   X,
+  FileBadge,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber, formatCurrency as formatCurrencyAR, getLocalDateString } from '@/lib/utils'
@@ -190,6 +192,7 @@ export default function QuoteViewPage() {
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
   const [pdfLoading, setPdfLoading] = useState(false)
+  const [showCertificados, setShowCertificados] = useState(false)
 
   // Dialogs
   const [showSendDialog, setShowSendDialog] = useState(false)
@@ -702,6 +705,10 @@ export default function QuoteViewPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setShowCertificados(true)}>
+            <FileBadge className="h-4 w-4 mr-2" />
+            Certificados
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -1958,6 +1965,30 @@ export default function QuoteViewPage() {
           }}
         />
       )}
+
+      <CertificadosDialog
+        open={showCertificados}
+        onOpenChange={setShowCertificados}
+        quoteId={quote.id}
+        customerName={quote.customer.businessName || quote.customer.name}
+        items={(
+          (quote.items || []) as Array<{
+            id: string
+            itemNumber: number
+            description: string | null
+            product?: { name?: string | null } | null
+            quantity: number
+            isAlternative: boolean
+          }>
+        )
+          .filter((item) => !item.isAlternative)
+          .map((item) => ({
+            id: item.id,
+            itemNumber: item.itemNumber,
+            description: item.description || item.product?.name || '',
+            quantity: item.quantity,
+          }))}
+      />
     </div>
   )
 }

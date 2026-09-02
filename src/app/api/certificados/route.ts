@@ -2,7 +2,6 @@ import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
-import { prisma } from '@/lib/prisma'
 import {
   generateCertificadoCalibracionPDF,
   type CertificadoCalibracionData,
@@ -10,6 +9,10 @@ import {
 import { getLogoBlanco } from '@/lib/logo-blanco-base64'
 
 interface CertificadosBody {
+  cliente: string
+  oc?: string
+  referencia?: string
+  fecha?: string // YYYY-MM-DD; default hoy
   valvulas: string[]
   tituloPill: string
   titulo: string
@@ -33,19 +36,18 @@ function isPairArray(value: unknown): value is Array<[string, string]> {
   )
 }
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function POST(request: NextRequest) {
   try {
     const session = await auth()
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
 
-    const { id } = await params
     const body = (await request.json()) as CertificadosBody
 
+    if (typeof body.cliente !== 'string' || !body.cliente.trim()) {
+      return NextResponse.json({ error: 'Indicá el cliente' }, { status: 400 })
+    }
     if (
       !Array.isArray(body.valvulas) ||
       body.valvulas.length === 0 ||
@@ -61,21 +63,18 @@ export async function POST(
       return NextResponse.json({ error: 'Datos del certificado inválidos' }, { status: 400 })
     }
 
-    const quote = await prisma.quote.findUnique({
-      where: { id },
-      include: {
-        customer: { select: { name: true, businessName: true } },
-      },
-    })
-    if (!quote) {
-      return NextResponse.json({ error: 'Cotización no encontrada' }, { status: 404 })
+    let fecha = new Date()
+    if (body.fecha) {
+      const parsed = new Date(`${body.fecha}T12:00:00`)
+      if (!isNaN(parsed.getTime())) fecha = parsed
     }
 
-    const cliente = quote.customer.businessName || quote.customer.name
+    const cliente = body.cliente.trim()
     const data: CertificadoCalibracionData = {
       cliente,
-      referencia: `Cot. ${quote.quoteNumber}`,
-      fecha: new Date(),
+      oc: body.oc?.trim() || undefined,
+      referencia: body.referencia?.trim() || '',
+      fecha,
       valvulas: body.valvulas.map((v) => v.trim()),
       tituloPill: body.tituloPill || 'CERTIFICADO DE CALIBRACIÓN',
       titulo: body.titulo || 'VÁLVULA DE SEGURIDAD',

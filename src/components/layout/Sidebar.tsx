@@ -35,6 +35,7 @@ import {
   Store,
   UtensilsCrossed,
   TreePalm,
+  FileBadge,
 } from 'lucide-react'
 
 interface SubNavItem {
@@ -213,6 +214,12 @@ const navItems: NavItem[] = [
     title: 'Leads',
     href: '/leads',
     icon: Sparkles,
+    roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
+  },
+  {
+    title: 'Certificados',
+    href: '/certificados',
+    icon: FileBadge,
     roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
   },
   {

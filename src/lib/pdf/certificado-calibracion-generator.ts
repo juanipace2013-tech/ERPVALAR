@@ -11,7 +11,9 @@ import { jsPDF } from 'jspdf'
 
 export interface CertificadoCalibracionData {
   cliente: string
-  referencia: string // ej. "Cot. VAL-2026-2373" u "OC N° 4746"
+  referencia: string // ej. "Cot. VAL-2026-2373"
+  /** N° de orden de compra del cliente (fila propia si está presente) */
+  oc?: string
   fecha: Date
   /** Números grabados en las válvulas: una página por cada uno */
   valvulas: string[]
@@ -203,13 +205,14 @@ function drawPage(doc: jsPDF, data: CertificadoCalibracionData, valvula: string)
 
   // ---- Identificación ----
   y = sectionHeading(doc, M_LEFT, y + 4, 'IDENTIFICACIÓN')
-  y = kvTable(doc, M_LEFT, y, WIDTH, WIDTH * 0.52, [
+  const identRows: Array<[string, string]> = [
     ['Identificación del usuario (N° de válvula)', valvula],
     ['Cliente', data.cliente],
-    ['Referencia', data.referencia],
-    ['Fecha de emisión', formatDate(data.fecha)],
-    ['Marca · Tipo de válvula', data.marcaTipo],
-  ])
+  ]
+  if (data.oc) identRows.push(['OC N°', data.oc])
+  if (data.referencia) identRows.push(['Referencia', data.referencia])
+  identRows.push(['Fecha de emisión', formatDate(data.fecha)], ['Marca · Tipo de válvula', data.marcaTipo])
+  y = kvTable(doc, M_LEFT, y, WIDTH, WIDTH * 0.52, identRows)
 
   // ---- Materiales ----
   y = sectionHeading(doc, M_LEFT, y + 7, 'MATERIALES DE CONSTRUCCIÓN')

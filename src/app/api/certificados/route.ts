@@ -2,6 +2,8 @@ import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
+import { prisma } from '@/lib/prisma'
+import type { Prisma } from '@prisma/client'
 import {
   generateCertificadoCalibracionPDF,
   type CertificadoCalibracionData,
@@ -24,6 +26,36 @@ interface CertificadosBody {
   calibracion: Array<[string, string]>
   conexiones: Array<[string, string]>
   encargado: { nombre: string; rol: string }
+}
+
+export async function GET() {
+  try {
+    const session = await auth()
+    if (!session) {
+      return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
+    }
+
+    const certificados = await prisma.certificadoCalibracion.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      select: {
+        id: true,
+        fecha: true,
+        cliente: true,
+        oc: true,
+        referencia: true,
+        valvulas: true,
+        titulo: true,
+        subtitulo: true,
+        emitidoPor: true,
+        createdAt: true,
+      },
+    })
+    return NextResponse.json({ certificados })
+  } catch (error) {
+    logger.error('Error listando certificados:', error)
+    return NextResponse.json({ error: 'Error al listar certificados' }, { status: 500 })
+  }
 }
 
 function isPairArray(value: unknown): value is Array<[string, string]> {
@@ -94,6 +126,24 @@ export async function POST(request: NextRequest) {
 
     const doc = generateCertificadoCalibracionPDF(data)
     const buffer = Buffer.from(doc.output('arraybuffer'))
+
+    // Registro histórico: guarda el cuerpo completo para poder re-descargar el PDF
+    const payloadRaw: Record<string, unknown> = { ...data, fecha: fecha.toISOString() }
+    delete payloadRaw.logoBase64
+    const payload = payloadRaw as Prisma.InputJsonValue
+    await prisma.certificadoCalibracion.create({
+      data: {
+        fecha,
+        cliente,
+        oc: data.oc || null,
+        referencia: data.referencia || null,
+        valvulas: data.valvulas,
+        titulo: data.titulo,
+        subtitulo: data.subtitulo || null,
+        payload,
+        emitidoPor: session.user?.name || session.user?.email || null,
+      },
+    })
 
     const safeName = cliente.replace(/[/\\:*?"<>|]/g, '-').trim()
     const nums = data.valvulas

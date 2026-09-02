@@ -3443,3 +3443,20 @@ model ViandaDay {
 
   @@map("vianda_days")
 }
+
+model CertificadoCalibracion {
+  id         String   @id @default(cuid())
+  fecha      DateTime @db.Date // fecha de emisión que figura en el PDF
+  cliente    String
+  oc         String?
+  referencia String?
+  valvulas   String[] // números grabados en las válvulas (una página por número)
+  titulo     String // ej. "VÁLVULA DE SEGURIDAD"
+  subtitulo  String? // ej. "2\" x 3\"  -  SERIE 150  -  AISI 304"
+  payload    Json // cuerpo completo del certificado, para regenerar el PDF
+  emitidoPor String? // nombre o email del usuario que lo generó
+
+  createdAt DateTime @default(now())
+
+  @@map("certificados_calibracion")
+}

@@ -1,8 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -13,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Loader2, FileBadge, Wand2 } from 'lucide-react'
+import { Loader2, FileBadge, Wand2, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { getLocalDateString } from '@/lib/utils'
 import {
@@ -30,6 +38,24 @@ import {
  * la opción de precargar los campos pegando la descripción del producto.
  * Descarga un PDF con una página por válvula en el formato VALAR.
  */
+interface CertificadoEmitido {
+  id: string
+  fecha: string
+  cliente: string
+  oc: string | null
+  referencia: string | null
+  valvulas: string[]
+  titulo: string
+  subtitulo: string | null
+  emitidoPor: string | null
+  createdAt: string
+}
+
+function formatValvulas(valvulas: string[]): string {
+  if (valvulas.length <= 2) return valvulas.join(', ')
+  return `${valvulas[0]}-${valvulas[valvulas.length - 1]} (${valvulas.length})`
+}
+
 export default function CertificadosPage() {
   const [cliente, setCliente] = useState('')
   const [oc, setOc] = useState('')
@@ -39,8 +65,27 @@ export default function CertificadosPage() {
   const [valvulasInput, setValvulasInput] = useState('')
   const [fields, setFields] = useState<TechFields>(TECH_DEFAULTS)
   const [loading, setLoading] = useState(false)
+  const [historial, setHistorial] = useState<CertificadoEmitido[]>([])
+  const [historialLoading, setHistorialLoading] = useState(true)
 
   const set = (patch: Partial<TechFields>) => setFields((prev) => ({ ...prev, ...patch }))
+
+  const loadHistorial = useCallback(async () => {
+    try {
+      const response = await fetch('/api/certificados')
+      if (!response.ok) return
+      const data = await response.json()
+      setHistorial(data.certificados || [])
+    } catch {
+      // silencioso: el historial no bloquea la generación
+    } finally {
+      setHistorialLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadHistorial()
+  }, [loadHistorial])
 
   const handlePrefill = () => {
     if (!descripcion.trim()) {
@@ -96,6 +141,7 @@ export default function CertificadosPage() {
       toast.success(
         `${valvulas.length} certificado${valvulas.length > 1 ? 's' : ''} generado${valvulas.length > 1 ? 's' : ''}`
       )
+      loadHistorial()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Error al generar certificados')
     } finally {
@@ -360,6 +406,69 @@ export default function CertificadosPage() {
           Generar PDF
         </Button>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Historial de certificados emitidos</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {historialLoading ? (
+            <div className="text-muted-foreground flex items-center gap-2 py-4 text-sm">
+              <Loader2 className="h-4 w-4 animate-spin" /> Cargando historial...
+            </div>
+          ) : historial.length === 0 ? (
+            <p className="text-muted-foreground py-4 text-sm">
+              Todavía no hay certificados emitidos.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>OC / Referencia</TableHead>
+                  <TableHead>Válvulas</TableHead>
+                  <TableHead>Detalle</TableHead>
+                  <TableHead>Emitido por</TableHead>
+                  <TableHead className="text-right">PDF</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {historial.map((cert) => (
+                  <TableRow key={cert.id}>
+                    <TableCell className="whitespace-nowrap">
+                      {new Date(cert.fecha).toLocaleDateString('es-AR', { timeZone: 'UTC' })}
+                    </TableCell>
+                    <TableCell>{cert.cliente}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {[cert.oc, cert.referencia].filter(Boolean).join(' · ') || '—'}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap font-mono text-sm">
+                      {formatValvulas(cert.valvulas)}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground max-w-64 truncate text-sm">
+                      {[cert.titulo, cert.subtitulo].filter(Boolean).join(' · ')}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {cert.emitidoPor || '—'}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Descargar PDF"
+                        onClick={() => window.open(`/api/certificados/${cert.id}/pdf`, '_blank')}
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

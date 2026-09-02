@@ -47,6 +47,7 @@ import { useSession } from 'next-auth/react'
 import { formatNumber, getLocalDateString } from '@/lib/utils'
 import { useColppyStock, refreshInventoryCache } from '@/hooks/useColppyStock'
 import { StockBadge, StockWarning } from '@/components/StockBadge'
+import { CertificadosDialog } from '@/components/quotes/CertificadosDialog'
 import { getConjuntosGenebre, type ConjuntoOpcion, type ConjuntoTipo } from '@/lib/genebre-conjuntos'
 import { getBobinasElectrovalvula, type BobinaKit, ELECTROVALVULAS_NAMUR, type NamurKit } from '@/lib/genebre-electrovalvulas'
 
@@ -185,6 +186,7 @@ export default function QuoteDetailPage() {
 
   // Item form state
   const [showItemDialog, setShowItemDialog] = useState(false)
+  const [showCertificados, setShowCertificados] = useState(false)
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [itemFormData, setItemFormData] = useState<ItemFormData>({
     productId: '',
@@ -1380,6 +1382,9 @@ export default function QuoteDetailPage() {
             title="Ver detalle completo"
           >
             <Eye className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" onClick={() => setShowCertificados(true)}>
+            Certificados
           </Button>
           <Button
             variant="outline"
@@ -3194,6 +3199,21 @@ export default function QuoteDetailPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <CertificadosDialog
+        open={showCertificados}
+        onOpenChange={setShowCertificados}
+        quoteId={quote.id}
+        customerName={quote.customer.businessName || quote.customer.name}
+        items={quote.items
+          .filter((item) => !item.isAlternative)
+          .map((item) => ({
+            id: item.id,
+            itemNumber: item.itemNumber,
+            description: item.description || item.product?.name || '',
+            quantity: item.quantity,
+          }))}
+      />
     </div>
   )
 }

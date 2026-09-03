@@ -3,7 +3,7 @@
 /**
  * Vacaciones — control de ausencias de empleados.
  *
- * Vista MES: grilla empleados × días (click cicla vacío→V→P→E→vacío).
+ * Vista MES: grilla empleados × días (click cicla vacío→V→P→E→X→vacío).
  * Vista AÑO: planificador anual (12 meses en barras por empleado).
  * Carga por rango (desde/hasta), feriados sombreados, saldo calculado por
  * LCT con ajuste manual, aviso de días que vencen el 30/4 y alerta de
@@ -30,18 +30,20 @@ const MESES = [
 const MESES_CORTOS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 const DOW = ['D', 'L', 'M', 'M', 'J', 'V', 'S']
 
-type Tipo = 'VACACIONES' | 'PERSONAL' | 'ENFERMEDAD'
-const CICLO: (Tipo | null)[] = [null, 'VACACIONES', 'PERSONAL', 'ENFERMEDAD']
-const LETRA: Record<Tipo, string> = { VACACIONES: 'V', PERSONAL: 'P', ENFERMEDAD: 'E' }
+type Tipo = 'VACACIONES' | 'PERSONAL' | 'ENFERMEDAD' | 'ESTUDIO'
+const CICLO: (Tipo | null)[] = [null, 'VACACIONES', 'PERSONAL', 'ENFERMEDAD', 'ESTUDIO']
+const LETRA: Record<Tipo, string> = { VACACIONES: 'V', PERSONAL: 'P', ENFERMEDAD: 'E', ESTUDIO: 'X' }
 const CELDA: Record<Tipo, string> = {
   VACACIONES: 'bg-green-500 text-white',
   PERSONAL: 'bg-amber-400 text-white',
   ENFERMEDAD: 'bg-red-500 text-white',
+  ESTUDIO: 'bg-violet-500 text-white',
 }
 const MINI: Record<Tipo, string> = {
   VACACIONES: 'bg-green-500',
   PERSONAL: 'bg-amber-400',
   ENFERMEDAD: 'bg-red-500',
+  ESTUDIO: 'bg-violet-500',
 }
 
 interface SaldoDetalleAnio { anio: number; corresponden: number; tomados: number; activado: boolean }
@@ -76,7 +78,7 @@ export default function VacacionesPage() {
   // Dialog de carga por rango
   const [rangoOpen, setRangoOpen] = useState(false)
   const [rangoEmpleado, setRangoEmpleado] = useState('')
-  const [rangoTipo, setRangoTipo] = useState<'VACACIONES' | 'PERSONAL' | 'ENFERMEDAD' | 'QUITAR'>('VACACIONES')
+  const [rangoTipo, setRangoTipo] = useState<Tipo | 'QUITAR'>('VACACIONES')
   const [rangoDesde, setRangoDesde] = useState('')
   const [rangoHasta, setRangoHasta] = useState('')
   const [rangoGuardando, setRangoGuardando] = useState(false)
@@ -328,6 +330,7 @@ export default function VacacionesPage() {
               <span><span className="inline-block w-4 h-4 rounded bg-green-500 align-middle mr-1" />V Vacaciones</span>
               <span><span className="inline-block w-4 h-4 rounded bg-amber-400 align-middle mr-1" />P Personal</span>
               <span><span className="inline-block w-4 h-4 rounded bg-red-500 align-middle mr-1" />E Enfermedad</span>
+              <span><span className="inline-block w-4 h-4 rounded bg-violet-500 align-middle mr-1" />X Estudio</span>
               <span><span className="inline-block w-4 h-4 rounded bg-sky-100 border border-sky-300 align-middle mr-1" />Feriado</span>
               {puedeEditar && vista === 'mes' && <span className="text-gray-400">Click en el día para marcar</span>}
             </CardDescription>
@@ -350,7 +353,7 @@ export default function VacacionesPage() {
                       </th>
                     ))}
                     <th className="pl-3 text-right">Mes</th>
-                    <th className="pl-3 text-right">Año V/P/E</th>
+                    <th className="pl-3 text-right">Año V/P/E/X</th>
                     <th className="pl-3 text-right">Corresponden</th>
                     <th className="pl-3 text-right">Saldo</th>
                   </tr>
@@ -392,7 +395,7 @@ export default function VacacionesPage() {
                       })}
                       <td className="pl-3 text-right font-semibold">{totalMes(emp.id) || ''}</td>
                       <td className="pl-3 text-right text-gray-500 whitespace-nowrap">
-                        {totalAnioTipo(emp.id, 'VACACIONES')}/{totalAnioTipo(emp.id, 'PERSONAL')}/{totalAnioTipo(emp.id, 'ENFERMEDAD')}
+                        {totalAnioTipo(emp.id, 'VACACIONES')}/{totalAnioTipo(emp.id, 'PERSONAL')}/{totalAnioTipo(emp.id, 'ENFERMEDAD')}/{totalAnioTipo(emp.id, 'ESTUDIO')}
                       </td>
                       <td className="pl-3 text-right text-gray-600 whitespace-nowrap" title={emp.fechaIngreso ? `Ingreso: ${fmtCorta(emp.fechaIngreso)}/${emp.fechaIngreso.slice(0, 4)}` : undefined}>
                         {emp.esSocio ? 'Libre' : emp.corresponden != null ? `${emp.corresponden} días` : '—'}
@@ -510,6 +513,7 @@ export default function VacacionesPage() {
                   <SelectItem value="VACACIONES">Vacaciones (V)</SelectItem>
                   <SelectItem value="PERSONAL">Personal (P)</SelectItem>
                   <SelectItem value="ENFERMEDAD">Enfermedad (E)</SelectItem>
+                  <SelectItem value="ESTUDIO">Estudio (X)</SelectItem>
                   <SelectItem value="QUITAR">Quitar marcas del rango</SelectItem>
                 </SelectContent>
               </Select>

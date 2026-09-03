@@ -3393,6 +3393,7 @@ enum AusenciaTipo {
   VACACIONES
   PERSONAL
   ENFERMEDAD
+  ESTUDIO
 }
 
 model Empleado {

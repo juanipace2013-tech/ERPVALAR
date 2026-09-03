@@ -122,7 +122,7 @@ const fechaRegex = /^\d{4}-\d{2}-\d{2}$/
 const postSchema = z
   .object({
     empleadoId: z.string().min(1),
-    tipo: z.enum(['VACACIONES', 'PERSONAL', 'ENFERMEDAD']).nullable(),
+    tipo: z.enum(['VACACIONES', 'PERSONAL', 'ENFERMEDAD', 'ESTUDIO']).nullable(),
     fecha: z.string().regex(fechaRegex).optional(),
     desde: z.string().regex(fechaRegex).optional(),
     hasta: z.string().regex(fechaRegex).optional(),

@@ -856,7 +856,7 @@ export default function ProductoDetallePage() {
               {product.technicalSheetUrl ? (
                 <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded px-3 py-2">
                   <a
-                    href={product.technicalSheetUrl}
+                    href={`/api${product.technicalSheetUrl}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-2 text-sm text-green-800 hover:underline truncate flex-1 mr-2"

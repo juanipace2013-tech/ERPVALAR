@@ -27,7 +27,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
-import { MlAutoReplyStatus, MlPostSaleStatus } from '@prisma/client'
+import { MlAutoReplyStatus, MlPostSaleStatus, type MlPostSaleMessage } from '@prisma/client'
 import {
   getMessage,
   getPackMessages,
@@ -40,7 +40,7 @@ import { detectModeration, isRejectedModerationStatus } from './handlePostSale'
 // Substring que sendPostSaleMessage graba en moderationReason cuando el envío
 // salió via template REQUEST_VARIANTS (hoy el camino primario). Marca los
 // packs elegibles para auto-reply con el texto completo.
-const FALLBACK_MARKER = 'enviado template REQUEST_VARIANTS'
+export const FALLBACK_MARKER = 'enviado template REQUEST_VARIANTS'
 // Igual que el envío original: la moderación de ML es asíncrona, re-chequear.
 const MODERATION_RECHECK_DELAY_MS = 3 * 60 * 1000
 // Ventana del barrido del cron para auto-replies SENT.
@@ -121,6 +121,36 @@ export async function handleBuyerReply(notificationId: string): Promise<void> {
     return
   }
 
+  const buyerUserId = message.from?.user_id
+  if (buyerUserId == null) {
+    logger.warn(`[ML AutoReply] Mensaje ${messageId} sin from.user_id, no puedo responder`)
+    await prisma.mlPostSaleMessage.updateMany({
+      where: { id: record.id, autoReplyStatus: null },
+      data: {
+        autoReplyStatus: MlAutoReplyStatus.FAILED,
+        autoReplyAt: new Date(),
+        autoReplyError: 'Mensaje del comprador sin from.user_id',
+      },
+    })
+    await markProcessed()
+    return
+  }
+
+  await claimAndSendAutoReply(record, buyerUserId)
+  await markProcessed()
+}
+
+export type AutoReplyOutcome = 'sent' | 'moderated' | 'failed' | 'already_claimed'
+
+/**
+ * Claim atómico (autoReplyStatus null -> SENDING) + envío del texto completo al
+ * comprador. Un solo intento por pack aunque llegue en paralelo desde el
+ * webhook y el cron de barrido (sweepMissedAutoReplies).
+ */
+export async function claimAndSendAutoReply(
+  record: MlPostSaleMessage,
+  buyerUserId: string | number
+): Promise<AutoReplyOutcome> {
   // Claim atómico: null -> SENDING. Si otra notificación (duplicada o de un
   // segundo mensaje del comprador) llegó primero, count = 0 y no hacemos nada.
   const claimed = await prisma.mlPostSaleMessage.updateMany({
@@ -129,22 +159,7 @@ export async function handleBuyerReply(notificationId: string): Promise<void> {
   })
   if (claimed.count === 0) {
     logger.info(`[ML AutoReply] pack=${record.packId} ya reclamado en paralelo, skip`)
-    await markProcessed()
-    return
-  }
-
-  const buyerUserId = message.from?.user_id
-  if (buyerUserId == null) {
-    logger.warn(`[ML AutoReply] Mensaje ${messageId} sin from.user_id, no puedo responder`)
-    await prisma.mlPostSaleMessage.update({
-      where: { id: record.id },
-      data: {
-        autoReplyStatus: MlAutoReplyStatus.FAILED,
-        autoReplyError: 'Mensaje del comprador sin from.user_id',
-      },
-    })
-    await markProcessed()
-    return
+    return 'already_claimed'
   }
 
   try {
@@ -165,8 +180,7 @@ export async function handleBuyerReply(notificationId: string): Promise<void> {
           autoReplyError: reason,
         },
       })
-      await markProcessed()
-      return
+      return 'moderated'
     }
 
     logger.info(`[ML AutoReply] Texto completo enviado OK pack=${record.packId}`)
@@ -190,6 +204,7 @@ export async function handleBuyerReply(notificationId: string): Promise<void> {
       )
     }, MODERATION_RECHECK_DELAY_MS)
     timer.unref?.()
+    return 'sent'
   } catch (err) {
     const detail = err instanceof MlApiError ? JSON.stringify(err.body) : String(err)
     logger.error(`[ML AutoReply] Error enviando pack=${record.packId}`, detail)
@@ -202,9 +217,8 @@ export async function handleBuyerReply(notificationId: string): Promise<void> {
         autoReplyError: `API error: ${detail}`.slice(0, 500),
       },
     })
+    return 'failed'
   }
-
-  await markProcessed()
 }
 
 /**

@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { logger } from '@/lib/logger'
 import { sweepSentModeration } from '@/lib/mercadolibre/handlePostSale'
 import { sweepAutoReplyModeration } from '@/lib/mercadolibre/handleBuyerReply'
+import { sweepMissedAutoReplies } from '@/lib/mercadolibre/sweepMissedAutoReplies'
 
 export const maxDuration = 300
 
@@ -20,6 +21,7 @@ let lastRun: {
   completedAt: string
   result: { checked: number; moderated: number }
   autoReplies?: { checked: number; moderated: number }
+  missedReplies?: { checked: number; repaired: number; alerted: number }
   durationMs: number
 } | null = null
 
@@ -34,10 +36,12 @@ export async function GET(req: NextRequest) {
   try {
     const result = await sweepSentModeration()
     const autoReplies = await sweepAutoReplyModeration()
+    const missedReplies = await sweepMissedAutoReplies()
     lastRun = {
       completedAt: new Date().toISOString(),
       result,
       autoReplies,
+      missedReplies,
       durationMs: Date.now() - started,
     }
     if (result.moderated > 0) {

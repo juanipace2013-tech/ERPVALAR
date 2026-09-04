@@ -3057,6 +3057,10 @@ model MlPostSaleMessage {
   autoReplyMlMessageId String?
   autoReplyError       String? // reason de moderación o detalle del error de API
 
+  // Sellado del cron de alertas (sweepMissedAutoReplies): un pack alertado por
+  // mail no se vuelve a alertar ni a escanear.
+  alertedAt DateTime?
+
   @@index([status])
   @@index([orderId])
   @@index([autoReplyStatus])

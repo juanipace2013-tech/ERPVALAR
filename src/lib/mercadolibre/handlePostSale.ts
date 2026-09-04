@@ -7,8 +7,10 @@
  *   3. Calcula packId = pack_id ?? order.id.
  *   4. Idempotencia por packId (UNIQUE en MlPostSaleMessage).
  *   5. Matchea una MlMessageRule enabled por ml_item_id o seller_sku.
- *   6. Chequea cap_available para la opción OTHER del action_guide.
- *   7. Según el modo de la regla: REVIEW (deja pendiente) o AUTO (envía).
+ *   6. Chequea cap_available (REQUEST_VARIANTS primario, OTHER fallback).
+ *   7. Según el modo de la regla: REVIEW (deja pendiente) o AUTO (envía el
+ *      template REQUEST_VARIANTS; el texto completo va después por auto-reply,
+ *      ver sendPostSaleMessage y handleBuyerReply).
  *   8. Marca la notificación como processed.
  *
  * El envío real (paso 7-AUTO) está en sendPostSaleMessage, reutilizado por el
@@ -30,6 +32,7 @@ import {
 } from './client'
 
 const OTHER_OPTION_ID = 'OTHER'
+const REQUEST_VARIANTS_OPTION_ID = 'REQUEST_VARIANTS'
 // Cuánto esperar después de un envío OK para re-chequear la moderación
 // asíncrona de ML (el POST devuelve limpio y el rechazo aparece después).
 const MODERATION_RECHECK_DELAY_MS = 3 * 60 * 1000
@@ -130,6 +133,47 @@ export function detectModeration(resp: MlPostOptionResponse): {
 export async function sendPostSaleMessage(
   message: MlPostSaleMessage
 ): Promise<MlPostSaleMessage> {
+  // Primario: template REQUEST_VARIANTS ("confirmá las características..."),
+  // que no pasa por moderación. El texto completo (rangos) queda en el registro
+  // y lo manda el auto-reply cuando el comprador responde (handleBuyerReply).
+  // Antes se intentaba OTHER con el texto completo acá; ML lo rechazaba por
+  // "automatic_message" y el mensaje bloqueado quedaba visible en el hilo del
+  // vendedor (venta 2000014851268509, 3/9/26).
+  try {
+    const tplResp = await postActionGuideOption(
+      message.packId,
+      REQUEST_VARIANTS_OPTION_ID,
+      undefined,
+      REQUEST_VARIANTS_TEMPLATE_ID
+    )
+    const tplMod = detectModeration(tplResp)
+    if (!tplMod.moderated) {
+      logger.info(
+        `[ML PostSale] Template REQUEST_VARIANTS enviado pack=${message.packId}`
+      )
+      return prisma.mlPostSaleMessage.update({
+        where: { id: message.id },
+        data: {
+          status: MlPostSaleStatus.SENT,
+          sentAt: new Date(),
+          mlMessageId: tplResp.id ?? tplResp.message_id ?? null,
+          // Debe contener el marker de handleBuyerReply para habilitar el
+          // auto-reply con el texto completo.
+          moderationReason: 'enviado template REQUEST_VARIANTS (primario)',
+        },
+      })
+    }
+    logger.warn(
+      `[ML PostSale] Template REQUEST_VARIANTS moderado pack=${message.packId} reason=${tplMod.reason ?? 'desconocido'}`
+    )
+  } catch (tplErr) {
+    const tplDetail =
+      tplErr instanceof MlApiError ? JSON.stringify(tplErr.body) : String(tplErr)
+    logger.error(`[ML PostSale] Template REQUEST_VARIANTS falló pack=${message.packId}`, tplDetail)
+  }
+
+  // Fallback: OTHER con el texto completo (el diseño original). Si pasa, el
+  // comprador ya tiene todo y no hace falta auto-reply (sin marker).
   try {
     const resp = await postActionGuideOption(message.packId, OTHER_OPTION_ID, message.text)
     const { moderated, reason } = detectModeration(resp)
@@ -138,39 +182,6 @@ export async function sendPostSaleMessage(
       logger.warn(
         `[ML PostSale] Mensaje moderado pack=${message.packId} reason=${reason ?? 'desconocido'}`
       )
-      // Fallback: el template REQUEST_VARIANTS no pasa por moderación, así el
-      // comprador al menos recibe el pedido de confirmar características y al
-      // responder se abre la conversación para mandarle el detalle de rangos.
-      try {
-        const tplResp = await postActionGuideOption(
-          message.packId,
-          'REQUEST_VARIANTS',
-          undefined,
-          REQUEST_VARIANTS_TEMPLATE_ID
-        )
-        const tplMod = detectModeration(tplResp)
-        if (!tplMod.moderated) {
-          logger.info(
-            `[ML PostSale] Fallback template REQUEST_VARIANTS enviado pack=${message.packId}`
-          )
-          return prisma.mlPostSaleMessage.update({
-            where: { id: message.id },
-            data: {
-              status: MlPostSaleStatus.SENT,
-              sentAt: new Date(),
-              mlMessageId: tplResp.id ?? tplResp.message_id ?? null,
-              moderationReason: `OTHER rechazado (${reason ?? 'desconocido'}); enviado template REQUEST_VARIANTS`,
-            },
-          })
-        }
-      } catch (tplErr) {
-        const tplDetail =
-          tplErr instanceof MlApiError ? JSON.stringify(tplErr.body) : String(tplErr)
-        logger.error(
-          `[ML PostSale] Fallback template falló pack=${message.packId}`,
-          tplDetail
-        )
-      }
       return prisma.mlPostSaleMessage.update({
         where: { id: message.id },
         data: {
@@ -324,14 +335,15 @@ export async function handlePostSale(notificationId: string): Promise<void> {
   // Texto final personalizado para esta venta (ver renderMessageTemplate).
   const messageText = renderMessageTemplate(rule.messageText, order, packId)
 
-  // 6. cap_available para OTHER
+  // 6. cap_available: REQUEST_VARIANTS (primario) u OTHER (fallback)
   let capOk = false
   try {
     const list = await getActionGuideCaps(packId)
-    const other = list.find(
-      (c) => (c.option_id ?? c.id)?.toUpperCase() === OTHER_OPTION_ID
-    )
-    capOk = (other?.cap_available ?? 0) >= 1
+    const capFor = (optionId: string) =>
+      list.find((c) => (c.option_id ?? c.id)?.toUpperCase() === optionId)
+    capOk =
+      (capFor(REQUEST_VARIANTS_OPTION_ID)?.cap_available ?? 0) >= 1 ||
+      (capFor(OTHER_OPTION_ID)?.cap_available ?? 0) >= 1
   } catch (err) {
     const detail = err instanceof MlApiError ? JSON.stringify(err.body) : String(err)
     logger.error(`[ML PostSale] Error leyendo caps pack=${packId}`, detail)
@@ -341,7 +353,9 @@ export async function handlePostSale(notificationId: string): Promise<void> {
   }
 
   if (!capOk) {
-    logger.info(`[ML PostSale] Sin cap_available para OTHER pack=${packId}, SKIPPED`)
+    logger.info(
+      `[ML PostSale] Sin cap_available para REQUEST_VARIANTS ni OTHER pack=${packId}, SKIPPED`
+    )
     try {
       await prisma.mlPostSaleMessage.create({
         data: {

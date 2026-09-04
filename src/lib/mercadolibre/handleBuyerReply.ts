@@ -1,8 +1,9 @@
 /**
- * Auto-reply post-venta: cuando el mensaje original quedó en fallback template
- * REQUEST_VARIANTS (porque ML moderó el texto libre del action_guide con
- * "automatic_message") y el comprador responde, la conversación queda abierta
- * y ahí sí se puede mandar texto por POST /messages/packs. Este handler
+ * Auto-reply post-venta: el primer mensaje de la venta es SIEMPRE el template
+ * REQUEST_VARIANTS ("confirmá las características...", desde 4/9/26 es el
+ * envío primario — antes era fallback tras el rechazo de OTHER por
+ * "automatic_message"). Cuando el comprador responde, la conversación queda
+ * abierta y ahí sí se puede mandar texto por POST /messages/packs. Este handler
  * procesa las notificaciones del topic "messages" y le envía al comprador el
  * texto completo (los rangos de manómetro) que quedó guardado en el registro.
  *
@@ -37,7 +38,8 @@ import {
 import { detectModeration, isRejectedModerationStatus } from './handlePostSale'
 
 // Substring que sendPostSaleMessage graba en moderationReason cuando el envío
-// terminó en fallback template. Marca los packs elegibles para auto-reply.
+// salió via template REQUEST_VARIANTS (hoy el camino primario). Marca los
+// packs elegibles para auto-reply con el texto completo.
 const FALLBACK_MARKER = 'enviado template REQUEST_VARIANTS'
 // Igual que el envío original: la moderación de ML es asíncrona, re-chequear.
 const MODERATION_RECHECK_DELAY_MS = 3 * 60 * 1000

@@ -46,10 +46,17 @@ const MODERATION_RECHECK_DELAY_MS = 3 * 60 * 1000
 // Ventana del barrido del cron para auto-replies SENT.
 const MODERATION_SWEEP_WINDOW_MS = 48 * 60 * 60 * 1000
 
-/** Extrae el id de mensaje de un resource tipo "/messages/abc123" -> "abc123". */
+/**
+ * Extrae el id de mensaje del resource. ML usa dos formatos para el topic
+ * "messages": "/messages/abc123" y el id pelado "abc123" (visto en prod el
+ * 4/9/26 — venta 2000014867157377: el resource pelado devolvía null y la
+ * respuesta del comprador se descartaba sin auto-reply).
+ */
 export function parseMessageId(resource: string): string | null {
   const m = resource.match(/\/messages\/([A-Za-z0-9-]+)/)
-  return m ? m[1] : null
+  if (m) return m[1]
+  const bare = resource.trim()
+  return /^[A-Za-z0-9-]+$/.test(bare) ? bare : null
 }
 
 /**

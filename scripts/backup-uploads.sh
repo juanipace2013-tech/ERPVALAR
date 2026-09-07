@@ -23,7 +23,8 @@
 #   # como deploy, con las claves de un Space de DigitalOcean (API → Spaces Keys):
 #   rclone config create valarg-backup s3 provider DigitalOcean \
 #     access_key_id TU_ACCESS_KEY secret_access_key TU_SECRET_KEY \
-#     endpoint nyc3.digitaloceanspaces.com acl private
+#     endpoint sfo3.digitaloceanspaces.com acl private no_check_bucket true
+#   # no_check_bucket: las claves limitadas de DO no pueden hacer HeadBucket/CreateBucket
 #   rclone lsd valarg-backup:            # tiene que listar el Space sin error
 #   crontab -e
 #   30 3 * * * RCLONE_REMOTE=valarg-backup:valarg-backups bash /home/deploy/crm-valarg/scripts/backup-uploads.sh >> /home/deploy/logs/backup-uploads.log 2>&1
@@ -91,14 +92,14 @@ if ! command -v rclone >/dev/null 2>&1; then
 fi
 
 log "Sync incremental de uploads/ a $RCLONE_REMOTE/uploads ($(find "$UPLOADS_DIR" -type f | wc -l) archivos, $(du -sh "$UPLOADS_DIR" | cut -f1))"
-rclone sync "$UPLOADS_DIR" "$RCLONE_REMOTE/uploads" \
+rclone sync "$UPLOADS_DIR" "$RCLONE_REMOTE/uploads" --s3-no-check-bucket \
   --backup-dir "$RCLONE_REMOTE/deleted/$STAMP" \
   --transfers 8 --checkers 16 --stats-one-line --stats 5m
 log "Sync OK"
 
 if [ -f "$ARCHIVE" ]; then
   log "Subiendo $ARCHIVE a $RCLONE_REMOTE/tars"
-  rclone copy "$ARCHIVE" "$RCLONE_REMOTE/tars/" --quiet
+  rclone copy "$ARCHIVE" "$RCLONE_REMOTE/tars/" --s3-no-check-bucket --quiet
   # Rotación en el remote: mismo criterio que local
   rclone delete "$RCLONE_REMOTE/tars" --min-age "$((KEEP_LOCAL * 2))d" --quiet || true
 fi

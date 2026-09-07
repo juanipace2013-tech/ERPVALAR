@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { prisma } from '@/lib/prisma'
+import { requireRole, ROLES } from '@/lib/authz'
 
 const companySettingsSchema = z.object({
   // Datos generales
@@ -119,6 +120,9 @@ export async function PUT(request: NextRequest) {
         { status: 401 }
       )
     }
+
+    const forbidden = requireRole(session, ROLES.GESTION)
+    if (forbidden) return forbidden
 
     const body = await request.json()
 

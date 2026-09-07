@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { logger } from '@/lib/logger'
 import { cerrar } from '@/lib/comisiones/liquidacion'
+import { requireRole, ROLES } from '@/lib/authz'
 
 // POST /api/comisiones/liquidaciones/[id]/cerrar — recalcula y congela la
 // tasa del mes en cada línea (tratamiento retroactivo del tramo).
@@ -15,6 +16,9 @@ export async function POST(
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
+
+    const forbidden = requireRole(session, ROLES.GESTION)
+    if (forbidden) return forbidden
 
     const { id } = await params
     const liquidacion = await cerrar(id)

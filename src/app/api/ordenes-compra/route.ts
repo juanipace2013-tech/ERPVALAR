@@ -3,6 +3,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/prisma'
+import { parsePage, parseLimit } from '@/lib/pagination'
 
 // GET /api/ordenes-compra - Listar órdenes de compra con filtros
 export async function GET(request: NextRequest) {
@@ -13,8 +14,8 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '20')
+    const page = parsePage(searchParams.get('page'))
+    const limit = parseLimit(searchParams.get('limit'), 20)
     const supplierId = searchParams.get('supplierId') || ''
     const status = searchParams.get('status') || ''
     const search = searchParams.get('search') || ''

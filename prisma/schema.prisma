@@ -3465,3 +3465,21 @@ model CertificadoCalibracion {
 
   @@map("certificados_calibracion")
 }
+
+/// Corridas de crons (/api/cron/*). Reemplaza el estado en memoria: sobrevive
+/// reinicios, es común a todas las instancias y sirve de lock contra corridas
+/// superpuestas (ver src/lib/cron-run.ts).
+model CronRun {
+  id         String    @id @default(cuid())
+  job        String
+  status     String // RUNNING | OK | ERROR
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  durationMs Int?
+  result     Json?
+  error      String?
+
+  @@index([job, startedAt(sort: Desc)])
+  @@index([job, status])
+  @@map("cron_runs")
+}

@@ -9,6 +9,7 @@ export default auth((req) => {
   const isPublicRoute =
     pathname === '/login' ||
     pathname.startsWith('/api/auth') ||
+    pathname === '/api/health' ||
     pathname.startsWith('/api/cron') ||
     pathname.startsWith('/api/webhooks') ||
     // Subida programada de conversiones offline de Google Ads:

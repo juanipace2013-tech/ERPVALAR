@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { prisma } from '@/lib/prisma'
+import { requireRole, ROLES } from '@/lib/authz'
 
 const invoiceNumberingUpdateSchema = z.object({
   description: z.string().min(1).optional(),
@@ -35,6 +36,9 @@ export async function PUT(
         { status: 401 }
       )
     }
+
+    const forbidden = requireRole(session, ROLES.GESTION)
+    if (forbidden) return forbidden
 
     const { id } = await params
     const body = await request.json()
@@ -77,6 +81,9 @@ export async function DELETE(
         { status: 401 }
       )
     }
+
+    const forbidden = requireRole(session, ROLES.GESTION)
+    if (forbidden) return forbidden
 
     const { id } = await params
 

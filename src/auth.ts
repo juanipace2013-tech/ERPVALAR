@@ -2,6 +2,8 @@ import NextAuth from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
 import { PrismaAdapter } from '@auth/prisma-adapter'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
+import type { UserRole, UserStatus } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 import * as OTPAuth from 'otpauth'
 import { checkRateLimit, recordFailedAttempt, clearAttempts } from '@/lib/rate-limit'
@@ -14,6 +16,9 @@ function getClientIp(request: Request | undefined): string {
   if (xri) return xri.trim()
   return 'unknown'
 }
+
+/** Cada cuánto se relee estado/rol del usuario desde la DB en el callback jwt. */
+const REVALIDATE_MS = 5 * 60 * 1000
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma) as any,
@@ -116,6 +121,34 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.status = (user as any).status
         token.avatar = (user as any).avatar
         token.mfaEnabled = (user as any).mfaEnabled
+        token.revalidatedAt = Date.now()
+      }
+
+      // Revalidar estado y rol contra la DB cada REVALIDATE_MS: una baja o un
+      // cambio de rol tiene efecto en sesiones abiertas sin esperar los 30 días.
+      // Devolver null invalida la sesión (Auth.js borra la cookie).
+      const revalidatedAt = (token.revalidatedAt as number | undefined) ?? 0
+      if (token.id && Date.now() - revalidatedAt > REVALIDATE_MS) {
+        let dbUser: { role: UserRole; status: UserStatus; avatar: string | null } | null | undefined
+        try {
+          dbUser = await prisma.user.findUnique({
+            where: { id: token.id as string },
+            select: { role: true, status: true, avatar: true },
+          })
+        } catch (error) {
+          // DB caída: no desloguear a todo el mundo, reintentar en la próxima request
+          logger.error('[Auth] No se pudo revalidar la sesión contra la DB', error)
+          dbUser = undefined
+        }
+        if (dbUser !== undefined) {
+          if (!dbUser || dbUser.status !== 'ACTIVE') {
+            return null
+          }
+          token.role = dbUser.role
+          token.status = dbUser.status
+          token.avatar = dbUser.avatar
+          token.revalidatedAt = Date.now()
+        }
       }
 
       // Refrescar mfaEnabled cuando se actualiza la sesión

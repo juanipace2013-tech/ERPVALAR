@@ -2,6 +2,7 @@ import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger'
+import { requireRole, ROLES } from '@/lib/authz';
 
 export async function GET(
   request: NextRequest,
@@ -120,6 +121,9 @@ export async function DELETE(
     if (!session?.user) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
     }
+
+    const forbidden = requireRole(session, ROLES.GESTION);
+    if (forbidden) return forbidden;
 
     const { id } = await params;
 

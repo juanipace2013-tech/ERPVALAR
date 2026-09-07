@@ -3,53 +3,40 @@
  *
  * Sync liviano: solo actualiza Customer.balance desde Colppy.
  * NO toca nombre, CUIT, dirección, etc. — solo el saldo.
- * Pensado para correr diariamente a las 18:00 ART via cron.
+ * Corre diariamente a las 8:30 AR via cron del servidor.
  *
- * GET sin ?secret devuelve el estado de la última sincronización.
+ * GET sin ?secret devuelve el estado de la última sincronización (persistido
+ * en cron_runs, ver src/lib/cron-run.ts). Si ya hay una corrida en curso
+ * responde 409 sin ejecutar.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { colppyLogin, colppyLogout, getColppyConfig, md5Hash, callColppyAPI, fetchAllColppyPages, ColppySession } from '@/lib/colppy'
+import { colppyLogin, colppyLogout, getColppyConfig, md5Hash, callColppyAPI, fetchAllColppyPages } from '@/lib/colppy'
 import { logger } from '@/lib/logger'
+import { runCronJob, getCronStatus, cronSkippedResponse, type CronJob } from '@/lib/cron-run'
 
-// ─── Estado en memoria ──────────────────────────────────────────────────────
+const JOB: CronJob = 'sync-balances'
 
-let lastSync: {
-  completedAt: string | null
+interface SyncResult {
   updated: number
   errors: number
   duration: string
-} = { completedAt: null, updated: 0, errors: 0, duration: '0s' }
+}
 
-// ─── Handler ────────────────────────────────────────────────────────────────
+// ─── Sync ───────────────────────────────────────────────────────────────────
 
-export async function GET(req: NextRequest) {
-  const secret = req.nextUrl.searchParams.get('secret')
-
-  // Sin secret → devolver estado de última sincronización (público para la UI)
-  if (!secret) {
-    return NextResponse.json({
-      lastSync: lastSync.completedAt ? lastSync : null,
-    })
-  }
-
-  // Con secret → ejecutar sync
-  if (secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
+async function sincronizarSaldos(): Promise<SyncResult> {
   const startTime = Date.now()
   let updated = 0
   let errors = 0
 
-  try {
-    // 1. Login Colppy
-    const session = await colppyLogin()
-    const config = getColppyConfig()
-    const passwordMD5 = md5Hash(config.password)
+  // 1. Login Colppy
+  const session = await colppyLogin()
+  const config = getColppyConfig()
+  const passwordMD5 = md5Hash(config.password)
 
-    try {
+  try {
     // 2. Traer todos los clientes de Colppy (solo necesitamos idCliente + Saldo).
     // Paginado: un limit fijo corta silenciosamente el listado.
     const colppyClients: any[] = await fetchAllColppyPages(async (start, limit) => {
@@ -99,11 +86,17 @@ export async function GET(req: NextRequest) {
         const balance = parseFloat(c.Saldo || '0')
 
         operations.push(
-          prisma.customer.update({
-            where: { id: localId },
-            data: { balance },
-          }).then(() => { updated++ })
-           .catch(() => { errors++ })
+          prisma.customer
+            .update({
+              where: { id: localId },
+              data: { balance },
+            })
+            .then(() => {
+              updated++
+            })
+            .catch(() => {
+              errors++
+            })
         )
       }
 
@@ -111,25 +104,44 @@ export async function GET(req: NextRequest) {
     }
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1)
-
-    lastSync = {
-      completedAt: new Date().toISOString(),
-      updated,
-      errors,
-      duration: `${duration}s`,
-    }
-
     logger.info(`[CRON] Sync balances completed: ${updated} clients updated, ${errors} errors in ${duration}s`)
+    return { updated, errors, duration: `${duration}s` }
+  } finally {
+    await colppyLogout(session).catch(() => {})
+  }
+}
 
+// ─── Handler ────────────────────────────────────────────────────────────────
+
+export async function GET(req: NextRequest) {
+  const secret = req.nextUrl.searchParams.get('secret')
+
+  // Sin secret → devolver estado de última sincronización (público para la UI)
+  if (!secret) {
+    const { last, running } = await getCronStatus(JOB)
+    const lastSync =
+      last?.status === 'OK'
+        ? { completedAt: last.finishedAt?.toISOString() ?? null, ...(last.result as unknown as SyncResult) }
+        : null
     return NextResponse.json({
-      status: 'ok',
-      updated,
-      errors,
-      duration: `${duration}s`,
+      lastSync,
+      lastError: last?.status === 'ERROR' ? { at: last.finishedAt, error: last.error } : null,
+      running: running ? { since: running.startedAt } : null,
     })
-    } finally {
-      await colppyLogout(session).catch(() => {})
+  }
+
+  // Con secret → ejecutar sync
+  if (secret !== process.env.CRON_SECRET) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const startTime = Date.now()
+  try {
+    const outcome = await runCronJob(JOB, sincronizarSaldos)
+    if (outcome.skipped) {
+      return NextResponse.json(cronSkippedResponse(outcome.reason), { status: 409 })
     }
+    return NextResponse.json({ status: 'ok', ...outcome.result })
   } catch (error: any) {
     const duration = ((Date.now() - startTime) / 1000).toFixed(1)
     logger.error(`[CRON] Sync balances FAILED after ${duration}s:`, error.message)

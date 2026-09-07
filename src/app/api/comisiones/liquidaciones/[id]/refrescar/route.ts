@@ -4,6 +4,7 @@ import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { abrirYSincronizar } from '@/lib/comisiones/liquidacion'
+import { requireRole, ROLES } from '@/lib/authz'
 
 // POST /api/comisiones/liquidaciones/[id]/refrescar — re-sincroniza las
 // líneas con las facturas parciales del mes (altas nuevas, anuladas afuera).
@@ -16,6 +17,9 @@ export async function POST(
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
+
+    const forbidden = requireRole(session, ROLES.GESTION)
+    if (forbidden) return forbidden
 
     const { id } = await params
     const existente = await prisma.comisionLiquidacion.findUnique({ where: { id } })

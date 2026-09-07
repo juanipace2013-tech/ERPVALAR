@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { invalidateCustomerCache } from '@/lib/colppy/customer-cache'
 import { parseCivilDate } from '@/lib/date-helpers'
+import { requireRole, ROLES } from '@/lib/authz'
 
 /**
  * GET /api/quotes/[id]
@@ -415,6 +416,9 @@ export async function DELETE(
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
+
+    const forbidden = requireRole(session, ROLES.OPERATIVOS)
+    if (forbidden) return forbidden
 
     const { id } = await params
 

@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { exchangeRateSchema } from '@/lib/validations'
 import { z } from 'zod'
+import { requireRole, ROLES } from '@/lib/authz'
 
 /**
  * GET /api/tipo-cambio
@@ -86,6 +87,9 @@ export async function POST(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
+
+    const forbidden = requireRole(session, ROLES.FINANZAS)
+    if (forbidden) return forbidden
 
     const body = await request.json()
 

@@ -21,6 +21,7 @@ import {
   invalidateCustomerCache,
 } from '@/lib/colppy/customer-cache';
 import { callColppyAPI, fetchAllColppyPages } from '@/lib/colppy';
+import { parseLimit } from '@/lib/pagination';
 
 // ============================================================================
 // CONFIGURACIÓN
@@ -255,7 +256,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const search = (searchParams.get('search') || '').trim().toLowerCase();
-    const limit = parseInt(searchParams.get('limit') || '20');
+    const limit = parseLimit(searchParams.get('limit'), 20);
     const all = searchParams.get('all') === 'true';
     const id = searchParams.get('id') || '';
 

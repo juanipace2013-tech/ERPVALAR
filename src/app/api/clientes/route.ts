@@ -7,6 +7,7 @@ import { customerSchema } from '@/lib/validations'
 import { normalizeCuit, buildCuitWhereClause } from '@/lib/cuit-utils'
 import { z } from 'zod'
 import { logAudit } from '@/lib/audit'
+import { parsePage, parseLimit } from '@/lib/pagination'
 
 // GET /api/clientes - Listar clientes con filtros y paginación
 export async function GET(request: NextRequest) {
@@ -17,8 +18,8 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '50')
+    const page = parsePage(searchParams.get('page'))
+    const limit = parseLimit(searchParams.get('limit'), 50)
     const search = searchParams.get('search') || ''
     const status = searchParams.get('status') || ''
     const province = searchParams.get('province') || ''

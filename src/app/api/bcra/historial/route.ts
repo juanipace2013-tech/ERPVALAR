@@ -2,6 +2,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { parseLimit } from '@/lib/pagination'
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,7 +16,7 @@ export async function GET(request: NextRequest) {
     const userId = searchParams.get('userId')
     const dateFrom = searchParams.get('dateFrom')
     const dateTo = searchParams.get('dateTo')
-    const limit = parseInt(searchParams.get('limit') || '50')
+    const limit = parseLimit(searchParams.get('limit'), 50)
 
     const where: any = {}
     if (cuit) where.cuit = { contains: cuit.replace(/\D/g, '') }

@@ -2,6 +2,7 @@ import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger'
+import { requireRole, ROLES } from '@/lib/authz';
 
 interface RouteParams {
   params: Promise<{
@@ -55,6 +56,9 @@ export async function DELETE(
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
     }
+
+    const forbidden = requireRole(session, ROLES.GESTION);
+    if (forbidden) return forbidden;
 
     const { id } = await params;
 

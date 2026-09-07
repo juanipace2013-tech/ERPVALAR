@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { auth } from '@/auth'
 import { logger } from '@/lib/logger'
 import { abrirYSincronizar } from '@/lib/comisiones/liquidacion'
+import { requireRole, ROLES } from '@/lib/authz'
 
 const postSchema = z.object({
   vendedorId: z.string().min(1),
@@ -19,6 +20,9 @@ export async function POST(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
+
+    const forbidden = requireRole(session, ROLES.GESTION)
+    if (forbidden) return forbidden
 
     const parsed = postSchema.safeParse(await request.json())
     if (!parsed.success) {

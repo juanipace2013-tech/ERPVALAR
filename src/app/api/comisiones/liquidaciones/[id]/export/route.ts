@@ -11,6 +11,7 @@ import ExcelJS from 'exceljs'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { requireRole, ROLES } from '@/lib/authz'
 
 const MESES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -48,6 +49,9 @@ export async function GET(
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
+
+    const forbidden = requireRole(session, ROLES.GESTION)
+    if (forbidden) return forbidden
 
     const { id } = await params
     const liq = await prisma.comisionLiquidacion.findUnique({

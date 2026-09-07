@@ -6,6 +6,7 @@ import { logger } from '@/lib/logger'
 import { VENDEDOR_SELECCIONABLE } from '@/lib/vendedores'
 import { pipelineCerrado, resumenMes } from '@/lib/comisiones/liquidacion'
 import { COMISIONES_INICIO, getTipoCambioMes, mesHabilitado } from '@/lib/comisiones/calculo'
+import { requireRole, ROLES } from '@/lib/authz'
 
 // GET /api/comisiones/dashboard?vendedorId=&anio=&mes=
 // Resumen del vendedor: mes en curso (facturado, tramo, comisión provisoria),
@@ -16,6 +17,9 @@ export async function GET(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
+
+    const forbidden = requireRole(session, ROLES.GESTION)
+    if (forbidden) return forbidden
 
     const { searchParams } = new URL(request.url)
     const hoy = new Date()

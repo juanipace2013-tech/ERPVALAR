@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { prisma } from '@/lib/prisma'
+import { requireRole, ROLES } from '@/lib/authz'
 
 const invoiceNumberingSchema = z.object({
   description: z.string().min(1, 'La descripción es obligatoria'),
@@ -57,6 +58,9 @@ export async function POST(request: NextRequest) {
         { status: 401 }
       )
     }
+
+    const forbidden = requireRole(session, ROLES.GESTION)
+    if (forbidden) return forbidden
 
     const body = await request.json()
 

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { requireRole, ROLES } from '@/lib/authz'
 
 const caiConfigUpdateSchema = z.object({
   pointOfSale: z.number().int().positive().optional(),
@@ -23,6 +24,9 @@ export async function PUT(
     if (!session) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
+
+    const forbidden = requireRole(session, ROLES.GESTION)
+    if (forbidden) return forbidden
 
     const { id } = await params
     const body = await request.json()
@@ -68,6 +72,9 @@ export async function DELETE(
     if (!session) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
+
+    const forbidden = requireRole(session, ROLES.GESTION)
+    if (forbidden) return forbidden
 
     const { id } = await params
     await prisma.caiConfig.delete({ where: { id } })

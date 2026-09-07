@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { calcularReguladoraVapor } from '@/lib/calculoReguladoraVapor'
+import { parseLimit } from '@/lib/pagination'
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,7 +13,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const limit = parseInt(searchParams.get('limit') || '50')
+    const limit = parseLimit(searchParams.get('limit'), 50)
 
     const calculos = await prisma.calculoReguladoraVapor.findMany({
       select: {

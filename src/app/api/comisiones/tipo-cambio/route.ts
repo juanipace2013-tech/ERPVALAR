@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { requireRole, ROLES } from '@/lib/authz'
 
 // GET /api/comisiones/tipo-cambio?anio=2026 — TCs mensuales del año.
 export async function GET(request: NextRequest) {
@@ -12,6 +13,9 @@ export async function GET(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
+
+    const forbidden = requireRole(session, ROLES.GESTION)
+    if (forbidden) return forbidden
 
     const { searchParams } = new URL(request.url)
     const anio = Number(searchParams.get('anio')) || new Date().getFullYear()
@@ -40,6 +44,9 @@ export async function PUT(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
+
+    const forbidden = requireRole(session, ROLES.GESTION)
+    if (forbidden) return forbidden
 
     const parsed = putSchema.safeParse(await request.json())
     if (!parsed.success) {

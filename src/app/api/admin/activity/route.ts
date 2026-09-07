@@ -15,6 +15,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { requireRole, ROLES } from '@/lib/authz'
 
 const ALLOWED_EMAILS = ['stejedor@val-ar.com.ar', 'jpace@val-ar.com.ar']
 const ONLINE_WINDOW_MS = 5 * 60 * 1000
@@ -34,6 +35,9 @@ export async function GET(request: NextRequest) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
+
+    const forbidden = requireRole(session, ROLES.ADMIN)
+    if (forbidden) return forbidden
     if (!ALLOWED_EMAILS.includes(session.user.email || '')) {
       return NextResponse.json({ error: 'Acceso restringido' }, { status: 403 })
     }

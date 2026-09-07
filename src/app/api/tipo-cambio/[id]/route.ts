@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { exchangeRateSchema } from '@/lib/validations'
 import { z } from 'zod'
+import { requireRole, ROLES } from '@/lib/authz'
 
 /**
  * GET /api/tipo-cambio/[id]
@@ -56,6 +57,9 @@ export async function PUT(
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
+
+    const forbidden = requireRole(session, ROLES.FINANZAS)
+    if (forbidden) return forbidden
 
     const { id } = await params
     const body = await request.json()
@@ -151,6 +155,9 @@ export async function DELETE(
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
+
+    const forbidden = requireRole(session, ROLES.FINANZAS)
+    if (forbidden) return forbidden
 
     const { id } = await params
 

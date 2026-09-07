@@ -3,6 +3,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/prisma'
+import { requireRole, ROLES } from '@/lib/authz'
 
 export async function DELETE(
   request: NextRequest,
@@ -17,6 +18,9 @@ export async function DELETE(
         { status: 401 }
       )
     }
+
+    const forbidden = requireRole(session, ROLES.GESTION)
+    if (forbidden) return forbidden
 
     const { id } = await params
 

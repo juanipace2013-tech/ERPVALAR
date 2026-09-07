@@ -5,6 +5,7 @@ import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { recalcular } from '@/lib/comisiones/liquidacion'
+import { requireRole, ROLES } from '@/lib/authz'
 
 const patchSchema = z.object({
   tipoOperacion: z.enum(['BILLETE', 'DIVISA']),
@@ -21,6 +22,9 @@ export async function PATCH(
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
+
+    const forbidden = requireRole(session, ROLES.GESTION)
+    if (forbidden) return forbidden
 
     const { id } = await params
     const parsed = patchSchema.safeParse(await request.json())
@@ -69,6 +73,9 @@ export async function DELETE(
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
+
+    const forbidden = requireRole(session, ROLES.GESTION)
+    if (forbidden) return forbidden
 
     const { id } = await params
     const linea = await prisma.comisionLinea.findUnique({

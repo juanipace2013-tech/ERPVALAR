@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
+import { requireRole, ROLES } from '@/lib/authz'
 
 const VALID_STATUS = new Set([
   'NUEVO',
@@ -99,6 +100,9 @@ export async function DELETE(
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   }
+
+  const forbidden = requireRole(session, ROLES.OPERATIVOS)
+  if (forbidden) return forbidden
 
   const { id } = await params
   try {

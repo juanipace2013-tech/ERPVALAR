@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma'
 import { journalEntrySchema } from '@/lib/contabilidad/validations'
 import { z } from 'zod'
 import { JournalEntryStatus, Prisma } from '@prisma/client'
+import { parsePage, parseLimit } from '@/lib/pagination'
 
 // GET /api/contabilidad/asientos - Listar asientos contables
 export async function GET(request: NextRequest) {
@@ -19,8 +20,8 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status')
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '20')
+    const page = parsePage(searchParams.get('page'))
+    const limit = parseLimit(searchParams.get('limit'), 20)
 
     const where: Prisma.JournalEntryWhereInput = {}
 

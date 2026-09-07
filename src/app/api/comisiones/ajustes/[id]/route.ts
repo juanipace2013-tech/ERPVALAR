@@ -4,6 +4,7 @@ import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { recalcular } from '@/lib/comisiones/liquidacion'
+import { requireRole, ROLES } from '@/lib/authz'
 
 // DELETE /api/comisiones/ajustes/[id] — elimina un ajuste y recalcula.
 export async function DELETE(
@@ -15,6 +16,9 @@ export async function DELETE(
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
+
+    const forbidden = requireRole(session, ROLES.GESTION)
+    if (forbidden) return forbidden
 
     const { id } = await params
     const ajuste = await prisma.comisionAjuste.findUnique({

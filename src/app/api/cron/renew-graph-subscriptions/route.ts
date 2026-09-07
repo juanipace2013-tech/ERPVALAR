@@ -26,13 +26,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { renewMailSubscription, defaultMailSubscriptionExpiration } from '@/lib/inbox/graph-mail'
+import { runCronJob, getCronStatus, cronSkippedResponse, type CronJob } from '@/lib/cron-run'
+
+const JOB: CronJob = 'renew-graph-subscriptions'
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 /** Renovar cuando expira en menos de 48h (Graph permite hasta ~71h máximo). */
 const THRESHOLD_MS = 48 * 60 * 60 * 1000
 
-// ─── Estado en memoria (se pierde al reiniciar PM2 — solo para UI/monitoreo) ─
+// ─── Tipos del resultado (persistido en cron_runs) ───────────────────────────
 
 interface SubscriptionRunDetail {
   subscriptionId: string
@@ -52,8 +55,6 @@ interface LastRun {
   duration: string
   details: SubscriptionRunDetail[]
 }
-
-let lastRun: LastRun | null = null
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -81,7 +82,12 @@ export async function GET(req: NextRequest) {
 
   // Sin secret → devolver estado de última corrida (público para la UI)
   if (!secret) {
-    return NextResponse.json({ lastRun })
+    const { last, running } = await getCronStatus(JOB)
+    return NextResponse.json({
+      lastRun: last?.status === 'OK' ? (last.result as unknown as LastRun) : null,
+      lastError: last?.status === 'ERROR' ? { at: last.finishedAt, error: last.error } : null,
+      running: running ? { since: running.startedAt } : null,
+    })
   }
 
   if (secret !== process.env.CRON_SECRET) {
@@ -89,6 +95,21 @@ export async function GET(req: NextRequest) {
   }
 
   const force = req.nextUrl.searchParams.get('force') === '1'
+
+  try {
+    const outcome = await runCronJob(JOB, () => renovarSuscripciones(force))
+    if (outcome.skipped) {
+      return NextResponse.json(cronSkippedResponse(outcome.reason), { status: 409 })
+    }
+    return NextResponse.json({ status: 'ok', ...outcome.result, force })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logger.error('[CRON renew-graph] Error en la corrida', error)
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
+}
+
+async function renovarSuscripciones(force: boolean): Promise<LastRun> {
   const startTime = Date.now()
 
   // Snapshot de TODAS las subs para reportar totales correctamente
@@ -177,7 +198,7 @@ export async function GET(req: NextRequest) {
   const duration = ((Date.now() - startTime) / 1000).toFixed(1)
   const skipped = details.filter((d) => d.result === 'skipped').length
 
-  lastRun = {
+  const lastRun: LastRun = {
     completedAt: new Date().toISOString(),
     renewed,
     failed,
@@ -191,14 +212,5 @@ export async function GET(req: NextRequest) {
     `[CRON renew-graph] Completado: renewed=${renewed} failed=${failed} skipped=${skipped} total=${allSubs.length} duration=${duration}s${force ? ' (force=1)' : ''}`
   )
 
-  return NextResponse.json({
-    status: 'ok',
-    renewed,
-    failed,
-    skipped,
-    totalInDb: allSubs.length,
-    duration: `${duration}s`,
-    force,
-    details,
-  })
+  return lastRun
 }

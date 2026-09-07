@@ -5,6 +5,7 @@ import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { recalcular } from '@/lib/comisiones/liquidacion'
+import { requireRole, ROLES } from '@/lib/authz'
 
 // GET /api/comisiones/liquidaciones/[id] — detalle completo.
 export async function GET(
@@ -16,6 +17,9 @@ export async function GET(
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
+
+    const forbidden = requireRole(session, ROLES.GESTION)
+    if (forbidden) return forbidden
 
     const { id } = await params
     const liquidacion = await prisma.comisionLiquidacion.findUnique({
@@ -58,6 +62,9 @@ export async function PATCH(
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
+
+    const forbidden = requireRole(session, ROLES.GESTION)
+    if (forbidden) return forbidden
 
     const { id } = await params
     const parsed = patchSchema.safeParse(await request.json())

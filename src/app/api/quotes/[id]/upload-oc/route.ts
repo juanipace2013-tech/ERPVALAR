@@ -5,6 +5,7 @@ import { writeFile, mkdir, unlink } from 'fs/promises'
 import path from 'path'
 import { logger } from '@/lib/logger'
 import { parseCivilDate } from '@/lib/date-helpers'
+import { requireRole, ROLES } from '@/lib/authz'
 
 const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads', 'cotizaciones-oc')
 const MAX_SIZE = 10 * 1024 * 1024 // 10MB
@@ -193,6 +194,9 @@ export async function DELETE(
     if (!session?.user) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
+
+    const forbidden = requireRole(session, ROLES.OPERATIVOS)
+    if (forbidden) return forbidden
 
     const { id } = await params
 

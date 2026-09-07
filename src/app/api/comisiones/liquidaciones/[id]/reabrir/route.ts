@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { logger } from '@/lib/logger'
 import { reabrir } from '@/lib/comisiones/liquidacion'
+import { requireRole, ROLES } from '@/lib/authz'
 
 // POST /api/comisiones/liquidaciones/[id]/reabrir — vuelve la liquidación a
 // ABIERTA (las líneas se recalculan de nuevo con el tramo provisorio).
@@ -15,6 +16,9 @@ export async function POST(
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
+
+    const forbidden = requireRole(session, ROLES.GESTION)
+    if (forbidden) return forbidden
 
     const { id } = await params
     const liquidacion = await reabrir(id)

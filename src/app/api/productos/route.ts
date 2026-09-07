@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { productWithPricesSchema } from '@/lib/validations'
 import { z } from 'zod'
 import { logger } from '@/lib/logger'
+import { parsePage, parseLimit } from '@/lib/pagination'
 
 // GET /api/productos - Listar productos con filtros y paginación
 export async function GET(request: NextRequest) {
@@ -15,8 +16,8 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '20')
+    const page = parsePage(searchParams.get('page'))
+    const limit = parseLimit(searchParams.get('limit'), 20)
     const search = searchParams.get('search') || ''
     const status = searchParams.get('status') || ''
     const categoryId = searchParams.get('categoryId') || ''
@@ -65,7 +66,9 @@ export async function GET(request: NextRequest) {
     }
 
     if (belowMin) {
+      // Comparación entre columnas resuelta en la base (Prisma field reference)
       where.minStock = { gt: 0 }
+      where.stockQuantity = { lt: prisma.product.fields.minStock }
     }
 
     // Construir orderBy dinámico
@@ -95,30 +98,6 @@ export async function GET(request: NextRequest) {
         select: { id: true, name: true },
       },
     } as const
-
-    // belowMin requiere comparar stockQuantity < minStock (dos columnas),
-    // Prisma no soporta esto en where, así que traemos los de minStock > 0
-    // y filtramos en JS
-    if (belowMin) {
-      const allBelowMin = await prisma.product.findMany({
-        where,
-        orderBy: { [orderField]: orderDirection },
-        select: productSelect,
-      })
-      const filtered = allBelowMin.filter(p => p.stockQuantity < p.minStock)
-      const total = filtered.length
-      const paginated = filtered.slice(skip, skip + limit)
-
-      return NextResponse.json({
-        products: paginated,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
-      })
-    }
 
     // Obtener productos con paginación - select mínimo para rendimiento
     const [products, total] = await Promise.all([

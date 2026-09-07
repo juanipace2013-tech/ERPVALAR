@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getLocalDateString } from '@/lib/utils'
 import { logger } from '@/lib/logger'
+import { requireRole, ROLES } from '@/lib/authz'
 
 /**
  * GET /api/admin/audit
@@ -14,6 +15,9 @@ export async function GET(request: NextRequest) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
+
+    const forbidden = requireRole(session, ROLES.ADMIN)
+    if (forbidden) return forbidden
 
     const ALLOWED_EMAILS = ['stejedor@val-ar.com.ar', 'jpace@val-ar.com.ar']
     if (!ALLOWED_EMAILS.includes(session.user.email || '')) {

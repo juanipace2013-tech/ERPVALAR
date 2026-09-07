@@ -42,6 +42,7 @@ Reglas de contenido (estrictas):
 - Si la pregunta no se puede responder con certeza con esos datos, o pide algo comercial fuera de lo publicado (precio por cantidad, descuento, factura especial, envío a un lugar concreto, fabricación a medida, algo que no es este producto), marcá needs_review=true y redactá igual la mejor respuesta parcial posible, indicando en review_reason qué falta confirmar.
 - El precio y el stock vigentes son los de la publicación. Si el comprador pregunta precio, el precio es el publicado. Si pregunta stock y la publicación tiene stock, decí que hay disponibilidad.
 - Si hay variaciones (medidas/modelos), indicá que se elige la variante al comprar.
+- Si el comprador pide OTRA medida o modelo y figura en "Otras medidas del mismo modelo en el ERP": si esa medida tiene publicación en ML, decile que sí la tenemos y nombrá la publicación por su título (sin links) para que la busque; si tiene stock pero no publicación, decile que la trabajamos y que puede consultarnos por esa medida. Si no figura en la lista, no afirmes que existe.
 - Mercado Libre prohíbe en las respuestas: teléfonos, mails, direcciones web, links, redes sociales, o invitar a comprar/contactar fuera de la plataforma. NUNCA incluyas nada de eso.
 - Si el comprador pide factura A: sí emitimos factura A (somos responsables inscriptos); se elige al comprar.
 - Envíos: se hacen por Mercado Envíos según lo que marque la publicación; no prometas plazos concretos.
@@ -76,6 +77,15 @@ const answerTool: Anthropic.Messages.Tool = {
   },
 }
 
+/** Otro SKU de la misma familia (mismo modelo, otra medida) y dónde está publicado. */
+export interface FamilyVariantContext {
+  sku: string
+  name: string
+  stockQuantity: number
+  unit: string
+  mlTitle: string | null // título de la publicación activa en ML, si tiene
+}
+
 export interface ErpProductContext {
   sku: string
   name: string
@@ -83,6 +93,7 @@ export interface ErpProductContext {
   description: string | null
   stockQuantity: number
   unit: string
+  family?: FamilyVariantContext[]
 }
 
 export interface AnswerInput {
@@ -157,6 +168,14 @@ export async function generateAnswer(input: AnswerInput): Promise<AnswerResult> 
     if (product.brand) parts.push(`Marca: ${product.brand}`)
     parts.push(`Stock físico: ${product.stockQuantity} ${product.unit}`)
     if (product.description) parts.push(`Descripción: ${product.description.slice(0, 1500)}`)
+    if (product.family?.length) {
+      parts.push('')
+      parts.push('## Otras medidas del mismo modelo en el ERP')
+      for (const v of product.family) {
+        const pub = v.mlTitle ? `publicada en ML como "${v.mlTitle}"` : 'sin publicación en ML'
+        parts.push(`  - ${v.sku}: ${v.name} — stock ${v.stockQuantity} ${v.unit} — ${pub}`)
+      }
+    }
   } else {
     parts.push('(no se encontró el producto en el ERP; usar solo los datos de la publicación)')
   }

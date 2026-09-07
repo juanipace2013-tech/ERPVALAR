@@ -31,7 +31,12 @@ import {
   type MlItem,
   type MlQuestion,
 } from './client'
-import { generateAnswer, ML_ANSWER_MAX_CHARS, type ErpProductContext } from './answerAi'
+import {
+  generateAnswer,
+  ML_ANSWER_MAX_CHARS,
+  type ErpProductContext,
+  type FamilyVariantContext,
+} from './answerAi'
 
 export function parseQuestionId(resource: string): string | null {
   const m = resource.match(/\/questions\/(\d+)/)
@@ -81,6 +86,40 @@ async function findErpProduct(mlItemId: string, sku: string | null) {
 }
 
 /**
+ * Otras medidas del mismo modelo: SKUs con el mismo prefijo antes del espacio
+ * ("2415 06" -> familia "2415"), con su publicación activa en ML si la tienen.
+ * Le permite a la IA responder "¿lo tienen en DN40?" con la publicación
+ * correcta. SKUs sin espacio no tienen familia.
+ */
+async function findFamilyVariants(sku: string, productId: string): Promise<FamilyVariantContext[]> {
+  const family = sku.split(' ')[0]
+  if (!family || family === sku.trim()) return []
+  const rows = await prisma.product.findMany({
+    where: { sku: { startsWith: family + ' ' }, id: { not: productId } },
+    select: {
+      sku: true,
+      name: true,
+      stockQuantity: true,
+      unit: true,
+      mlItemLinks: {
+        where: { mlStatus: 'active' },
+        select: { title: true },
+        take: 1,
+      },
+    },
+    orderBy: { sku: 'asc' },
+    take: 40,
+  })
+  return rows.map((r) => ({
+    sku: r.sku,
+    name: r.name,
+    stockQuantity: r.stockQuantity,
+    unit: r.unit,
+    mlTitle: r.mlItemLinks[0]?.title ?? null,
+  }))
+}
+
+/**
  * Genera (o regenera) el borrador para una pregunta ya persistida y lo guarda.
  * Devuelve el registro actualizado. No publica.
  */
@@ -102,6 +141,7 @@ export async function draftAnswerFor(row: MlQuestionRow): Promise<MlQuestionRow>
         description: product.description,
         stockQuantity: product.stockQuantity,
         unit: product.unit,
+        family: await findFamilyVariants(product.sku, product.id),
       }
     : null
 

@@ -49,20 +49,34 @@ function resolveItemSku(item: MlItem): string | null {
   return v?.seller_custom_field ?? null
 }
 
-async function findErpProduct(sku: string | null) {
+const PRODUCT_SELECT = {
+  id: true,
+  sku: true,
+  name: true,
+  brand: true,
+  description: true,
+  stockQuantity: true,
+  unit: true,
+} as const
+
+/**
+ * Producto del ERP para una publicación: primero la vinculación de
+ * Publicaciones ML (MlItemLink, que cubre los matches por title-code y los
+ * manuales — la mayoría de las publicaciones no tienen seller_custom_field),
+ * y si no está vinculada, por SKU de la publicación.
+ */
+async function findErpProduct(mlItemId: string, sku: string | null) {
+  const link = await prisma.mlItemLink.findUnique({
+    where: { mlItemId },
+    select: { product: { select: PRODUCT_SELECT } },
+  })
+  if (link?.product) return link.product
+
   if (!sku) return null
   const clean = sku.trim()
   return prisma.product.findFirst({
     where: { OR: [{ sku: clean }, { sku: { equals: clean, mode: 'insensitive' } }] },
-    select: {
-      id: true,
-      sku: true,
-      name: true,
-      brand: true,
-      description: true,
-      stockQuantity: true,
-      unit: true,
-    },
+    select: PRODUCT_SELECT,
   })
 }
 
@@ -79,7 +93,7 @@ export async function draftAnswerFor(row: MlQuestionRow): Promise<MlQuestionRow>
   ])
 
   const sku = resolveItemSku(item)
-  const product = await findErpProduct(sku)
+  const product = await findErpProduct(row.mlItemId, sku)
   const productCtx: ErpProductContext | null = product
     ? {
         sku: product.sku,

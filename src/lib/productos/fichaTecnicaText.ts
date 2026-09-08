@@ -41,7 +41,8 @@ function normalizeText(raw: string): string {
  * capa de texto, o si pdf.js no lo puede abrir.
  */
 export async function extractPdfText(data: Buffer | Uint8Array): Promise<string | null> {
-  const bytes = data instanceof Uint8Array ? data : new Uint8Array(data)
+  // pdf.js rechaza Buffer (aunque sea subclase de Uint8Array): copia plana.
+  const bytes = new Uint8Array(data)
   const { text } = await extractText(bytes, { mergePages: true })
   const clean = normalizeText(text ?? '')
   if (clean.length < 20) return null

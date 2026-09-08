@@ -5,6 +5,7 @@ import { writeFile, mkdir, unlink } from 'fs/promises'
 import path from 'path'
 import { logger } from '@/lib/logger'
 import { requireRole, ROLES } from '@/lib/authz'
+import { extractPdfText } from '@/lib/productos/fichaTecnicaText'
 
 const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads', 'fichas-tecnicas')
 const MAX_SIZE = 3 * 1024 * 1024 // 3MB (límite por archivo del email)
@@ -64,7 +65,23 @@ export async function POST(
     const filePath = path.join(UPLOAD_DIR, fileName)
 
     const bytes = await file.arrayBuffer()
-    await writeFile(filePath, Buffer.from(bytes))
+    const buffer = Buffer.from(bytes)
+    await writeFile(filePath, buffer)
+
+    // Texto para la IA de preguntas de ML. Si falla, la ficha se sube igual y
+    // el texto se extrae después (al vuelo o con el script de backfill).
+    let technicalSheetText: string | null = null
+    let technicalSheetTextAt: Date | null = null
+    if (file.type === 'application/pdf') {
+      try {
+        technicalSheetText = await extractPdfText(buffer)
+        technicalSheetTextAt = new Date()
+      } catch (err) {
+        logger.error(`[Ficha técnica] No se pudo extraer texto de ${fileName}`, err)
+      }
+    } else {
+      technicalSheetTextAt = new Date()
+    }
 
     // Borrar la ficha anterior si había
     if (product.technicalSheetUrl) {
@@ -80,6 +97,8 @@ export async function POST(
       data: {
         technicalSheetUrl: `/uploads/fichas-tecnicas/${fileName}`,
         technicalSheetName: file.name,
+        technicalSheetText,
+        technicalSheetTextAt,
       },
       select: { technicalSheetUrl: true, technicalSheetName: true },
     })
@@ -132,7 +151,12 @@ export async function DELETE(
 
     await prisma.product.update({
       where: { id },
-      data: { technicalSheetUrl: null, technicalSheetName: null },
+      data: {
+        technicalSheetUrl: null,
+        technicalSheetName: null,
+        technicalSheetText: null,
+        technicalSheetTextAt: null,
+      },
     })
 
     return NextResponse.json({ success: true })

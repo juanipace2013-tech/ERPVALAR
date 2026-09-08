@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ['fs', 'path'],
+  serverExternalPackages: ['fs', 'path', 'unpdf'],
   async headers() {
     return [
       {

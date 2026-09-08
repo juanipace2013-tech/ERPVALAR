@@ -272,6 +272,10 @@ async function main() {
             data: {
               technicalSheetUrl: `/uploads/fichas-tecnicas/${destName}`,
               technicalSheetName: chosen.fileName,
+              // Ficha nueva: el texto se re-extrae (scripts/extraer-texto-fichas-tecnicas.ts
+              // o al vuelo en la próxima pregunta de ML).
+              technicalSheetText: null,
+              technicalSheetTextAt: null,
             },
           })
         })

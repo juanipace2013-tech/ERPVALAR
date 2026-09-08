@@ -5,8 +5,9 @@
  *   1. Extraer el questionId del resource ("/questions/123") y traer la pregunta.
  *   2. Gatear: solo status UNANSWERED.
  *   3. Idempotencia por mlQuestionId (UNIQUE en MlQuestion).
- *   4. Traer ítem + descripción + respuestas previas del ítem; mapear el
- *      seller_custom_field al Product del ERP por SKU.
+ *   4. Traer ítem + descripción + respuestas previas del ítem; resolver el
+ *      Product del ERP (vinculación de Publicaciones ML o SKU) y el texto de
+ *      su ficha técnica (fuente principal para lo técnico).
  *   5. Generar borrador con Claude.
  *   6. Según ML_QUESTIONS_MODE:
  *        REVIEW (default): queda PENDING_REVIEW.
@@ -37,6 +38,7 @@ import {
   type ErpProductContext,
   type FamilyVariantContext,
 } from './answerAi'
+import { ensureTechnicalSheetText } from '@/lib/productos/fichaTecnicaText'
 
 export function parseQuestionId(resource: string): string | null {
   const m = resource.match(/\/questions\/(\d+)/)
@@ -62,6 +64,9 @@ const PRODUCT_SELECT = {
   description: true,
   stockQuantity: true,
   unit: true,
+  technicalSheetUrl: true,
+  technicalSheetText: true,
+  technicalSheetTextAt: true,
 } as const
 
 /**
@@ -141,6 +146,10 @@ export async function draftAnswerFor(row: MlQuestionRow): Promise<MlQuestionRow>
         description: product.description,
         stockQuantity: product.stockQuantity,
         unit: product.unit,
+        // Fuente principal de datos técnicos. Si la ficha todavía no tiene el
+        // texto extraído (cargada antes de este cambio), se extrae acá y queda
+        // guardada para las próximas preguntas.
+        technicalSheetText: await ensureTechnicalSheetText(product),
         family: await findFamilyVariants(product.sku, product.id),
       }
     : null

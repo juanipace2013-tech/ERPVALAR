@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { SupplierCombobox } from '@/components/productos/SupplierCombobox'
 import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, FileText, Loader2, Package, Pencil, Save, Trash2, Upload, X } from 'lucide-react'
 import { toast } from 'sonner'
@@ -545,14 +546,11 @@ export default function ProductoDetallePage() {
               <div className="space-y-2">
                 <Label>Proveedor</Label>
                 {editing ? (
-                  <Select value={formData.supplierId || undefined} onValueChange={(v) => handleChange('supplierId', v)}>
-                    <SelectTrigger><SelectValue placeholder="Seleccionar proveedor" /></SelectTrigger>
-                    <SelectContent>
-                      {suppliers.map((sup) => (
-                        <SelectItem key={sup.id} value={sup.id}>{sup.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SupplierCombobox
+                    suppliers={suppliers}
+                    value={formData.supplierId}
+                    onChange={(v) => handleChange('supplierId', v)}
+                  />
                 ) : (
                   <p className="text-sm px-3 py-2">{product.supplier?.name || <span className="text-gray-400">-</span>}</p>
                 )}

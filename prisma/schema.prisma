@@ -2983,6 +2983,11 @@ enum MlQuestionStatus {
   CLOSED // ML la cerró (borrada por el comprador / ítem pausado) antes de responder
 }
 
+enum MlShippingAlertStatus {
+  PENDING // cartel rojo activo en el ERP hasta que alguien la resuelva
+  RESOLVED // venta anulada (o gestionada por fuera) — deja de mostrarse
+}
+
 // Credenciales OAuth de la cuenta de VAL ARG en ML. Una sola fila.
 // El refresh_token de ML es de un solo uso: cada refresh devuelve uno nuevo
 // que hay que persistir. Ver getValidAccessToken en client.ts.
@@ -3126,6 +3131,29 @@ model MlItemLink {
   @@index([status])
   @@index([productId])
   @@map("ml_item_links")
+}
+
+// Alerta de venta con envío a una provincia bloqueada (no despachamos a
+// Misiones: la venta se anula). UNIQUE en orderId = idempotencia (ML notifica
+// la misma orden varias veces). Mientras está PENDING pinta un cartel rojo en
+// el layout del ERP y ya se avisó por mail; se resuelve a mano desde el cartel.
+model MlShippingAlert {
+  id           String                @id @default(cuid())
+  orderId      String                @unique
+  packId       String
+  shipmentId   String?
+  stateId      String // id ISO de ML, ej "AR-N"
+  stateName    String // "Misiones"
+  city         String?
+  buyerName    String?
+  itemsSummary String?               @db.Text // "1x Válvula ... | 2x ..."
+  status       MlShippingAlertStatus @default(PENDING)
+  emailSentAt  DateTime?
+  resolvedAt   DateTime?
+  createdAt    DateTime              @default(now())
+
+  @@index([status])
+  @@map("ml_shipping_alerts")
 }
 
 // ============================================================================

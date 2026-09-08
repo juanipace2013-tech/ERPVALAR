@@ -216,6 +216,18 @@ export interface MlOrder {
   pack_id?: number | null
   order_items: MlOrderItem[]
   buyer?: { id?: number; nickname?: string; first_name?: string; last_name?: string }
+  shipping?: { id?: number | null } // null/ausente = retiro en persona / a convenir
+}
+
+export interface MlShipment {
+  id?: number
+  status?: string
+  receiver_address?: {
+    address_line?: string
+    zip_code?: string
+    city?: { id?: string; name?: string }
+    state?: { id?: string; name?: string } // ej { id: "AR-N", name: "Misiones" }
+  }
 }
 
 export interface MlActionGuideCap {
@@ -262,6 +274,11 @@ export interface MlPostOptionResponse {
 
 export function getOrder(orderId: string): Promise<MlOrder> {
   return mlFetch<MlOrder>(`/orders/${orderId}`)
+}
+
+/** Envío de una orden; receiver_address trae la provincia de destino. */
+export function getShipment(shipmentId: string | number): Promise<MlShipment> {
+  return mlFetch<MlShipment>(`/shipments/${shipmentId}`)
 }
 
 export async function getActionGuideCaps(packId: string): Promise<MlActionGuideCap[]> {

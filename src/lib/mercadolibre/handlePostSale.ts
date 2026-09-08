@@ -30,6 +30,7 @@ import {
   type MlOrder,
   type MlPostOptionResponse,
 } from './client'
+import { checkBlockedShipping } from './shippingAlerts'
 
 const OTHER_OPTION_ID = 'OTHER'
 const REQUEST_VARIANTS_OPTION_ID = 'REQUEST_VARIANTS'
@@ -315,6 +316,12 @@ export async function handlePostSale(notificationId: string): Promise<void> {
 
   // 3. packId
   const packId = resolvePackId(order)
+
+  // 3.b Alerta de provincia bloqueada (Misiones). Va ANTES del gating de
+  // reglas y de la idempotencia de mensajería porque aplica a TODAS las
+  // ventas pagas, no solo a las que tienen mensaje post-venta. Tiene su
+  // propia idempotencia (UNIQUE en orderId) y nunca lanza.
+  await checkBlockedShipping(order, packId)
 
   // 4. Idempotencia
   const existing = await prisma.mlPostSaleMessage.findUnique({ where: { packId } })

@@ -550,6 +550,7 @@ export default function ProductoDetallePage() {
                     suppliers={suppliers}
                     value={formData.supplierId}
                     onChange={(v) => handleChange('supplierId', v)}
+                    selected={product.supplier}
                   />
                 ) : (
                   <p className="text-sm px-3 py-2">{product.supplier?.name || <span className="text-gray-400">-</span>}</p>

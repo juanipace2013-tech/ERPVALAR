@@ -70,7 +70,7 @@ export async function GET(
     const pdfData = {
       quoteNumber: quote.quoteNumber,
       date: quote.date,
-      validUntil: quote.validUntil || new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
+      validUntil: quote.validUntil || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       customer: {
         name: quote.customer.name,
         legalName: quote.customer.businessName || undefined,
@@ -145,7 +145,7 @@ export async function GET(
       paymentTerms: quote.terms || 'Cuenta corriente a 30 días fecha factura',
       validityDays: quote.validUntil
         ? Math.ceil((quote.validUntil.getTime() - quote.date.getTime()) / (1000 * 60 * 60 * 24))
-        : 5,
+        : 30,
       purchaseOrderNumber: quote.purchaseOrderNumber || undefined,
       purchaseOrderDate: quote.purchaseOrderDate || undefined,
       tenderNumber: quote.tenderNumber || undefined,

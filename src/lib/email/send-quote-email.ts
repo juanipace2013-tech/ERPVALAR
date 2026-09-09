@@ -179,7 +179,7 @@ export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
       paymentTerms: quote.terms || 'Cuenta corriente a 30 días fecha factura',
       validityDays: quote.validUntil
         ? Math.ceil((quote.validUntil.getTime() - quote.date.getTime()) / (1000 * 60 * 60 * 24))
-        : 5,
+        : 30,
       purchaseOrderNumber: quote.purchaseOrderNumber || undefined,
       purchaseOrderDate: quote.purchaseOrderDate || undefined,
       tenderNumber: quote.tenderNumber || undefined,

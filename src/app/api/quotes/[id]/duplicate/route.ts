@@ -101,9 +101,9 @@ export async function POST(
       }
     }
 
-    // Vigencia: hoy + 5 días, igual que una cotización nueva
+    // Vigencia: hoy + 30 días, igual que una cotización nueva
     const newValidUntil = new Date();
-    newValidUntil.setDate(newValidUntil.getDate() + 5);
+    newValidUntil.setDate(newValidUntil.getDate() + 30);
 
     // Tipo de cambio actual: primero el vigente en la DB, sino el del BCRA.
     // Si ambos fallan, se mantiene el de la cotización original.

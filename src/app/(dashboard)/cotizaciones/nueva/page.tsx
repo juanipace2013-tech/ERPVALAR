@@ -55,10 +55,10 @@ export default function NuevaCotizacionPage() {
   const [users, setUsers] = useState<{ id: string; name: string }[]>([])
   const [customerTCType, setCustomerTCType] = useState<string | null>(null)
 
-  // Calcular fecha de vigencia: hoy + 5 días
+  // Calcular fecha de vigencia: hoy + 30 días
   const getDefaultValidUntil = () => {
     const date = new Date()
-    date.setDate(date.getDate() + 5)
+    date.setDate(date.getDate() + 30)
     return getLocalDateString(date)
   }
 
@@ -152,7 +152,7 @@ export default function NuevaCotizacionPage() {
       const condicionTexto = customer.paymentTerms || 'Contado'
       setFormData(prev => ({
         ...prev,
-        terms: `Condición de pago: ${condicionTexto}. Precios válidos por 5 días corridos desde la fecha de emisión.`,
+        terms: `Condición de pago: ${condicionTexto}. Precios válidos por 30 días corridos desde la fecha de emisión.`,
       }))
 
       // Pre-cargar vendedor asignado y TC del cliente
@@ -369,7 +369,7 @@ export default function NuevaCotizacionPage() {
                     }
                   />
                   <p className="text-xs text-muted-foreground">
-                    Por defecto 5 días. Modificable según acuerdo con el cliente.
+                    Por defecto 30 días. Modificable según acuerdo con el cliente.
                   </p>
                 </div>
 

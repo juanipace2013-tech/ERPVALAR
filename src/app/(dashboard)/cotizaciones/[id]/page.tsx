@@ -47,6 +47,7 @@ import { useSession } from 'next-auth/react'
 import { formatNumber, getLocalDateString } from '@/lib/utils'
 import { useColppyStock, refreshInventoryCache } from '@/hooks/useColppyStock'
 import { StockBadge, StockWarning } from '@/components/StockBadge'
+import { FamiqStock } from '@/components/productos/FamiqStock'
 import { getConjuntosGenebre, type ConjuntoOpcion, type ConjuntoTipo } from '@/lib/genebre-conjuntos'
 import { getBobinasElectrovalvula, type BobinaKit, ELECTROVALVULAS_NAMUR, type NamurKit } from '@/lib/genebre-electrovalvulas'
 
@@ -2029,7 +2030,7 @@ export default function QuoteDetailPage() {
                         <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium line-clamp-2">{selectedProduct.name}</p>
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                               <span className="font-mono">SKU: {selectedProduct.sku}</span>
                               <StockBadge
                                 sku={selectedProduct.sku}
@@ -2038,6 +2039,9 @@ export default function QuoteDetailPage() {
                                 loading={stockLoading}
                                 size="sm"
                               />
+                              {selectedProduct.brand?.toUpperCase() === 'FMQ' && (
+                                <FamiqStock sku={selectedProduct.sku} />
+                              )}
                             </div>
                           </div>
                           <span className="text-sm font-mono font-semibold shrink-0 ml-3">USD {formatNumber(selectedProduct.listPriceUSD || 0)}</span>
@@ -2560,7 +2564,7 @@ export default function QuoteDetailPage() {
                                   </span>
                                 )}
                                 {mainItem.product && (
-                                  <div className="mt-1">
+                                  <div className="mt-1 flex flex-wrap items-center gap-2">
                                     <StockBadge
                                       sku={mainItem.product.sku}
                                       stock={quoteStockData[mainItem.product.sku]?.stock}
@@ -2569,6 +2573,9 @@ export default function QuoteDetailPage() {
                                       showQuantity={true}
                                       size="sm"
                                     />
+                                    {mainItem.product.brand?.toUpperCase() === 'FMQ' && (
+                                      <FamiqStock sku={mainItem.product.sku} />
+                                    )}
                                   </div>
                                 )}
                               </div>

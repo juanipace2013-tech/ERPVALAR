@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { SupplierCombobox } from '@/components/productos/SupplierCombobox'
+import { FamiqStock } from '@/components/productos/FamiqStock'
 import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, FileText, Loader2, Package, Pencil, Save, Trash2, Upload, X } from 'lucide-react'
 import { toast } from 'sonner'
@@ -563,7 +564,10 @@ export default function ProductoDetallePage() {
           <Card>
             <CardHeader>
               <CardTitle>Inventario</CardTitle>
-              <CardDescription>Control de stock y unidades</CardDescription>
+              <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                Control de stock y unidades
+                {product.brand?.toUpperCase() === 'FMQ' && <FamiqStock sku={product.sku} />}
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

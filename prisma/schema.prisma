@@ -834,8 +834,8 @@ model Product {
 
   // Ficha técnica del producto (PDF/imagen en public/uploads/fichas-tecnicas).
   // Se adjunta automáticamente al enviar cotizaciones por email.
-  technicalSheetUrl  String?
-  technicalSheetName String? // Nombre original del archivo subido
+  technicalSheetUrl    String?
+  technicalSheetName   String? // Nombre original del archivo subido
   // Texto extraído del PDF de la ficha: es la fuente principal de datos técnicos
   // para la IA que responde preguntas de ML. Null si la ficha es imagen o el
   // PDF no tiene capa de texto; technicalSheetTextAt marca que ya se intentó.
@@ -863,6 +863,7 @@ model Product {
 
   mlQuestions MlQuestion[]
   mlItemLinks MlItemLink[]
+  famiqLink   FamiqLink?
 
   @@index([sku])
   @@index([name])
@@ -1485,13 +1486,13 @@ model Invoice {
   cbteNumero        Int? // Número dentro del PV
   docTipo           Int? // 80 CUIT, 96 DNI, 99 CF
   docNro            String?
-  qrUrl             String? @db.Text // URL del QR (RG 4892)
-  arcaObservaciones String? @db.Text // Observaciones de ARCA al autorizar (si las hubo)
+  qrUrl             String?   @db.Text // URL del QR (RG 4892)
+  arcaObservaciones String?   @db.Text // Observaciones de ARCA al autorizar (si las hubo)
   fceVtoPago        DateTime? // FCE MiPyME (cbteTipo 201/206): fecha de vto de pago informada a ARCA
   // Registro en Colppy de una factura emitida por el ERP (CC/stock/asiento):
   // 'OK' | 'PENDIENTE' | 'ERROR'. null para facturas emitidas por Colppy.
   colppySyncStatus  String?
-  colppySyncError   String? @db.Text
+  colppySyncError   String?   @db.Text
   colppyPayload     Json? // Payload de alta_facturaventa para reintentar
   // NC/ND emitida por el ERP: factura a la que se asocia
   relatedInvoiceId  String?
@@ -3081,28 +3082,28 @@ model MlPostSaleMessage {
 // idempotencia. El borrador lo genera Claude con contexto del ítem + producto
 // del ERP; en modo REVIEW queda PENDING_REVIEW hasta que alguien lo aprueba.
 model MlQuestion {
-  id            String           @id @default(cuid())
-  mlQuestionId  BigInt           @unique
-  mlItemId      String // "MLA123..."
-  itemTitle     String?
-  itemSku       String? // seller_sku / seller_custom_field de la publicación
-  productId     String?
-  product       Product?         @relation(fields: [productId], references: [id])
-  buyerId       BigInt?
-  questionText  String           @db.Text
-  askedAt       DateTime? // date_created en ML
-  status        MlQuestionStatus @default(PENDING_REVIEW)
-  draftAnswer   String?          @db.Text // propuesta de la IA (editable)
-  answerText    String?          @db.Text // lo que efectivamente se publicó
-  answeredAt    DateTime?
-  answeredById  String?
-  needsReview   Boolean          @default(false) // la IA pidió revisión humana
-  reviewReason  String?
-  errorDetail   String?
-  aiModel       String?
-  aiCostUsd     Decimal?         @db.Decimal(10, 6)
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  id           String           @id @default(cuid())
+  mlQuestionId BigInt           @unique
+  mlItemId     String // "MLA123..."
+  itemTitle    String?
+  itemSku      String? // seller_sku / seller_custom_field de la publicación
+  productId    String?
+  product      Product?         @relation(fields: [productId], references: [id])
+  buyerId      BigInt?
+  questionText String           @db.Text
+  askedAt      DateTime? // date_created en ML
+  status       MlQuestionStatus @default(PENDING_REVIEW)
+  draftAnswer  String?          @db.Text // propuesta de la IA (editable)
+  answerText   String?          @db.Text // lo que efectivamente se publicó
+  answeredAt   DateTime?
+  answeredById String?
+  needsReview  Boolean          @default(false) // la IA pidió revisión humana
+  reviewReason String?
+  errorDetail  String?
+  aiModel      String?
+  aiCostUsd    Decimal?         @db.Decimal(10, 6)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
 
   @@index([status])
   @@index([mlItemId])
@@ -3434,20 +3435,20 @@ enum AusenciaTipo {
 }
 
 model Empleado {
-  id              String  @id @default(cuid())
-  nombre          String  @unique
-  activo          Boolean @default(true)
-  orden           Int     @default(0)
+  id              String    @id @default(cuid())
+  nombre          String    @unique
+  activo          Boolean   @default(true)
+  orden           Int       @default(0)
   // Días de vacaciones pendientes (LEGACY: la planilla manual; hoy el saldo
   // se calcula solo — ver ajusteSaldo)
   saldoVacaciones Int?
   // Ajuste del saldo calculado (arrastre entrante al 1/1/2025 + correcciones
   // manuales). saldo = ajusteSaldo + Σ corresponden(LCT) − Σ V tomadas, desde 2025.
-  ajusteSaldo     Int      @default(0)
+  ajusteSaldo     Int       @default(0)
   // Fecha de ingreso (del recibo de sueldo) → días de vacaciones por LCT
   fechaIngreso    DateTime? @db.Date
   // Socios: vacaciones sin límite (no se les computa el corresponde LCT)
-  esSocio         Boolean  @default(false)
+  esSocio         Boolean   @default(false)
 
   ausencias Ausencia[]
 
@@ -3515,4 +3516,24 @@ model CronRun {
   @@index([job, startedAt(sort: Desc)])
   @@index([job, status])
   @@map("cron_runs")
+}
+
+// Mapeo producto FAMIQ -> ID de su web (famiq.com.ar), para consultar stock en
+// vivo por sucursal y precio de lista desde la API pública del sitio
+// (GET /producto/{webId}/data). Se carga con scripts/cargar-famiq-links.ts a
+// partir del crawl del sitemap; codigo = SKU del producto en el ERP.
+model FamiqLink {
+  id               String    @id @default(cuid())
+  codigo           String    @unique // código FAMIQ = Product.sku
+  webId            Int
+  nombre           String?
+  fichaUrl         String?
+  productId        String?   @unique
+  product          Product?  @relation(fields: [productId], references: [id])
+  precioListaWeb   Decimal?  @db.Decimal(12, 2) // último precio de lista visto en la web (USD)
+  precioListaWebAt DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@map("famiq_links")
 }

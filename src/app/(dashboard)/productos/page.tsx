@@ -14,6 +14,13 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Package, Plus, Search, AlertTriangle, CheckCircle2, Loader2, ChevronUp, ChevronDown, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber } from '@/lib/utils'
@@ -57,6 +64,8 @@ export default function ProductosPage() {
   const [totalProducts, setTotalProducts] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [letterFilter, setLetterFilter] = useState<string | null>(null)
+  const [brandFilter, setBrandFilter] = useState<string | null>(null)
+  const [brands, setBrands] = useState<string[]>([])
   const [orderBy, setOrderBy] = useState<string>('sku')
   const [order, setOrder] = useState<'asc' | 'desc'>('asc')
   const [refreshingStock, setRefreshingStock] = useState(false)
@@ -72,7 +81,15 @@ export default function ProductosPage() {
 
   useEffect(() => {
     fetchProducts()
-  }, [page, debouncedSearch, letterFilter, orderBy, order])
+  }, [page, debouncedSearch, letterFilter, brandFilter, orderBy, order])
+
+  // Marcas para el filtro (una sola vez)
+  useEffect(() => {
+    fetch('/api/productos/marcas')
+      .then((r) => (r.ok ? r.json() : { brands: [] }))
+      .then((d) => setBrands(d.brands || []))
+      .catch(() => {})
+  }, [])
 
   const fetchProducts = async () => {
     // Cancelar la búsqueda anterior si sigue en vuelo (evita respuestas fuera de orden)
@@ -97,6 +114,10 @@ export default function ProductosPage() {
 
       if (letterFilter) {
         params.append('letter', letterFilter)
+      }
+
+      if (brandFilter) {
+        params.append('brand', brandFilter)
       }
 
       const response = await fetch(`/api/productos?${params.toString()}`, {
@@ -369,17 +390,36 @@ export default function ProductosPage() {
             </div>
           </div>
 
-          {/* Búsqueda */}
-          <div className="mb-4">
-            <div className="relative">
+          {/* Búsqueda + filtro por marca */}
+          <div className="mb-4 flex gap-2">
+            <div className="relative flex-1">
               <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar por nombre o SKU..."
+                placeholder="Buscar por nombre, SKU o marca..."
                 value={search}
                 onChange={(e) => handleSearchChange(e.target.value)}
                 className="pl-10"
               />
             </div>
+            <Select
+              value={brandFilter ?? 'ALL'}
+              onValueChange={(v) => {
+                setBrandFilter(v === 'ALL' ? null : v)
+                setPage(1)
+              }}
+            >
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Marca" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Todas las marcas</SelectItem>
+                {brands.map((b) => (
+                  <SelectItem key={b} value={b}>
+                    {b}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Contador de resultados */}
@@ -397,9 +437,9 @@ export default function ProductosPage() {
             <div className="flex flex-col items-center justify-center py-8 text-center">
               <Package className="h-12 w-12 text-muted-foreground mb-4" />
               <p className="text-muted-foreground">
-                {search ? 'No se encontraron productos' : 'No hay productos registrados'}
+                {search || brandFilter ? 'No se encontraron productos' : 'No hay productos registrados'}
               </p>
-              {!search && (
+              {!search && !brandFilter && (
                 <Link href="/productos/nuevo">
                   <Button className="mt-4" variant="outline">
                     <Plus className="mr-2 h-4 w-4" />

@@ -7,6 +7,10 @@ import { z } from 'zod'
 import { logger } from '@/lib/logger'
 import { parsePage, parseLimit } from '@/lib/pagination'
 
+const BRAND_SEARCH_ALIASES: Record<string, string> = {
+  famiq: 'FMQ',
+}
+
 // GET /api/productos - Listar productos con filtros y paginación
 export async function GET(request: NextRequest) {
   try {
@@ -24,6 +28,7 @@ export async function GET(request: NextRequest) {
     const supplierId = searchParams.get('supplierId') || ''
     const type = searchParams.get('type') || '' // Nuevo filtro por tipo
     const letter = searchParams.get('letter') || '' // Filtro alfabético
+    const brand = searchParams.get('brand') || '' // Filtro por marca exacta
     const belowMin = searchParams.get('belowMin') === 'true'
     const orderBy = searchParams.get('orderBy') || 'sku' // Campo de ordenamiento
     const order = searchParams.get('order') || 'asc' // Dirección (asc/desc)
@@ -34,11 +39,15 @@ export async function GET(request: NextRequest) {
     const where: Record<string, unknown> = {}
 
     if (search) {
-      where.OR = [
+      const or: Record<string, unknown>[] = [
         { sku: { contains: search, mode: 'insensitive' } },
         { name: { contains: search, mode: 'insensitive' } },
         { brand: { contains: search, mode: 'insensitive' } },
       ]
+      // Nombres de proveedor que la gente tipea pero la marca está abreviada
+      const alias = BRAND_SEARCH_ALIASES[search.trim().toLowerCase()]
+      if (alias) or.push({ brand: { equals: alias, mode: 'insensitive' } })
+      where.OR = or
     }
 
     // Filtro alfabético por primera letra del SKU
@@ -47,6 +56,10 @@ export async function GET(request: NextRequest) {
         startsWith: letter,
         mode: 'insensitive'
       }
+    }
+
+    if (brand) {
+      where.brand = { equals: brand, mode: 'insensitive' }
     }
 
     if (status) {

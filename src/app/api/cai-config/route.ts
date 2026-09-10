@@ -53,6 +53,24 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Renovación: la numeración de remitos es correlativa por PV entre CAIs,
+    // así que si no se indica lastUsedNumber se continúa desde el CAI anterior
+    let lastUsedNumber = validated.lastUsedNumber
+    if (lastUsedNumber === undefined) {
+      const previous = await prisma.caiConfig.findFirst({
+        where: { pointOfSale: validated.pointOfSale },
+        orderBy: { lastUsedNumber: 'desc' },
+      })
+      lastUsedNumber = Math.max(validated.startNumber - 1, previous?.lastUsedNumber ?? 0)
+    }
+
+    if (lastUsedNumber >= validated.endNumber) {
+      return NextResponse.json(
+        { error: `El rango termina en ${validated.endNumber} pero la numeración ya va por ${lastUsedNumber}. Ampliá el rango.` },
+        { status: 400 }
+      )
+    }
+
     // Desactivar configs activas anteriores del mismo PV
     if (validated.active !== false) {
       await prisma.caiConfig.updateMany({
@@ -68,7 +86,7 @@ export async function POST(request: NextRequest) {
         caiExpirationDate: new Date(validated.caiExpirationDate),
         startNumber: validated.startNumber,
         endNumber: validated.endNumber,
-        lastUsedNumber: validated.lastUsedNumber ?? 0,
+        lastUsedNumber,
         active: validated.active ?? true,
       },
     })

@@ -36,6 +36,7 @@ import {
   Package,
   Eye,
   FileSpreadsheet,
+  FileDown,
   MoreHorizontal,
   Filter,
   Plus,
@@ -287,12 +288,40 @@ export default function RemitosPage() {
             Gestión de remitos y despachos de mercadería
           </p>
         </div>
-        <Button asChild className="bg-blue-600 hover:bg-blue-700">
-          <Link href="/remitos/nuevo">
-            <Plus className="h-4 w-4 mr-2" />
-            Nuevo Remito
-          </Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline">
+                <FileDown className="h-4 w-4 mr-2" />
+                Régimen info. ARCA
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Autoimpresor (PV 6)</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => {
+                  window.location.href = '/api/delivery-notes/regimen-informacion?formato=txt'
+                }}
+              >
+                TXT último remito por mes (alta)
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  window.location.href = '/api/delivery-notes/regimen-informacion?formato=csv'
+                }}
+              >
+                CSV listado completo (fecha y número)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button asChild className="bg-blue-600 hover:bg-blue-700">
+            <Link href="/remitos/nuevo">
+              <Plus className="h-4 w-4 mr-2" />
+              Nuevo Remito
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}

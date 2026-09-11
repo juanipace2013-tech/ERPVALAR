@@ -17,6 +17,11 @@
  *     → hace Graph + OCR + matcheo y devuelve qué crearía, sin tocar la DB.
  *       Para probar en prod antes de activar el cron.
  *
+ *   GET /api/cron/ingest-facturas-mail?secret=CRON_SECRET&dryRun=1&recheck=1&limit=5
+ *     → además ignora la deduplicación: pasa por OCR los últimos 5 mails
+ *       aunque sus facturas ya estén cargadas y devuelve la existente al lado
+ *       (total, items) para comparar la lectura del bot con la carga manual.
+ *
  * Mismo patrón de auth, lock y forma de respuesta que los otros /api/cron/*.
  */
 
@@ -46,12 +51,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const dryRun = req.nextUrl.searchParams.get('dryRun') === '1'
-  const lookbackParam = Number(req.nextUrl.searchParams.get('lookbackDays'))
-  const lookbackDays = Number.isFinite(lookbackParam) && lookbackParam > 0 ? lookbackParam : undefined
+  const params = req.nextUrl.searchParams
+  const dryRun = params.get('dryRun') === '1'
+  const recheck = params.get('recheck') === '1'
+  const positive = (name: string) => {
+    const n = Number(params.get(name))
+    return Number.isFinite(n) && n > 0 ? n : undefined
+  }
 
   try {
-    const outcome = await runCronJob(JOB, () => ingestFacturasMail({ dryRun, lookbackDays }))
+    const outcome = await runCronJob(JOB, () =>
+      ingestFacturasMail({ dryRun, recheck, lookbackDays: positive('lookbackDays'), limit: positive('limit') })
+    )
     if (outcome.skipped) {
       return NextResponse.json(cronSkippedResponse(outcome.reason), { status: 409 })
     }

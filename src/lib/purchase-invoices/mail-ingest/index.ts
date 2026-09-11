@@ -46,6 +46,8 @@ export interface IngestDetail {
   supplier?: string
   total?: number
   reviewReason?: string | null
+  /** Solo en dryRun+recheck: la factura ya cargada a mano, para comparar. */
+  existing?: { purchaseInvoiceId: string; total: number; itemCount: number; generalDiscount: number; perceptionsAmount: number }
 }
 
 export interface IngestRunResult {
@@ -53,6 +55,7 @@ export interface IngestRunResult {
   mailbox: string
   since: string
   dryRun: boolean
+  recheck: boolean
   messagesScanned: number
   fromTrustedSenders: number
   created: number
@@ -69,6 +72,14 @@ export interface IngestOptions {
   lookbackDays?: number
   /** Hace todo (Graph + OCR + matcheo) pero no crea facturas ni registra el mail. */
   dryRun?: boolean
+  /**
+   * Solo con dryRun: ignora la deduplicación y pasa por OCR facturas que ya
+   * están cargadas, devolviendo la existente al lado para comparar qué tan
+   * bien lee el bot contra lo cargado a mano.
+   */
+  recheck?: boolean
+  /** Solo con dryRun: procesar únicamente los N mails más nuevos. */
+  limit?: number
 }
 
 export async function ingestFacturasMail(opts: IngestOptions = {}): Promise<IngestRunResult> {
@@ -77,22 +88,24 @@ export async function ingestFacturasMail(opts: IngestOptions = {}): Promise<Inge
   if (!mailbox) throw new Error('FACTURACION_MAILBOX no configurada (UPN de la casilla de facturación)')
 
   const dryRun = Boolean(opts.dryRun)
+  const recheck = dryRun && Boolean(opts.recheck)
   const lookbackDays = opts.lookbackDays ?? (Number(process.env.FACTURACION_MAIL_LOOKBACK_DAYS) || DEFAULT_LOOKBACK_DAYS)
   const since = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000)
 
   const messages = await listMessagesSince(mailbox, since)
-  const trusted = messages
+  let trusted = messages
     .map((m) => ({ message: m, sender: findTrustedSender(m.from?.emailAddress?.address) }))
     .filter((x): x is { message: GraphMessage; sender: TrustedInvoiceSender } => x.sender !== null)
     // Más viejos primero para que las facturas queden en orden de llegada
     .sort((a, b) => (a.message.receivedDateTime || '').localeCompare(b.message.receivedDateTime || ''))
+  if (dryRun && opts.limit && opts.limit > 0) trusted = trusted.slice(-opts.limit)
 
   const details: IngestDetail[] = []
   const counts = { created: 0, duplicates: 0, noPdf: 0, supplierNotFound: 0, errors: 0, skipped: 0 }
 
   for (const { message, sender } of trusted) {
     try {
-      await processMessage(mailbox, message, sender, dryRun, details, counts)
+      await processMessage(mailbox, message, sender, { dryRun, recheck }, details, counts)
     } catch (err) {
       // Falló antes de llegar a un adjunto (ej. Graph al listar attachments): se
       // reintenta en la próxima corrida porque no quedó registro.
@@ -109,6 +122,7 @@ export async function ingestFacturasMail(opts: IngestOptions = {}): Promise<Inge
     mailbox,
     since: since.toISOString(),
     dryRun,
+    recheck,
     messagesScanned: messages.length,
     fromTrustedSenders: trusted.length,
     ...counts,
@@ -137,15 +151,17 @@ function baseDetail(message: GraphMessage, attachment: string, status: IngestDet
 }
 
 type Counts = { created: number; duplicates: number; noPdf: number; supplierNotFound: number; errors: number; skipped: number }
+type Mode = { dryRun: boolean; recheck: boolean }
 
 async function processMessage(
   mailbox: string,
   message: GraphMessage,
   sender: TrustedInvoiceSender,
-  dryRun: boolean,
+  mode: Mode,
   details: IngestDetail[],
   counts: Counts
 ) {
+  const { dryRun } = mode
   const messageKey = message.internetMessageId || message.id
   const existing = dryRun
     ? []
@@ -186,7 +202,7 @@ async function processMessage(
     }
 
     try {
-      const outcome = await processPdf(mailbox, message, sender, pdf, dryRun)
+      const outcome = await processPdf(mailbox, message, sender, pdf, mode)
       details.push({ ...baseDetail(message, pdf.name, outcome.status, outcome.detail), ...outcome.extra })
       if (outcome.status === 'PROCESSED' || outcome.status === 'WOULD_CREATE') counts.created++
       else if (outcome.status === 'DUPLICATE') counts.duplicates++
@@ -215,11 +231,11 @@ async function processPdf(
   message: GraphMessage,
   sender: TrustedInvoiceSender,
   pdf: { id: string; name: string; size?: number },
-  dryRun: boolean
+  { dryRun, recheck }: Mode
 ): Promise<PdfOutcome> {
   // Duplicado por nombre de archivo: nos ahorra la llamada de OCR
   const numberFromName = invoiceNumberFromFilename(pdf.name)
-  if (numberFromName) {
+  if (numberFromName && !recheck) {
     const dup = await prisma.purchaseInvoice.findUnique({ where: { invoiceNumber: numberFromName }, select: { id: true } })
     if (dup) {
       return {
@@ -250,14 +266,26 @@ async function processPdf(
   const built = buildCreateInputFromOcr(data, { supplierId: supplier.id, supplierPaymentDays: supplier.paymentDays })
   const invoiceNumber = buildInvoiceNumber(built.input.voucherType, built.input.pointOfSale, built.input.invoiceNumberSuffix)
 
-  const dup = await prisma.purchaseInvoice.findUnique({ where: { invoiceNumber }, select: { id: true } })
-  if (dup) {
+  const dup = await prisma.purchaseInvoice.findUnique({
+    where: { invoiceNumber },
+    select: { id: true, total: true, generalDiscount: true, perceptionsAmount: true, _count: { select: { items: true } } },
+  })
+  if (dup && !recheck) {
     return {
       status: 'DUPLICATE',
       detail: `La factura ${invoiceNumber} ya estaba cargada`,
       extra: { invoiceNumber, purchaseInvoiceId: dup.id, supplier: supplier.name },
     }
   }
+  const existing: IngestDetail['existing'] = dup
+    ? {
+        purchaseInvoiceId: dup.id,
+        total: Number(dup.total),
+        itemCount: dup._count.items,
+        generalDiscount: Number(dup.generalDiscount),
+        perceptionsAmount: Number(dup.perceptionsAmount),
+      }
+    : undefined
 
   await linkItemsBySku(built.input.items)
 
@@ -293,12 +321,16 @@ async function processPdf(
     supplier: supplier.name,
     total: built.computedTotal,
     reviewReason,
+    existing,
   }
 
   if (dryRun) {
     return {
       status: 'WOULD_CREATE',
-      detail: `${built.input.items.length} items (${linked} vinculados), total ${built.computedTotal.toFixed(2)}` +
+      detail:
+        `${built.input.items.length} items (${linked} vinculados), desc. gral ${built.input.generalDiscount}%, ` +
+        `percepciones ${(built.input.perceptions ?? []).reduce((s, p) => s + p.amount, 0).toFixed(2)}, ` +
+        `total ${built.computedTotal.toFixed(2)}` +
         (notes.length > 0 ? ` — ${notes.join(' | ')}` : ''),
       extra,
     }

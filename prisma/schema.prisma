@@ -586,6 +586,10 @@ model PurchaseInvoice {
   colppyInvoiceId String?   @db.Text // ID de la factura en Colppy
   colppySyncedAt  DateTime? // Fecha de envío a Colppy
 
+  // PDF original del comprobante (/uploads/facturas-compra/...). Hoy solo lo
+  // cargan las facturas que entran solas desde el mail de facturación.
+  sourceFileUrl String?
+
   // Usuario
   createdBy     String
   createdByUser User   @relation(fields: [createdBy], references: [id])
@@ -596,6 +600,7 @@ model PurchaseInvoice {
   perceptions    PurchaseInvoicePerception[]
   payments       PurchasePayment[]
   stockMovements StockMovement[]
+  mailIngests    PurchaseInvoiceMailIngest[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -698,6 +703,38 @@ model PurchaseInvoicePerception {
   @@index([purchaseInvoiceId])
   @@index([accountId])
   @@map("purchase_invoice_perceptions")
+}
+
+// Registro de cada adjunto de mail que el cron ingest-facturas-mail intentó
+// convertir en factura de compra (casilla de facturación, remitentes conocidos
+// en src/lib/purchase-invoices/mail-ingest/senders.ts). Sirve para no procesar
+// dos veces el mismo mail y para ver qué pasó con cada uno.
+model PurchaseInvoiceMailIngest {
+  id String @id @default(cuid())
+
+  mailbox        String // casilla leída (UPN)
+  messageKey     String // internetMessageId (estable entre carpetas) o id de Graph
+  graphMessageId String
+  fromAddress    String
+  subject        String?
+  receivedAt     DateTime
+  attachmentName String @default("") // "" = el mail no tenía PDF
+
+  // PROCESSED | DUPLICATE | NO_PDF | SUPPLIER_NOT_FOUND | ERROR
+  status   String
+  detail   String? @db.Text // motivo / error
+  attempts Int     @default(1) // los ERROR se reintentan hasta MAX_ATTEMPTS
+
+  purchaseInvoiceId String?
+  purchaseInvoice   PurchaseInvoice? @relation(fields: [purchaseInvoiceId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([messageKey, attachmentName])
+  @@index([status])
+  @@index([receivedAt])
+  @@map("purchase_invoice_mail_ingests")
 }
 
 model PurchasePayment {

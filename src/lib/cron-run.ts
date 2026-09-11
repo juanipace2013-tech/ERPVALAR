@@ -16,7 +16,12 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 
-export type CronJob = 'sync-balances' | 'sync-ml-stock' | 'check-ml-moderation' | 'renew-graph-subscriptions'
+export type CronJob =
+  | 'sync-balances'
+  | 'sync-ml-stock'
+  | 'check-ml-moderation'
+  | 'renew-graph-subscriptions'
+  | 'ingest-facturas-mail'
 
 /** Una corrida RUNNING más vieja que esto se considera colgada y se libera. */
 const STALE_MS = 30 * 60 * 1000

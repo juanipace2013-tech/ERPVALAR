@@ -58,51 +58,8 @@ import { toast } from 'sonner'
 import { getLocalDateString, parseDecimalAR } from '@/lib/utils'
 import { resolveJurisdiccionIIBB } from '@/lib/jurisdicciones-iibb'
 import { REVIEW_REASONS, type ReviewReason } from '@/lib/review-reasons'
-
-// ============ PAYMENT TERM NORMALIZATION ============
-
-const VALID_PAYMENT_DAYS = [7, 15, 30, 45, 60, 90, 120, 150, 180]
-
-/**
- * Normaliza el texto de condición de pago del OCR al formato de Colppy.
- * Ej: "CUENTA CORRIENTE 30 DIAS" → "a 30 Dias"
- *     "Contado" → "Contado"
- */
-function normalizePaymentTerm(raw: string): string {
-  if (!raw) return ''
-  const lower = raw.toLowerCase()
-
-  // Buscar número de días PRIMERO (prioridad sobre "contado"/"efectivo")
-  // porque textos como "30 DIAS FF ... EFECTIVO PAGO" deben ser "a 30 Dias"
-  const match = lower.match(/(\d+)\s*d[ií]as?/)
-  if (match) {
-    const dias = parseInt(match[1])
-    const closest = VALID_PAYMENT_DAYS.reduce((prev, curr) =>
-      Math.abs(curr - dias) < Math.abs(prev - dias) ? curr : prev
-    )
-    return `a ${closest} Dias`
-  }
-
-  // Si tiene solo un número
-  const numMatch = lower.match(/\b(\d+)\b/)
-  if (numMatch) {
-    const dias = parseInt(numMatch[1])
-    if (dias >= 7 && dias <= 180) {
-      const closest = VALID_PAYMENT_DAYS.reduce((prev, curr) =>
-        Math.abs(curr - dias) < Math.abs(prev - dias) ? curr : prev
-      )
-      return `a ${closest} Dias`
-    }
-  }
-
-  // Contado / efectivo (solo si no se detectaron días arriba)
-  if (lower.includes('contado') || lower.includes('efectivo')) return 'Contado'
-
-  // Si dice "cuenta corriente" sin número, asumir 30 días
-  if (lower.includes('cuenta corriente') || lower.includes('cta cte')) return 'a 30 Dias'
-
-  return ''
-}
+import { normalizePaymentTerm } from '@/lib/purchase-invoices/payment-terms'
+import { generateSkuVariants } from '@/lib/purchase-invoices/sku-variants'
 
 // ============ TYPES ============
 
@@ -481,40 +438,6 @@ export default function NewPurchaseInvoicePage() {
   }
 
   // ============ PRODUCT AUTO-LINK ============
-
-  /**
-   * Genera variantes de SKU quitando progresivamente ceros iniciales de la primera parte.
-   * Ej: "0012416 04" → ["2416 04", "12416 04", "012416 04", "0012416 04"]
-   */
-  const generateSkuVariants = (supplierCode: string): string[] => {
-    const code = supplierCode.trim()
-    if (!code) return []
-
-    const parts = code.split(/\s+/)
-    const variants: string[] = []
-    const seen = new Set<string>()
-
-    const addVariant = (v: string) => {
-      if (!seen.has(v)) { seen.add(v); variants.push(v) }
-    }
-
-    // Strip all leading zeros from first part (most aggressive)
-    const firstPartStripped = parts[0].replace(/^0+/, '') || parts[0]
-    const rest = parts.slice(1)
-    addVariant([firstPartStripped, ...rest].join(' '))
-
-    // Progressively add back leading zeros
-    let current = firstPartStripped
-    for (let i = 1; i <= parts[0].length - firstPartStripped.length; i++) {
-      current = '0' + current
-      addVariant([current, ...rest].join(' '))
-    }
-
-    // Original code (if not already added)
-    addVariant(code)
-
-    return variants
-  }
 
   /**
    * Después del OCR, intenta vincular automáticamente cada item con un producto

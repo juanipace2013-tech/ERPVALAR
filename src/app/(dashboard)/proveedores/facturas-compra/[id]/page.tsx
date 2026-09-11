@@ -71,6 +71,7 @@ interface PurchaseInvoice {
   colppySyncedAt: string | null
   requiresReview: boolean
   reviewReason: string | null
+  sourceFileUrl: string | null
   supplier: {
     id: string
     name: string
@@ -453,6 +454,14 @@ export default function PurchaseInvoiceDetailPage() {
           <Badge className={statusColors[invoice.status]}>
             {statusLabels[invoice.status]}
           </Badge>
+          {invoice.sourceFileUrl && (
+            <Button variant="outline" asChild>
+              <a href={invoice.sourceFileUrl} target="_blank" rel="noopener noreferrer">
+                <FileText className="h-4 w-4 mr-2" />
+                Ver PDF original
+              </a>
+            </Button>
+          )}
           {/* Enviar a Colppy - solo si no fue enviada aún */}
           {!invoice.colppyInvoiceId && (invoice.status === 'APPROVED' || invoice.status === 'PENDING') && (
             <>
@@ -739,6 +748,12 @@ export default function PurchaseInvoiceDetailPage() {
                     jurisdicción donde corresponda (24 provincias válidas), y recién después
                     destildá el flag. <strong>Mientras el flag esté activo, el envío a Colppy
                     se bloquea</strong>.
+                  </>
+                ) : invoice.reviewReason === 'mail_ingest' ? (
+                  <>
+                    Esta factura entró sola desde el mail de facturación y nadie la miró todavía.
+                    Compará los datos con el PDF original (botón arriba), corregí lo que haga
+                    falta y marcala como revisada para habilitar el envío a Colppy.
                   </>
                 ) : (
                   <>

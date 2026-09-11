@@ -20,6 +20,8 @@ export const REVIEW_REASONS = {
   CUIT_MISMATCH: 'cuit_mismatch',
   /** La descripción/encabezado de una percepción es ambigua y no se pudo clasificar. */
   AMBIGUOUS_PERCEPTION: 'ambiguous_perception',
+  /** Entró sola desde el mail de facturación (cron ingest-facturas-mail): nadie la miró todavía. */
+  MAIL_INGEST: 'mail_ingest',
 } as const
 
 export type ReviewReason = (typeof REVIEW_REASONS)[keyof typeof REVIEW_REASONS]
@@ -30,6 +32,7 @@ export const REVIEW_REASON_LABELS: Record<ReviewReason, string> = {
   amount_mismatch: 'Revisar totales',
   cuit_mismatch: 'Revisar CUIT',
   ambiguous_perception: 'Revisar percepción',
+  mail_ingest: 'Cargada desde el mail — revisar',
 }
 
 /** `true` si el string es un motivo conocido. Útil para validar input antes de persistir. */

@@ -163,6 +163,75 @@ export async function fetchMessage(userUpn: string, messageId: string): Promise<
 }
 
 /**
+ * Mensajes de una casilla recibidos desde `since` (todas las carpetas), más
+ * nuevos primero. Sigue @odata.nextLink hasta `max` mensajes. Sin body: es
+ * para barridos por polling (cron), no para ingestar la conversación.
+ */
+export async function listMessagesSince(
+  userUpn: string,
+  since: Date,
+  max = 500
+): Promise<GraphMessage[]> {
+  const token = await getGraphToken()
+  const select = 'id,conversationId,internetMessageId,subject,from,toRecipients,receivedDateTime,hasAttachments'
+  const filter = `receivedDateTime ge ${since.toISOString()}`
+  let url: string | null =
+    `${GRAPH_BASE}/users/${userUpn}/messages?$select=${select}&$filter=${encodeURIComponent(filter)}` +
+    `&$orderby=receivedDateTime desc&$top=${Math.min(max, 100)}`
+
+  const messages: GraphMessage[] = []
+  while (url && messages.length < max) {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(`Graph list messages falló: ${res.status} ${text}`)
+    }
+    const page = (await res.json()) as { value: GraphMessage[]; '@odata.nextLink'?: string }
+    messages.push(...page.value)
+    url = page['@odata.nextLink'] ?? null
+  }
+  return messages.slice(0, max)
+}
+
+export interface GraphAttachmentMeta {
+  id: string
+  name: string
+  contentType?: string
+  size?: number
+  isInline?: boolean
+  '@odata.type'?: string // '#microsoft.graph.fileAttachment' | itemAttachment | referenceAttachment
+}
+
+/** Metadatos de los adjuntos de un mensaje (sin el contenido). */
+export async function listAttachments(userUpn: string, messageId: string): Promise<GraphAttachmentMeta[]> {
+  const token = await getGraphToken()
+  const url =
+    `${GRAPH_BASE}/users/${userUpn}/messages/${encodeURIComponent(messageId)}/attachments` +
+    `?$select=id,name,contentType,size,isInline`
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Graph list attachments falló: ${res.status} ${text}`)
+  }
+  const data = (await res.json()) as { value: GraphAttachmentMeta[] }
+  return data.value
+}
+
+/** Bytes de un fileAttachment (el endpoint $value sirve cualquier tamaño, sin base64). */
+export async function downloadAttachment(userUpn: string, messageId: string, attachmentId: string): Promise<Buffer> {
+  const token = await getGraphToken()
+  const url =
+    `${GRAPH_BASE}/users/${userUpn}/messages/${encodeURIComponent(messageId)}` +
+    `/attachments/${encodeURIComponent(attachmentId)}/$value`
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Graph download attachment falló: ${res.status} ${text}`)
+  }
+  return Buffer.from(await res.arrayBuffer())
+}
+
+/**
  * Extrae el UPN del path `Users/{guid o upn}/Messages/{id}`.
  * Las notificaciones de Graph mandan el resource con el GUID del usuario,
  * pero también podría ser el UPN si así lo registramos.

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { buildCreateInputFromOcr, parseVoucherTipo, totalsMatch } from '@/lib/purchase-invoices/from-ocr'
 import { normalizeOcrData, type OcrData } from '@/lib/purchase-invoices/ocr-extract'
 import { normalizePaymentTerm, paymentTermDays } from '@/lib/purchase-invoices/payment-terms'
-import { generateSkuVariants } from '@/lib/purchase-invoices/sku-variants'
+import { generateSkuVariants, normalizeSkuForMatch } from '@/lib/purchase-invoices/sku-variants'
 import { findTrustedSender, invoiceNumberFromFilename } from '@/lib/purchase-invoices/mail-ingest/senders'
 
 function genebreOcr(overrides: Partial<OcrData> = {}): OcrData {
@@ -176,6 +176,14 @@ describe('generateSkuVariants', () => {
     expect(generateSkuVariants('0012416 04')).toEqual(['12416 04', '012416 04', '0012416 04'])
     expect(generateSkuVariants('2416 04')).toEqual(['2416 04'])
     expect(generateSkuVariants('  ')).toEqual([])
+  })
+})
+
+describe('normalizeSkuForMatch', () => {
+  it('iguala los códigos de la factura GENEBRE con los SKUs del catálogo', () => {
+    expect(normalizeSkuForMatch('5800-140')).toBe(normalizeSkuForMatch('5800 140'))
+    expect(normalizeSkuForMatch('451902 C24')).toBe(normalizeSkuForMatch('4519 02 C24'))
+    expect(normalizeSkuForMatch('2025 07')).not.toBe(normalizeSkuForMatch('2025 07 MD'))
   })
 })
 

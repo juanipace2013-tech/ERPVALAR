@@ -1,4 +1,13 @@
 /**
+ * Forma "comparable" de un SKU: minúsculas y sin espacios, guiones ni otros
+ * separadores. GENEBRE factura "5800-140" y "451902 C24" para lo que el
+ * catálogo tiene como "5800 140" y "4519 02 C24"; normalizados coinciden.
+ */
+export function normalizeSkuForMatch(sku: string): string {
+  return sku.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+/**
  * Variantes de un código de proveedor para buscarlo como SKU del catálogo,
  * quitando progresivamente los ceros iniciales de la primera parte.
  * Ej: "0012416 04" → ["2416 04", "12416 04", "012416 04", "0012416 04"]

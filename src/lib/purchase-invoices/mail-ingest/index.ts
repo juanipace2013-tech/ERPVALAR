@@ -17,6 +17,7 @@
 
 import { mkdir, writeFile, unlink } from 'fs/promises'
 import path from 'path'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { listMessagesSince, listAttachments, downloadAttachment, type GraphMessage } from '@/lib/inbox/graph-mail'
@@ -25,7 +26,7 @@ import { REVIEW_REASONS, type ReviewReason } from '@/lib/review-reasons'
 import { extractPurchaseInvoice, OCR_MAX_FILE_BYTES } from '../ocr-extract'
 import { buildCreateInputFromOcr } from '../from-ocr'
 import { createPurchaseInvoice, buildInvoiceNumber, isDuplicateInvoiceError } from '../create'
-import { generateSkuVariants } from '../sku-variants'
+import { generateSkuVariants, normalizeSkuForMatch } from '../sku-variants'
 import { findTrustedSender, invoiceNumberFromFilename, type TrustedInvoiceSender } from './senders'
 
 const MAX_ATTEMPTS = 3
@@ -287,7 +288,7 @@ async function processPdf(
       }
     : undefined
 
-  await linkItemsBySku(built.input.items)
+  await linkItemsBySku(built.input.items, sender.brand)
 
   // Motivo de revisión: el más específico gana
   const notes = [...built.reviewNotes]
@@ -388,8 +389,16 @@ async function findSupplier(
   return byName ? { supplier: byName, matchedBy: 'name' } : null
 }
 
-/** Vincula items al catálogo por SKU probando las variantes con/sin ceros iniciales (como la UI). */
-async function linkItemsBySku(items: Array<{ supplierProductCode?: string | null; productId?: string | null }>) {
+/**
+ * Vincula items al catálogo por SKU. Primero exacto probando las variantes
+ * con/sin ceros iniciales (como la UI); lo que queda sin vincular se compara
+ * sin espacios ni guiones dentro de la marca del remitente, y solo si hay un
+ * único candidato.
+ */
+async function linkItemsBySku(
+  items: Array<{ supplierProductCode?: string | null; productId?: string | null }>,
+  brand?: string
+) {
   const variantsByItem = items.map((i) => generateSkuVariants(i.supplierProductCode || ''))
   const allVariants = [...new Set(variantsByItem.flat())]
   if (allVariants.length === 0) return
@@ -409,6 +418,25 @@ async function linkItemsBySku(items: Array<{ supplierProductCode?: string | null
       }
     }
   })
+
+  if (!brand) return
+  const pending = items.filter((i) => !i.productId && i.supplierProductCode?.trim())
+  const norms = [...new Set(pending.map((i) => normalizeSkuForMatch(i.supplierProductCode!)).filter(Boolean))]
+  if (norms.length === 0) return
+
+  const candidates: Array<{ id: string; norm: string }> = await prisma.$queryRaw`
+    SELECT id, regexp_replace(lower(sku), '[^a-z0-9]', '', 'g') AS norm
+    FROM products
+    WHERE status = 'ACTIVE' AND brand ILIKE ${brand}
+      AND regexp_replace(lower(sku), '[^a-z0-9]', '', 'g') IN (${Prisma.join(norms)})`
+
+  const byNorm = new Map<string, string[]>()
+  for (const c of candidates) byNorm.set(c.norm, [...(byNorm.get(c.norm) ?? []), c.id])
+
+  for (const item of pending) {
+    const ids = byNorm.get(normalizeSkuForMatch(item.supplierProductCode!))
+    if (ids?.length === 1) item.productId = ids[0]
+  }
 }
 
 async function savePdf(invoiceNumber: string, buffer: Buffer): Promise<string> {

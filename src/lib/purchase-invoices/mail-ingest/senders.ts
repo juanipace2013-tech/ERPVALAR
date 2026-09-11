@@ -13,6 +13,13 @@ export interface TrustedInvoiceSender {
   address: string
   label: string
   supplierNamePattern: RegExp
+  /**
+   * Product.brand de los artículos de este proveedor. Cuando el código de la
+   * factura no coincide exacto con un SKU, se compara sin espacios ni guiones
+   * pero solo dentro de esta marca (entre marcas hay colisiones, ej. "3342 07"
+   * y "334207").
+   */
+  brand?: string
 }
 
 export const TRUSTED_INVOICE_SENDERS: TrustedInvoiceSender[] = [
@@ -20,6 +27,7 @@ export const TRUSTED_INVOICE_SENDERS: TrustedInvoiceSender[] = [
     address: 'facturaelectronica@genebre.com.ar',
     label: 'GENEBRE',
     supplierNamePattern: /genebre/i,
+    brand: 'GENEBRE',
   },
 ]
 

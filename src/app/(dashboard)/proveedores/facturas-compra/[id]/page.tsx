@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { ProductSearchCombobox } from '@/components/inventario/ProductSearchCombobox'
 
 interface PurchaseInvoice {
   id: string
@@ -80,6 +81,7 @@ interface PurchaseInvoice {
   }
   items: Array<{
     id: string
+    supplierProductCode: string | null
     description: string
     quantity: number
     listPrice: number
@@ -201,6 +203,45 @@ export default function PurchaseInvoiceDetailPage() {
       toast.error(e.message || 'Error al limpiar el flag de revisión')
     } finally {
       setClearingReview(false)
+    }
+  }
+
+  // Vincular / desvincular un item a un producto del catálogo desde el detalle
+  const [linkingItemId, setLinkingItemId] = useState<string | null>(null)
+
+  const handleLinkItem = async (
+    itemId: string,
+    product: { id: string; sku: string; name: string } | null
+  ) => {
+    if (!invoice) return
+    try {
+      setLinkingItemId(itemId)
+      const res = await fetch('/api/inventory/link-items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ links: [{ purchaseInvoiceItemId: itemId, productId: product ? product.id : null }] }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Error al vincular' }))
+        throw new Error(err.error || 'Error al vincular el item')
+      }
+      setInvoice((prev) =>
+        prev
+          ? {
+              ...prev,
+              items: prev.items.map((i) =>
+                i.id === itemId
+                  ? { ...i, product: product ? { id: product.id, sku: product.sku, name: product.name } : null }
+                  : i
+              ),
+            }
+          : prev
+      )
+      toast.success(product ? `Item vinculado a ${product.sku}` : 'Producto desvinculado')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Error al vincular el item')
+    } finally {
+      setLinkingItemId(null)
     }
   }
 
@@ -752,8 +793,10 @@ export default function PurchaseInvoiceDetailPage() {
                 ) : invoice.reviewReason === 'mail_ingest' ? (
                   <>
                     Esta factura entró sola desde el mail de facturación y nadie la miró todavía.
-                    Compará los datos con el PDF original (botón arriba), corregí lo que haga
-                    falta y marcala como revisada para habilitar el envío a Colppy.
+                    Compará los datos con el PDF original (botón arriba), vinculá los items que
+                    hayan quedado sin producto (buscador en la tabla de items; el sistema lo
+                    recuerda para las próximas facturas) y marcala como revisada para habilitar
+                    el envío a Colppy.
                   </>
                 ) : (
                   <>
@@ -944,10 +987,36 @@ export default function PurchaseInvoiceDetailPage() {
                           <TableCell className="overflow-hidden">
                             <div className="min-w-0">
                               <p className="font-medium truncate" title={item.description}>{item.description}</p>
-                              {item.product && (
-                                <p className="text-sm text-gray-500 truncate" title={skuLabel}>
-                                  {skuLabel}
+                              {item.supplierProductCode && (
+                                <p className="text-xs text-gray-400 truncate" title={`Código del proveedor: ${item.supplierProductCode}`}>
+                                  Cód. proveedor: <span className="font-mono">{item.supplierProductCode}</span>
                                 </p>
+                              )}
+                              {item.product ? (
+                                <p className="text-sm text-gray-500 truncate flex items-center gap-2" title={skuLabel}>
+                                  <span className="truncate">{skuLabel}</span>
+                                  {!item.stockProcessed && (
+                                    <button
+                                      type="button"
+                                      className="text-xs text-blue-600 hover:underline flex-shrink-0 disabled:opacity-50"
+                                      disabled={linkingItemId === item.id}
+                                      onClick={() => handleLinkItem(item.id, null)}
+                                      title="Desvincular para elegir otro producto"
+                                    >
+                                      cambiar
+                                    </button>
+                                  )}
+                                </p>
+                              ) : (
+                                <div className="mt-1 max-w-sm">
+                                  <p className="text-xs text-amber-700 mb-1">Sin producto vinculado — buscá el SKU del catálogo:</p>
+                                  <ProductSearchCombobox
+                                    suggestions={[]}
+                                    selectedProduct={null}
+                                    onSelect={(product) => handleLinkItem(item.id, product)}
+                                    onClear={() => {}}
+                                  />
+                                </div>
                               )}
                               {item.account && (
                                 <p className="text-xs text-gray-400 truncate" title={accountLabel}>

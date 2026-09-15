@@ -11,6 +11,7 @@ import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { resolveJurisdiccionIIBB, COLPPY_JURISDICCIONES } from '@/lib/jurisdicciones-iibb'
 import { REVIEW_REASONS, isReviewReason, type ReviewReason } from '@/lib/review-reasons'
+import { findLearnedLinks } from './learned-links'
 
 export interface CreatePurchaseInvoiceItemInput {
   productId?: string | null
@@ -266,12 +267,14 @@ export async function createPurchaseInvoice(
       select: { id: true, sku: true },
     })
     const skuMap = new Map(matchedProducts.map((p) => [p.sku, p.id]))
+    // Códigos que alguien ya vinculó a mano en facturas anteriores del mismo proveedor
+    const learned = await findLearnedLinks(purchaseInvoice.supplierId, allCodes)
 
     const updates: Promise<unknown>[] = []
     for (const item of unlinkItems) {
       const code = item.supplierProductCode!.trim()
       const altCode = code.startsWith('001') && code.length > 3 ? code.substring(3).trim() : null
-      const productId = skuMap.get(code) || (altCode ? skuMap.get(altCode) : null)
+      const productId = skuMap.get(code) || (altCode ? skuMap.get(altCode) : null) || learned.get(code)
       if (productId) {
         updates.push(prisma.purchaseInvoiceItem.update({ where: { id: item.id }, data: { productId } }))
         autoLinkedCount++

@@ -48,6 +48,7 @@ import { formatNumber, getLocalDateString } from '@/lib/utils'
 import { useColppyStock, refreshInventoryCache } from '@/hooks/useColppyStock'
 import { StockBadge, StockWarning } from '@/components/StockBadge'
 import { FamiqStock } from '@/components/productos/FamiqStock'
+import { WintersStock } from '@/components/productos/WintersStock'
 import { getConjuntosGenebre, type ConjuntoOpcion, type ConjuntoTipo } from '@/lib/genebre-conjuntos'
 import { getBobinasElectrovalvula, type BobinaKit, ELECTROVALVULAS_NAMUR, type NamurKit } from '@/lib/genebre-electrovalvulas'
 
@@ -2042,6 +2043,9 @@ export default function QuoteDetailPage() {
                               {selectedProduct.brand?.toUpperCase() === 'FMQ' && (
                                 <FamiqStock sku={selectedProduct.sku} />
                               )}
+                              {selectedProduct.brand?.toUpperCase() === 'WINTERS' && (
+                                <WintersStock sku={selectedProduct.sku} />
+                              )}
                             </div>
                           </div>
                           <span className="text-sm font-mono font-semibold shrink-0 ml-3">USD {formatNumber(selectedProduct.listPriceUSD || 0)}</span>
@@ -2575,6 +2579,9 @@ export default function QuoteDetailPage() {
                                     />
                                     {mainItem.product.brand?.toUpperCase() === 'FMQ' && (
                                       <FamiqStock sku={mainItem.product.sku} />
+                                    )}
+                                    {mainItem.product.brand?.toUpperCase() === 'WINTERS' && (
+                                      <WintersStock sku={mainItem.product.sku} />
                                     )}
                                   </div>
                                 )}

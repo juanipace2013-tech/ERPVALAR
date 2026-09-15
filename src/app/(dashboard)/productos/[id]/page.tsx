@@ -17,6 +17,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { SupplierCombobox } from '@/components/productos/SupplierCombobox'
 import { FamiqStock } from '@/components/productos/FamiqStock'
+import { WintersStock } from '@/components/productos/WintersStock'
 import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, FileText, Loader2, Package, Pencil, Save, Trash2, Upload, X } from 'lucide-react'
 import { toast } from 'sonner'
@@ -567,6 +568,7 @@ export default function ProductoDetallePage() {
               <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 Control de stock y unidades
                 {product.brand?.toUpperCase() === 'FMQ' && <FamiqStock sku={product.sku} />}
+                {product.brand?.toUpperCase() === 'WINTERS' && <WintersStock sku={product.sku} />}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">

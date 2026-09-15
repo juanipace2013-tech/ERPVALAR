@@ -3574,3 +3574,39 @@ model FamiqLink {
 
   @@map("famiq_links")
 }
+
+// Stock semanal de WINTERS en Buenos Aires (planilla "Stock WINAR"): lo importa
+// el cron ingest-stock-winters desde el mail semanal de @winters.com
+// (WINTERS_STOCK_MAILBOX). Cada import reemplaza la tabla completa, así que un
+// código que no está en la última planilla es "sin stock local".
+model WintersStock {
+  id          String   @id @default(cuid())
+  codigo      String   @unique // "Número de artículo" de la planilla = Product.sku
+  cantidad    Int
+  descripcion String?
+  fechaLista  DateTime // fecha del asunto ("STOCK WINAR I al DD/MM/YYYY")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("winters_stock")
+}
+
+// Un registro por mail de stock WINAR procesado (dedupe del cron, mismo rol
+// que purchase_invoice_mail_ingests para las facturas).
+model WintersStockImport {
+  id             String   @id @default(cuid())
+  mailbox        String // casilla leída (UPN)
+  messageKey     String   @unique // internetMessageId (estable entre carpetas) o id de Graph
+  fromAddress    String
+  subject        String?
+  receivedAt     DateTime
+  attachmentName String
+  fechaLista     DateTime
+  rows           Int // filas importadas
+  status         String // OK | ERROR
+  detail         String?  @db.Text
+  createdAt      DateTime @default(now())
+
+  @@index([receivedAt])
+  @@map("winters_stock_imports")
+}

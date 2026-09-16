@@ -958,6 +958,7 @@ enum ExchangeRateSource {
   MANUAL
   BANCO_CENTRAL
   API
+  BNA
 }
 
 model ExchangeRate {

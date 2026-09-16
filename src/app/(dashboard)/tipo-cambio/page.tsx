@@ -59,18 +59,20 @@ const sourceLabels: Record<string, string> = {
   MANUAL: 'Manual',
   BANCO_CENTRAL: 'BCRA',
   API: 'API',
+  BNA: 'BNA billete',
 }
 
 const sourceColors: Record<string, string> = {
   MANUAL: 'bg-gray-100 text-gray-800',
   BANCO_CENTRAL: 'bg-green-100 text-green-800',
   API: 'bg-blue-100 text-blue-800',
+  BNA: 'bg-emerald-100 text-emerald-800',
 }
 
 export default function TipoCambioPage() {
   const [exchangeRates, setExchangeRates] = useState<ExchangeRate[]>([])
   const [loading, setLoading] = useState(true)
-  const [updatingBCRA, setUpdatingBCRA] = useState(false)
+  const [updatingBNA, setUpdatingBNA] = useState(false)
   const [openDialog, setOpenDialog] = useState(false)
   const [formData, setFormData] = useState({
     fromCurrency: 'USD',
@@ -110,22 +112,22 @@ export default function TipoCambioPage() {
     }
   }
 
-  const handleUpdateFromBCRA = async () => {
+  const handleUpdateFromBNA = async () => {
     try {
-      setUpdatingBCRA(true)
-      const response = await fetch('/api/tipo-cambio/bcra', {
+      setUpdatingBNA(true)
+      const response = await fetch('/api/tipo-cambio/bna', {
         method: 'POST',
       })
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.message || 'Error al actualizar desde BCRA')
+        throw new Error(errorData.message || 'Error al actualizar desde BNA')
       }
 
       const data = await response.json()
       toast.success(
-        `Tipo de cambio actualizado: $${formatNumber(data.bcraData.rate)} (${new Date(
-          data.bcraData.date
+        `${data.message}: $${formatNumber(data.rate)} (billete venta BNA del ${new Date(
+          data.fechaCotizacion + 'T00:00:00'
         ).toLocaleDateString('es-AR')})`
       )
       fetchExchangeRates()
@@ -134,10 +136,10 @@ export default function TipoCambioPage() {
       toast.error(
         error instanceof Error
           ? error.message
-          : 'Error al actualizar tipo de cambio desde BCRA'
+          : 'Error al actualizar tipo de cambio desde BNA'
       )
     } finally {
-      setUpdatingBCRA(false)
+      setUpdatingBNA(false)
     }
   }
 
@@ -234,16 +236,16 @@ export default function TipoCambioPage() {
             Tipo de Cambio
           </h1>
           <p className="text-muted-foreground">
-            Gestión de tipos de cambio y actualización automática desde BCRA
+            El dólar billete venta BNA del día anterior se carga solo cada mañana
           </p>
         </div>
         <div className="flex gap-2">
           <Button
             variant="outline"
-            onClick={handleUpdateFromBCRA}
-            disabled={updatingBCRA}
+            onClick={handleUpdateFromBNA}
+            disabled={updatingBNA}
           >
-            {updatingBCRA ? (
+            {updatingBNA ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Actualizando...
@@ -251,7 +253,7 @@ export default function TipoCambioPage() {
             ) : (
               <>
                 <Building2 className="mr-2 h-4 w-4" />
-                Actualizar desde BCRA
+                Actualizar desde BNA
               </>
             )}
           </Button>

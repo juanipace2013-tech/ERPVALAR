@@ -23,6 +23,7 @@ export type CronJob =
   | 'renew-graph-subscriptions'
   | 'ingest-facturas-mail'
   | 'ingest-stock-winters'
+  | 'actualizar-tc-bna'
 
 /** Una corrida RUNNING más vieja que esto se considera colgada y se libera. */
 const STALE_MS = 30 * 60 * 1000

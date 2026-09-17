@@ -190,11 +190,14 @@ export default function TipoCambioPage() {
   }
 
 
+  // validFrom se guarda como medianoche UTC: formatear en UTC para no mostrar
+  // el día anterior (en AR, UTC-3, "16/9 00:00Z" se veía como "15 de sept").
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('es-AR', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
+      timeZone: 'UTC',
     })
   }
 
@@ -220,7 +223,7 @@ export default function TipoCambioPage() {
     .slice(0, 30)
     .reverse()
     .map(rate => ({
-      date: new Date(rate.validFrom).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }),
+      date: new Date(rate.validFrom).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', timeZone: 'UTC' }),
       valor: Number(rate.rate),
     }))
 

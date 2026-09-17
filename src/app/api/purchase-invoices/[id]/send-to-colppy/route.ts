@@ -279,8 +279,21 @@ export async function POST(
         const listPrice = Number(item.listPrice) // Precio de lista (bruto, antes de descuento)
         const discountPercent = Number(item.discountPercent) // % de descuento
         const taxRate = Number(item.taxRate)
-        const colppyCode = cleanSupplierCode(item.supplierProductCode || '')
-        const rawIdItem = await getIdItem(item.supplierProductCode || '')
+        // Código para Colppy: preferir el SKU del producto vinculado — el
+        // catálogo del ERP viene de Colppy, así que el SKU es el código que
+        // Colppy conoce. El código impreso en la factura puede diferir solo en
+        // separadores ("5803-51" vs "5803 51") y no matchear el inventario.
+        const linkedSku = (item.product?.sku || '').trim()
+        const supplierCode = cleanSupplierCode(item.supplierProductCode || '')
+        let colppyCode = linkedSku || supplierCode
+        let rawIdItem = await getIdItem(colppyCode)
+        if (!rawIdItem && linkedSku && supplierCode && supplierCode !== linkedSku) {
+          const fallbackIdItem = await getIdItem(supplierCode)
+          if (fallbackIdItem) {
+            colppyCode = supplierCode
+            rawIdItem = fallbackIdItem
+          }
+        }
 
         // Si hay descuento y precio lista, enviar precio lista + descuento
         // Colppy calcula internamente: neto = ImporteUnitario * qty * (1 - porcDesc/100)

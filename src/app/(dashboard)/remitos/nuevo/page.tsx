@@ -91,6 +91,24 @@ interface Quote {
   }
   items: QuoteItem[]
   exchangeRate?: number | string | null
+  facturas?: Array<{
+    id: string
+    numeroFactura: string | null
+    items: Array<{ cotizacionItemId: string; cantidad: number | string }>
+  }>
+}
+
+/** Fila editable de la tabla de items en modo cotización. */
+interface QuoteRemitoRow {
+  quoteItemId: string
+  sku: string
+  description: string
+  unit: string
+  additionals: Array<{ id: string; sku: string; description: string; unit: string }>
+  /** Cantidad de la cotización (tope informativo). */
+  quoteQty: number
+  qty: string
+  included: boolean
 }
 
 interface CustomerTransportOption {
@@ -233,6 +251,9 @@ export default function NuevoRemitoPage() {
   // ── Quote mode state ──
   const [quote, setQuote] = useState<Quote | null>(null)
   const [quoteLoading, setQuoteLoading] = useState(isFromQuote)
+  // Items editables del remito (modo cotización): qué items van y con qué
+  // cantidad. Si viene de una factura parcial, se precargan los facturados.
+  const [quoteRows, setQuoteRows] = useState<QuoteRemitoRow[]>([])
 
   // ── Direct mode state ──
   const [step, setStep] = useState(1)
@@ -340,6 +361,63 @@ export default function NuevoRemitoPage() {
       setCustomerTransportSchedule(c.defaultTransportSchedule)
     }
   }, [quote?.customer?.id])
+
+  // Armar las filas editables cuando carga la cotización. Si viene de una
+  // factura parcial, arrancan tildados solo los items de esa factura, con la
+  // cantidad facturada; el resto queda destildado con su cantidad original.
+  useEffect(() => {
+    if (!quote) return
+    const factura = cotizacionFacturaId
+      ? quote.facturas?.find((f) => f.id === cotizacionFacturaId)
+      : null
+    const cantFacturada = new Map<string, number>()
+    if (factura) {
+      for (const it of factura.items) {
+        cantFacturada.set(it.cotizacionItemId, Number(it.cantidad))
+      }
+    }
+    setQuoteRows(
+      quote.items
+        .filter((i) => !i.isAlternative)
+        .map((item) => {
+          const quoteQty = Number(item.quantity)
+          const facturadaQty = factura ? (cantFacturada.get(item.id) ?? 0) : null
+          const included = factura ? facturadaQty! > 0 : true
+          const qty = included && factura ? facturadaQty! : quoteQty
+          return {
+            quoteItemId: item.id,
+            sku: item.product?.sku || item.manualSku || '',
+            description: item.description || item.product?.name || 'Item',
+            unit: item.product?.unit || 'UN',
+            additionals: (item.additionals || []).map((add) => ({
+              id: add.id,
+              sku: add.product?.sku || '',
+              description: add.description || add.product?.name || 'Adicional',
+              unit: add.product?.unit || 'UN',
+            })),
+            quoteQty,
+            qty: String(qty),
+            included,
+          }
+        })
+    )
+  }, [quote, cotizacionFacturaId])
+
+  const toggleQuoteRow = (quoteItemId: string, included: boolean) => {
+    setQuoteRows((prev) =>
+      prev.map((r) => (r.quoteItemId === quoteItemId ? { ...r, included } : r))
+    )
+  }
+
+  const updateQuoteRowQty = (quoteItemId: string, qty: string) => {
+    setQuoteRows((prev) =>
+      prev.map((r) => (r.quoteItemId === quoteItemId ? { ...r, qty } : r))
+    )
+  }
+
+  const includedRows = quoteRows.filter(
+    (r) => r.included && (parseFloat(r.qty.replace(',', '.')) || 0) > 0
+  )
 
   const applyTransport = (t: CustomerTransportOption) => {
     setCarrier(t.name)
@@ -590,6 +668,10 @@ export default function NuevoRemitoPage() {
   const handleSubmitFromQuote = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!quote) return
+    if (includedRows.length === 0) {
+      toast.error('Seleccioná al menos un item para el remito')
+      return
+    }
 
     setSubmitting(true)
     try {
@@ -598,6 +680,10 @@ export default function NuevoRemitoPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           cotizacionFacturaId: cotizacionFacturaId || undefined,
+          items: includedRows.map((r) => ({
+            quoteItemId: r.quoteItemId,
+            quantity: parseFloat(r.qty.replace(',', '.')),
+          })),
           carrier: carrier || undefined,
           transportAddress: transportAddress || undefined,
           deliveryType: carrier
@@ -723,8 +809,6 @@ export default function NuevoRemitoPage() {
 
     if (!quote) return null
 
-    const mainItems = quote.items.filter((i) => !i.isAlternative)
-
     return (
       <div className="space-y-6 p-6">
         <div className="flex items-center gap-4">
@@ -796,50 +880,78 @@ export default function NuevoRemitoPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">
-                Items a remitir ({mainItems.length + mainItems.reduce((sum, i) => sum + (i.additionals?.length || 0), 0)})
+                Items a remitir ({includedRows.length} de {quoteRows.length})
               </CardTitle>
+              <p className="text-xs text-gray-500">
+                Destildá los items que no van en este remito y ajustá las cantidades si hace falta.
+              </p>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto border rounded-lg">
                 <Table className="table-fixed">
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-10" />
                       <TableHead>Descripción</TableHead>
-                      <TableHead className="w-[80px] text-right">Cantidad</TableHead>
+                      <TableHead className="w-[90px] text-right">Cotizado</TableHead>
+                      <TableHead className="w-[120px] text-center">A remitir</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {mainItems.map((item) => {
-                      const skuLabel = item.product?.sku || item.manualSku || ''
-                      const itemDesc = item.description || item.product?.name || ''
-                      const fullDesc = skuLabel ? `${skuLabel} - ${itemDesc}` : itemDesc
+                    {quoteRows.map((row) => {
+                      const fullDesc = row.sku ? `${row.sku} - ${row.description}` : row.description
                       return (
                         <>
-                          <TableRow key={item.id}>
+                          <TableRow key={row.quoteItemId} className={row.included ? '' : 'opacity-50'}>
+                            <TableCell>
+                              <Checkbox
+                                checked={row.included}
+                                onCheckedChange={(checked) => toggleQuoteRow(row.quoteItemId, !!checked)}
+                              />
+                            </TableCell>
                             <TableCell className="overflow-hidden">
                               <p className="font-medium truncate" title={fullDesc}>
                                 {fullDesc}
                               </p>
                             </TableCell>
-                            <TableCell className="text-right">
-                              {item.quantity} {item.product?.unit || 'UN'}
+                            <TableCell className="text-right text-sm text-gray-500">
+                              {row.quoteQty} {row.unit}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                <Input
+                                  type="number"
+                                  min="0.01"
+                                  step="0.01"
+                                  value={row.qty}
+                                  disabled={!row.included}
+                                  onChange={(e) => updateQuoteRowQty(row.quoteItemId, e.target.value)}
+                                  className="w-20 text-center text-sm h-8"
+                                />
+                                <span className="text-xs text-gray-500">{row.unit}</span>
+                              </div>
                             </TableCell>
                           </TableRow>
-                          {item.additionals && item.additionals.length > 0 && item.additionals.map((add) => {
-                            const addSku = add.product?.sku || ''
-                            const addDesc = add.description || add.product?.name || ''
-                            const addFullDesc = addSku ? `+ ${addSku} - ${addDesc}` : `+ ${addDesc}`
+                          {row.additionals.map((add) => {
+                            const addFullDesc = add.sku ? `+ ${add.sku} - ${add.description}` : `+ ${add.description}`
                             return (
-                              <TableRow key={`${item.id}-add-${add.id}`} className="bg-blue-50/50">
+                              <TableRow
+                                key={`${row.quoteItemId}-add-${add.id}`}
+                                className={`bg-blue-50/50 ${row.included ? '' : 'opacity-50'}`}
+                              >
+                                <TableCell />
                                 <TableCell className="pl-8 overflow-hidden">
                                   <p className="text-sm text-gray-600 truncate" title={addFullDesc}>
                                     <span className="text-blue-600 font-medium">+ </span>
-                                    {addSku ? `${addSku} - ` : ''}
-                                    {addDesc}
+                                    {add.sku ? `${add.sku} - ` : ''}
+                                    {add.description}
                                   </p>
                                 </TableCell>
-                                <TableCell className="text-right text-sm text-gray-600">
-                                  {item.quantity} {add.product?.unit || 'UN'}
+                                <TableCell className="text-right text-sm text-gray-500">
+                                  {row.quoteQty} {add.unit}
+                                </TableCell>
+                                <TableCell className="text-center text-sm text-gray-600">
+                                  {row.included ? `${row.qty || 0} ${add.unit}` : '—'}
                                 </TableCell>
                               </TableRow>
                             )
@@ -982,7 +1094,7 @@ export default function NuevoRemitoPage() {
             </Link>
             <Button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || includedRows.length === 0}
               className="bg-blue-600 hover:bg-blue-700"
             >
               {submitting ? (

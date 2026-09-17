@@ -422,6 +422,10 @@ export async function generateDeliveryNoteFromQuote(
      *  esta CotizacionFactura (factura parcial), no con la cotización completa.
      *  El DeliveryNote queda vinculado a esa CotizacionFactura. */
     cotizacionFacturaId?: string;
+    /** Selección manual desde la pantalla de Generar Remito: solo estos items
+     *  principales, con estas cantidades. Tiene prioridad sobre las cantidades
+     *  de la cotización y de la factura parcial. */
+    items?: Array<{ quoteItemId: string; quantity: number }>;
   }
 ) {
   const quote = await prisma.quote.findUnique({
@@ -498,15 +502,35 @@ export async function generateDeliveryNoteFromQuote(
       }
     }
 
+    // Selección manual del operador (checkboxes + cantidades editadas en la
+    // pantalla de Generar Remito). Si viene, manda sobre todo lo demás.
+    const seleccionPorItemId = new Map<string, number>();
+    if (data?.items?.length) {
+      for (const sel of data.items) {
+        const qty = Number(sel.quantity);
+        if (Number.isFinite(qty) && qty > 0) {
+          seleccionPorItemId.set(sel.quoteItemId, qty);
+        }
+      }
+      if (seleccionPorItemId.size === 0) {
+        throw new Error('No hay items válidos en la selección del remito');
+      }
+    }
+
     for (const item of quote.items) {
       if (item.isAlternative) continue; // Solo items principales
 
       // Determinar cantidad para este item:
+      // - Si hay selección manual: sólo los items elegidos, con esa cantidad.
       // - Si hay CotizacionFactura: sólo incluir items que están en ella,
       //   y usar la cantidad facturada.
       // - Si no: comportamiento original (cantidad completa).
       let itemQuantity: number;
-      if (cotizacionFactura) {
+      if (seleccionPorItemId.size > 0) {
+        const qty = seleccionPorItemId.get(item.id);
+        if (qty == null) continue; // no seleccionado para este remito
+        itemQuantity = qty;
+      } else if (cotizacionFactura) {
         const qty = cantidadPorItemId.get(item.id);
         if (qty == null || qty <= 0) continue; // este item no se facturó en esta factura
         itemQuantity = qty;

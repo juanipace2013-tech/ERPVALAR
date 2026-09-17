@@ -28,7 +28,18 @@ export async function POST(
       bultos,
       notes,
       cotizacionFacturaId,
+      items,
     } = body;
+
+    // Selección manual de items del remito (opcional): validar la forma
+    const selectedItems = Array.isArray(items)
+      ? items
+          .filter((i: unknown): i is { quoteItemId: string; quantity: number } => {
+            const it = i as { quoteItemId?: unknown; quantity?: unknown };
+            return typeof it?.quoteItemId === 'string' && Number(it?.quantity) > 0;
+          })
+          .map((i) => ({ quoteItemId: i.quoteItemId, quantity: Number(i.quantity) }))
+      : undefined;
 
     const deliveryNote = await generateDeliveryNoteFromQuote(id, {
       deliveryAddress,
@@ -43,6 +54,7 @@ export async function POST(
       bultos,
       notes,
       cotizacionFacturaId,
+      items: selectedItems,
     });
 
     return NextResponse.json(deliveryNote, { status: 201 });

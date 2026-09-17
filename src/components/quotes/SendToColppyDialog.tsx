@@ -207,10 +207,11 @@ export function SendToColppyDialog({
       fetch('/api/tipo-cambio?from=USD&to=ARS')
         .then((r) => r.json())
         .then((data) => {
-          if (data.length > 0) {
+          const latest = data?.rates?.[0];
+          if (latest) {
             setLatestRate({
-              rate: Number(data[0].rate),
-              date: data[0].validFrom,
+              rate: Number(latest.rate),
+              date: latest.validFrom,
             });
           }
         })

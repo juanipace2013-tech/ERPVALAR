@@ -1126,10 +1126,11 @@ model Quote {
   statusHistory  QuoteStatusHistory[]
   publicToken    QuotePublicToken? // Token para acceso público
   emailLogs      QuoteEmailLog[] // Log de emails enviados
-  seguimientos   QuoteSeguimiento[] // Seguimientos de contacto
-  facturas       CotizacionFactura[] // Facturas parciales generadas
-  auditLogs      CotizacionAuditLog[]
-  comisionLineas ComisionLinea[] // Líneas de comisión vinculadas
+  seguimientos      QuoteSeguimiento[] // Seguimientos de contacto
+  facturas          CotizacionFactura[] // Facturas parciales generadas
+  auditLogs         CotizacionAuditLog[]
+  comisionLineas    ComisionLinea[] // Líneas de comisión vinculadas
+  deliverySchedules QuoteDeliverySchedule[] // Cronograma de entregas parciales (OC del cliente)
 
   @@index([customerId])
   @@index([opportunityId])
@@ -1143,6 +1144,24 @@ model Quote {
   @@index([colppySyncedAt])
   @@index([billingTargetDate])
   @@map("quotes")
+}
+
+// Cronograma de entregas parciales pactado en la OC del cliente (ej: EBINOX
+// entrega en 5 tramos a lo largo de un año). El tablero de facturación alerta
+// "no facturar hasta X" hasta DIAS_AVISO_ENTREGA días antes de cada tramo
+// pendiente. Solo informativo: NO bloquea la facturación manual.
+model QuoteDeliverySchedule {
+  id       String  @id @default(cuid())
+  quoteId  String
+  fecha    DateTime // Fecha civil de entrega, pineada a 12:00 UTC
+  cantidad Decimal  @db.Decimal(12, 2) // Unidades totales del tramo
+
+  createdAt DateTime @default(now())
+
+  quote Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([quoteId])
+  @@map("quote_delivery_schedules")
 }
 
 model QuoteItem {

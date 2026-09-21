@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { classifyQuote, getFarthestDelivery, isItemInStock, parseDeliveryDays } from '@/lib/facturacion-utils'
+import { classifyQuote, getFarthestDelivery, getNextDeliveryTranche, isItemInStock, parseDeliveryDays } from '@/lib/facturacion-utils'
 
 const item = (deliveryTime: string | null, isAlternative = false) => ({ deliveryTime, isAlternative })
 
@@ -50,5 +50,51 @@ describe('getFarthestDelivery', () => {
   })
   it('un plazo numérico gana sobre un no parseable', () => {
     expect(getFarthestDelivery([item('Consultar'), item('10 días')])).toBe('10 días')
+  })
+})
+
+describe('getNextDeliveryTranche', () => {
+  // Cronograma tipo EBINOX OC P09724: 5 tramos, 160 un. totales
+  const cronograma = [
+    { fecha: '2026-12-18T12:00:00.000Z', cantidad: 72 },
+    { fecha: '2027-02-15T12:00:00.000Z', cantidad: 24 },
+    { fecha: '2027-04-30T12:00:00.000Z', cantidad: 24 },
+    { fecha: '2027-07-13T12:00:00.000Z', cantidad: 24 },
+    { fecha: '2027-09-25T12:00:00.000Z', cantidad: 16 },
+  ]
+
+  it('sin facturar apunta al primer tramo', () => {
+    const next = getNextDeliveryTranche(cronograma, 0)
+    expect(next?.fecha).toBe('2026-12-18T12:00:00.000Z')
+    expect(next?.cantidad).toBe(72)
+    expect(next?.cantidadAcumulada).toBe(72)
+    // 10 días antes, preservando las 12:00 UTC de la fecha civil
+    expect(next?.facturarDesde).toBe('2026-12-08T12:00:00.000Z')
+  })
+
+  it('facturado el primer tramo completo avanza al segundo', () => {
+    const next = getNextDeliveryTranche(cronograma, 72)
+    expect(next?.fecha).toBe('2027-02-15T12:00:00.000Z')
+    expect(next?.cantidadAcumulada).toBe(96)
+  })
+
+  it('facturación parcial de un tramo sigue apuntando a ese tramo', () => {
+    const next = getNextDeliveryTranche(cronograma, 50)
+    expect(next?.fecha).toBe('2026-12-18T12:00:00.000Z')
+  })
+
+  it('todo facturado devuelve null', () => {
+    expect(getNextDeliveryTranche(cronograma, 160)).toBeNull()
+    expect(getNextDeliveryTranche(cronograma, 200)).toBeNull()
+  })
+
+  it('cronograma vacío devuelve null', () => {
+    expect(getNextDeliveryTranche([], 0)).toBeNull()
+  })
+
+  it('ordena tramos aunque vengan desordenados', () => {
+    const desordenado = [cronograma[2], cronograma[0], cronograma[1]]
+    const next = getNextDeliveryTranche(desordenado, 0)
+    expect(next?.fecha).toBe('2026-12-18T12:00:00.000Z')
   })
 })

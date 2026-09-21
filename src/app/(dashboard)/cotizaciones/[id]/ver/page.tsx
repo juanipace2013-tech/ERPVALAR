@@ -53,6 +53,8 @@ import {
   Trash2,
   Save,
   X,
+  Truck,
+  Plus,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber, formatCurrency as formatCurrencyAR, getLocalDateString } from '@/lib/utils'
@@ -83,6 +85,7 @@ interface Quote {
   purchaseOrderUrl: string | null
   purchaseOrderNumber: string | null
   purchaseOrderDate: string | null
+  deliverySchedules: Array<{ id: string; fecha: string; cantidad: number | string }>
   colppySyncedAt: string | null
   customer: {
     id: string
@@ -215,6 +218,11 @@ export default function QuoteViewPage() {
   const [ocDate, setOcDate] = useState('')
   const [ocSaving, setOcSaving] = useState(false)
 
+  // Cronograma de entregas parciales
+  const [dsRows, setDsRows] = useState<Array<{ fecha: string; cantidad: string }>>([])
+  const [dsEditing, setDsEditing] = useState(false)
+  const [dsSaving, setDsSaving] = useState(false)
+
   // Revert dialog
   const [showRevertDialog, setShowRevertDialog] = useState(false)
   const [revertTarget, setRevertTarget] = useState<string>('')
@@ -255,6 +263,15 @@ export default function QuoteViewPage() {
         const d = new Date(data.purchaseOrderDate)
         setOcDate(getLocalDateString(d))
       }
+      // Inicializar cronograma de entregas (fechas civiles a 12:00 UTC → YYYY-MM-DD)
+      setDsRows(
+        (data.deliverySchedules || []).map(
+          (t: { fecha: string; cantidad: number | string }) => ({
+            fecha: String(t.fecha).slice(0, 10),
+            cantidad: String(Number(t.cantidad)),
+          })
+        )
+      )
       // Fetch BCRA indicator from session cache or API (background, no await)
       if (!bcraFetched.current && data?.customer?.cuit) {
         bcraFetched.current = true
@@ -593,6 +610,50 @@ export default function QuoteViewPage() {
       toast.error('Error al actualizar datos de OC')
     } finally {
       setOcSaving(false)
+    }
+  }
+
+  const handleSaveDeliverySchedule = async () => {
+    const tramos = dsRows
+      .filter((r) => r.fecha || r.cantidad)
+      .map((r) => ({ fecha: r.fecha, cantidad: Number(r.cantidad) }))
+
+    for (const t of tramos) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(t.fecha) || !t.cantidad || t.cantidad <= 0) {
+        toast.error('Cada tramo necesita fecha y cantidad mayor a 0')
+        return
+      }
+    }
+
+    try {
+      setDsSaving(true)
+      const response = await fetch(`/api/quotes/${id}/delivery-schedule`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tramos }),
+      })
+      if (!response.ok) {
+        const err = await response.json().catch(() => null)
+        throw new Error(err?.error || 'Error al guardar cronograma')
+      }
+      const data = await response.json()
+      setQuote((prev) =>
+        prev ? { ...prev, deliverySchedules: data.deliverySchedules } : prev
+      )
+      setDsRows(
+        (data.deliverySchedules as Array<{ fecha: string; cantidad: number | string }>).map((t) => ({
+          fecha: String(t.fecha).slice(0, 10),
+          cantidad: String(Number(t.cantidad)),
+        }))
+      )
+      setDsEditing(false)
+      toast.success(
+        tramos.length > 0 ? 'Cronograma de entregas guardado' : 'Cronograma de entregas eliminado'
+      )
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Error al guardar cronograma')
+    } finally {
+      setDsSaving(false)
     }
   }
 
@@ -1100,6 +1161,145 @@ export default function QuoteViewPage() {
                   <span className="text-xs text-gray-500">
                     Formatos: PDF, JPG, PNG (máx 10MB)
                   </span>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Cronograma de Entregas — entregas parciales pactadas en la OC */}
+      {['ACCEPTED', 'CONVERTED', 'FACTURADA_PARCIAL'].includes(quote.status) && (
+        <Card className="mb-6 border-sky-200">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center justify-between text-base">
+              <span className="flex items-center gap-2">
+                <Truck className="h-5 w-5 text-sky-600" />
+                Cronograma de Entregas
+              </span>
+              {!dsEditing && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    if (dsRows.length === 0) setDsRows([{ fecha: '', cantidad: '' }])
+                    setDsEditing(true)
+                  }}
+                >
+                  <Pencil className="h-4 w-4 mr-1" />
+                  {quote.deliverySchedules?.length ? 'Editar' : 'Cargar cronograma'}
+                </Button>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {!dsEditing ? (
+              quote.deliverySchedules?.length ? (
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-2">
+                    {quote.deliverySchedules.map((t) => (
+                      <div
+                        key={t.id}
+                        className="rounded border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-center"
+                      >
+                        <p className="text-xs font-semibold text-sky-900">
+                          {formatDate(t.fecha)}
+                        </p>
+                        <p className="text-xs text-sky-700">
+                          {formatNumber(Number(t.cantidad))} un.
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Total: {formatNumber(quote.deliverySchedules.reduce((s, t) => s + Number(t.cantidad), 0))} un.
+                    {' — '}El tablero de facturación avisa &quot;no facturar&quot; hasta 10 días antes de cada entrega.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">
+                  Sin cronograma. Si la OC pacta entregas parciales, cargalo acá: el tablero
+                  de facturación va a avisar que no se facture cada tramo hasta 10 días antes
+                  de su fecha de entrega.
+                </p>
+              )
+            ) : (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  {dsRows.map((row, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <Input
+                        type="date"
+                        className="w-44"
+                        value={row.fecha}
+                        onChange={(e) =>
+                          setDsRows((rows) =>
+                            rows.map((r, i) => (i === idx ? { ...r, fecha: e.target.value } : r))
+                          )
+                        }
+                        disabled={dsSaving}
+                      />
+                      <Input
+                        type="number"
+                        min="1"
+                        step="1"
+                        placeholder="Cantidad"
+                        className="w-32"
+                        value={row.cantidad}
+                        onChange={(e) =>
+                          setDsRows((rows) =>
+                            rows.map((r, i) => (i === idx ? { ...r, cantidad: e.target.value } : r))
+                          )
+                        }
+                        disabled={dsSaving}
+                      />
+                      <span className="text-xs text-gray-400">un.</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-600 hover:bg-red-50"
+                        onClick={() => setDsRows((rows) => rows.filter((_, i) => i !== idx))}
+                        disabled={dsSaving}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDsRows((rows) => [...rows, { fecha: '', cantidad: '' }])}
+                  disabled={dsSaving}
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Agregar tramo
+                </Button>
+                <div className="flex items-center gap-2 pt-1">
+                  <Button size="sm" onClick={handleSaveDeliverySchedule} disabled={dsSaving}>
+                    {dsSaving ? (
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4 mr-1" />
+                    )}
+                    Guardar cronograma
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setDsRows(
+                        (quote.deliverySchedules || []).map((t) => ({
+                          fecha: String(t.fecha).slice(0, 10),
+                          cantidad: String(Number(t.cantidad)),
+                        }))
+                      )
+                      setDsEditing(false)
+                    }}
+                    disabled={dsSaving}
+                  >
+                    Cancelar
+                  </Button>
                 </div>
               </div>
             )}

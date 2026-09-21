@@ -5,7 +5,9 @@ import { logger } from '@/lib/logger'
 import { VENDEDOR_SELECCIONABLE } from '@/lib/vendedores'
 import {
   getFarthestDelivery,
+  getNextDeliveryTranche,
   type KanbanColumn,
+  type NextTrancheInfo,
 } from '@/lib/facturacion-utils'
 
 /**
@@ -116,6 +118,10 @@ export async function GET(request: NextRequest) {
           billingNote: true,
           billingNoteUpdatedAt: true,
           billingNoteUpdatedBy: true,
+          deliverySchedules: {
+            select: { fecha: true, cantidad: true },
+            orderBy: { fecha: 'asc' },
+          },
           customer: {
             select: { id: true, name: true, cuit: true, taxCondition: true, paymentTerms: true, exchangeRateType: true },
           },
@@ -220,6 +226,8 @@ export async function GET(request: NextRequest) {
       billingNote: string | null
       billingNoteUpdatedAt: string | null
       billingNoteUpdatedByName: string | null
+      deliverySchedule: Array<{ fecha: string; cantidad: number }>
+      nextDelivery: NextTrancheInfo | null
     }
 
     // Resolver nombres de los últimos editores de billingNote en una sola query
@@ -349,6 +357,18 @@ export async function GET(request: NextRequest) {
       const readyItemsCount = pendingItems.filter((i) => i.isInStock).length
       const totalItemsCount = pendingItems.length
 
+      // Cronograma de entregas parciales: próximo tramo pendiente según
+      // unidades ya facturadas (suma de todos los ítems principales).
+      const deliverySchedule = quote.deliverySchedules.map((t) => ({
+        fecha: t.fecha.toISOString(),
+        cantidad: Number(t.cantidad),
+      }))
+      const totalInvoicedUnits = processedItems.reduce(
+        (sum, i) => sum + i.invoicedQuantity,
+        0
+      )
+      const nextDelivery = getNextDeliveryTranche(deliverySchedule, totalInvoicedUnits)
+
       // Determinar estado Colppy de la cotización
       const colppySyncedAt = quote.colppySyncedAt
         ? quote.colppySyncedAt.toISOString()
@@ -385,6 +405,9 @@ export async function GET(request: NextRequest) {
         billingNote: quote.billingNote ?? null,
         billingNoteUpdatedAt: quote.billingNoteUpdatedAt ? quote.billingNoteUpdatedAt.toISOString() : null,
         billingNoteUpdatedByName: quote.billingNoteUpdatedBy ? (editorMap.get(quote.billingNoteUpdatedBy) ?? null) : null,
+        // Cronograma de entregas parciales
+        deliverySchedule,
+        nextDelivery,
       })
     }
 

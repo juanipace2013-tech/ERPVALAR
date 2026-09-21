@@ -152,6 +152,13 @@ interface BoardCard {
   billingNote: string | null
   billingNoteUpdatedAt: string | null
   billingNoteUpdatedByName: string | null
+  deliverySchedule: Array<{ fecha: string; cantidad: number }>
+  nextDelivery: {
+    fecha: string
+    cantidad: number
+    cantidadAcumulada: number
+    facturarDesde: string
+  } | null
 }
 
 interface ColumnData {
@@ -261,11 +268,17 @@ export default function FacturacionPage() {
 
       const data = (await response.json()) as BoardData
       // Subir al tope de cada columna las cards con billingTargetDate vencida
-      // (today >= billingTargetDate). El resto del orden se preserva.
+      // (today >= billingTargetDate) o con un tramo del cronograma de entregas
+      // ya en ventana de facturación. El resto del orden se preserva.
       const todayMs = todayCivilUtcMs()
+      const isCardDue = (c: BoardCard) => {
+        if (c.billingTargetDate && new Date(c.billingTargetDate).getTime() <= todayMs) return true
+        if (c.nextDelivery && new Date(c.nextDelivery.facturarDesde).getTime() <= todayMs) return true
+        return false
+      }
       const sortByBillingDue = (a: BoardCard, b: BoardCard) => {
-        const aDue = a.billingTargetDate ? new Date(a.billingTargetDate).getTime() <= todayMs : false
-        const bDue = b.billingTargetDate ? new Date(b.billingTargetDate).getTime() <= todayMs : false
+        const aDue = isCardDue(a)
+        const bDue = isCardDue(b)
         if (aDue === bDue) return 0
         return aDue ? -1 : 1
       }
@@ -1237,7 +1250,16 @@ function QuoteCard({
   // Estado de programación de facturación (comparación de fechas civiles)
   const billingDue = isBillingDue(quote.billingTargetDate)
   const billingScheduled = quote.billingTargetDate !== null && !billingDue
-  const billingBorderClass = billingDue
+
+  // Cronograma de entregas parciales: hold hasta 10 días antes del próximo tramo
+  const deliveryWindowOpen = quote.nextDelivery
+    ? isBillingDue(quote.nextDelivery.facturarDesde)
+    : false
+  const deliveryHold = quote.nextDelivery !== null && !deliveryWindowOpen
+
+  const billingBorderClass = deliveryHold
+    ? 'border-l-4 border-l-red-400'
+    : billingDue || deliveryWindowOpen
     ? 'border-l-4 border-l-green-500'
     : billingScheduled
     ? 'border-l-4 border-l-blue-400'
@@ -1320,6 +1342,38 @@ function QuoteCard({
             <div className="flex items-center gap-1 text-xs text-orange-600">
               <Clock className="h-3 w-3" />
               <span>Plazo máx: {quote.farthestDelivery}</span>
+            </div>
+          )}
+
+          {quote.nextDelivery && (
+            <div className={`text-xs rounded px-1.5 py-1 mt-0.5 space-y-0.5 border ${
+              deliveryHold
+                ? 'bg-red-50 text-red-800 border-red-200'
+                : 'bg-green-50 text-green-800 border-green-200'
+            }`}>
+              <div className="flex items-start gap-1">
+                <Truck className="h-3 w-3 flex-shrink-0 mt-[2px]" />
+                {deliveryHold ? (
+                  <span>
+                    <span className="font-semibold">
+                      No facturar hasta el {formatBillingDate(quote.nextDelivery.facturarDesde)}
+                    </span>
+                    {' — '}entrega {formatBillingDate(quote.nextDelivery.fecha)} ({formatNumber(quote.nextDelivery.cantidad)} un.)
+                  </span>
+                ) : (
+                  <span>
+                    <span className="font-semibold">
+                      Facturar {formatNumber(quote.nextDelivery.cantidad)} un.
+                    </span>
+                    {' — '}entrega el {formatBillingDate(quote.nextDelivery.fecha)}
+                  </span>
+                )}
+              </div>
+              {quote.deliverySchedule.length > 1 && (
+                <p className="text-[10px] opacity-75">
+                  Cronograma: {quote.deliverySchedule.map((t) => `${formatBillingDate(t.fecha).slice(0, 5)}: ${formatNumber(t.cantidad)}`).join(' · ')}
+                </p>
+              )}
             </div>
           )}
 

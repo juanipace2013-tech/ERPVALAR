@@ -166,6 +166,10 @@ export async function GET(
             },
           },
         },
+        deliverySchedules: {
+          select: { id: true, fecha: true, cantidad: true },
+          orderBy: { fecha: 'asc' },
+        },
       },
     })
 

@@ -1308,10 +1308,23 @@ export default function QuoteDetailPage() {
   }
 
   const handleOpenAlternativeDialog = (parentItemId: string) => {
+    // Partir de un formulario limpio: si quedó editingItemId de una edición
+    // cerrada con X/ESC, el guardado haría PATCH y pisaría el ítem original.
+    resetItemForm()
     setItemFormData({
-      ...itemFormData,
+      productId: '',
+      quantity: 1,
+      description: '',
+      deliveryTime: 'Inmediato',
       isAlternative: true,
       alternativeToItemId: parentItemId,
+      additionals: [],
+      isManual: false,
+      manualSku: '',
+      manualBrand: '',
+      manualUnitPrice: '',
+      brandDiscountOverride: '',
+      multiplierOverride: '',
     })
     setShowItemDialog(true)
   }
@@ -1753,7 +1766,15 @@ export default function QuoteDetailPage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="text-blue-900">Items de la Cotización</CardTitle>
-            <Dialog open={showItemDialog} onOpenChange={setShowItemDialog}>
+            <Dialog
+              open={showItemDialog}
+              onOpenChange={(open) => {
+                setShowItemDialog(open)
+                // Al cerrar con X/ESC/overlay, limpiar editingItemId y el form
+                // para que la próxima apertura no herede el modo edición.
+                if (!open) resetItemForm()
+              }}
+            >
               <DialogTrigger asChild>
                 <Button
                   size="sm"

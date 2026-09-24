@@ -91,6 +91,7 @@ interface Quote {
   }
   items: QuoteItem[]
   exchangeRate?: number | string | null
+  purchaseOrderNumber?: string | null
   facturas?: Array<{
     id: string
     numeroFactura: string | null
@@ -157,6 +158,7 @@ interface QuoteForImport {
   status: string
   total: number | string
   currency: string
+  purchaseOrderNumber?: string | null
   items: Array<{
     id: string
     productId: string | null
@@ -361,6 +363,13 @@ export default function NuevoRemitoPage() {
       setCustomerTransportSchedule(c.defaultTransportSchedule)
     }
   }, [quote?.customer?.id])
+
+  // Precargar la OC del cliente desde la cotización (solo si el campo está vacío,
+  // para no pisar lo que el usuario ya tipeó).
+  useEffect(() => {
+    if (!quote?.purchaseOrderNumber) return
+    setPurchaseOrder((prev) => prev || quote.purchaseOrderNumber || '')
+  }, [quote?.purchaseOrderNumber])
 
   // Armar las filas editables cuando carga la cotización. Si viene de una
   // factura parcial, arrancan tildados solo los items de esa factura, con la
@@ -656,6 +665,10 @@ export default function NuevoRemitoPage() {
     }
     setItems((prev) => [...prev, ...toImport])
     setLinkedQuoteId(quote.id)
+    // Traer la OC del cliente de la cotización importada (si el campo está vacío)
+    if (quote.purchaseOrderNumber) {
+      setPurchaseOrder((prev) => prev || quote.purchaseOrderNumber || '')
+    }
     toast.success(`${toImport.length} item${toImport.length !== 1 ? 's' : ''} importado${toImport.length !== 1 ? 's' : ''} de ${quote.quoteNumber}`)
     setSelectedQuoteId(null)
     setSelectedQuoteItems(new Set())

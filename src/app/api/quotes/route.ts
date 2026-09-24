@@ -109,6 +109,7 @@ export async function GET(request: NextRequest) {
           tenderNumber: true,
           colppySyncedAt: true,
           purchaseOrderUrl: true,
+          purchaseOrderNumber: true,
           rejectionReason: true,
           statusUpdatedAt: true,
           bonification: true,

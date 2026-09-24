@@ -111,6 +111,7 @@ export async function GET(request: NextRequest) {
           bonification: true,
           terms: true,
           notes: true,
+          purchaseOrderNumber: true,
           date: true,
           colppySyncedAt: true,
           colppyInvoiceId: true,
@@ -214,6 +215,7 @@ export async function GET(request: NextRequest) {
       bonification: number
       terms: string | null
       notes: string | null
+      purchaseOrderNumber: string | null
       date: string
       readyItemsCount: number
       totalItemsCount: number
@@ -386,6 +388,7 @@ export async function GET(request: NextRequest) {
         bonification: Number(quote.bonification ?? 0),
         terms: quote.terms,
         notes: quote.notes,
+        purchaseOrderNumber: quote.purchaseOrderNumber,
         date: quote.date.toISOString(),
         readyItemsCount,
         totalItemsCount,

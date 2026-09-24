@@ -2130,6 +2130,7 @@ export default function QuoteViewPage() {
               currency: quote.currency,
               exchangeRate: quote.exchangeRate,
               notes: quote.notes ?? undefined,
+              purchaseOrderNumber: quote.purchaseOrderNumber,
               bonification: Number(quote.bonification) || 0,
             }}
             open={showColppyDialog}

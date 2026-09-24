@@ -140,6 +140,7 @@ interface BoardCard {
   bonification: number
   terms: string | null
   notes: string | null
+  purchaseOrderNumber: string | null
   date: string
   readyItemsCount: number
   totalItemsCount: number
@@ -502,6 +503,7 @@ export default function FacturacionPage() {
       currency: quote.currency,
       exchangeRate: quote.exchangeRate,
       notes: quote.notes ?? undefined,
+      purchaseOrderNumber: quote.purchaseOrderNumber,
       bonification: quote.bonification,
     }
   }, [colppyQuoteId, boardData, getItemsForColppy])

@@ -218,12 +218,51 @@ export async function publishAnswer(
 }
 
 /**
+ * Cierra en el ERP una pregunta que dejó de estar pendiente en ML: respondida
+ * directo desde la página de ML, borrada por el comprador, baneada o con el
+ * ítem cerrado. Sin esto, lo que se contesta por fuera del ERP queda en
+ * Pendientes para siempre. Devuelve true si actualizó la fila local.
+ */
+export async function reconcileExternalQuestion(question: MlQuestion): Promise<boolean> {
+  // UNDER_REVIEW es moderación de ML y puede volver a UNANSWERED: no tocar.
+  if (question.status === 'UNANSWERED' || question.status === 'UNDER_REVIEW') return false
+  const row = await prisma.mlQuestion.findUnique({ where: { mlQuestionId: BigInt(question.id) } })
+  if (!row) return false
+  if (row.status !== MlQuestionStatus.PENDING_REVIEW && row.status !== MlQuestionStatus.FAILED)
+    return false
+
+  if (question.status === 'ANSWERED') {
+    await prisma.mlQuestion.update({
+      where: { id: row.id },
+      data: {
+        status: MlQuestionStatus.ANSWERED,
+        answerText: question.answer?.text ?? row.answerText,
+        answeredAt: question.answer?.date_created ? new Date(question.answer.date_created) : new Date(),
+        answeredById: null, // respondida en la página de ML, no desde el ERP
+        errorDetail: null,
+      },
+    })
+  } else {
+    await prisma.mlQuestion.update({
+      where: { id: row.id },
+      data: { status: MlQuestionStatus.CLOSED, errorDetail: null },
+    })
+  }
+  logger.info(
+    `[ML Preguntas] question=${question.id} ${question.status} en ML, fila local actualizada`
+  )
+  return true
+}
+
+/**
  * Ingresa una pregunta de ML al ERP: crea el registro (idempotente), genera el
  * borrador y, en modo AUTO sin revisión, la publica. Devuelve el registro o
  * null si se salteó.
  */
 export async function ingestQuestion(question: MlQuestion): Promise<MlQuestionRow | null> {
   if (question.status !== 'UNANSWERED') {
+    // Puede ser una notificación de que la respondieron/cerraron desde ML.
+    await reconcileExternalQuestion(question)
     logger.info(`[ML Preguntas] question=${question.id} status=${question.status}, skip`)
     return null
   }
@@ -298,18 +337,26 @@ export async function handleQuestionNotification(notificationId: string): Promis
 
 /**
  * Backfill: trae todas las preguntas sin responder de la cuenta y las ingresa.
- * Devuelve cuántas se crearon.
+ * Además reconcilia las pendientes del ERP que ya no figuran sin responder en
+ * ML (respondidas desde la página de ML, borradas, etc.). Devuelve cuántas se
+ * crearon y cuántas se cerraron.
  */
-export async function syncUnansweredQuestions(): Promise<{ found: number; created: number }> {
+export async function syncUnansweredQuestions(): Promise<{
+  found: number
+  created: number
+  closed: number
+}> {
   let offset = 0
   const limit = 50
   let found = 0
   let created = 0
+  const unanswered = new Set<string>()
   for (;;) {
     const page = await getMyUnansweredQuestions(limit, offset)
     const qs = page.questions ?? []
     found += qs.length
     for (const q of qs) {
+      unanswered.add(String(q.id))
       const row = await ingestQuestion(q)
       if (row) created++
     }
@@ -317,6 +364,32 @@ export async function syncUnansweredQuestions(): Promise<{ found: number; create
     offset += limit
     if (offset > 1000) break // guardia
   }
-  logger.info(`[ML Preguntas] Sync: ${found} sin responder, ${created} nuevas`)
-  return { found, created }
+
+  // Pendientes locales que ML ya no lista como sin responder: consultar una
+  // por una y cerrarlas según su estado real.
+  let closed = 0
+  const pending = await prisma.mlQuestion.findMany({
+    where: { status: { in: [MlQuestionStatus.PENDING_REVIEW, MlQuestionStatus.FAILED] } },
+    select: { mlQuestionId: true },
+  })
+  for (const p of pending) {
+    if (unanswered.has(p.mlQuestionId.toString())) continue
+    try {
+      const q = await getQuestion(p.mlQuestionId.toString())
+      if (await reconcileExternalQuestion(q)) closed++
+    } catch (err) {
+      if (err instanceof MlApiError && err.status === 404) {
+        await prisma.mlQuestion.update({
+          where: { mlQuestionId: p.mlQuestionId },
+          data: { status: MlQuestionStatus.CLOSED },
+        })
+        closed++
+      } else {
+        logger.error(`[ML Preguntas] Error reconciliando question=${p.mlQuestionId}`, err)
+      }
+    }
+  }
+
+  logger.info(`[ML Preguntas] Sync: ${found} sin responder, ${created} nuevas, ${closed} cerradas`)
+  return { found, created, closed }
 }

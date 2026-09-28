@@ -272,7 +272,9 @@ export default function PreguntasMlPage() {
       const res = await fetch('/api/mercadolibre/preguntas/sync', { method: 'POST' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Error')
-      toast.success(`${data.found} sin responder en ML · ${data.created} nuevas con borrador`)
+      toast.success(
+        `${data.found} sin responder en ML · ${data.created} nuevas con borrador · ${data.closed ?? 0} resueltas por fuera`
+      )
       await load()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Error al sincronizar')

@@ -12,8 +12,9 @@
  *   facturas-compra-items-<mes>.csv      renglones (lista + dto + alícuota)
  *   facturas-compra-iva-<mes>.csv        IVA por alícuota declarado
  *   facturas-compra-percepciones-<mes>.csv
- *   ventas-<mes>.csv                     emitidas por el ERP (ARCA PV 7) con
- *                                        CAE aprobado, incluye NC/ND
+ *   ventas-<mes>.csv                     comprobantes de venta con CAE
+ *                                        aprobado (hoy emitidos por Colppy;
+ *                                        incluye NC/ND)
  *   ventas-items-<mes>.csv               renglones de esas facturas
  *
  * Uso (en el VPS, que tiene la DB de prod):
@@ -185,14 +186,17 @@ async function exportCompras(outDir: string, desde: Date, hasta: Date, label: st
 }
 
 async function exportVentas(outDir: string, desde: Date, hasta: Date, label: string) {
+  // Comprobantes de venta con CAE aprobado del período. Hoy los emite Colppy
+  // (PV 0003, emitidaPor null); cuando arranque la emisión propia (ARCA PV 7)
+  // salen igual, distinguidos por la columna emitida_por.
   const invoices = await prisma.invoice.findMany({
     where: {
-      emitidaPor: 'ARCA', // PV 7, emitidas por el ERP (incluye NC/ND)
+      transactionType: { in: ['SALE', 'CREDIT_NOTE', 'DEBIT_NOTE'] },
       afipStatus: 'APPROVED',
       status: { not: 'CANCELLED' },
       issueDate: { gte: desde, lt: hasta },
     },
-    orderBy: [{ cbteTipo: 'asc' }, { cbteNumero: 'asc' }],
+    orderBy: { issueDate: 'asc' },
     include: {
       customer: { select: { name: true, businessName: true, cuit: true } },
       items: true,
@@ -205,9 +209,8 @@ async function exportVentas(outDir: string, desde: Date, hasta: Date, label: str
   for (const f of invoices) {
     cab.push([
       esc(f.invoiceNumber),
-      String(f.pointOfSale ?? ''),
-      String(f.cbteTipo ?? ''),
-      String(f.cbteNumero ?? ''),
+      f.invoiceType, // A / B / C / E
+      f.transactionType, // SALE / CREDIT_NOTE / DEBIT_NOTE
       esc(f.customer.businessName || f.customer.name),
       esc(f.customer.cuit),
       fecha(f.issueDate),
@@ -220,6 +223,7 @@ async function exportVentas(outDir: string, desde: Date, hasta: Date, label: str
       num(f.total),
       esc(f.cae),
       esc(f.relatedInvoice?.invoiceNumber), // NC/ND: comprobante original
+      esc(f.emitidaPor ?? 'COLPPY'),
     ])
     for (const it of f.items)
       items.push([
@@ -237,7 +241,7 @@ async function exportVentas(outDir: string, desde: Date, hasta: Date, label: str
   writeFileSync(
     join(outDir, `ventas-${label}.csv`),
     csv(
-      ['numero', 'punto_venta', 'cbte_tipo', 'cbte_numero', 'cliente', 'cuit', 'fecha', 'vencimiento', 'moneda', 'cotizacion', 'neto', 'iva', 'descuento', 'total', 'cae', 'comprobante_original'],
+      ['numero', 'letra', 'transaccion', 'cliente', 'cuit', 'fecha', 'vencimiento', 'moneda', 'cotizacion', 'neto', 'iva', 'descuento', 'total', 'cae', 'comprobante_original', 'emitida_por'],
       cab
     )
   )
@@ -259,7 +263,7 @@ async function main() {
   const compras = await exportCompras(outDir, desde, hasta, label)
   console.log(`  facturas-compra-${label}.csv: ${compras} comprobantes (+items/iva/percepciones)`)
   const ventas = await exportVentas(outDir, desde, hasta, label)
-  console.log(`  ventas-${label}.csv: ${ventas} comprobantes ARCA PV 7 aprobados (+items)`)
+  console.log(`  ventas-${label}.csv: ${ventas} comprobantes de venta con CAE (+items)`)
   console.log('Listo. Sólo lectura: no se modificó ningún dato.')
 }
 

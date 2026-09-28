@@ -123,7 +123,8 @@ export async function consultarPersona(cuitInput: string): Promise<PersonaPadron
     condicionIva: condicionIva(ret),
     domicilio: {
       direccion: dom.direccion ?? '',
-      localidad: dom.localidad ?? '',
+      // ARCA no informa localidad para domicilios en CABA.
+      localidad: dom.localidad || (provincia(dom.descripcionProvincia ?? '') === 'CABA' ? 'CABA' : ''),
       provincia: provincia(dom.descripcionProvincia ?? ''),
       codigoPostal: dom.codPostal ?? '',
     },

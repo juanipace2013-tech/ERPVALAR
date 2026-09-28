@@ -2778,7 +2778,7 @@ export default function QuoteDetailPage() {
                                     {alt.product ? `SKU: ${alt.product.sku}` : alt.manualSku ? `Código: ${alt.manualSku}` : ''}
                                   </p>
                                   {alt.product && (
-                                    <div className="mt-1">
+                                    <div className="mt-1 flex flex-wrap items-center gap-2">
                                       <StockBadge
                                         sku={alt.product.sku}
                                         stock={quoteStockData[alt.product.sku]?.stock}
@@ -2787,6 +2787,12 @@ export default function QuoteDetailPage() {
                                         showQuantity={true}
                                         size="sm"
                                       />
+                                      {alt.product.brand?.toUpperCase() === 'FMQ' && (
+                                        <FamiqStock sku={alt.product.sku} />
+                                      )}
+                                      {alt.product.brand?.toUpperCase() === 'WINTERS' && (
+                                        <WintersStock sku={alt.product.sku} />
+                                      )}
                                     </div>
                                   )}
                                   {alt.product && quoteStockData[alt.product.sku]?.found &&

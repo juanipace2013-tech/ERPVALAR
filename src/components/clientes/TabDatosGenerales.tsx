@@ -40,6 +40,7 @@ import {
   Truck,
   Save,
   X,
+  Search,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { CONDICIONES_IVA } from '@/lib/constants'
@@ -186,6 +187,9 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
   const [editForm, setEditForm] = useState({
     name: '',
     address: '',
+    city: '',
+    province: '',
+    postalCode: '',
     phone: '',
     mobile: '',
     email: '',
@@ -193,6 +197,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
     taxCondition: '',
   })
   const [savingEdit, setSavingEdit] = useState(false)
+  const [loadingAFIP, setLoadingAFIP] = useState(false)
 
   // Transport edit state
   const [isEditingTransport, setIsEditingTransport] = useState(false)
@@ -308,6 +313,9 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
     setEditForm({
       name: customer.name || '',
       address: customer.address || '',
+      city: customer.city || '',
+      province: customer.province || '',
+      postalCode: customer.postalCode || '',
       phone: customer.phone || '',
       mobile: customer.mobile || '',
       email: customer.email || '',
@@ -319,6 +327,39 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
 
   const cancelEditing = () => {
     setIsEditing(false)
+  }
+
+  // Trae de ARCA el domicilio fiscal y la condición IVA; se guardan recién al tocar Guardar.
+  // La razón social viene de Colppy y no se edita acá: sólo se avisa si ARCA informa otra.
+  const fetchAFIPData = async () => {
+    const cuitDigits = (customer.cuit || cuit || '').replace(/\D/g, '')
+    if (cuitDigits.length !== 11) {
+      toast.error('El cliente no tiene un CUIT válido')
+      return
+    }
+    try {
+      setLoadingAFIP(true)
+      const response = await fetch(`/api/afip/cuit/${cuitDigits}`)
+      const result = await response.json()
+      if (!response.ok || !result.success) throw new Error(result.message || 'Error al consultar AFIP')
+      const d = result.data
+      setEditForm((prev) => ({
+        ...prev,
+        address: d.address || prev.address,
+        city: d.city || prev.city,
+        province: d.province || prev.province,
+        postalCode: d.postalCode || prev.postalCode,
+        taxCondition: d.taxCondition || prev.taxCondition,
+      }))
+      if (d.status === 'INACTIVE') toast.warning('Atención: el CUIT figura inactivo en ARCA')
+      else toast.success('Datos actualizados desde AFIP. Revisalos y tocá Guardar.')
+      if (d.businessName && customer.businessName && d.businessName.trim().toUpperCase() !== customer.businessName.trim().toUpperCase())
+        toast.info(`En ARCA la razón social es "${d.businessName}"`, { description: 'La razón social se corrige en Colppy.' })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Error al consultar AFIP')
+    } finally {
+      setLoadingAFIP(false)
+    }
   }
 
   const handleSaveEdit = async () => {
@@ -334,6 +375,9 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
         body: JSON.stringify({
           name: editForm.name,
           address: editForm.address,
+          city: editForm.city,
+          province: editForm.province,
+          postalCode: editForm.postalCode,
           phone: editForm.phone,
           mobile: editForm.mobile,
           email: editForm.email || null,
@@ -350,6 +394,9 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
       onCustomerUpdate?.({
         name: editForm.name,
         address: editForm.address,
+        city: editForm.city,
+        province: editForm.province,
+        postalCode: editForm.postalCode,
         phone: editForm.phone,
         mobile: editForm.mobile,
         email: editForm.email,
@@ -609,6 +656,16 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
                 <Button
                   size="sm"
                   variant="outline"
+                  onClick={fetchAFIPData}
+                  disabled={loadingAFIP || savingEdit}
+                  className="h-7 text-xs"
+                >
+                  {loadingAFIP ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Search className="h-3.5 w-3.5 mr-1" />}
+                  Buscar en AFIP
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
                   onClick={cancelEditing}
                   disabled={savingEdit}
                   className="h-7 text-xs"
@@ -683,10 +740,35 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
                 label="Dirección"
                 value={editForm.address}
                 onChange={(v) => setEditForm({ ...editForm, address: v })}
-                placeholder="Dirección completa"
+                placeholder="Calle y número"
               />
             ) : (
               <InfoRow icon={MapPin} label="Dirección" value={fullAddress} />
+            )}
+            {isEditing && (
+              <>
+                <EditableRow
+                  icon={MapPin}
+                  label="Ciudad"
+                  value={editForm.city}
+                  onChange={(v) => setEditForm({ ...editForm, city: v })}
+                  placeholder="Ciudad"
+                />
+                <EditableRow
+                  icon={MapPin}
+                  label="Provincia"
+                  value={editForm.province}
+                  onChange={(v) => setEditForm({ ...editForm, province: v })}
+                  placeholder="Provincia"
+                />
+                <EditableRow
+                  icon={MapPin}
+                  label="Código postal"
+                  value={editForm.postalCode}
+                  onChange={(v) => setEditForm({ ...editForm, postalCode: v })}
+                  placeholder="CP"
+                />
+              </>
             )}
 
             {/* Teléfono — editable */}

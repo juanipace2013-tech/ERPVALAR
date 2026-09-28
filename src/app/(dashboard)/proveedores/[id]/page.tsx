@@ -35,6 +35,7 @@ import {
   ShoppingCart,
   StickyNote,
   Star,
+  Search,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -152,6 +153,7 @@ export default function SupplierDetailPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [loadingAFIP, setLoadingAFIP] = useState(false)
   const [supplier, setSupplier] = useState<Supplier | null>(null)
   const [products, setProducts] = useState<Product[]>([])
   const [loadingProducts, setLoadingProducts] = useState(false)
@@ -218,6 +220,35 @@ export default function SupplierDetailPage() {
       toast.error('Error al cargar movimientos de cuenta')
     } finally {
       setLoadingMovements(false)
+    }
+  }
+
+  const fetchAFIPData = async () => {
+    const cuit = (formData.taxId || '').replace(/\D/g, '')
+    if (cuit.length !== 11) {
+      toast.error('Ingresá un CUIT válido (11 dígitos)')
+      return
+    }
+    try {
+      setLoadingAFIP(true)
+      const response = await fetch(`/api/afip/cuit/${cuit}`)
+      const result = await response.json()
+      if (!response.ok || !result.success) throw new Error(result.message || 'Error al consultar AFIP')
+      const d = result.data
+      setFormData((prev) => ({
+        ...prev,
+        legalName: d.businessName || prev.legalName,
+        address: d.address || prev.address,
+        city: d.city || prev.city,
+        province: d.province || prev.province,
+        postalCode: d.postalCode || prev.postalCode,
+      }))
+      if (d.status === 'INACTIVE') toast.warning('Atención: el CUIT figura inactivo en ARCA')
+      else toast.success('Datos actualizados desde AFIP. Revisalos y tocá Guardar.')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Error al consultar AFIP')
+    } finally {
+      setLoadingAFIP(false)
     }
   }
 
@@ -524,12 +555,18 @@ export default function SupplierDetailPage() {
                     <div className="space-y-2">
                       <Label>CUIT</Label>
                       {editing ? (
-                        <Input
-                          value={formData.taxId || ''}
-                          onChange={(e) =>
-                            setFormData({ ...formData, taxId: e.target.value })
-                          }
-                        />
+                        <div className="flex gap-2">
+                          <Input
+                            value={formData.taxId || ''}
+                            onChange={(e) =>
+                              setFormData({ ...formData, taxId: e.target.value })
+                            }
+                          />
+                          <Button type="button" variant="outline" onClick={fetchAFIPData} disabled={loadingAFIP}>
+                            {loadingAFIP ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                            <span className="ml-2">Buscar en AFIP</span>
+                          </Button>
+                        </div>
                       ) : (
                         <p className="text-sm">{supplier.taxId || '-'}</p>
                       )}

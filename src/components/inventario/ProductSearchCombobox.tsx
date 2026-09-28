@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { Loader2, Check, Search, X } from 'lucide-react'
 
 export interface ProductSuggestion {
@@ -36,17 +37,6 @@ export function ProductSearchCombobox({
   const [showDropdown, setShowDropdown] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-
-  // Close dropdown on click outside
-  useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setShowDropdown(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [])
 
   const searchProducts = useCallback(async (q: string) => {
     if (q.length < 2) {
@@ -94,24 +84,34 @@ export function ProductSearchCombobox({
     )
   }
 
+  // El desplegable va en un portal (Popover): dentro de tablas con
+  // overflow-hidden/auto un dropdown absolute queda recortado e invisible.
   return (
-    <div ref={containerRef} className="relative">
-      <div className="relative">
-        <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
-        <Input
-          className="h-8 text-xs pl-7 pr-2"
-          placeholder="Buscar SKU o nombre..."
-          value={query}
-          onChange={(e) => handleQueryChange(e.target.value)}
-          onFocus={() => setShowDropdown(true)}
-        />
-        {searching && (
-          <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 animate-spin text-gray-400" />
-        )}
-      </div>
+    <Popover open={showDropdown} onOpenChange={setShowDropdown}>
+      <PopoverAnchor asChild>
+        <div ref={containerRef} className="relative">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
+          <Input
+            className="h-8 text-xs pl-7 pr-2"
+            placeholder="Buscar SKU o nombre..."
+            value={query}
+            onChange={(e) => handleQueryChange(e.target.value)}
+            onFocus={() => setShowDropdown(true)}
+          />
+          {searching && (
+            <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 animate-spin text-gray-400" />
+          )}
+        </div>
+      </PopoverAnchor>
 
-      {showDropdown && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-64 overflow-y-auto">
+      <PopoverContent
+        align="start"
+        className="p-0 w-(--radix-popover-trigger-width) min-w-[320px] max-h-64 overflow-y-auto bg-white"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onInteractOutside={(e) => {
+          if (containerRef.current?.contains(e.target as Node)) e.preventDefault()
+        }}
+      >
           {/* Auto suggestions */}
           {suggestions.length > 0 && query.length < 2 && (
             <>
@@ -165,9 +165,8 @@ export function ProductSearchCombobox({
               Escribí 2+ caracteres para buscar
             </div>
           )}
-        </div>
-      )}
-    </div>
+      </PopoverContent>
+    </Popover>
   )
 }
 

@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ArrowLeft, Save, Loader2, X } from 'lucide-react'
+import { ArrowLeft, Save, Loader2, X, Search } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface User {
@@ -56,6 +56,7 @@ export default function NewSupplierPage() {
   const [loading, setLoading] = useState(false)
   const [users, setUsers] = useState<User[]>([])
   const [brandInput, setBrandInput] = useState('')
+  const [loadingAFIP, setLoadingAFIP] = useState(false)
 
   const [formData, setFormData] = useState({
     name: '',
@@ -156,6 +157,39 @@ export default function NewSupplierPage() {
     setFormData({ ...formData, [field]: value })
   }
 
+  const fetchAFIPData = async () => {
+    const cuit = formData.taxId.replace(/\D/g, '')
+    if (cuit.length !== 11) {
+      toast.error('Ingresá un CUIT válido (11 dígitos)')
+      return
+    }
+    try {
+      setLoadingAFIP(true)
+      const response = await fetch(`/api/afip/cuit/${cuit}`)
+      const result = await response.json()
+      if (!response.ok || !result.success) throw new Error(result.message || 'Error al consultar AFIP')
+      const d = result.data
+      setFormData((prev) => ({
+        ...prev,
+        name: prev.name || d.name || '',
+        legalName: d.businessName || prev.legalName,
+        address: d.address || prev.address,
+        city: d.city || prev.city,
+        province: d.province || prev.province,
+        postalCode: d.postalCode || prev.postalCode,
+        status: d.status === 'INACTIVE' ? 'INACTIVE' : prev.status,
+      }))
+      if (d.status === 'INACTIVE') toast.warning('Atención: el CUIT figura inactivo en ARCA')
+      else toast.success('Datos cargados desde AFIP')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Error al consultar AFIP', {
+        description: 'Podés cargar los datos manualmente.',
+      })
+    } finally {
+      setLoadingAFIP(false)
+    }
+  }
+
   const addBrand = () => {
     if (brandInput.trim() && !formData.brands.includes(brandInput.trim())) {
       setFormData({
@@ -232,12 +266,18 @@ export default function NewSupplierPage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="taxId">CUIT</Label>
-                  <Input
-                    id="taxId"
-                    value={formData.taxId}
-                    onChange={(e) => handleInputChange('taxId', e.target.value)}
-                    placeholder="30-12345678-9"
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      id="taxId"
+                      value={formData.taxId}
+                      onChange={(e) => handleInputChange('taxId', e.target.value)}
+                      placeholder="30-12345678-9"
+                    />
+                    <Button type="button" variant="outline" onClick={fetchAFIPData} disabled={loadingAFIP}>
+                      {loadingAFIP ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                      <span className="ml-2">Buscar en AFIP</span>
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="space-y-2">

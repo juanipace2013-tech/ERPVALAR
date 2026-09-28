@@ -175,8 +175,7 @@ export default function NewCustomerPage() {
 
       toast.error(errorMessage, {
         duration: 5000,
-        description: 'El servicio público de AFIP puede tener restricciones. ' +
-                    'Puedes ingresar los datos manualmente o configurar Web Services oficiales.',
+        description: 'Podés cargar los datos manualmente.',
       })
     } finally {
       setLoadingAFIP(false)

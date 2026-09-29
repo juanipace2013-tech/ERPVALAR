@@ -818,7 +818,7 @@ export default function QuoteDetailPage() {
       listPrice,
       additionalsTotal,
       subtotalWithAdditionals,
-      brandDiscount: brandDiscountPercent * 100,
+      brandDiscount: brandDiscountPercent > 0 ? overrideVal : 0,
       afterDiscount,
       unitPrice,
       totalPrice,
@@ -934,7 +934,7 @@ export default function QuoteDetailPage() {
       manualBrand: item.manualBrand || '',
       manualUnitPrice: isManual ? String(Number(item.listPrice).toFixed(2)) : '',
       brandDiscountOverride: item.productId
-        ? String(Number(item.brandDiscount) * 100)
+        ? String(Math.round(Number(item.brandDiscount) * 10000) / 100)
         : '',
       multiplierOverride: item.multiplierOverride !== null && item.multiplierOverride !== undefined
         ? String(Number(item.multiplierOverride))
@@ -2671,7 +2671,7 @@ export default function QuoteDetailPage() {
                                     Desc. Marca:
                                   </span>
                                   <span className="ml-2 font-medium text-green-600">
-                                    {(Number(mainItem.brandDiscount) * 100).toFixed(0)}%
+                                    {Math.round(Number(mainItem.brandDiscount) * 10000) / 100}%
                                   </span>
                                 </div>
                               )}

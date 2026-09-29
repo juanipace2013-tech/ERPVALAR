@@ -124,6 +124,9 @@
       "Bash(ls -la /c/Users/santi/crm-valarg/src/app/\\\\\\(dashboard\\\\\\)/cotizaciones/)",
       "Bash(ls -la /c/Users/santi/crm-valarg/src/app/\\\\\\(dashboard\\\\\\)/cotizaciones/[id\\\\\\)/)",
       "Bash(grep -n \"items a remitir\\\\|Generar Remito\\\\|generate.*delivery\\\\|generateDelivery\" /c/Users/santi/crm-valarg/src/app/\\\\\\(dashboard\\\\\\)/cotizaciones/[id]/page.tsx)",
+      "Bash(ssh deploy@147.182.238.63 *)",
+      "Bash(ssh -o ConnectTimeout=15 -o BatchMode=yes deploy@147.182.238.63 *)",
+      "Bash(scp * deploy@147.182.238.63:*)",
       "Bash(ssh -p5547 root@138.36.236.75 \"pm2 logs crm-valarg --lines 200 --nostream\")",
       "Bash(ssh -p5547 root@138.36.236.75 'curl -sk \"\"https://api.bcra.gob.ar/CentralDeDeudores/v1.0/Deudas/30574421124\"\" 2>&1 | head -300')",
       "Bash(ssh -p5547 -o BatchMode=yes -o ConnectTimeout=10 root@138.36.236.75 \"echo connected\")",
@@ -345,7 +348,15 @@
       "mcp__claude-in-chrome__navigate",
       "mcp__claude-in-chrome__computer",
       "mcp__claude-in-chrome__get_page_text",
-      "mcp__claude-in-chrome__find"
+      "mcp__claude-in-chrome__find",
+      "Bash(scp -P 5547 \"C:\\\\Users\\\\santi\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-santi-crm-valarg\\\\5a822fa1-5c85-4b1d-81fd-62b53768a6f8\\\\scratchpad\\\\resend-postsale.ts\" deploy@138.36.236.75:~/crm-valarg/scripts/_tmp-resend-postsale.ts)",
+      "Bash(ssh -p 5547 -o BatchMode=yes deploy@138.36.236.75 \"ls -la /home/deploy/crm-valarg/certs 2>/dev/null; grep -oE '^[A-Z_]+' /home/deploy/crm-valarg/.env | sort; echo '--- exiros files ---'; ls /home/deploy/exiros-agent/\")",
+      "Bash(ssh -p 5547 -o BatchMode=yes deploy@138.36.236.75 \"ls /home/deploy/crm-valarg/public/uploads/; echo '---'; du -sh /home/deploy/crm-valarg/public/uploads/*\")",
+      "Bash(ssh -p 5547 -o BatchMode=yes deploy@138.36.236.75 \"cd /home/deploy/crm-valarg/public/uploads && tar czf - cotizaciones-oc remitos-firmados\")",
+      "Bash(ssh -o BatchMode=yes root@147.182.238.63 \"cd /home/deploy/crm-valarg/public/uploads && tar xzkf - 2>/dev/null; chown -R deploy:deploy cotizaciones-oc remitos-firmados; echo '--- resultado ---'; du -sh cotizaciones-oc remitos-firmados; find cotizaciones-oc remitos-firmados -type f | wc -l\")",
+      "Bash(ssh -p 5547 -o BatchMode=yes deploy@138.36.236.75 \"crontab -l | sed -E 's|^\\(0 \\\\*/6 .*renew-graph.*\\)|#DUP-DO# \\\\1|; s|^\\(0 9 .*sync-colppy-diario.*\\)|#DUP-DO# \\\\1|; s|^\\(30 8 .*sync-balances.*\\)|#DUP-DO# \\\\1|; s|^\\(45 8 .*fce-padron-sync.*\\)|#DUP-DO# \\\\1|' | crontab - && crontab -l | grep -E '^\\(#DUP-DO#|[0-9*]\\)'\")",
+      "Bash(scp \"C:\\\\Users\\\\santi\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-santi-crm-valarg\\\\b45e4f89-d505-4136-8d32-fc95848e0a50\\\\scratchpad\\\\reprocess-natali.ts\" deploy@147.182.238.63:~/crm-valarg/reprocess-natali.ts)",
+      "Bash(ssh -o ConnectTimeout=15 -o BatchMode=yes deploy@147.182.238.63 \"cd ~/crm-valarg && npx tsx reprocess-natali.ts; rm reprocess-natali.ts\")"
     ]
   }
 }

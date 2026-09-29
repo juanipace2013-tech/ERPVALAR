@@ -6,6 +6,43 @@
       "runtimeExecutable": "node.exe",
       "runtimeArgs": ["node_modules/next/dist/bin/next", "dev", "--port", "3001"],
       "port": 3001
+    },
+    {
+      "name": "erp-emergencia",
+      "runtimeExecutable": "node.exe",
+      "runtimeArgs": ["node_modules/next/dist/bin/next", "start", "--port", "3000"],
+      "port": 3000
+    },
+    {
+      "name": "web-valar",
+      "runtimeExecutable": "npm.cmd",
+      "runtimeArgs": ["--prefix", "C:\\Users\\santi\\Downloads\\Pagina_web", "run", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "web-valar-dist",
+      "runtimeExecutable": "npm.cmd",
+      "runtimeArgs": ["--prefix", "C:\\Users\\santi\\Downloads\\Pagina_web", "run", "preview"],
+      "port": 4173
+    },
+    {
+      "name": "contabilidad-lab",
+      "runtimeExecutable": "node.exe",
+      "runtimeArgs": ["C:\\Users\\santi\\Documents\\Codex\\2026-09-16\\si\\outputs\\valarg-contabilidad\\server.js"],
+      "port": 4317,
+      "autoPort": true
+    },
+    {
+      "name": "contabilidad-paralelo",
+      "runtimeExecutable": "node.exe",
+      "runtimeArgs": ["C:\\Users\\santi\\Documents\\Codex\\2026-09-16\\si\\outputs\\valarg-contabilidad\\server.js", "--db", "C:\\Users\\santi\\Documents\\Codex\\2026-09-16\\si\\outputs\\valarg-contabilidad\\data\\paralelo.sqlite", "--no-demo", "--port", "4319"],
+      "port": 4319
+    },
+    {
+      "name": "contabilidad-lab-prueba",
+      "runtimeExecutable": "node.exe",
+      "runtimeArgs": ["C:\\Users\\santi\\Documents\\Codex\\2026-09-16\\si\\outputs\\valarg-contabilidad\\server.js", "--db", "C:\\Users\\santi\\AppData\\Local\\Temp\\claude\\C--Users-santi-crm-valarg\\b2b8afdf-8e54-4b04-98ea-10a435bf8d46\\scratchpad\\lab-prueba.sqlite", "--port", "4318"],
+      "port": 4318
     }
   ]
 }

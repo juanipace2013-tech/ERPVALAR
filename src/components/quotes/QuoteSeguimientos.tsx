@@ -51,7 +51,7 @@ const tipoConfig: Record<string, { label: string; icon: React.ReactNode; color: 
   otro: { label: 'Otro', icon: <MoreHorizontal className="h-3 w-3" />, color: 'bg-gray-100 text-gray-700 border-gray-200' },
 }
 
-const usuarios = ['Santiago', 'Germán', 'Paula', 'Juan']
+const usuarios = ['Santiago', 'Germán', 'Juan']
 
 export function QuoteSeguimientos({ quoteId }: QuoteSeguimientosProps) {
   const [seguimientos, setSeguimientos] = useState<Seguimiento[]>([])

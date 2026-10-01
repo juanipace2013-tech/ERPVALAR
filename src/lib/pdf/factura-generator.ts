@@ -58,6 +58,8 @@ export interface FacturaPDFData {
   isVoided?: boolean
   /** FCE MiPyME (cbteTipo 201/206): vencimiento de pago y CBU del emisor */
   fce?: { vtoPago?: Date | null; cbu?: string | null }
+  /** CBU de VAL ARG para que el cliente transfiera: va en el encabezado de todas las facturas */
+  cbuEmisor?: string | null
   /** Orden de compra del cliente (Quote.purchaseOrderNumber) */
   ordenCompra?: string | null
   /** Número de cliente (id en Colppy) */
@@ -268,9 +270,11 @@ function drawFactura(doc: jsPDF, data: FacturaPDFData, logoBase64: string, qrBas
     doc.text(titulo.toUpperCase(), rx, hy + 15)
     doc.setFontSize(9)
     doc.text(`FECHA: ${fmtDate(data.fecha)}`, rx, hy + 22)
-    label('CUIT:', fmtCuit(EMISOR.cuit.replace(/\D/g, '')), rx, hy + 29, ML + USABLE_W - 2, 8)
-    label('Ingresos Brutos Conv. Multi:', EMISOR.iibb, rx, hy + 34, ML + USABLE_W - 2, 8)
-    label('Fecha de Inicio de actividades:', EMISOR.inicioActividades, rx, hy + 39, ML + USABLE_W - 2, 8)
+    // Datos fiscales + CBU (4,5 mm entre líneas para que entre el CBU en la cabecera)
+    label('CUIT:', fmtCuit(EMISOR.cuit.replace(/\D/g, '')), rx, hy + 27, ML + USABLE_W - 2, 8)
+    label('Ingresos Brutos Conv. Multi:', EMISOR.iibb, rx, hy + 31.5, ML + USABLE_W - 2, 8)
+    label('Fecha de Inicio de actividades:', EMISOR.inicioActividades, rx, hy + 36, ML + USABLE_W - 2, 8)
+    if (data.cbuEmisor) label('CBU:', data.cbuEmisor, rx, hy + 40.5, ML + USABLE_W - 2, 8)
 
     // Receptor
     doc.rect(ML, ry, USABLE_W, rh)
@@ -441,7 +445,8 @@ ${it.detalle}` : ''}`
     obsParts.push(`Importe expresado en Dólares Estadounidenses, equivalente a Pesos ${fmtNum(enPesos)} al Tipo de Cambio ${fmtNum(data.cotizacion, 2)} ---`)
   }
   if (data.fce?.cbu || data.fce?.vtoPago) {
-    obsParts.push(`FCE MiPyME${data.fce.vtoPago ? ` - Vto. de pago: ${fmtDate(data.fce.vtoPago)}` : ''}${data.fce.cbu ? ` - CBU emisor: ${data.fce.cbu}` : ''}`)
+    // El CBU ya va en el encabezado; acá solo si por algún motivo no está ahí
+    obsParts.push(`FCE MiPyME${data.fce.vtoPago ? ` - Vto. de pago: ${fmtDate(data.fce.vtoPago)}` : ''}${data.fce.cbu && !data.cbuEmisor ? ` - CBU emisor: ${data.fce.cbu}` : ''}`)
   }
   if (data.asociados?.length) obsParts.push(`Comprobantes asociados: ${data.asociados.map((a) => a.descripcion).join(', ')}`)
   if (data.observaciones) obsParts.push(data.observaciones)

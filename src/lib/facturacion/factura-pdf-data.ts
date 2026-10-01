@@ -148,6 +148,8 @@ export async function buildFacturaPdfData(invoiceId: string): Promise<FacturaPDF
           cbu: isArcaConfigured() ? getArcaConfig().cbu : null,
         }
       : undefined,
+    // CBU de VAL ARG (ARCA_CBU, cuenta Galicia) en el encabezado de todas las facturas
+    cbuEmisor: isArcaConfigured() ? getArcaConfig().cbu ?? null : null,
     // Fila OC / Cliente Nro / Remito (estilo Winters)
     ordenCompra: inv.quote?.purchaseOrderNumber ?? null,
     clienteNro: inv.customer.colppyId ?? null,

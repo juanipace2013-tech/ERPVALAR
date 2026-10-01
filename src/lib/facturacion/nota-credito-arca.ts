@@ -21,6 +21,7 @@ import { logger } from '@/lib/logger'
 import { archivarFacturaEnSharePointBg } from '@/lib/sharepoint/facturas-emitidas'
 import {
   colppyCreateInvoice,
+  colppyLeerFacturaVenta,
   getCachedColppySession,
   invalidateColppySessionCache,
   ColppySessionExpiredError,
@@ -31,6 +32,7 @@ import { emitirComprobante, receptorDesdeCondicion, type LetraComprobante } from
 import { buildQrUrl, toCbteFch } from '@/lib/arca/wsfe'
 import { sincronizarComisionesDeQuote } from '@/lib/comisiones/liquidacion'
 import { signoCantidad } from '@/lib/facturacion/cantidades'
+import { armarImputacionNc, type ItemCobroColppy } from '@/lib/facturacion/imputacion-nc'
 import {
   acreditadoVacio,
   calcularNcImporte,
@@ -85,6 +87,8 @@ export interface NotaCreditoResult {
   /** Avisos para el usuario (p. ej. líneas que no se pudieron vincular a la cotización) */
   advertencias: string[]
   colppyPendiente: boolean
+  /** En Colppy quedó aplicada a la factura (como "Emitir NC"). */
+  colppyImputada: boolean
   /** NC sobre FCE: quedó como BORRADOR en Colppy (tildar FCE y aprobar). */
   colppyBorradorFce: boolean
   colppyId: string | null
@@ -747,23 +751,74 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
   let colppyId: string | null = null
   let colppyPendiente = false
   let colppyBorradorFce = false
+  let colppyImputada = false
   if (colppyPayload) {
     try {
       let session = await getCachedColppySession()
-      let res
-      try {
-        res = await colppyCreateInvoice(session, colppyPayload)
-      } catch (e) {
-        if (e instanceof ColppySessionExpiredError) {
-          invalidateColppySessionCache()
-          session = await getCachedColppySession()
-          res = await colppyCreateInvoice(session, colppyPayload)
-        } else {
+      // Imputación a la factura, como "Emitir NC" de Colppy (best effort: si
+      // no se puede, la NC queda como crédito a favor y se aplica a mano).
+      // No en NC FCE: van como borrador y se aprueban (y aplican) en Colppy.
+      let imputacion: ItemCobroColppy | null = null
+      let facturaSaldada = false
+      if (inv.colppyId && !colppyPayload.mipyme) {
+        try {
+          const info = await colppyLeerFacturaVenta(session, inv.colppyId)
+          const montoNcArs = esUsd ? r2(total * cotizacion) : total
+          imputacion = info ? armarImputacionNc(info, montoNcArs) : null
+          facturaSaldada = !!info && Number(info.saldoaaplicar) <= 0.01
+          if (imputacion) {
+            colppyPayload.itemsCobro = [imputacion]
+            // Como el front de Colppy: una NC imputada va de contado
+            colppyPayload.idCondicionPago = 'Contado'
+          }
+        } catch (e) {
+          logger.warn('[NC] No se pudo leer la factura en Colppy para imputar la NC', { invoiceId, error: (e as Error).message })
+        }
+      }
+      const crear = async () => {
+        try {
+          return await colppyCreateInvoice(session, colppyPayload)
+        } catch (e) {
+          if (e instanceof ColppySessionExpiredError) {
+            invalidateColppySessionCache()
+            session = await getCachedColppySession()
+            return await colppyCreateInvoice(session, colppyPayload)
+          }
           throw e
         }
       }
+      let res
+      try {
+        res = await crear()
+      } catch (e) {
+        // Si Colppy rechaza el alta con la imputación, se registra igual sin
+        // imputar (lo importante es que la NC entre a CC/stock/asiento). Un
+        // alta duplicada la rechaza Colppy por número.
+        if (!colppyPayload.itemsCobro) throw e
+        logger.warn('[NC] Colppy rechazó la NC con imputación; reintento sin imputar', { ncId, error: (e as Error).message })
+        delete colppyPayload.itemsCobro
+        imputacion = null
+        res = await crear()
+      }
       colppyId = res.idFactura
       colppyBorradorFce = !!res.borradorFce
+      // ¿Quedó imputada? El saldo de la factura en Colppy tiene que haber bajado
+      if (imputacion && inv.colppyId) {
+        try {
+          const despues = await colppyLeerFacturaVenta(session, inv.colppyId)
+          const saldo = Number(despues?.saldoaaplicar)
+          colppyImputada = Number.isFinite(saldo) && saldo <= imputacion.Saldo + 0.05
+        } catch {
+          /* se informa como no verificada */
+        }
+      }
+      if (!colppyImputada && !colppyBorradorFce && inv.colppyId) {
+        advertencias.push(
+          facturaSaldada
+            ? `En Colppy la factura ${inv.invoiceNumber} ya estaba cobrada: la NC queda como saldo a favor del cliente.`
+            : `En Colppy la NC quedó registrada pero sin aplicar a la factura ${inv.invoiceNumber}: abrí la NC, tildá "Aplicar" en la factura y guardá.`
+        )
+      }
       await prisma.invoice.update({
         where: { id: ncId },
         data: { colppyId, colppySyncStatus: res.borradorFce ? 'BORRADOR_FCE' : 'OK', colppySyncError: null },
@@ -791,6 +846,7 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
     modo,
     advertencias,
     colppyPendiente,
+    colppyImputada,
     colppyBorradorFce,
     colppyId,
   }

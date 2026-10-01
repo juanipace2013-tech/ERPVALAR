@@ -13,6 +13,7 @@ import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
 import { isArcaConfigured, getArcaConfig } from '@/lib/arca/config';
 import { consultarPersona } from '@/lib/arca/padron';
+import type { ItemCobroColppy } from '@/lib/facturacion/imputacion-nc';
 
 // ============================================================================
 // CONFIGURACIÓN
@@ -916,6 +917,11 @@ export type ColppyInvoicePayload = {
     mipyme?: boolean;
     /** CAE del comprobante emitido por el ERP (para la descripción del borrador FCE). */
     cae?: string;
+    /**
+     * NC: imputación a la factura (como "Emitir NC" de Colppy): va como
+     * ItemsCobro en el alta. Ver src/lib/facturacion/imputacion-nc.ts.
+     */
+    itemsCobro?: ItemCobroColppy[];
     /** Marca "Factura de crédito electrónica MiPyME (FCE)" en Colppy (is_fce) + CBU y transmisión. */
     isFce?: boolean;
     fceCbu?: string;
@@ -1224,6 +1230,10 @@ async function colppyCreateInvoiceRaw(
         { alicuotaIva: '27',   importeIva: 0, baseImpIva: 0 },
       ],
       itemsFactura: invoice.items,
+      // NC imputada a su factura: igual que el front de Colppy ("Emitir NC"),
+      // ItemsCobro con la factura y totalaplicado/saldoaaplicar en 0 (los
+      // calcula Colppy).
+      ...(invoice.itemsCobro?.length ? { ItemsCobro: invoice.itemsCobro, totalaplicado: 0, saldoaaplicar: 0 } : {}),
     },
   };
 

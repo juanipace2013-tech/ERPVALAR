@@ -38,6 +38,7 @@ import {
   Database,
   Clock,
   Download,
+  Plus,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber, formatCUIT, formatDateAR } from '@/lib/utils'
@@ -379,6 +380,10 @@ export default function ClientesPage() {
           <Button variant="outline" onClick={fetchCustomers} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refrescar
+          </Button>
+          <Button onClick={() => router.push('/clientes/nuevo')}>
+            <Plus className="h-4 w-4 mr-2" />
+            Nuevo cliente
           </Button>
         </div>
       </div>

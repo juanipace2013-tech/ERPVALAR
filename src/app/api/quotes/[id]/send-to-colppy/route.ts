@@ -13,6 +13,7 @@ import { logAudit } from '@/lib/audit';
 import { logger } from '@/lib/logger'
 import { syncStockForSkusFireAndForget } from '@/lib/colppy-inventory';
 import { sincronizarComisionesDeQuote } from '@/lib/comisiones/liquidacion';
+import { crearHookEmisionArca, getEmisorFacturacion } from '@/lib/facturacion/emision-arca';
 
 // ============================================================================
 // TIPOS
@@ -277,21 +278,56 @@ export async function POST(
     };
 
     // 9. Llamar a sendQuoteToColppy
+    // Emisor: 'arca' → el ERP pide el CAE (PV 7) y Colppy recibe la factura ya
+    // emitida (Aprobada). Mismo circuito que /api/facturacion/generate-invoice.
+    const emiteFactura = action.includes('factura');
+    const emisor = emiteFactura ? getEmisorFacturacion() : 'colppy';
+    const hookArca = emisor === 'arca'
+      ? crearHookEmisionArca({
+          name: quote.customer.name,
+          cuit: quote.customer.cuit,
+          taxCondition: quote.customer.taxCondition,
+          fceObligado: quote.customer.fceObligado,
+        })
+      : null;
     const options: SendToColppyOptions = {
       action,
       condicionPago: editedData?.condicionPago,
       puntoVenta: editedData?.puntoVenta,
       descripcion: editedData?.descripcion,
+      emisionExterna: hookArca?.hook,
     };
     const result = await sendQuoteToColppy(options, quoteData);
 
+    // Emisión ARCA ya realizada (aunque Colppy haya fallado después)
+    const emisionArca = hookArca?.getEmision() ?? null;
+
     // 10. Verificar resultado
-    if (!result.success) {
+    if (!result.success && !emisionArca) {
+      const prefix = result.errorStage === 'arca' ? 'ARCA rechazó la factura' : 'Error al enviar a Colppy';
       return NextResponse.json(
-        { error: `Error al enviar a Colppy: ${result.error}` },
-        { status: 500 }
+        { error: `${prefix}: ${result.error}`, errorStage: result.errorStage ?? 'colppy' },
+        { status: result.errorStage === 'arca' ? 422 : 500 }
       );
     }
+
+    // CAE obtenido pero el alta en Colppy falló: la factura EXISTE fiscalmente,
+    // se persiste igual marcada PENDIENTE y se reintenta desde /facturas/[id].
+    const colppyPendiente = !result.success && !!emisionArca;
+    if (colppyPendiente) {
+      logger.error('[ARCA_SIN_COLPPY] Factura emitida en ARCA pero el alta en Colppy falló', {
+        quoteId: quote.id,
+        quoteNumber: quote.quoteNumber,
+        numero: emisionArca!.numeroFormateado,
+        cae: emisionArca!.cae,
+        error: result.error,
+      });
+    }
+    const payloadColppy = result.colppyInvoicePayload;
+    const esFceEmitida = !!emisionArca && emisionArca.cbteTipo >= 201;
+    const letraArca = emisionArca ? ([1, 201].includes(emisionArca.cbteTipo) ? 'A' : 'B') : null;
+    const numeroArca = emisionArca ? `${esFceEmitida ? 'FCE' : ''}${letraArca}-${emisionArca.numeroFormateado}` : null;
+    let invoiceIdCreado: string | null = null;
 
     // 11. Persistir resultado en una transacción:
     //   - crear Invoice + InvoiceItem (legacy tracking)
@@ -303,7 +339,7 @@ export async function POST(
     // Cualquier cambio en uno debe replicarse en el otro hasta que se haga el
     // refactor a src/lib/colppy-billing.ts.
     const now = new Date();
-    const invoiceType = quote.customer.taxCondition === 'RESPONSABLE_INSCRIPTO' ? 'A' : 'B';
+    const invoiceType = letraArca ?? (quote.customer.taxCondition === 'RESPONSABLE_INSCRIPTO' ? 'A' : 'B');
 
     // Mapa de cantidades realmente enviadas por quoteItemId
     const sentQtyByItemId = new Map<string, number>();
@@ -345,26 +381,49 @@ export async function POST(
 
         const newInvoice = await tx.invoice.create({
           data: {
-            invoiceNumber: `BORRADOR-COLPPY-${result.facturaNumber || result.remitoNumber || Date.now()}`,
+            invoiceNumber: numeroArca ?? `BORRADOR-COLPPY-${result.facturaNumber || result.remitoNumber || Date.now()}`,
             invoiceType,
             transactionType: 'SALE',
             quoteId: quote.id,
             customerId: quote.customerId,
             userId: quote.salesPersonId || session.user!.id!,
-            status: 'DRAFT',
+            status: emisionArca ? 'AUTHORIZED' : 'DRAFT',
             currency: quote.currency,
             exchangeRate: quote.currency === 'USD' && currentExchangeRate ? currentExchangeRate : quote.exchangeRate,
             colppyId: result.facturaId || null,
-            subtotal,
-            taxAmount: 0,
+            // Emisión ARCA: totales fiscales reales (los mismos que recibió Colppy)
+            subtotal: emisionArca && payloadColppy ? Number(payloadColppy.netoGravado) : subtotal,
+            taxAmount: emisionArca && payloadColppy ? Number(payloadColppy.totalIVA) : 0,
             discount: 0,
-            total: subtotal,
-            balance: subtotal,
+            total: emisionArca && payloadColppy ? Number(payloadColppy.totalFactura) : subtotal,
+            balance: emisionArca && payloadColppy ? Number(payloadColppy.totalFactura) : subtotal,
             issueDate: now,
             dueDate: calcDueDate(now, quote.customer.paymentTerms),
-            notes: `Borrador enviado a Colppy el ${now.toLocaleString('es-AR')}. ${result.facturaNumber ? `Factura: ${result.facturaNumber}` : ''} ${result.remitoNumber ? `Remito: ${result.remitoNumber}` : ''}`.trim(),
-            afipStatus: 'PENDING',
+            notes: emisionArca
+              ? `Emitida por el ERP (ARCA) el ${now.toLocaleString('es-AR')}. CAE ${emisionArca.cae}. ${colppyPendiente ? 'PENDIENTE de registrar en Colppy.' : `Registrada en Colppy (${result.facturaId}).`} ${result.remitoNumber ? `Remito: ${result.remitoNumber}` : ''}`.trim()
+              : `Borrador enviado a Colppy el ${now.toLocaleString('es-AR')}. ${result.facturaNumber ? `Factura: ${result.facturaNumber}` : ''} ${result.remitoNumber ? `Remito: ${result.remitoNumber}` : ''}`.trim(),
+            afipStatus: emisionArca ? 'APPROVED' : 'PENDING',
             paymentStatus: 'UNPAID',
+            ...(emisionArca
+              ? {
+                  emitidaPor: 'ARCA',
+                  pointOfSale: emisionArca.puntoVenta,
+                  cbteTipo: emisionArca.cbteTipo,
+                  cbteNumero: emisionArca.numero,
+                  cae: emisionArca.cae,
+                  caeExpiration: emisionArca.caeVencimiento,
+                  docTipo: hookArca?.getReceptor()?.docTipo ?? null,
+                  docNro: hookArca?.getReceptor()?.docNro ?? null,
+                  qrUrl: hookArca?.getQrUrl() ?? null,
+                  fceVtoPago: hookArca?.getFceVtoPago() ?? null,
+                  arcaObservaciones: emisionArca.observaciones.length
+                    ? emisionArca.observaciones.map((o) => `[${o.Code}] ${o.Msg}`).join(' · ')
+                    : null,
+                  colppySyncStatus: colppyPendiente ? 'PENDIENTE' : 'OK',
+                  colppySyncError: colppyPendiente ? (result.error || 'error desconocido').slice(0, 2000) : null,
+                  colppyPayload: payloadColppy ? (JSON.parse(JSON.stringify(payloadColppy)) as Prisma.InputJsonValue) : Prisma.JsonNull,
+                }
+              : {}),
             items: {
               create: Array.from(sentQtyByItemId.entries()).map(([itemId, qty]) => {
                 const item = quote.items.find((i) => i.id === itemId)!;
@@ -384,6 +443,8 @@ export async function POST(
           },
         });
 
+        invoiceIdCreado = newInvoice.id;
+
         // Crear CotizacionFactura (modelo nuevo) + items, linkeado a Invoice.
         const montoUSD = montoUSDPre;
         const montoARS = montoARSPre;
@@ -392,12 +453,12 @@ export async function POST(
             cotizacionId: quote.id,
             invoiceId: newInvoice.id,
             colppyInvoiceId: result.facturaId || null,
-            numeroFactura: result.facturaNumber || result.remitoNumber || null,
+            numeroFactura: numeroArca ?? (result.facturaNumber || result.remitoNumber || null),
             fecha: now,
             montoUSD,
             montoARS,
             tipoCambio: tcUsado,
-            estado: 'BORRADOR',
+            estado: emisionArca ? 'EMITIDA' : 'BORRADOR',
             createdById: session.user!.id!,
             items: {
               create: Array.from(sentQtyByItemId.entries()).map(([itemId, qty]) => {
@@ -466,7 +527,7 @@ export async function POST(
           fromStatus,
           toStatus: updateData.status || fromStatus,
           changedBy: session.user!.id!,
-          notes: `Enviado a Colppy: ${action}. ${result.remitoNumber ? `Remito: ${result.remitoNumber}` : ''} ${result.facturaNumber ? `Factura: ${result.facturaNumber}` : ''}${action.includes('factura') ? (isFullyInvoiced ? ' (facturación completa)' : ' (facturación parcial)') : ''}`.trim(),
+          notes: `${emisionArca ? `Emitida por el ERP (ARCA): ${action}. Factura: ${emisionArca.numeroFormateado} CAE ${emisionArca.cae}.` : `Enviado a Colppy: ${action}.`} ${result.remitoNumber ? `Remito: ${result.remitoNumber}` : ''} ${!emisionArca && result.facturaNumber ? `Factura: ${result.facturaNumber}` : ''}${action.includes('factura') ? (isFullyInvoiced ? ' (facturación completa)' : ' (facturación parcial)') : ''}`.trim(),
         },
       });
     }, { maxWait: 10000, timeout: 60000 });
@@ -482,6 +543,7 @@ export async function POST(
         action,
         facturaId: result.facturaId,
         facturaNumber: result.facturaNumber,
+        arca: emisionArca ? { numero: emisionArca.numeroFormateado, cae: emisionArca.cae } : undefined,
         remitoId: result.remitoId,
         remitoNumber: result.remitoNumber,
         error: txError?.message,
@@ -539,11 +601,13 @@ export async function POST(
       return NextResponse.json(
         {
           errorCode: 'COLPPY_ORPHAN',
-          message:
-            'La factura se emitió correctamente en Colppy pero el ERP no pudo registrarla. NO REINTENTES — contactá a soporte con el número de factura de Colppy para reconciliar manualmente.',
+          message: emisionArca
+            ? `La factura ${emisionArca.numeroFormateado} se emitió en ARCA (CAE ${emisionArca.cae}) pero el ERP no pudo registrarla. NO REINTENTES — contactá a soporte con ese número para reconciliar manualmente.`
+            : 'La factura se emitió correctamente en Colppy pero el ERP no pudo registrarla. NO REINTENTES — contactá a soporte con el número de factura de Colppy para reconciliar manualmente.',
           colppyFacturaId: result.facturaId || null,
-          colppyFacturaNumber: result.facturaNumber || null,
+          colppyFacturaNumber: emisionArca?.numeroFormateado || result.facturaNumber || null,
           colppyRemitoNumber: result.remitoNumber || null,
+          arcaCae: emisionArca?.cae || null,
         },
         { status: 500 }
       );
@@ -610,11 +674,21 @@ export async function POST(
     // 14. Retornar resultado
     return NextResponse.json({
       success: true,
-      message: 'Cotización enviada a Colppy exitosamente',
+      message: emisionArca
+        ? colppyPendiente
+          ? `Factura ${emisionArca.numeroFormateado} emitida (CAE ${emisionArca.cae}). ATENCIÓN: no se pudo registrar en Colppy, reintentar desde la factura.`
+          : `Factura ${emisionArca.numeroFormateado} emitida (CAE ${emisionArca.cae}) y registrada en Colppy`
+        : 'Cotización enviada a Colppy exitosamente',
       remitoId: result.remitoId,
       remitoNumber: result.remitoNumber,
       facturaId: result.facturaId,
-      facturaNumber: result.facturaNumber,
+      facturaNumber: emisionArca?.numeroFormateado || result.facturaNumber,
+      emisor,
+      invoiceId: invoiceIdCreado,
+      cae: emisionArca?.cae,
+      caeVencimiento: emisionArca?.caeVencimiento?.toISOString(),
+      colppyPendiente,
+      pdfUrl: invoiceIdCreado && emisionArca ? `/api/facturas/${invoiceIdCreado}/pdf` : undefined,
       exchangeRateUsed: currentExchangeRate,
       exchangeRateDate: exchangeRateDate?.toISOString() || null,
     });

@@ -1648,6 +1648,16 @@ export async function sendQuoteToColppy(
       options.action === 'factura-contado' ||
       options.action === 'remito-factura'
     ) {
+      // Seguro: el PV de emisión propia (ARCA) nunca va como borrador a Colppy
+      // (Colppy no emite ahí: quedaría una factura 0007 sin CAE). Pasó el
+      // 1/10/2026 con un endpoint que no tenía el hook de ARCA conectado.
+      const pvArca = Number(process.env.ARCA_PUNTO_VENTA || 7);
+      if (!options.emisionExterna && options.puntoVenta && Number(options.puntoVenta) === pvArca) {
+        throw new Error(
+          `El punto de venta ${String(pvArca).padStart(4, '0')} es de emisión propia del ERP (ARCA): no se puede mandar como borrador a Colppy`
+        );
+      }
+
       // Fecha actual en formato DD-MM-YYYY
       const fechaFactura = formatDateColppy(new Date());
 

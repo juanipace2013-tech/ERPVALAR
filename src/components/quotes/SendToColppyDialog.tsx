@@ -449,9 +449,19 @@ export function SendToColppyDialog({
           successParts.push(`Factura: ${data.facturaNumber}`);
         }
 
-        toast.success('Enviado a Colppy', {
-          description: successParts.join(' | '),
-        });
+        if (data.cae) {
+          // Emitida por el ERP (ARCA PV 7)
+          toast.success(data.message || `Factura ${data.facturaNumber} emitida`, {
+            description: data.remitoNumber ? `Remito: ${data.remitoNumber}` : undefined,
+          });
+          if (data.colppyPendiente) {
+            toast.warning('La factura no se pudo registrar en Colppy: reintentalo desde la factura', { duration: 10000 });
+          }
+        } else {
+          toast.success('Enviado a Colppy', {
+            description: successParts.join(' | '),
+          });
+        }
       }
 
       // Cerrar dialog y notificar

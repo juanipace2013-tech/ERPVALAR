@@ -563,8 +563,12 @@ export async function generateFacturaPDF(data: FacturaPDFData): Promise<Buffer> 
 }
 
 /** Nombre de archivo: "Factura A 0007-00000001 RAZON SOCIAL.pdf" (mismo criterio que el archivo de facturas emitidas). */
-export function facturaPdfFilename(d: Pick<FacturaPDFData, 'clase' | 'letra' | 'puntoVenta' | 'numero' | 'receptor'>): string {
-  const clase = d.clase === 'FACTURA' ? 'Factura' : d.clase === 'NOTA DE CRÉDITO' ? 'Nota de Credito' : 'Nota de Debito'
+export function facturaPdfFilename(d: Pick<FacturaPDFData, 'clase' | 'letra' | 'puntoVenta' | 'numero' | 'receptor' | 'cbteTipo'>): string {
+  const clase0 = d.clase === 'FACTURA' ? 'Factura' : d.clase === 'NOTA DE CRÉDITO' ? 'Nota de Credito' : 'Nota de Debito'
+  // FCE MiPyME (201+) numera aparte de las facturas comunes: que el nombre lo diga
+  // (si no, "Factura A 0007-00000001" se repite con otro cliente)
+  // ("Factura de Credito MiPyME", "Nota de Credito MiPyME", "Nota de Debito MiPyME")
+  const clase = d.cbteTipo >= 201 ? (clase0 === 'Factura' ? 'Factura de Credito MiPyME' : `${clase0} MiPyME`) : clase0
   const nombre = d.receptor.nombre.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60)
   return `${clase} ${d.letra} ${nroFormateado(d.puntoVenta, d.numero)}${nombre ? ` ${nombre}` : ''}.pdf`
 }

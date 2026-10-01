@@ -317,7 +317,7 @@ function drawFactura(doc: jsPDF, data: FacturaPDFData, logoBase64: string, qrBas
   drawEncabezado()
 
   // ═══ ITEMS (pagina solo; el encabezado se redibuja en cada página nueva) ═══
-  const head = [['Cantidad', 'Código/Descripción', '', `Precio Unit.${esUsd ? ' (USD)' : ''}`, 'Total', 'Dto', 'Precio Total']]
+  const head = [['Cantidad', 'Código/Descripción', 'IVA %', `Precio Unit.${esUsd ? ' (USD)' : ''}`, 'Total', 'Dto', 'Precio Total']]
   const body = data.items.map((it) => {
     // Muchos nombres de producto ya empiezan con el SKU ("2025 04 Válvula..."): no repetirlo
     const yaTieneCodigo = !!it.codigo && it.descripcion.trim().toUpperCase().startsWith(it.codigo.trim().toUpperCase())

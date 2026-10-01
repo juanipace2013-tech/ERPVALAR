@@ -7,6 +7,7 @@ import { customerSchema } from '@/lib/validations'
 import { normalizeCuit, buildCuitWhereClause } from '@/lib/cuit-utils'
 import { z } from 'zod'
 import { logAudit } from '@/lib/audit'
+import { colppyEnsureCustomer } from '@/lib/colppy'
 import { parsePage, parseLimit } from '@/lib/pagination'
 
 // GET /api/clientes - Listar clientes con filtros y paginación
@@ -208,7 +209,23 @@ export async function POST(request: NextRequest) {
       description: `Creó cliente ${customer.name} (${customer.cuit})`,
     });
 
-    return NextResponse.json(customer, { status: 201 })
+    // Alta en Colppy (o vínculo si ya existía). Si falla, el cliente queda
+    // creado en el ERP y se da de alta en Colppy con la primera factura.
+    let colppy: { ok: boolean; creado?: boolean; idCliente?: string; error?: string } = { ok: false }
+    if (customer.cuit.replace(/\D/g, '').length === 11) {
+      try {
+        const r = await colppyEnsureCustomer(customer)
+        await prisma.customer.update({ where: { id: customer.id }, data: { colppyId: r.idCliente } })
+        colppy = { ok: true, ...r }
+      } catch (e) {
+        logger.error(`[Clientes] Alta en Colppy de ${customer.name} (${customer.cuit}) falló`, e)
+        colppy = { ok: false, error: (e as Error).message }
+      }
+    } else {
+      colppy = { ok: false, error: 'Sin CUIT de 11 dígitos: no se sube a Colppy' }
+    }
+
+    return NextResponse.json({ ...customer, colppy }, { status: 201 })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

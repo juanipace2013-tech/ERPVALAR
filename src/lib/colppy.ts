@@ -524,10 +524,9 @@ export async function colppyFindCustomerByCUIT(
  * (condición IVA/pago, domicilio fiscal); todos los campos van, vacíos si no
  * hay dato. Colppy NO valida CUIT repetido: buscar antes de dar de alta.
  *
- * Si ARCA está configurado, completa razón social, domicilio, localidad, CP,
- * provincia y condición de IVA desde la Constancia de Inscripción (lo mismo
- * que el botón "Buscar en AFIP" de Colppy); si la consulta falla, usa los
- * datos recibidos.
+ * Si ARCA está configurado, completa desde la Constancia de Inscripción (lo
+ * mismo que el botón "Buscar en AFIP" de Colppy) los datos que NO vinieron:
+ * los recibidos (p. ej. la ficha del ERP) tienen prioridad.
  */
 // idCondicionIva de Colppy (relevado de los clientes existentes, 2026-09-30)
 const COLPPY_ID_CONDICION_IVA: Record<string, string> = {
@@ -538,6 +537,14 @@ const COLPPY_ID_CONDICION_IVA: Record<string, string> = {
   RESPONSABLE_NO_INSCRIPTO: '6',
   NO_RESPONSABLE: '6',
 };
+
+// idCondicionPago de Colppy = días de plazo (0 contado, 7, 15, 30, 45, 60, 90, 120).
+// Un plazo intermedio se redondea hacia abajo al valor válido más cercano.
+function colppyIdCondicionPago(dias: number | null | undefined): string {
+  const validos = [0, 7, 15, 30, 45, 60, 90, 120];
+  const d = Number(dias) || 0;
+  return String(validos.filter((v) => v <= d).pop() ?? 0);
+}
 
 // Colppy escribe "Santa Fé"; el resto coincide con los nombres del padrón.
 const colppyProvincia = (p: string) => (p === 'Santa Fe' ? 'Santa Fé' : p);
@@ -554,6 +561,8 @@ export async function colppyCreateCustomer(
     provincia?: string;
     telefono?: string;
     email?: string;
+    /** Días de plazo de pago (ficha del ERP); default contado */
+    plazoPagoDias?: number | null;
   }
 ): Promise<ColppyCustomer> {
   const config = getColppyConfig();
@@ -566,18 +575,19 @@ export async function colppyCreateCustomer(
   if (isArcaConfigured() && customer.cuit.replace(/D/g, '').length === 11) {
     try {
       const p = await consultarPersona(customer.cuit);
-      datos.razonSocial = p.razonSocial || datos.razonSocial;
-      datos.direccion = p.domicilio.direccion || datos.direccion;
-      datos.ciudad = p.domicilio.localidad || datos.ciudad;
-      datos.codigoPostal = p.domicilio.codigoPostal || datos.codigoPostal;
-      datos.provincia = p.domicilio.provincia || datos.provincia;
-      if (p.condicionIva) datos.condicionIva = p.condicionIva;
+      datos.razonSocial = datos.razonSocial || p.razonSocial;
+      datos.direccion = datos.direccion || p.domicilio.direccion;
+      datos.ciudad = datos.ciudad || p.domicilio.localidad;
+      datos.codigoPostal = datos.codigoPostal || p.domicilio.codigoPostal;
+      datos.provincia = datos.provincia || p.domicilio.provincia;
+      datos.condicionIva = datos.condicionIva || p.condicionIva || '';
     } catch (e: any) {
       logger.warn(`[Colppy] Alta de cliente ${cuitFormatted} sin datos de ARCA: ${e?.message}`);
     }
   }
 
   const provincia = colppyProvincia(datos.provincia || '');
+  const idCondicionPago = colppyIdCondicionPago(customer.plazoPagoDias);
   const payload = {
     auth: {
       usuario: config.user,
@@ -615,7 +625,7 @@ export async function colppyCreateCustomer(
         DirFiscalCodigoPostal: datos.codigoPostal || '',
         DirFiscalProvincia: provincia,
         DirFiscalPais: 'Argentina',
-        idCondicionPago: '0',
+        idCondicionPago,
         idCondicionIva: COLPPY_ID_CONDICION_IVA[datos.condicionIva] || '1',
         porcentajeIVA: '21',
         idPlanCuenta: '',
@@ -651,11 +661,58 @@ export async function colppyCreateCustomer(
       razonSocial: datos.razonSocial,
       cuit: customer.cuit,
       condicionIva: datos.condicionIva,
-      idCondicionPago: '0',
+      idCondicionPago,
     };
   } catch (error: any) {
     throw new Error(`Error al crear cliente en Colppy: ${error.message}`);
   }
+}
+
+/**
+ * Da de alta en Colppy un cliente del ERP si no existe (busca por CUIT antes:
+ * Colppy no valida duplicados). Devuelve el idCliente de Colppy.
+ */
+export async function colppyEnsureCustomer(c: {
+  name: string;
+  businessName?: string | null;
+  cuit: string;
+  taxCondition: string;
+  address?: string | null;
+  city?: string | null;
+  postalCode?: string | null;
+  province?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  paymentTerms?: number | null;
+}): Promise<{ idCliente: string; creado: boolean }> {
+  let session = await getCachedColppySession();
+  const run = async <T,>(fn: (s: ColppySession) => Promise<T>): Promise<T> => {
+    try {
+      return await fn(session);
+    } catch (e) {
+      if (!(e instanceof ColppySessionExpiredError)) throw e;
+      invalidateColppySessionCache();
+      session = await getCachedColppySession();
+      return fn(session);
+    }
+  };
+  const existente = await run((s) => colppyFindCustomerByCUIT(s, c.cuit));
+  if (existente) return { idCliente: String(existente.idEntidad), creado: false };
+  const nuevo = await run((s) =>
+    colppyCreateCustomer(s, {
+      razonSocial: c.businessName || c.name,
+      cuit: c.cuit,
+      condicionIva: c.taxCondition,
+      direccion: c.address || undefined,
+      ciudad: c.city || undefined,
+      codigoPostal: c.postalCode || undefined,
+      provincia: c.province || undefined,
+      telefono: c.phone || undefined,
+      email: c.email || undefined,
+      plazoPagoDias: c.paymentTerms,
+    })
+  );
+  return { idCliente: String(nuevo.idEntidad), creado: true };
 }
 
 // ============================================================================

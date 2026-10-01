@@ -230,7 +230,12 @@ export default function NewCustomerPage() {
       }
 
       const customer = await response.json()
-      toast.success('Cliente creado exitosamente')
+      if (customer.colppy?.ok) {
+        toast.success(customer.colppy.creado ? 'Cliente creado en el ERP y dado de alta en Colppy' : 'Cliente creado y vinculado al que ya existía en Colppy')
+      } else {
+        toast.success('Cliente creado exitosamente')
+        toast.warning(`No se pudo dar de alta en Colppy: ${customer.colppy?.error ?? 'error desconocido'}. Se va a crear con la primera factura.`, { duration: 10000 })
+      }
       router.push(`/clientes/${customer.id}`)
     } catch (error) {
       console.error('Error:', error)

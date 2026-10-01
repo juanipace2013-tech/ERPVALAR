@@ -30,7 +30,7 @@ import {
 import { getArcaConfig } from '@/lib/arca/config'
 import { emitirComprobante, receptorDesdeCondicion, type LetraComprobante } from '@/lib/arca/emitir'
 import { buildQrUrl, toCbteFch } from '@/lib/arca/wsfe'
-import { sincronizarComisionesDeQuote } from '@/lib/comisiones/liquidacion'
+import { MARCA_NC_SIN_PENDIENTE, sincronizarComisionesDeQuote } from '@/lib/comisiones/liquidacion'
 import { signoCantidad } from '@/lib/facturacion/cantidades'
 import { armarImputacionNc, type ImputacionNc } from '@/lib/facturacion/imputacion-nc'
 import {
@@ -58,7 +58,8 @@ export interface EmitirNotaCreditoOpts {
   /**
    * Modo elegido. Si se omite: UNIDADES con `unidades`, IMPORTE con
    * `netoParcial`, TOTAL sin ninguno. Nunca se pasa de IMPORTE a TOTAL; de
-   * UNIDADES a TOTAL solo si devuelve todo y no hubo NC antes.
+   * UNIDADES a TOTAL solo si devuelve todo, no hubo NC antes y las unidades
+   * vuelven a pendiente (o la factura no tiene cotización).
    */
   modo?: ModoNotaCredito
   /**
@@ -69,8 +70,8 @@ export interface EmitirNotaCreditoOpts {
   /**
    * Devolución por unidades: [{ index (línea de la factura), cantidad }]. El
    * importe sale de las líneas de la factura, la NC devuelve el stock en
-   * Colppy, las unidades vuelven a quedar pendientes en la cotización y la
-   * comisión baja en el mes de la NC (CotizacionFactura negativa).
+   * Colppy y la comisión baja en el mes de la NC (CotizacionFactura
+   * negativa). Si vuelven a pendiente en la cotización: pendienteEnCotizacion.
    */
   unidades?: SeleccionUnidades[]
   /**
@@ -346,7 +347,7 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
     // reabre la cotización), salvo que las unidades no vuelvan a pendiente:
     // ahí queda como devolución (la factura acreditada completa, la
     // cotización sin cambios). calc ya trae el remanente exacto.
-    modo = calc.devuelveTodo && opts.pendienteEnCotizacion ? 'TOTAL' : 'UNIDADES'
+    modo = calc.devuelveTodo && (!inv.quote || opts.pendienteEnCotizacion) ? 'TOTAL' : 'UNIDADES'
     neto = calc.neto
     iva = calc.iva
   } else if (modoPedido === 'IMPORTE') {
@@ -611,7 +612,7 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
         qrUrl,
         arcaObservaciones: em.observaciones.length ? em.observaciones.map((o) => `[${o.Code}] ${o.Msg}`).join(' · ') : null,
         relatedInvoiceId: inv.id,
-        notes: `Nota de crédito ${esTotal ? 'TOTAL' : modo === 'UNIDADES' ? `POR UNIDADES (devolución: ${detalleDevolucion}; ${vuelvenAPendiente ? 'vuelven a pendiente en la cotización' : 'no vuelven a la cotización'})` : 'PARCIAL'} s/ ${inv.invoiceNumber}${motivo ? ` — ${motivo}` : ''}. CAE ${em.cae}.`,
+        notes: `Nota de crédito ${esTotal ? 'TOTAL' : modo === 'UNIDADES' ? `POR UNIDADES (devolución: ${detalleDevolucion})` : 'PARCIAL'} s/ ${inv.invoiceNumber}${motivo ? ` — ${motivo}` : ''}. CAE ${em.cae}.${modo === 'UNIDADES' && inv.quote ? `\nCotización: ${vuelvenAPendiente ? 'las unidades vuelven a pendiente de facturar' : 'no vuelven a pendiente (el cliente no las quiere)'}` : ''}`,
         colppySyncStatus: colppyPayload ? 'PENDIENTE' : null,
         colppyPayload: colppyPayload ? (JSON.parse(JSON.stringify(colppyPayload)) as Prisma.InputJsonValue) : Prisma.JsonNull,
         items: esTotal
@@ -759,7 +760,7 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
           montoARS: -r2(Number(cf.montoARS) * proporcion),
           tipoCambio: cf.tipoCambio,
           estado: 'NOTA_CREDITO',
-          errorMessage: `${esTotal ? 'NC total' : 'Devolución'} s/ ${inv.invoiceNumber}: ${esTotal ? 'todo' : detalleDevolucion}`.slice(0, 2000),
+          errorMessage: `${modo === 'UNIDADES' && !vuelvenAPendiente ? MARCA_NC_SIN_PENDIENTE + ' ' : ''}${esTotal ? 'NC total' : 'Devolución'} s/ ${inv.invoiceNumber}: ${esTotal ? 'todo' : detalleDevolucion}`.slice(0, 2000),
           createdById: opts.userId,
           items: { create: itemsNegativos },
         },

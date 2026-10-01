@@ -19,6 +19,13 @@ import {
 // ERROR_GUARDADO.)
 const ESTADOS_FACTURA_EXCLUIDOS = ['ANULADA', 'ERROR_GUARDADO']
 
+/**
+ * Prefijo en errorMessage de la fila NOTA_CREDITO de una devolución cuyas
+ * unidades NO vuelven a pendiente (el cliente ya no las quiere): resta en
+ * comisiones pero no es saldo a facturar en el pipeline.
+ */
+export const MARCA_NC_SIN_PENDIENTE = 'SIN_PENDIENTE:'
+
 function rangoMes(anio: number, mes: number): { desde: Date; hasta: Date } {
   return { desde: new Date(anio, mes - 1, 1), hasta: new Date(anio, mes, 1) }
 }
@@ -457,7 +464,7 @@ export async function pipelineCerrado(vendedorId: string) {
       customer: { select: { name: true } },
       facturas: {
         where: { estado: { notIn: ESTADOS_FACTURA_EXCLUIDOS } },
-        select: { montoUSD: true },
+        select: { montoUSD: true, estado: true, errorMessage: true },
       },
     },
     orderBy: { date: 'desc' },
@@ -465,7 +472,10 @@ export async function pipelineCerrado(vendedorId: string) {
 
   const items = quotes
     .map((q) => {
-      const facturado = q.facturas.reduce((sum, f) => sum + Number(f.montoUSD), 0)
+      // Una devolución que no vuelve a pendiente no agranda el saldo a facturar
+      const facturado = q.facturas
+        .filter((f) => !(f.estado === 'NOTA_CREDITO' && f.errorMessage?.startsWith(MARCA_NC_SIN_PENDIENTE)))
+        .reduce((sum, f) => sum + Number(f.montoUSD), 0)
       const saldo = redondear2(Number(q.total) - facturado)
       return {
         quoteId: q.id,

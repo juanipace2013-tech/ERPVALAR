@@ -755,7 +755,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                                     {!l.conStock && ' · sin artículo de stock'}
                                     {l.vinculo === 'ADICIONAL' && l.adicionalDe != null && ` · adicional de la línea ${l.adicionalDe + 1}`}
                                   </div>
-                                  {l.vinculo === 'SIN_VINCULO' && (
+                                  {l.vinculo === 'SIN_VINCULO' && ncPendiente && (
                                     <div className="text-amber-700">No se pudo vincular con la cotización: no vuelve a quedar pendiente</div>
                                   )}
                                 </td>
@@ -796,11 +796,16 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                         <div className="flex justify-between"><span>Neto</span><span>{formatCurrency(ncPreview.neto, invoice.currency)}</span></div>
                         <div className="flex justify-between"><span>IVA 21%</span><span>{formatCurrency(ncPreview.iva, invoice.currency)}</span></div>
                         <div className="flex justify-between font-semibold"><span>Total NC</span><span>{formatCurrency(ncPreview.total, invoice.currency)}</span></div>
-                        {ncPreview.devuelveTodo && ncPendiente && (
-                          <p className="mt-1 text-xs text-red-700">Se devuelve todo: sale como NC total, la factura queda anulada y la cotización se reabre.</p>
+                        {ncPreview.devuelveTodo && (ncPendiente || !invoice.quote) && (
+                          <p className="mt-1 text-xs text-red-700">
+                            Se devuelve todo: sale como NC total y la factura queda anulada{invoice.quote ? ' (la cotización se reabre)' : ''}.
+                          </p>
                         )}
-                        {ncPreview.devuelveTodo && !ncPendiente && (
-                          <p className="mt-1 text-xs text-gray-500">Se devuelve todo: la factura queda acreditada completa.</p>
+                        {ncPreview.devuelveTodo && !ncPendiente && invoice.quote && (
+                          <p className="mt-1 text-xs text-gray-500">
+                            Se devuelve todo: la factura queda acreditada completa y la cotización no cambia. Si es para volver a facturar
+                            (error de datos), usá «Total (anula la factura)» o tildá la casilla de abajo.
+                          </p>
                         )}
                         {!ncPreview.devuelveTodo && ncPreview.agotaTodo && (
                           <p className="mt-1 text-xs text-gray-500">Es lo último que quedaba: toma el saldo pendiente exacto de la factura.</p>

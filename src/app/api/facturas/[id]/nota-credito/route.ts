@@ -3,7 +3,8 @@
  *      para devolver (NC por unidades) y el contexto para la vista previa.
  * POST /api/facturas/[id]/nota-credito — emite una nota de crédito (ARCA) sobre
  * una factura emitida por el ERP y la registra en Colppy.
- *   body: { modo: 'UNIDADES', unidades: [{ index, cantidad }], motivo? }  (devolución)
+ *   body: { modo: 'UNIDADES', unidades: [{ index, cantidad }], pendienteEnCotizacion?: boolean, motivo? }
+ *         (devolución; pendienteEnCotizacion = las unidades vuelven a pendiente de facturar, default no)
  *      o  { modo: 'IMPORTE', netoParcial, motivo? }                      (ajuste)
  *      o  { modo: 'TOTAL', motivo? }                                     (anula la factura)
  *   modo es obligatorio: un comprobante fiscal no se emite deduciendo la intención.
@@ -66,6 +67,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     : undefined
   if (unidades?.some((u) => !Number.isInteger(u.index) || u.index < 0 || !Number.isFinite(u.cantidad) || u.cantidad < 0)) {
     return NextResponse.json({ error: 'Línea o cantidad inválida en la devolución' }, { status: 400 })
+  }
+  if (body.pendienteEnCotizacion !== undefined && typeof body.pendienteEnCotizacion !== 'boolean') {
+    return NextResponse.json({ error: 'pendienteEnCotizacion tiene que ser true o false' }, { status: 400 })
   }
   const netoParcial = body.netoParcial === undefined ? undefined : typeof body.netoParcial === 'number' ? body.netoParcial : NaN
   if (netoParcial !== undefined && !Number.isFinite(netoParcial)) {

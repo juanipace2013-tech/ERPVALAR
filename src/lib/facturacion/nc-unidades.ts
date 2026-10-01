@@ -34,8 +34,8 @@ export interface LineaAcreditable {
   conStock: boolean
   /**
    * Vínculo con la cotización (solo si la factura tiene cotización):
-   * COTIZACION = las unidades vuelven a quedar pendientes; ADICIONAL = es un
-   * adicional del ítem `adicionalDe`; SIN_VINCULO = no se pudo vincular.
+   * COTIZACION = se puede devolver a pendiente; ADICIONAL = es un adicional
+   * del ítem `adicionalDe`; SIN_VINCULO = no se pudo vincular.
    */
   vinculo?: 'COTIZACION' | 'ADICIONAL' | 'SIN_VINCULO' | null
   adicionalDe?: number | null

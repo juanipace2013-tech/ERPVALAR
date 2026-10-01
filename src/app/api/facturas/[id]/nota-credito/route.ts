@@ -43,7 +43,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: 'Sin permisos para emitir notas de crédito' }, { status: 403 })
   }
   const { id } = await params
-  let body: { modo?: string; motivo?: string; netoParcial?: unknown; unidades?: unknown } = {}
+  let body: { modo?: string; motivo?: string; netoParcial?: unknown; unidades?: unknown; pendienteEnCotizacion?: unknown } = {}
   try {
     const parsed = await request.json()
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) body = parsed
@@ -79,6 +79,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       modo: body.modo as ModoNotaCredito | undefined,
       netoParcial,
       unidades,
+      pendienteEnCotizacion: body.pendienteEnCotizacion === true,
     })
     logAudit({
       userId: session.user.id,

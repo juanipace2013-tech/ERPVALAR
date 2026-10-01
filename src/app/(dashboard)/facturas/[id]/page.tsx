@@ -148,6 +148,8 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const [ncLineasError, setNcLineasError] = useState<string | null>(null)
   const [ncCantidades, setNcCantidades] = useState<Record<number, string>>({})
   const [ncContexto, setNcContexto] = useState<ContextoNc | null>(null)
+  // Devolución: ¿las unidades vuelven a quedar pendientes en la cotización? (default no)
+  const [ncPendiente, setNcPendiente] = useState(false)
   const [ncLoading, setNcLoading] = useState(false)
 
   const fetchInvoice = useCallback(async () => {
@@ -203,6 +205,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
       setNcLoading(true)
       const body: {
         modo: 'UNIDADES' | 'IMPORTE' | 'TOTAL'
+        pendienteEnCotizacion?: boolean
         motivo?: string
         netoParcial?: number
         unidades?: Array<{ index: number; cantidad: number }>
@@ -211,6 +214,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
         motivo: ncMotivo.trim() || undefined,
       }
       if (ncModo === 'UNIDADES') {
+        body.pendienteEnCotizacion = ncPendiente
         body.unidades = Object.entries(ncCantidades)
           .map(([index, c]) => ({ index: Number(index), cantidad: parseCantidad(c) }))
           .filter((u) => u.cantidad !== 0)
@@ -255,6 +259,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     setNcContexto(null)
     setNcLineasError(null)
     setNcCantidades({})
+    setNcPendiente(false)
     setNcModo('UNIDADES')
     fetch(`/api/facturas/${id}/nota-credito`)
       .then(async (r) => {
@@ -791,8 +796,11 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                         <div className="flex justify-between"><span>Neto</span><span>{formatCurrency(ncPreview.neto, invoice.currency)}</span></div>
                         <div className="flex justify-between"><span>IVA 21%</span><span>{formatCurrency(ncPreview.iva, invoice.currency)}</span></div>
                         <div className="flex justify-between font-semibold"><span>Total NC</span><span>{formatCurrency(ncPreview.total, invoice.currency)}</span></div>
-                        {ncPreview.devuelveTodo && (
-                          <p className="mt-1 text-xs text-red-700">Se devuelve todo: sale como NC total y la factura queda anulada.</p>
+                        {ncPreview.devuelveTodo && ncPendiente && (
+                          <p className="mt-1 text-xs text-red-700">Se devuelve todo: sale como NC total, la factura queda anulada y la cotización se reabre.</p>
+                        )}
+                        {ncPreview.devuelveTodo && !ncPendiente && (
+                          <p className="mt-1 text-xs text-gray-500">Se devuelve todo: la factura queda acreditada completa.</p>
                         )}
                         {!ncPreview.devuelveTodo && ncPreview.agotaTodo && (
                           <p className="mt-1 text-xs text-gray-500">Es lo último que quedaba: toma el saldo pendiente exacto de la factura.</p>
@@ -804,8 +812,24 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                         La factura ya tiene un ajuste por importe: el precio de las unidades devueltas baja en la misma proporción ({Math.round((1 - ncContexto.factor) * 1000) / 10}%).
                       </p>
                     )}
+                    {invoice.quote && (
+                      <label className="flex items-start gap-2 text-xs">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={ncPendiente}
+                          onChange={(e) => setNcPendiente(e.target.checked)}
+                        />
+                        <span>
+                          Las unidades devueltas vuelven a quedar <b>pendientes de facturar</b> en la cotización (cambio o reposición).
+                          <span className="block text-gray-500">
+                            Sin tildar: el cliente ya no las quiere y la cotización queda como está.
+                          </span>
+                        </span>
+                      </label>
+                    )}
                     <p className="text-xs text-gray-500">
-                      Devuelve el stock en Colppy, las unidades vuelven a quedar pendientes en la cotización y la comisión baja en el mes de la NC. Si se devuelve todo, sale como NC total.
+                      Devuelve el stock en Colppy, se aplica a la factura y la comisión baja en el mes de la NC.
                     </p>
                   </>
                 )}

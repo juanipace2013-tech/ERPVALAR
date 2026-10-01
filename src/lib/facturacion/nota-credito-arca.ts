@@ -73,6 +73,13 @@ export interface EmitirNotaCreditoOpts {
    * comisión baja en el mes de la NC (CotizacionFactura negativa).
    */
   unidades?: SeleccionUnidades[]
+  /**
+   * Devolución por unidades: ¿las unidades devueltas vuelven a quedar
+   * pendientes de facturar en la cotización? Default NO: el cliente ya no las
+   * quiere (pidió 2 en vez de 3) y la cotización queda como estaba. SÍ: cambio
+   * o reposición que se vuelve a facturar. La comisión baja igual en los dos.
+   */
+  pendienteEnCotizacion?: boolean
 }
 
 export interface NotaCreditoResult {
@@ -335,9 +342,11 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
     } catch (e) {
       throw new NotaCreditoError((e as Error).message)
     }
-    // Devuelve todo y no hubo NC antes: es una NC total (anula la factura).
-    // Si devuelve lo último que quedaba, calc ya trae el remanente exacto.
-    modo = calc.devuelveTodo ? 'TOTAL' : 'UNIDADES'
+    // Devuelve todo y no hubo NC antes: es una NC total (anula la factura y
+    // reabre la cotización), salvo que las unidades no vuelvan a pendiente:
+    // ahí queda como devolución (la factura acreditada completa, la
+    // cotización sin cambios). calc ya trae el remanente exacto.
+    modo = calc.devuelveTodo && opts.pendienteEnCotizacion ? 'TOTAL' : 'UNIDADES'
     neto = calc.neto
     iva = calc.iva
   } else if (modoPedido === 'IMPORTE') {
@@ -496,6 +505,9 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
     return { ...d, invoiceItem, adicional: !!v?.adicional }
   })
   const advertencias: string[] = []
+  // ¿Las unidades devueltas vuelven a pendiente en la cotización? (si no, el
+  // cliente ya no las quiere: la cotización no cambia)
+  const vuelvenAPendiente = modo === 'UNIDADES' && opts.pendienteEnCotizacion === true
   // Una unidad de la cotización = la línea principal + sus adicionales: solo
   // vuelve a pendiente si se devuelve completa (si no, al re-facturarla se
   // cobraría de nuevo el adicional que el cliente se quedó).
@@ -508,7 +520,7 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
       .filter(({ v }) => v?.adicional && v.principal === d.linea.index)
       .map(({ i }) => calc?.cantidades.get(i) ?? 0)
     const completas = Math.min(d.cantidad, ...adicionales)
-    if (completas < d.cantidad) {
+    if (completas < d.cantidad && vuelvenAPendiente) {
       advertencias.push(
         `${d.linea.codigo || d.linea.descripcion.slice(0, 40)}: ${r2(d.cantidad - completas)} unidad(es) se devolvieron sin sus adicionales y no vuelven a quedar pendientes en la cotización.`
       )
@@ -516,7 +528,7 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
     if (completas > 0) devueltasPorQuoteItem.set(qi, (devueltasPorQuoteItem.get(qi) ?? 0) + completas)
   }
   const detalleDevolucion = devueltas.map((d) => `${d.cantidad} × ${d.linea.codigo || d.linea.descripcion.slice(0, 40)}`).join(', ')
-  if (modo === 'UNIDADES' && inv.quote) {
+  if (vuelvenAPendiente && inv.quote) {
     const sinVinculo = devueltas.filter((d) => !d.adicional && !d.invoiceItem?.quoteItemId)
     if (sinVinculo.length) {
       advertencias.push(
@@ -599,7 +611,7 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
         qrUrl,
         arcaObservaciones: em.observaciones.length ? em.observaciones.map((o) => `[${o.Code}] ${o.Msg}`).join(' · ') : null,
         relatedInvoiceId: inv.id,
-        notes: `Nota de crédito ${esTotal ? 'TOTAL' : modo === 'UNIDADES' ? `POR UNIDADES (devolución: ${detalleDevolucion})` : 'PARCIAL'} s/ ${inv.invoiceNumber}${motivo ? ` — ${motivo}` : ''}. CAE ${em.cae}.`,
+        notes: `Nota de crédito ${esTotal ? 'TOTAL' : modo === 'UNIDADES' ? `POR UNIDADES (devolución: ${detalleDevolucion}; ${vuelvenAPendiente ? 'vuelven a pendiente en la cotización' : 'no vuelven a la cotización'})` : 'PARCIAL'} s/ ${inv.invoiceNumber}${motivo ? ` — ${motivo}` : ''}. CAE ${em.cae}.`,
         colppySyncStatus: colppyPayload ? 'PENDIENTE' : null,
         colppyPayload: colppyPayload ? (JSON.parse(JSON.stringify(colppyPayload)) as Prisma.InputJsonValue) : Prisma.JsonNull,
         items: esTotal
@@ -622,7 +634,9 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
               // quoteItemId en las devoluciones: restan en lo facturado de la
               // cotización (signoCantidad) → las unidades vuelven a pendientes
               create: devueltas.map((d) => ({
-                quoteItemId: d.adicional ? null : d.invoiceItem?.quoteItemId ?? null,
+                // Con quoteItemId la devolución resta en lo facturado de la
+                // cotización (vuelve a pendiente); sin, la cotización no cambia
+                quoteItemId: !vuelvenAPendiente || d.adicional ? null : d.invoiceItem?.quoteItemId ?? null,
                 productId: d.adicional ? null : d.invoiceItem?.productId ?? null,
                 lineaFactura: d.linea.index,
                 sku: d.linea.codigo,
@@ -683,7 +697,21 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
       })
     }
 
-    if (modo === 'UNIDADES' && devueltasPorQuoteItem.size > 0) {
+    if (modo === 'UNIDADES' && !vuelvenAPendiente && inv.quote) {
+      // El cliente no quiere esas unidades: la cotización queda igual, solo
+      // se deja constancia en su historial
+      await tx.quoteStatusHistory.create({
+        data: {
+          quoteId: inv.quote.id,
+          fromStatus: inv.quote.status,
+          toStatus: inv.quote.status,
+          changedBy: opts.userId,
+          notes: `Devolución por NC ${numeroErp} (${detalleDevolucion})${motivo ? ` — ${motivo}` : ''}: no vuelven a pendiente (el cliente no las quiere)`,
+        },
+      })
+    }
+
+    if (vuelvenAPendiente && devueltasPorQuoteItem.size > 0) {
       // Unidades devueltas → vuelven a quedar pendientes de facturar
       const values = Array.from(devueltasPorQuoteItem.entries()).map(([id, qty]) => Prisma.sql`(${id}, ${qty}::numeric)`)
       await tx.$executeRaw`

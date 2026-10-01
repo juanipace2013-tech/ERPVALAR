@@ -14,6 +14,7 @@ import { logger } from '@/lib/logger'
 import { syncStockForSkusFireAndForget } from '@/lib/colppy-inventory';
 import { sincronizarComisionesDeQuote } from '@/lib/comisiones/liquidacion';
 import { crearHookEmisionArca, getEmisorFacturacion } from '@/lib/facturacion/emision-arca';
+import { facturaEnPesos, itemsEnPesos, type MonedaFactura } from '@/lib/facturacion/moneda';
 
 // ============================================================================
 // TIPOS
@@ -40,6 +41,8 @@ interface SendToColppyRequest {
     ordenCompra?: string;
     exchangeRate?: number;
     exchangeRateModo?: 'BILLETE' | 'DIVISA';
+    /** Cotización en USD facturada en pesos (excepción) */
+    monedaFactura?: MonedaFactura;
   };
 }
 
@@ -216,6 +219,11 @@ export async function POST(
       }
     }
 
+    // Excepción: cotización en USD facturada en pesos con el TC de la factura.
+    // Los montos para comisiones (CotizacionFactura.montoUSD) siguen en USD.
+    const enPesos = facturaEnPesos(quote.currency, editedData?.monedaFactura) && !!currentExchangeRate;
+    const fx = enPesos ? currentExchangeRate! : 1;
+
     // 8. Preparar datos para Colppy
     // IMPORTANTE: QuoteItem.unitPrice INCLUYE adicionales (listPrice + additionalsPrices) * discount * multiplier
     // Necesitamos descomponer el precio en principal + adicionales separados
@@ -264,8 +272,8 @@ export async function POST(
     const quoteData = {
       id: quote.id,
       quoteNumber: quote.quoteNumber,
-      currency: quote.currency,
-      exchangeRate: currentExchangeRate,
+      currency: enPesos ? 'ARS' : quote.currency,
+      exchangeRate: enPesos ? null : currentExchangeRate,
       bonification: Number(quote.bonification ?? 0),
       pricesIncludeTax: quote.pricesIncludeTax,
       customer: {
@@ -276,7 +284,7 @@ export async function POST(
         phone: quote.customer.phone || undefined,
         email: quote.customer.email || undefined,
       },
-      items: quoteItems,
+      items: enPesos ? itemsEnPesos(quoteItems, fx) : quoteItems,
     };
 
     // N° de OC del diálogo: si cambió, se guarda en la cotización (el PDF de la
@@ -399,19 +407,19 @@ export async function POST(
             customerId: quote.customerId,
             userId: quote.salesPersonId || session.user!.id!,
             status: emisionArca ? 'AUTHORIZED' : 'DRAFT',
-            currency: quote.currency,
+            currency: enPesos ? 'ARS' : quote.currency,
             exchangeRate: quote.currency === 'USD' && currentExchangeRate ? currentExchangeRate : quote.exchangeRate,
             colppyId: result.facturaId || null,
             // Emisión ARCA: totales fiscales reales (los mismos que recibió Colppy)
-            subtotal: emisionArca && payloadColppy ? Number(payloadColppy.netoGravado) : subtotal,
+            subtotal: emisionArca && payloadColppy ? Number(payloadColppy.netoGravado) : Math.round(subtotal * fx * 100) / 100,
             taxAmount: emisionArca && payloadColppy ? Number(payloadColppy.totalIVA) : 0,
             discount: 0,
-            total: emisionArca && payloadColppy ? Number(payloadColppy.totalFactura) : subtotal,
-            balance: emisionArca && payloadColppy ? Number(payloadColppy.totalFactura) : subtotal,
+            total: emisionArca && payloadColppy ? Number(payloadColppy.totalFactura) : Math.round(subtotal * fx * 100) / 100,
+            balance: emisionArca && payloadColppy ? Number(payloadColppy.totalFactura) : Math.round(subtotal * fx * 100) / 100,
             issueDate: now,
             dueDate: calcDueDate(now, quote.customer.paymentTerms),
             notes: emisionArca
-              ? `Emitida por el ERP (ARCA) el ${now.toLocaleString('es-AR')}. CAE ${emisionArca.cae}. ${colppyPendiente ? 'PENDIENTE de registrar en Colppy.' : `Registrada en Colppy (${result.facturaId}).`} ${remitoRef ? `Remito: ${remitoRef}` : ''}`.trim()
+              ? `Emitida por el ERP (ARCA) el ${now.toLocaleString('es-AR')}. CAE ${emisionArca.cae}. ${enPesos ? `Facturada en pesos (cotización en USD, TC ${fx}). ` : ''}${colppyPendiente ? 'PENDIENTE de registrar en Colppy.' : `Registrada en Colppy (${result.facturaId}).`} ${remitoRef ? `Remito: ${remitoRef}` : ''}`.trim()
               : `Borrador enviado a Colppy el ${now.toLocaleString('es-AR')}. ${result.facturaNumber ? `Factura: ${result.facturaNumber}` : ''} ${result.remitoNumber ? `Remito: ${result.remitoNumber}` : ''}`.trim(),
             afipStatus: emisionArca ? 'APPROVED' : 'PENDING',
             paymentStatus: 'UNPAID',
@@ -438,7 +446,7 @@ export async function POST(
             items: {
               create: Array.from(sentQtyByItemId.entries()).map(([itemId, qty]) => {
                 const item = quote.items.find((i) => i.id === itemId)!;
-                const unit = unitTotalForItem(itemId, Number(item.unitPrice));
+                const unit = Math.round(unitTotalForItem(itemId, Number(item.unitPrice)) * fx * 100) / 100;
                 return {
                   productId: item.productId || null,
                   quoteItemId: item.id,

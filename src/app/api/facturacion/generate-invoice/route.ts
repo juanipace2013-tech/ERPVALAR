@@ -24,6 +24,7 @@ import { logger } from '@/lib/logger'
 import { syncStockForSkusFireAndForget } from '@/lib/colppy-inventory'
 import { sincronizarComisionesDeQuote } from '@/lib/comisiones/liquidacion'
 import { crearHookEmisionArca, getEmisorFacturacion } from '@/lib/facturacion/emision-arca'
+import { facturaEnPesos, itemsEnPesos, type MonedaFactura } from '@/lib/facturacion/moneda'
 
 interface InvoiceItemRequest {
   quoteItemId: string
@@ -69,6 +70,8 @@ export async function POST(request: NextRequest) {
         ordenCompra?: string
         exchangeRate?: number
         exchangeRateModo?: 'BILLETE' | 'DIVISA'
+        /** Cotización en USD facturada en pesos (excepción) */
+        monedaFactura?: MonedaFactura
       }
     }
 
@@ -129,6 +132,12 @@ export async function POST(request: NextRequest) {
     if (quote.currency === 'USD' && tcFactura && quote.exchangeRate && Math.abs(tcFactura - Number(quote.exchangeRate)) > 0.001) {
       logger.info(`[Generate Invoice] TC de factura ${tcFactura} (${editedData?.exchangeRateModo || 'manual'}) distinto al de la cotizacion ${Number(quote.exchangeRate)} — quote ${quote.quoteNumber}`)
     }
+
+    // Excepción: cotización en USD facturada en pesos con el TC de la factura.
+    // Los montos para comisiones (CotizacionFactura.montoUSD) siguen en USD.
+    const enPesos = facturaEnPesos(quote.currency, editedData?.monedaFactura)
+    const monedaInvoice = enPesos ? 'ARS' : quote.currency
+    const fx = enPesos ? tcFactura! : 1
 
     // Cantidad pendiente de facturar de un quoteItem (max entre la columna
     // cantidadFacturada y la suma de InvoiceItems no cancelados).
@@ -267,8 +276,8 @@ export async function POST(request: NextRequest) {
     const colppyResult = await sendQuoteToColppy(colppyOptions, {
       id: quote.id,
       quoteNumber: quote.quoteNumber,
-      currency: quote.currency,
-      exchangeRate: tcFactura,
+      currency: monedaInvoice,
+      exchangeRate: enPesos ? null : tcFactura,
       bonification: Number(quote.bonification ?? 0),
       customer: {
         name: quote.customer.name,
@@ -278,7 +287,7 @@ export async function POST(request: NextRequest) {
         phone: quote.customer.phone || undefined,
         email: quote.customer.email || undefined,
       },
-      items: colppyItems,
+      items: enPesos ? itemsEnPesos(colppyItems, fx) : colppyItems,
     })
 
     // Emisión ARCA ya realizada (aunque Colppy haya fallado después)
@@ -368,19 +377,19 @@ export async function POST(request: NextRequest) {
           customerId: quote.customerId,
           userId: quote.salesPersonId || session.user!.id!,
           status: emisionArca ? 'AUTHORIZED' : 'DRAFT',
-          currency: quote.currency,
+          currency: monedaInvoice,
           exchangeRate: quote.currency === 'USD' ? tcFactura : quote.exchangeRate,
           colppyId: colppyResult.facturaId || null,
           // Emisión ARCA: neto fiscal real (el mismo que fue a ARCA y a Colppy)
-          subtotal: emisionArca && payloadColppy ? Number(payloadColppy.netoGravado) : subtotal,
+          subtotal: emisionArca && payloadColppy ? Number(payloadColppy.netoGravado) : Math.round(subtotal * fx * 100) / 100,
           taxAmount,
           discount: 0,
-          total: totalFiscal ?? subtotal,
-          balance: totalFiscal ?? subtotal,
+          total: totalFiscal ?? Math.round(subtotal * fx * 100) / 100,
+          balance: totalFiscal ?? Math.round(subtotal * fx * 100) / 100,
           issueDate: now,
           dueDate: calcDueDate(now, quote.customer.paymentTerms),
           notes: emisionArca
-            ? `Emitida por el ERP (ARCA) el ${now.toLocaleString('es-AR')}. CAE ${emisionArca.cae}. ${colppyPendiente ? 'PENDIENTE de registrar en Colppy.' : `Registrada en Colppy (${colppyResult.facturaId}).`} ${remitoRef ? `Remito: ${remitoRef}` : ''}`.trim()
+            ? `Emitida por el ERP (ARCA) el ${now.toLocaleString('es-AR')}. CAE ${emisionArca.cae}. ${enPesos ? `Facturada en pesos (cotización en USD, TC ${fx}). ` : ''}${colppyPendiente ? 'PENDIENTE de registrar en Colppy.' : `Registrada en Colppy (${colppyResult.facturaId}).`} ${remitoRef ? `Remito: ${remitoRef}` : ''}`.trim()
             : `Borrador enviado a Colppy el ${now.toLocaleString('es-AR')}. ${colppyResult.facturaNumber ? `Factura: ${colppyResult.facturaNumber}` : ''} ${remitoRef ? `Remito: ${remitoRef}` : ''}`.trim(),
           afipStatus: emisionArca ? 'APPROVED' : 'PENDING',
           paymentStatus: 'UNPAID',
@@ -415,10 +424,10 @@ export async function POST(request: NextRequest) {
                   quoteItemId: quoteItem.id,
                   description: quoteItem.description || quoteItem.product?.name || 'Item',
                   quantity: l.split.quantity,
-                  unitPrice: splitItemUnitTotal(l.split),
+                  unitPrice: Math.round(splitItemUnitTotal(l.split) * fx * 100) / 100,
                   discount: 0,
                   taxRate: 21,
-                  subtotal: splitItemLineTotal(l.split),
+                  subtotal: Math.round(splitItemLineTotal(l.split) * fx * 100) / 100,
                 }
               }),
           },

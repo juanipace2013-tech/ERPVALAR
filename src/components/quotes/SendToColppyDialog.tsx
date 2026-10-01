@@ -93,6 +93,8 @@ export interface ColppySendPayload {
     exchangeRate?: number;
     /** BILLETE = TC del sistema (/tipo-cambio), DIVISA = ingresado a mano. */
     exchangeRateModo?: TipoCambioModo;
+    /** Cotización en USD facturada en pesos (excepción): precios × TC de la factura. */
+    monedaFactura?: 'USD' | 'ARS';
   };
 }
 
@@ -185,6 +187,8 @@ export function SendToColppyDialog({
   // TC con el que se factura: por defecto billete (sistema); "Divisa" habilita
   // el campo para tipear el TC que usan los clientes grandes.
   const [tcModo, setTcModo] = useState<TipoCambioModo>('BILLETE');
+  // Excepción: facturar en pesos una cotización en USD (clientes que no aceptan USD)
+  const [monedaFactura, setMonedaFactura] = useState<'USD' | 'ARS'>('USD');
   const [tcManual, setTcManual] = useState('');
   const tcBillete = latestRate?.rate ?? quote.exchangeRate ?? null;
   const tcEfectivo =
@@ -314,6 +318,7 @@ export function SendToColppyDialog({
       // Inicializar descripción y OC (la de la cotización)
       setDescripcionFactura(`Cotización ${quote.quoteNumber}`);
       setOrdenCompra(quote.purchaseOrderNumber ?? '');
+      setMonedaFactura('USD');
     }
   }, [open, quote]);
 
@@ -398,7 +403,7 @@ export function SendToColppyDialog({
       remitoNumero: remitoNumero.trim() || undefined,
       ordenCompra: ordenCompra.trim() || undefined,
       ...(quote.currency === 'USD' && tcEfectivo
-        ? { exchangeRate: tcEfectivo, exchangeRateModo: tcModo }
+        ? { exchangeRate: tcEfectivo, exchangeRateModo: tcModo, monedaFactura }
         : {}),
     },
   });
@@ -595,6 +600,16 @@ export function SendToColppyDialog({
                   autoFocus
                 />
               )}
+              <Label htmlFor="moneda-factura" className="pt-1">Moneda de la factura</Label>
+              <Select value={monedaFactura} onValueChange={(v) => setMonedaFactura(v as 'USD' | 'ARS')}>
+                <SelectTrigger id="moneda-factura" className={monedaFactura === 'ARS' ? 'border-amber-400 bg-amber-50' : ''}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="USD">Dólares (USD)</SelectItem>
+                  <SelectItem value="ARS">Pesos (convertir con el TC)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           )}
           <div className="space-y-2">
@@ -831,6 +846,12 @@ export function SendToColppyDialog({
                 {formatCurrency(totales.total, quote.currency)}
               </span>
             </div>
+            {quote.currency === 'USD' && monedaFactura === 'ARS' && (
+              <div className="flex justify-between rounded bg-amber-50 px-2 py-1 text-amber-900">
+                <span className="font-semibold">Factura en pesos (TC {tcEfectivo ? tcEfectivo.toLocaleString('es-AR', { minimumFractionDigits: 2 }) : '—'}):</span>
+                <span className="font-semibold">{tcEfectivo ? formatCurrency(totales.total * tcEfectivo, 'ARS') : 'Falta el TC'}</span>
+              </div>
+            )}
           </div>
         </div>
 

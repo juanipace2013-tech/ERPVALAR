@@ -87,9 +87,19 @@ const CREDIT_NOTE_TIPOS = new Set(['5', '11', '53'])
 // Notas de Débito (NDV) → transactionType = DEBIT_NOTE, SUMAN al total
 const DEBIT_NOTE_TIPOS = new Set(['8', '12', '52'])
 
-/** Tipo de comprobante ARCA (1/6 FA-FB, 3/8 NC, 2/7 ND) segun clase y letra. */
-function arcaCbteTipo(transactionType: string, letra: string): number | null {
+/**
+ * Tipo de comprobante ARCA (1/6 FA-FB, 3/8 NC, 2/7 ND) segun clase y letra.
+ * FCE MiPyME (Colppy 51/52/53) → 201/206, 203/208, 202/207: numeran aparte,
+ * así que nunca se deben cruzar con la factura común del mismo número.
+ */
+function arcaCbteTipo(transactionType: string, letra: string, tipoCompColppy?: string): number | null {
   const esB = letra === 'B' || letra === 'C'
+  if (tipoCompColppy === '51' || tipoCompColppy === '52' || tipoCompColppy === '53') {
+    if (transactionType === 'SALE') return esB ? 206 : 201
+    if (transactionType === 'CREDIT_NOTE') return esB ? 208 : 203
+    if (transactionType === 'DEBIT_NOTE') return esB ? 207 : 202
+    return null
+  }
   if (transactionType === 'SALE') return esB ? 6 : 1
   if (transactionType === 'CREDIT_NOTE') return esB ? 8 : 3
   if (transactionType === 'DEBIT_NOTE') return esB ? 7 : 2
@@ -385,6 +395,12 @@ export async function syncColppyFacturas(dateFrom: Date, dateTo: Date): Promise<
           // los eliminaba, destruyendo los InvoiceItems que vinculan la
           // factura con los items de la cotización (caso VAL-2026-2331).
           { invoiceNumber: { not: { startsWith: 'BORRADOR-COLPPY-' } } },
+          // Nunca borrar comprobantes emitidos por el ERP (ARCA, PV 7): tienen
+          // CAE/QR/items y numeran "A-0007-..." (no "0003-0000"). Con la rama
+          // ARCA de abajo pasando el status a PENDING, esta limpieza los
+          // borraba en la corrida siguiente (detectado 1/10/2026, antes de que
+          // ocurriera). OR explícito: { not: 'ARCA' } solo excluye NULLs.
+          { OR: [{ emitidaPor: null }, { emitidaPor: { not: 'ARCA' } }] },
         ],
       },
     })
@@ -660,7 +676,7 @@ export async function syncColppyFacturas(dateFrom: Date, dateTo: Date): Promise<
       // PV + tipo ARCA + numero.
       if (!existing) {
         const m = String(f.nroFactura || '').match(/^(\d{4,5})-(\d{8})$/)
-        const cbteTipoArca = m ? arcaCbteTipo(transactionType, invoiceData.invoiceType) : null
+        const cbteTipoArca = m ? arcaCbteTipo(transactionType, invoiceData.invoiceType, tipoComp) : null
         if (m && cbteTipoArca) {
           existing = await prisma.invoice.findFirst({
             where: { emitidaPor: 'ARCA', pointOfSale: Number(m[1]), cbteTipo: cbteTipoArca, cbteNumero: Number(m[2]) },
@@ -676,10 +692,15 @@ export async function syncColppyFacturas(dateFrom: Date, dateTo: Date): Promise<
         // Factura emitida por el ERP (ARCA) y cargada en Colppy como Aprobada:
         // el ERP es la fuente de verdad fiscal (número, CAE, importes). De
         // Colppy solo interesa lo que pasa DESPUÉS: cobros, saldo, estado.
+        // Status: solo avanza a PAID cuando Colppy la ve cobrada. Nunca pasa a
+        // PENDING (AUTHORIZED es el estado de una emitida impaga) ni pisa un
+        // CANCELLED puesto por una NC total del ERP.
+        const statusArca =
+          existing.status === 'CANCELLED' ? existing.status : invoiceData.status === 'PAID' ? 'PAID' : existing.status
         await prisma.invoice.update({
           where: { id: existing.id },
           data: {
-            status: invoiceData.status,
+            status: statusArca,
             paymentStatus: invoiceData.paymentStatus,
             balance: invoiceData.balance,
             colppySyncStatus: 'OK',

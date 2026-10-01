@@ -162,7 +162,7 @@ export function crearHookEmisionArca(cliente: ClienteFiscal): HookEmisionArca {
  * Reintenta el alta en Colppy de una factura ya emitida por el ERP cuyo
  * registro falló. Idempotente: si ya tiene colppyId no hace nada.
  */
-export async function reintentarAltaColppy(invoiceId: string): Promise<{ ok: boolean; colppyId?: string; error?: string }> {
+export async function reintentarAltaColppy(invoiceId: string): Promise<{ ok: boolean; colppyId?: string; error?: string; borradorFce?: boolean }> {
   const inv = await prisma.invoice.findUnique({
     where: { id: invoiceId },
     select: { id: true, invoiceNumber: true, colppyId: true, colppyPayload: true, emitidaPor: true, colppySyncStatus: true, cbteTipo: true },
@@ -191,14 +191,14 @@ export async function reintentarAltaColppy(invoiceId: string): Promise<{ ok: boo
     }
     await prisma.invoice.update({
       where: { id: inv.id },
-      data: { colppyId: res.idFactura, colppySyncStatus: 'OK', colppySyncError: null },
+      data: { colppyId: res.idFactura, colppySyncStatus: res.borradorFce ? 'BORRADOR_FCE' : 'OK', colppySyncError: null },
     })
     await prisma.cotizacionFactura.updateMany({
       where: { invoiceId: inv.id },
       data: { colppyInvoiceId: res.idFactura },
     })
     logger.info(`[Emisión ARCA] Reintento OK: ${inv.invoiceNumber} → Colppy ${res.idFactura}`)
-    return { ok: true, colppyId: res.idFactura }
+    return { ok: true, colppyId: res.idFactura, borradorFce: !!res.borradorFce }
   } catch (e) {
     const msg = (e as Error).message
     await prisma.invoice.update({

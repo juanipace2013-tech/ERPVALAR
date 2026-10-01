@@ -420,7 +420,7 @@ export async function POST(
             issueDate: now,
             dueDate: calcDueDate(now, quote.customer.paymentTerms),
             notes: emisionArca
-              ? `Emitida por el ERP (ARCA) el ${now.toLocaleString('es-AR')}. CAE ${emisionArca.cae}. ${enPesos ? `Facturada en pesos (cotización en USD, TC ${fx}). ` : ''}${colppyPendiente ? 'PENDIENTE de registrar en Colppy.' : `Registrada en Colppy (${result.facturaId}).`} ${remitoRef ? `Remito: ${remitoRef}` : ''}`.trim()
+              ? `Emitida por el ERP (ARCA) el ${now.toLocaleString('es-AR')}. CAE ${emisionArca.cae}. ${enPesos ? `Facturada en pesos (cotización en USD, TC ${fx}). ` : ''}${colppyPendiente ? 'PENDIENTE de registrar en Colppy.' : result.colppyBorradorFce ? `Borrador FCE en Colppy (${result.facturaId}): tildar FCE MiPyME y aprobar.` : `Registrada en Colppy (${result.facturaId}).`} ${remitoRef ? `Remito: ${remitoRef}` : ''}`.trim()
               : `Borrador enviado a Colppy el ${now.toLocaleString('es-AR')}. ${result.facturaNumber ? `Factura: ${result.facturaNumber}` : ''} ${result.remitoNumber ? `Remito: ${result.remitoNumber}` : ''}`.trim(),
             afipStatus: emisionArca ? 'APPROVED' : 'PENDING',
             paymentStatus: 'UNPAID',
@@ -439,7 +439,7 @@ export async function POST(
                   arcaObservaciones: emisionArca.observaciones.length
                     ? emisionArca.observaciones.map((o) => `[${o.Code}] ${o.Msg}`).join(' · ')
                     : null,
-                  colppySyncStatus: colppyPendiente ? 'PENDIENTE' : 'OK',
+                  colppySyncStatus: colppyPendiente ? 'PENDIENTE' : result.colppyBorradorFce ? 'BORRADOR_FCE' : 'OK',
                   colppySyncError: colppyPendiente ? (result.error || 'error desconocido').slice(0, 2000) : null,
                   colppyPayload: payloadColppy ? (JSON.parse(JSON.stringify(payloadColppy)) as Prisma.InputJsonValue) : Prisma.JsonNull,
                 }
@@ -448,7 +448,9 @@ export async function POST(
               create: Array.from(sentQtyByItemId.entries()).map(([itemId, qty]) => {
                 const item = quote.items.find((i) => i.id === itemId)!;
                 const unit = Math.round(unitTotalForItem(itemId, Number(item.unitPrice)) * fx * 100) / 100;
+                const comentario = (editedData?.items.find((e) => e.id === itemId)?.comentario || '').trim() || null;
                 return {
+                  comment: comentario,
                   productId: item.productId || null,
                   quoteItemId: item.id,
                   description: item.description || (item as any).product?.name || 'Item',
@@ -700,7 +702,9 @@ export async function POST(
       message: emisionArca
         ? colppyPendiente
           ? `Factura ${emisionArca.numeroFormateado} emitida (CAE ${emisionArca.cae}). ATENCIÓN: no se pudo registrar en Colppy, reintentar desde la factura.`
-          : `Factura ${emisionArca.numeroFormateado} emitida (CAE ${emisionArca.cae}) y registrada en Colppy`
+          : result.colppyBorradorFce
+            ? `Factura de Crédito MiPyME ${emisionArca.numeroFormateado} emitida (CAE ${emisionArca.cae}). En Colppy quedó como BORRADOR: abrilo, tildá "Factura de crédito electrónica MiPyME (FCE)" y aprobalo.`
+            : `Factura ${emisionArca.numeroFormateado} emitida (CAE ${emisionArca.cae}) y registrada en Colppy`
         : 'Cotización enviada a Colppy exitosamente',
       remitoId: result.remitoId,
       remitoNumber: result.remitoNumber,
@@ -711,6 +715,7 @@ export async function POST(
       cae: emisionArca?.cae,
       caeVencimiento: emisionArca?.caeVencimiento?.toISOString(),
       colppyPendiente,
+      colppyBorradorFce: !!result.colppyBorradorFce,
       pdfUrl: invoiceIdCreado && emisionArca ? `/api/facturas/${invoiceIdCreado}/pdf` : undefined,
       exchangeRateUsed: currentExchangeRate,
       exchangeRateDate: exchangeRateDate?.toISOString() || null,

@@ -115,6 +115,8 @@ export interface SendToColppyResult {
   emision?: EmisionExternaResultado;
   /** Payload de alta_facturaventa enviado a Colppy (para reintentar si falló). */
   colppyInvoicePayload?: ColppyInvoicePayload;
+  /** FCE MiPyME: quedó como BORRADOR en Colppy (tildar FCE y aprobar allá). */
+  colppyBorradorFce?: boolean;
 }
 
 /** Error lanzado por el hook de emisión externa (rechazo de ARCA). */
@@ -962,19 +964,62 @@ export function colppyTipoComprobante(
   return '4';
 }
 
+export interface ColppyCreateInvoiceResult {
+  idFactura: string;
+  numeroFactura: string;
+  /** FCE MiPyME: quedó como BORRADOR en Colppy (hay que tildar FCE y aprobar). */
+  borradorFce?: boolean;
+  /** El borrador FCE no aceptó el número real: va con uno provisorio (corregirlo al aprobar). */
+  numeroProvisorio?: boolean;
+}
+
+/**
+ * Alta de un comprobante de venta en Colppy.
+ *
+ * FCE MiPyME (invoice.mipyme): la API (alta_facturaventa) solo acepta
+ * idTipoComprobante 4/6/8/NCV/9 — no 51/52/53 — y como FAV común Aprobada
+ * choca con la Factura A del mismo número (las FCE numeran aparte; probado el
+ * 1/10/2026 con la FCEA-0007-00000001). Entonces se carga como BORRADOR con
+ * todos los datos (cliente, ítems, precios, moneda, número real y CAE en la
+ * descripción) y en Colppy solo hay que tildar "Factura de crédito
+ * electrónica MiPyME (FCE)" y aprobar. El resto de los comprobantes no cambia.
+ */
 export async function colppyCreateInvoice(
   session: ColppySession,
   invoice: ColppyInvoicePayload
-): Promise<{ idFactura: string; numeroFactura: string }> {
-  // La API (alta_facturaventa) solo acepta idTipoComprobante 4/6/8/NCV/9: no
-  // hay forma de cargar una FCE MiPyME (51/52/53), y como FAV común (4) choca
-  // con la Factura A del mismo número (las FCE numeran aparte). Probado el
-  // 1/10/2026 con la FCEA-0007-00000001. Se cargan a mano en Colppy.
-  if (invoice.mipyme) {
-    throw new Error(
-      `Colppy no acepta Facturas de Crédito MiPyME por API: cargá la ${invoice.nroFactura1 ?? ''}-${invoice.nroFactura2 ?? ''} a mano en Colppy como Factura MiPyME y avisá para vincularla`
-    );
+): Promise<ColppyCreateInvoiceResult> {
+  if (!invoice.mipyme) return colppyCreateInvoiceRaw(session, invoice);
+
+  const nro = `${invoice.nroFactura1 ?? ''}-${invoice.nroFactura2 ?? ''}`;
+  const cae = invoice.descripcion.match(/CAE (\d+)/)?.[1];
+  const clase = invoice.claseComprobante === 'NOTA_CREDITO' ? 'NC FCE' : invoice.claseComprobante === 'NOTA_DEBITO' ? 'ND FCE' : 'FCE';
+  const borrador: ColppyInvoicePayload = {
+    ...invoice,
+    estado: 'Borrador',
+    mipyme: false, // tipo de comprobante "común" (4/NCV/6): el único que acepta la API
+    descripcion: `${clase} ${nro}${cae ? ` CAE ${cae}` : ''} - tildar FCE MiPyME y aprobar`.slice(0, 100),
+  };
+  try {
+    const r = await colppyCreateInvoiceRaw(session, borrador);
+    return { ...r, borradorFce: true };
+  } catch (e) {
+    // Si Colppy valida el número también en borradores, choca con la factura
+    // común del mismo número: va con número provisorio y el real en la
+    // descripción (se corrige al aprobar).
+    if (!/ya existe/i.test((e as Error).message)) throw e;
+    const r = await colppyCreateInvoiceRaw(session, {
+      ...borrador,
+      nroFactura2: undefined,
+      descripcion: `${clase} ${nro} (poner este N° al aprobar)${cae ? ` CAE ${cae}` : ''} - tildar FCE`.slice(0, 100),
+    });
+    return { ...r, borradorFce: true, numeroProvisorio: true };
   }
+}
+
+async function colppyCreateInvoiceRaw(
+  session: ColppySession,
+  invoice: ColppyInvoicePayload
+): Promise<{ idFactura: string; numeroFactura: string }> {
   const config = getColppyConfig();
   const passwordMD5 = md5Hash(config.password);
 
@@ -1862,7 +1907,8 @@ export async function sendQuoteToColppy(
         result.emision = emision;
         emisionRealizada = emision;
         facturaPayload.estado = 'Aprobada';
-        // FCE MiPyME (201/206): tipo de comprobante propio en Colppy
+        // FCE MiPyME (201/206): la API no la acepta aprobada → borrador para
+        // tildar FCE y aprobar en Colppy (ver colppyCreateInvoice)
         if (emision.cbteTipo >= 201) facturaPayload.mipyme = true;
         // Al entrar directamente como Aprobada (sin pasar por la pantalla de
         // Colppy) hay que decirle explícitamente que la línea es un producto de
@@ -1891,6 +1937,7 @@ export async function sendQuoteToColppy(
 
       result.facturaId = factura.idFactura;
       result.facturaNumber = result.emision?.numeroFormateado || factura.numeroFactura;
+      if (factura.borradorFce) result.colppyBorradorFce = true;
     }
 
     logger.info('[Colppy] sendQuoteToColppy OK', {

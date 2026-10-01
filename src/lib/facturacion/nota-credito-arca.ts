@@ -356,7 +356,10 @@ export async function emitirNotaCredito(invoiceId: string, opts: EmitirNotaCredi
         }
       }
       colppyId = res.idFactura
-      await prisma.invoice.update({ where: { id: ncId }, data: { colppyId, colppySyncStatus: 'OK', colppySyncError: null } })
+      await prisma.invoice.update({
+        where: { id: ncId },
+        data: { colppyId, colppySyncStatus: res.borradorFce ? 'BORRADOR_FCE' : 'OK', colppySyncError: null },
+      })
     } catch (e) {
       colppyPendiente = true
       const msg = (e as Error).message

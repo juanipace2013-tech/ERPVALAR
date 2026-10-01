@@ -26,9 +26,11 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
       action: 'UPDATE',
       entity: 'INVOICE',
       entityId: id,
-      description: `Reintento de alta en Colppy OK (colppyId ${r.colppyId})`,
+      description: r.borradorFce
+        ? `Borrador FCE creado en Colppy (colppyId ${r.colppyId}): falta tildar FCE y aprobar`
+        : `Reintento de alta en Colppy OK (colppyId ${r.colppyId})`,
     })
-    return NextResponse.json({ success: true, colppyId: r.colppyId })
+    return NextResponse.json({ success: true, colppyId: r.colppyId, borradorFce: !!r.borradorFce })
   }
   return NextResponse.json({ success: false, error: r.error }, { status: 502 })
 }

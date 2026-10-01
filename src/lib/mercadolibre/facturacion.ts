@@ -419,7 +419,7 @@ export async function facturarVentaMl(params: {
             balance: payload ? Number(payload.totalFactura) : total,
             issueDate: now,
             dueDate: now,
-            notes: `${referencia}. Emitida por el ERP (ARCA) el ${now.toLocaleString('es-AR')}. CAE ${emitida.cae}. ${colppyPendiente ? 'PENDIENTE de registrar en Colppy.' : `Registrada en Colppy (${colppyResult.facturaId}).`}`,
+            notes: `${referencia}. Emitida por el ERP (ARCA) el ${now.toLocaleString('es-AR')}. CAE ${emitida.cae}. ${colppyPendiente ? 'PENDIENTE de registrar en Colppy.' : colppyResult.colppyBorradorFce ? `Borrador FCE en Colppy (${colppyResult.facturaId}): tildar FCE MiPyME y aprobar.` : `Registrada en Colppy (${colppyResult.facturaId}).`}`,
             afipStatus: 'APPROVED',
             paymentStatus: 'UNPAID',
             emitidaPor: 'ARCA',
@@ -435,7 +435,7 @@ export async function facturarVentaMl(params: {
             arcaObservaciones: emitida.observaciones.length
               ? emitida.observaciones.map((o) => `[${o.Code}] ${o.Msg}`).join(' · ')
               : null,
-            colppySyncStatus: colppyPendiente ? 'PENDIENTE' : 'OK',
+            colppySyncStatus: colppyPendiente ? 'PENDIENTE' : colppyResult.colppyBorradorFce ? 'BORRADOR_FCE' : 'OK',
             colppySyncError: colppyPendiente ? (colppyResult.error || 'error desconocido').slice(0, 2000) : null,
             colppyPayload: payload ? (JSON.parse(JSON.stringify(payload)) as Prisma.InputJsonValue) : Prisma.JsonNull,
             items: {

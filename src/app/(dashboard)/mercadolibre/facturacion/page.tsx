@@ -210,7 +210,9 @@ export default function FacturacionMlPage() {
                           <Badge variant="destructive">Emisión incompleta: revisar</Badge>
                         )}
                         {v.facturada.colppySyncStatus && v.facturada.colppySyncStatus !== 'OK' && (
-                          <Badge variant="destructive">Colppy: {v.facturada.colppySyncStatus}</Badge>
+                          <Badge variant={v.facturada.colppySyncStatus === 'BORRADOR_FCE' ? 'secondary' : 'destructive'}>
+                            {v.facturada.colppySyncStatus === 'BORRADOR_FCE' ? 'Colppy: borrador FCE (tildar y aprobar)' : `Colppy: ${v.facturada.colppySyncStatus}`}
+                          </Badge>
                         )}
                         {v.facturada.mlUploadStatus === 'OK' ? (
                           <Badge className="bg-green-100 text-green-800">Subida a ML</Badge>

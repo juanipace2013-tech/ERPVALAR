@@ -234,12 +234,14 @@ export async function POST(request: NextRequest) {
                 deliveryTime: undefined as string | undefined,
                 additionals: [] as Array<{ name: string; unitPrice: number; sku: string }>,
               }
-          return { quoteItem, split }
+          // Comentario tal cual lo cargó el usuario (para el PDF); el split
+          // trae un default "Cotización X" que solo va a Colppy.
+          return { quoteItem, split, comentario: (editedItem.comentario || '').trim() || null }
         })
       : requestedItems.map((req) => {
           const quoteItem = quote.items.find((i) => i.id === req.quoteItemId)!
           const split = buildSplitItem(quoteItem, calcComponentPrice, quote, { cantidad: req.quantity })
-          return { quoteItem, split }
+          return { quoteItem, split, comentario: null as string | null }
         })
 
     const colppyItems = lineItems.map((l) => l.split)
@@ -390,7 +392,7 @@ export async function POST(request: NextRequest) {
           issueDate: now,
           dueDate: calcDueDate(now, quote.customer.paymentTerms),
           notes: emisionArca
-            ? `Emitida por el ERP (ARCA) el ${now.toLocaleString('es-AR')}. CAE ${emisionArca.cae}. ${enPesos ? `Facturada en pesos (cotización en USD, TC ${fx}). ` : ''}${colppyPendiente ? 'PENDIENTE de registrar en Colppy.' : `Registrada en Colppy (${colppyResult.facturaId}).`} ${remitoRef ? `Remito: ${remitoRef}` : ''}`.trim()
+            ? `Emitida por el ERP (ARCA) el ${now.toLocaleString('es-AR')}. CAE ${emisionArca.cae}. ${enPesos ? `Facturada en pesos (cotización en USD, TC ${fx}). ` : ''}${colppyPendiente ? 'PENDIENTE de registrar en Colppy.' : colppyResult.colppyBorradorFce ? `Borrador FCE en Colppy (${colppyResult.facturaId}): tildar FCE MiPyME y aprobar.` : `Registrada en Colppy (${colppyResult.facturaId}).`} ${remitoRef ? `Remito: ${remitoRef}` : ''}`.trim()
             : `Borrador enviado a Colppy el ${now.toLocaleString('es-AR')}. ${colppyResult.facturaNumber ? `Factura: ${colppyResult.facturaNumber}` : ''} ${remitoRef ? `Remito: ${remitoRef}` : ''}`.trim(),
           afipStatus: emisionArca ? 'APPROVED' : 'PENDING',
           paymentStatus: 'UNPAID',
@@ -410,7 +412,7 @@ export async function POST(request: NextRequest) {
                 arcaObservaciones: emisionArca.observaciones.length
                   ? emisionArca.observaciones.map((o) => `[${o.Code}] ${o.Msg}`).join(' · ')
                   : null,
-                colppySyncStatus: colppyPendiente ? 'PENDIENTE' : 'OK',
+                colppySyncStatus: colppyPendiente ? 'PENDIENTE' : colppyResult.colppyBorradorFce ? 'BORRADOR_FCE' : 'OK',
                 colppySyncError: colppyPendiente ? (colppyResult.error || 'error desconocido').slice(0, 2000) : null,
                 colppyPayload: payloadColppy ? (JSON.parse(JSON.stringify(payloadColppy)) as Prisma.InputJsonValue) : Prisma.JsonNull,
               }
@@ -429,6 +431,7 @@ export async function POST(request: NextRequest) {
                   discount: 0,
                   taxRate: 21,
                   subtotal: Math.round(splitItemLineTotal(l.split) * fx * 100) / 100,
+                  comment: l.comentario,
                 }
               }),
           },
@@ -672,7 +675,9 @@ export async function POST(request: NextRequest) {
       message: emisionArca
         ? colppyPendiente
           ? `Factura ${emisionArca.numeroFormateado} emitida (CAE ${emisionArca.cae}). ATENCIÓN: no se pudo registrar en Colppy, reintentar desde la factura.`
-          : `Factura ${emisionArca.numeroFormateado} emitida (CAE ${emisionArca.cae}) y registrada en Colppy`
+          : colppyResult.colppyBorradorFce
+            ? `Factura de Crédito MiPyME ${emisionArca.numeroFormateado} emitida (CAE ${emisionArca.cae}). En Colppy quedó como BORRADOR: abrilo, tildá "Factura de crédito electrónica MiPyME (FCE)" y aprobalo.`
+            : `Factura ${emisionArca.numeroFormateado} emitida (CAE ${emisionArca.cae}) y registrada en Colppy`
         : 'Enviado a Colppy exitosamente',
       remitoId: colppyResult.remitoId,
       remitoNumber: colppyResult.remitoNumber,
@@ -683,6 +688,7 @@ export async function POST(request: NextRequest) {
       cae: emisionArca?.cae,
       caeVencimiento: emisionArca?.caeVencimiento?.toISOString(),
       colppyPendiente,
+      colppyBorradorFce: !!colppyResult.colppyBorradorFce,
       pdfUrl: invoiceIdCreado && emisionArca ? `/api/facturas/${invoiceIdCreado}/pdf` : undefined,
       sentAt: now.toISOString(),
     })

@@ -9,7 +9,7 @@
 
 'use client';
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -130,21 +130,6 @@ interface SendToColppyDialogProps {
   subtitle?: string;
 }
 
-/**
- * "RE 0006-00000927" → "006-00927" (formato corto usado en los comentarios
- * de línea de Colppy). Si no se pueden extraer PV y número, devuelve el
- * texto tal cual sin el prefijo "RE".
- */
-function formatRemitoRef(remito: string): string {
-  const grupos = remito.match(/\d+/g);
-  if (grupos && grupos.length >= 2) {
-    const pv = String(parseInt(grupos[0], 10)).padStart(3, '0');
-    const numero = String(parseInt(grupos[grupos.length - 1], 10)).padStart(5, '0');
-    return `${pv}-${numero}`;
-  }
-  return remito.replace(/^RE\s*/i, '').trim();
-}
-
 // ============================================================================
 // COMPONENTE
 // ============================================================================
@@ -198,21 +183,6 @@ export function SendToColppyDialog({
         ? Number(tcManual.replace(',', '.')) || null
         : tcBillete;
 
-  // Comentario de línea auto-armado: "Cotización X. Remito N° Y. OC N° Z."
-  // Se recalcula cuando cambia el N° de remito; solo pisa los comentarios que
-  // el usuario no editó a mano (los que siguen iguales al auto anterior).
-  const buildComentarioBase = () => {
-    const partes = [`Cotización ${quote.quoteNumber}`];
-    if (remitoNumero.trim()) {
-      partes.push(`Remito N° ${formatRemitoRef(remitoNumero)}`);
-    }
-    const oc = ordenCompra.replace(/^OC\s*(N[°º]?\s*)?/i, '').trim();
-    if (oc) {
-      partes.push(`OC N° ${oc}`);
-    }
-    return partes.join('. ') + '.' + (quote.notes ? ' ' + quote.notes : '');
-  };
-  const autoComentarioRef = useRef('');
 
   // Mapeo de días a texto de condición de pago
   const condicionMap: Record<string, string> = {
@@ -265,9 +235,9 @@ export function SendToColppyDialog({
     if (open) {
       setTcModo('BILLETE');
       setTcManual('');
-      // Inicializar items
-      const comentarioBase = buildComentarioBase();
-      autoComentarioRef.current = comentarioBase;
+      // Inicializar items. El comentario arranca vacío: cotización, remito y OC
+      // ya salen en el encabezado de la factura; acá va lo propio de cada línea
+      // (N° de ítem/SOLPED de la OC, etc.) y se imprime debajo de la descripción.
       setItems(
         quote.items.map((item) => ({
           id: item.id,
@@ -276,7 +246,7 @@ export function SendToColppyDialog({
           cantidad: item.quantity,
           precioUnitario: item.unitPrice,
           iva: item.iva || 21,
-          comentario: comentarioBase,
+          comentario: '',
           yaFacturado: item.quantityInvoiced ?? 0,
           cantidadOriginal: item.originalQuantity ?? item.quantity,
           incluido: true,
@@ -322,19 +292,6 @@ export function SendToColppyDialog({
     }
   }, [open, quote]);
 
-  // Re-armar el comentario cuando llega/cambia el N° de remito (se propone
-  // async desde /api/delivery-notes/next-number o lo edita el usuario).
-  useEffect(() => {
-    if (!open) return;
-    const nuevo = buildComentarioBase();
-    const previo = autoComentarioRef.current;
-    if (nuevo === previo) return;
-    autoComentarioRef.current = nuevo;
-    setItems((prev) =>
-      prev.map((item) => (item.comentario === previo ? { ...item, comentario: nuevo } : item))
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, remitoNumero, ordenCompra, quote]);
 
   // Determinar tipo de factura según condición IVA
   const invoiceType = quote.customer.taxCondition === 'RESPONSABLE_INSCRIPTO' ? 'A' : 'B';

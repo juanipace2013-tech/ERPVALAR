@@ -561,9 +561,9 @@ export default function FacturacionPage() {
       if (data.emisor === 'arca' && data.cae) {
         // Factura emitida por el ERP (ARCA): ofrecer el PDF con CAE/QR.
         const pdfUrl: string | undefined = data.pdfUrl
-        toast.success(data.colppyPendiente ? 'Factura emitida (pendiente en Colppy)' : 'Factura emitida', {
-          description: `${successParts.join(' | ')} | CAE ${data.cae}${data.colppyPendiente ? ' — no se pudo registrar en Colppy, reintentar desde la factura' : ''}`,
-          duration: data.colppyPendiente ? 20000 : 12000,
+        toast.success(data.colppyPendiente ? 'Factura emitida (pendiente en Colppy)' : data.colppyBorradorFce ? 'Factura de Crédito MiPyME emitida' : 'Factura emitida', {
+          description: `${successParts.join(' | ')} | CAE ${data.cae}${data.colppyPendiente ? ' — no se pudo registrar en Colppy, reintentar desde la factura' : data.colppyBorradorFce ? ' — en Colppy quedó como BORRADOR: tildá "Factura de crédito electrónica MiPyME (FCE)" y aprobalo' : ''}`,
+          duration: data.colppyPendiente || data.colppyBorradorFce ? 20000 : 12000,
           action: pdfUrl
             ? { label: 'Ver PDF', onClick: () => window.open(pdfUrl, '_blank') }
             : undefined,

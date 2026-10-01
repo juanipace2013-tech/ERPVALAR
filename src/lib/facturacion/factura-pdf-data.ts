@@ -89,7 +89,7 @@ export async function buildFacturaPdfData(invoiceId: string): Promise<FacturaPDF
     return {
       codigo: it.sku || it.product?.sku || null,
       descripcion: it.description || '',
-      detalle: referencia,
+      detalle: it.comment || null,
       cantidad,
       unidad: 'Un',
       precioUnitario: Math.round(unitPre * 100) / 100,

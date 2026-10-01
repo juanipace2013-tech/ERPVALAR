@@ -167,7 +167,14 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
       const r = await fetch(`/api/facturas/${id}/reenviar-colppy`, { method: 'POST' })
       const data = await r.json()
       if (!r.ok || !data.success) throw new Error(data.error || 'Error al reenviar a Colppy')
-      toast.success('Registrada en Colppy', { description: `ID Colppy ${data.colppyId}` })
+      if (data.borradorFce) {
+        toast.success('Borrador creado en Colppy', {
+          description: `ID ${data.colppyId}: abrilo en Colppy, tildá "Factura de crédito electrónica MiPyME (FCE)" y aprobalo`,
+          duration: 15000,
+        })
+      } else {
+        toast.success('Registrada en Colppy', { description: `ID Colppy ${data.colppyId}` })
+      }
       fetchInvoice()
     } catch (e) {
       toast.error('No se pudo registrar en Colppy', { description: (e as Error).message })
@@ -288,7 +295,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
             </Button>
           </>
         )}
-        {esArca && invoice.colppySyncStatus && invoice.colppySyncStatus !== 'OK' && (
+        {esArca && invoice.colppySyncStatus && invoice.colppySyncStatus !== 'OK' && invoice.colppySyncStatus !== 'BORRADOR_FCE' && (
           <Button variant="outline" onClick={reintentarColppy} disabled={retrying}>
             {retrying ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
             Reintentar registro en Colppy
@@ -449,7 +456,9 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                       </Link>{' '}
                       <span className="text-gray-500">· {formatDate(r.issueDate)}{r.cae ? ` · CAE ${r.cae}` : ''}</span>
                       {r.colppySyncStatus && r.colppySyncStatus !== 'OK' && (
-                        <Badge className="ml-2 bg-amber-100 text-amber-800">Pendiente Colppy</Badge>
+                        <Badge className="ml-2 bg-amber-100 text-amber-800">
+                          {r.colppySyncStatus === 'BORRADOR_FCE' ? 'Borrador FCE en Colppy' : 'Pendiente Colppy'}
+                        </Badge>
                       )}
                     </span>
                     <span className={r.transactionType === 'CREDIT_NOTE' ? 'text-red-700' : ''}>
@@ -509,7 +518,17 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                 )}
                 <div className="pt-2 border-t">
                   <p className="text-gray-600">Colppy</p>
-                  {invoice.colppySyncStatus === 'OK' || (!invoice.colppySyncStatus && invoice.colppyId) ? (
+                  {invoice.colppySyncStatus === 'BORRADOR_FCE' ? (
+                    <div>
+                      <p className="font-semibold text-blue-700 flex items-center">
+                        <AlertTriangle className="h-4 w-4 mr-1" /> Borrador en Colppy (ID {invoice.colppyId})
+                      </p>
+                      <p className="text-xs text-gray-600 mt-1">
+                        Abrilo en Colppy, tildá &quot;Factura de crédito electrónica MiPyME (FCE)&quot; y aprobalo. Revisá que quede con el
+                        número {String(invoice.pointOfSale ?? 7).padStart(4, '0')}-{String(invoice.cbteNumero ?? '').padStart(8, '0')}.
+                      </p>
+                    </div>
+                  ) : invoice.colppySyncStatus === 'OK' || (!invoice.colppySyncStatus && invoice.colppyId) ? (
                     <p className="font-semibold text-green-700 flex items-center">
                       <CheckCircle2 className="h-4 w-4 mr-1" /> Registrada (ID {invoice.colppyId})
                     </p>

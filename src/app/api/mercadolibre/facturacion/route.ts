@@ -1,7 +1,8 @@
 /**
  * GET  /api/mercadolibre/facturacion — ventas ML (desde el corte del PV 7) de
  *      compradores Responsables Inscriptos, con su estado de facturación.
- * POST /api/mercadolibre/facturacion { packId, cuit? } — emite la factura A
+ * POST /api/mercadolibre/facturacion { packId, cuit, lineas } — emite la factura A con
+ *      el borrador revisado por el usuario
  *      (ARCA PV 7 → Colppy) y sube el PDF a la venta de ML.
  */
 import { auth } from '@/auth'
@@ -9,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { logger } from '@/lib/logger'
 import { logAudit } from '@/lib/audit'
 import { PadronError } from '@/lib/arca/padron'
-import { FacturacionMlError, facturarVentaMl, listarVentasMl } from '@/lib/mercadolibre/facturacion'
+import { FacturacionMlError, facturarVentaMl, listarVentasMl, type LineaFacturaMl } from '@/lib/mercadolibre/facturacion'
 
 export async function GET() {
   const session = await auth()
@@ -26,12 +27,12 @@ export async function POST(req: NextRequest) {
   const session = await auth()
   if (!session?.user?.id) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
-  const body = (await req.json().catch(() => ({}))) as { packId?: string; cuit?: string }
+  const body = (await req.json().catch(() => ({}))) as { packId?: string; cuit?: string; lineas?: LineaFacturaMl[] }
   const packId = String(body.packId ?? '').trim()
   if (!/^\d+$/.test(packId)) return NextResponse.json({ error: 'packId inválido' }, { status: 400 })
 
   try {
-    const r = await facturarVentaMl({ packId, cuitManual: body.cuit, user: { id: session.user.id } })
+    const r = await facturarVentaMl({ packId, cuitManual: body.cuit, lineas: body.lineas, user: { id: session.user.id } })
     logAudit({
       userId: session.user.id,
       userName: session.user.name || '',

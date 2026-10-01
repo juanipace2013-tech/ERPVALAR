@@ -6,7 +6,6 @@ import { toast } from 'sonner'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   Table,
   TableBody,
@@ -16,12 +15,14 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { AlertTriangle, ExternalLink, FileText, Loader2, RefreshCw, Upload } from 'lucide-react'
+import { BorradorFacturaMlDialog } from '@/components/mercadolibre/BorradorFacturaMlDialog'
 
 interface VentaItem {
   mlItemId: string
   title: string
   quantity: number
   unitPrice: number
+  productId: string | null
   sku: string | null
   productName: string | null
 }
@@ -62,7 +63,7 @@ export default function FacturacionMlPage() {
   const [data, setData] = useState<Listado | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
-  const [cuits, setCuits] = useState<Record<string, string>>({})
+  const [borrador, setBorrador] = useState<Venta | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -81,33 +82,6 @@ export default function FacturacionMlPage() {
   useEffect(() => {
     load()
   }, [load])
-
-  const facturar = async (v: Venta) => {
-    const cuit = v.cuit ?? cuits[v.packId]?.trim()
-    if (!cuit) return toast.error('Cargá el CUIT del comprador')
-    const ok = window.confirm(
-      `¿Emitir Factura A por ${ars(v.total)} a CUIT ${cuit}?\n\nSale por el punto de venta 0007 (ARCA), se registra en Colppy y se sube a la venta de Mercado Libre.`
-    )
-    if (!ok) return
-    setBusy(v.packId)
-    try {
-      const res = await fetch('/api/mercadolibre/facturacion', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ packId: v.packId, cuit }),
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Error al facturar')
-      toast.success(`Factura ${json.invoiceNumber} emitida (CAE ${json.cae})`)
-      if (json.colppyPendiente) toast.warning('No se pudo registrar en Colppy: reintentalo desde la factura')
-      if (!json.mlUpload?.ok) toast.warning(`La factura no se pudo subir a Mercado Libre: ${json.mlUpload?.error ?? ''}`)
-      await load()
-    } catch (e) {
-      toast.error((e as Error).message, { duration: 10000 })
-    } finally {
-      setBusy(null)
-    }
-  }
 
   const subir = async (v: Venta) => {
     setBusy(v.packId)
@@ -150,7 +124,7 @@ export default function FacturacionMlPage() {
             <div>
               Mercado Libre no está entregando los datos fiscales de los compradores (falta habilitar el permiso
               &quot;Facturación&quot; en la aplicación de ML). Mientras tanto se listan <b>todas</b> las ventas: cargá el CUIT
-              a mano solo en las de Responsables Inscriptos. El ERP igual lo valida contra ARCA antes de emitir.
+              en el borrador solo en las de Responsables Inscriptos. El ERP igual lo valida contra ARCA antes de emitir.
             </div>
           </CardContent>
         </Card>
@@ -259,20 +233,9 @@ export default function FacturacionMlPage() {
                     ) : v.facturaEnMl ? (
                       <Badge variant="secondary">Ya tiene factura en ML (Colppy)</Badge>
                     ) : (
-                      <div className="flex items-center gap-2">
-                        {!v.cuit && (
-                          <Input
-                            placeholder="CUIT del comprador"
-                            className="h-8 w-36 text-xs"
-                            value={cuits[v.packId] ?? ''}
-                            onChange={(e) => setCuits((c) => ({ ...c, [v.packId]: e.target.value }))}
-                          />
-                        )}
-                        <Button size="sm" className="h-8" disabled={busy !== null} onClick={() => facturar(v)}>
-                          {busy === v.packId && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
-                          Facturar
-                        </Button>
-                      </div>
+                      <Button size="sm" className="h-8" disabled={busy !== null} onClick={() => setBorrador(v)}>
+                        Armar factura
+                      </Button>
                     )}
                   </TableCell>
                 </TableRow>
@@ -281,6 +244,15 @@ export default function FacturacionMlPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <BorradorFacturaMlDialog
+        venta={borrador}
+        onClose={() => setBorrador(null)}
+        onEmitida={() => {
+          setBorrador(null)
+          load()
+        }}
+      />
 
       {data && data.excluidasNoRI > 0 && (
         <p className="text-xs text-muted-foreground">

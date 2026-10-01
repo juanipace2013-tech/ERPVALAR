@@ -79,7 +79,8 @@ export interface VentaMlItem {
   title: string
   quantity: number
   unitPrice: number // final, con IVA
-  sku: string | null // SKU del ERP si la publicación está vinculada
+  productId: string | null // producto del ERP si la publicación está vinculada
+  sku: string | null
   productName: string | null
 }
 
@@ -135,7 +136,7 @@ export async function listarVentasMl(): Promise<ListadoVentasMl> {
     }),
     prisma.mlItemLink.findMany({
       where: { mlItemId: { in: itemIds }, status: 'LINKED', productId: { not: null } },
-      select: { mlItemId: true, product: { select: { sku: true, name: true } } },
+      select: { mlItemId: true, product: { select: { id: true, sku: true, name: true } } },
     }),
   ])
   const regPorPack = new Map(registros.map((r) => [r.packId, r]))
@@ -189,6 +190,7 @@ export async function listarVentasMl(): Promise<ListadoVentasMl> {
             title: it.item.title ?? it.item.id,
             quantity: it.quantity,
             unitPrice: Number(it.unit_price),
+            productId: p?.id ?? null,
             sku: p?.sku ?? null,
             productName: p?.name ?? null,
           }
@@ -242,9 +244,19 @@ async function ordenesDelPack(packId: string): Promise<MlSaleOrder[]> {
   }
 }
 
+/** Línea del borrador revisado por el usuario (precio FINAL con IVA, como en ML). */
+export interface LineaFacturaMl {
+  productId: string | null
+  descripcion: string
+  cantidad: number
+  precioFinal: number
+}
+
 export async function facturarVentaMl(params: {
   packId: string
   cuitManual?: string | null
+  /** Líneas editadas en el borrador; si faltan se arman desde la orden de ML */
+  lineas?: LineaFacturaMl[] | null
   user: { id: string }
 }): Promise<ResultadoFacturaMl> {
   const { packId, user } = params
@@ -259,18 +271,16 @@ export async function facturarVentaMl(params: {
     throw new FacturacionMlError(`La venta tiene órdenes que no están pagas (${noPagas.map((o) => `${o.id}: ${o.status}`).join(', ')})`)
   }
 
-  // CUIT: el que informa ML; si ML no lo da, el cargado a mano
-  let fiscal: MlBuyerFiscal | null = null
-  try {
-    fiscal = await getBuyerFiscal(orders[0])
-  } catch (e) {
-    logger.warn(`[ML Facturación] Sin datos fiscales de ML para ${packId}: ${(e as Error).message}`)
+  // CUIT: el del borrador (pre-cargado con el de ML, editable); si no vino, el de ML
+  let cuit = normalizeCuit(params.cuitManual)
+  if (!cuit) {
+    try {
+      cuit = cuitDeFiscal(await getBuyerFiscal(orders[0]))
+    } catch (e) {
+      logger.warn(`[ML Facturación] Sin datos fiscales de ML para ${packId}: ${(e as Error).message}`)
+    }
   }
-  const cuit = cuitDeFiscal(fiscal) ?? normalizeCuit(params.cuitManual)
-  if (!cuit) throw new FacturacionMlError('Falta el CUIT del comprador (ML no lo informó): cargalo a mano')
-  if (fiscal && !esRI(fiscal.taxpayerType)) {
-    throw new FacturacionMlError(`ML informa al comprador como "${fiscal.taxpayerType}": por ahora solo se facturan Responsables Inscriptos`)
-  }
+  if (!cuit) throw new FacturacionMlError('Falta el CUIT del comprador')
 
   // La condición fiscal manda ARCA, no ML
   const persona = await consultarPersona(cuit)
@@ -278,6 +288,8 @@ export async function facturarVentaMl(params: {
     throw new FacturacionMlError(`${persona.razonSocial} (${cuit}) no figura como Responsable Inscripto en ARCA (${persona.condicionIva ?? 'sin IVA'}): no se factura desde el ERP`)
   }
   if (!persona.activo) throw new FacturacionMlError(`El CUIT ${cuit} figura inactivo en ARCA`)
+
+  const lineas = await armarLineas(orders, params.lineas)
 
   // Candado contra doble facturación (packId unique)
   const total = Math.round(orders.reduce((s, o) => s + Number(o.total_amount ?? 0), 0) * 100) / 100
@@ -324,26 +336,6 @@ export async function facturarVentaMl(params: {
     } else if (customer.taxCondition !== 'RESPONSABLE_INSCRIPTO') {
       customer = await prisma.customer.update({ where: { id: customer.id }, data: { taxCondition: 'RESPONSABLE_INSCRIPTO' } })
     }
-
-    // Productos: SKU del ERP si la publicación está vinculada
-    const itemIds = Array.from(new Set(orders.flatMap((o) => o.order_items.map((i) => i.item.id))))
-    const links = await prisma.mlItemLink.findMany({
-      where: { mlItemId: { in: itemIds }, status: 'LINKED', productId: { not: null } },
-      select: { mlItemId: true, product: { select: { id: true, sku: true, name: true } } },
-    })
-    const linkPorItem = new Map(links.map((l) => [l.mlItemId, l.product!]))
-    const lineas = orders.flatMap((o) =>
-      o.order_items.map((it) => {
-        const p = linkPorItem.get(it.item.id)
-        return {
-          productId: p?.id ?? null,
-          productName: p?.name ?? it.item.title ?? it.item.id,
-          productSku: p?.sku ?? '',
-          quantity: it.quantity,
-          unitPrice: Number(it.unit_price), // final con IVA (pricesIncludeTax)
-        }
-      })
-    )
 
     const referencia = `Venta Mercado Libre #${packId}`
     hookArca = crearHookEmisionArca({
@@ -494,6 +486,51 @@ export async function facturarVentaMl(params: {
     if (!hookArca?.getEmision()) await liberarCandado()
     throw e
   }
+}
+
+/** Líneas a facturar: las del borrador (validadas) o las de la orden de ML. */
+async function armarLineas(orders: MlSaleOrder[], editadas?: LineaFacturaMl[] | null) {
+  if (editadas?.length) {
+    const ids = Array.from(new Set(editadas.map((l) => l.productId).filter((x): x is string => !!x)))
+    const productos = await prisma.product.findMany({ where: { id: { in: ids } }, select: { id: true, sku: true } })
+    const skuPorId = new Map(productos.map((p) => [p.id, p.sku]))
+    return editadas.map((l, i) => {
+      const cantidad = Number(l.cantidad)
+      const precio = Number(l.precioFinal)
+      const descripcion = String(l.descripcion ?? '').trim()
+      if (!descripcion) throw new FacturacionMlError(`Línea ${i + 1}: falta la descripción`)
+      if (!Number.isFinite(cantidad) || cantidad <= 0) throw new FacturacionMlError(`Línea ${i + 1}: cantidad inválida`)
+      if (!Number.isFinite(precio) || precio <= 0) throw new FacturacionMlError(`Línea ${i + 1}: precio inválido`)
+      if (l.productId && !skuPorId.has(l.productId)) throw new FacturacionMlError(`Línea ${i + 1}: el producto elegido no existe`)
+      return {
+        productId: l.productId || null,
+        productName: descripcion.slice(0, 250),
+        productSku: (l.productId && skuPorId.get(l.productId)) || '',
+        quantity: cantidad,
+        unitPrice: Math.round(precio * 100) / 100, // final con IVA (pricesIncludeTax)
+      }
+    })
+  }
+
+  // Sin borrador: SKU del ERP si la publicación está vinculada
+  const itemIds = Array.from(new Set(orders.flatMap((o) => o.order_items.map((i) => i.item.id))))
+  const links = await prisma.mlItemLink.findMany({
+    where: { mlItemId: { in: itemIds }, status: 'LINKED', productId: { not: null } },
+    select: { mlItemId: true, product: { select: { id: true, sku: true, name: true } } },
+  })
+  const linkPorItem = new Map(links.map((l) => [l.mlItemId, l.product!]))
+  return orders.flatMap((o) =>
+    o.order_items.map((it) => {
+      const p = linkPorItem.get(it.item.id)
+      return {
+        productId: p?.id ?? null,
+        productName: p?.name ?? it.item.title ?? it.item.id,
+        productSku: p?.sku ?? '',
+        quantity: it.quantity,
+        unitPrice: Number(it.unit_price), // final con IVA (pricesIncludeTax)
+      }
+    })
+  )
 }
 
 // ---------------------------------------------------------------------------

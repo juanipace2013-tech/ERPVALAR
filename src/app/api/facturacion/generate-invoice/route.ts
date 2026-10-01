@@ -27,6 +27,7 @@ import { crearHookEmisionArca, getEmisorFacturacion } from '@/lib/facturacion/em
 import { facturaEnPesos, itemsEnPesos, type MonedaFactura } from '@/lib/facturacion/moneda'
 import { esClienteExterior } from '@/lib/cliente-exterior'
 import { archivarFacturaEnSharePointBg } from '@/lib/sharepoint/facturas-emitidas'
+import { signoCantidad } from '@/lib/facturacion/cantidades'
 
 interface InvoiceItemRequest {
   quoteItemId: string
@@ -100,7 +101,7 @@ export async function POST(request: NextRequest) {
             },
             invoiceItems: {
               include: {
-                invoice: { select: { status: true } },
+                invoice: { select: { status: true, transactionType: true } },
               },
             },
           },
@@ -152,7 +153,7 @@ export async function POST(request: NextRequest) {
     const remainingFor = (quoteItem: (typeof quote.items)[number]): number => {
       const fromInvoiceItems = quoteItem.invoiceItems
         .filter((ii) => ii.invoice.status !== 'CANCELLED')
-        .reduce((sum, ii) => sum + Number(ii.quantity), 0)
+        .reduce((sum, ii) => sum + signoCantidad(ii.invoice) * Number(ii.quantity), 0)
       const fromColumn = Number(quoteItem.cantidadFacturada)
       return quoteItem.quantity - Math.max(fromInvoiceItems, fromColumn)
     }
@@ -519,7 +520,7 @@ export async function POST(request: NextRequest) {
       const isFullyInvoiced = quote.items.every((item) => {
         const fromInvoiceItems = item.invoiceItems
           .filter((ii) => ii.invoice.status !== 'CANCELLED')
-          .reduce((sum, ii) => sum + Number(ii.quantity), 0)
+          .reduce((sum, ii) => sum + signoCantidad(ii.invoice) * Number(ii.quantity), 0)
         const fromColumn = Number(item.cantidadFacturada)
         const sent = sentByItemId.get(item.id) || 0
         return Math.max(fromInvoiceItems, fromColumn) + sent >= item.quantity

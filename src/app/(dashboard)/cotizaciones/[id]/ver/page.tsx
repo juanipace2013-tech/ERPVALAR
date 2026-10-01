@@ -1724,12 +1724,15 @@ export default function QuoteViewPage() {
               <CardContent className="space-y-3">
                 {quote.facturas.map((f, idx) => {
                   const remito = f.deliveryNotes?.[0]
+                  // Devolución por unidades (NC): fila negativa, sin remito
+                  const esNc = f.estado === 'NOTA_CREDITO'
+                  const nroFactura = quote.facturas!.slice(0, idx + 1).filter((x) => x.estado !== 'NOTA_CREDITO').length
                   return (
-                    <div key={f.id} className="border rounded-lg p-3 bg-gray-50">
+                    <div key={f.id} className={`border rounded-lg p-3 ${esNc ? 'bg-red-50 border-red-200' : 'bg-gray-50'}`}>
                       <div className="flex items-start justify-between gap-3">
                         <div className="text-sm space-y-0.5">
-                          <p className="font-semibold">
-                            Factura {idx + 1}
+                          <p className={`font-semibold ${esNc ? 'text-red-700' : ''}`}>
+                            {esNc ? 'Nota de crédito (devolución)' : `Factura ${nroFactura}`}
                             {f.numeroFactura ? ` · ${f.numeroFactura}` : ''}
                           </p>
                           <p className="text-xs text-gray-500">
@@ -1746,7 +1749,7 @@ export default function QuoteViewPage() {
                           </p>
                         </div>
                         <div className="flex-shrink-0">
-                          {remito ? (
+                          {esNc ? null : remito ? (
                             <Button variant="outline" size="sm" asChild>
                               <Link href={`/remitos/${remito.id}`}>
                                 <Package className="h-3.5 w-3.5 mr-1.5" />
@@ -2102,7 +2105,8 @@ export default function QuoteViewPage() {
           .map((item: any) => {
             const fromInvoiceItems = (item.invoiceItems || [])
               .filter((ii: any) => ii.invoice?.status !== 'CANCELLED')
-              .reduce((sum: number, ii: any) => sum + Number(ii.quantity || 0), 0)
+              // las devoluciones (NC por unidades) restan
+              .reduce((sum: number, ii: any) => sum + (ii.invoice?.transactionType === 'CREDIT_NOTE' ? -1 : 1) * Number(ii.quantity || 0), 0)
             const fromColumn = Number(item.cantidadFacturada || 0)
             const yaFacturado = Math.max(fromInvoiceItems, fromColumn)
             const pendiente = Math.max(0, (item.quantity || 0) - yaFacturado)

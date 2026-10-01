@@ -14,8 +14,9 @@ import {
 } from './calculo'
 
 // Estados de CotizacionFactura que NO cuentan para comisiones.
-// (Los valores válidos son BORRADOR / ANULADA / ERROR_GUARDADO; una factura
-// enviada a Colppy queda en BORRADOR hasta que se anule.)
+// (Valores: BORRADOR (Colppy), EMITIDA (ARCA), NOTA_CREDITO (devolución por
+// unidades: montos NEGATIVOS, restan en el mes de la NC), ANULADA,
+// ERROR_GUARDADO.)
 const ESTADOS_FACTURA_EXCLUIDOS = ['ANULADA', 'ERROR_GUARDADO']
 
 function rangoMes(anio: number, mes: number): { desde: Date; hasta: Date } {
@@ -84,6 +85,12 @@ async function anularFacturasPorNC(vendedorId: string, anio: number, mes: number
         customerId: { in: customerIds },
         currency: 'USD',
         status: { not: 'CANCELLED' },
+        // Las NC emitidas por el ERP (ARCA) ya impactan en comisiones al
+        // emitirse (NC total: factura ANULADA; por unidades: CotizacionFactura
+        // negativa) y están vinculadas a su factura (relatedInvoiceId). Si
+        // entraran acá, por coincidencia de importe podían anular la comisión
+        // de OTRA factura del mismo cliente. Solo se buscan NC de Colppy.
+        relatedInvoiceId: null,
       },
       select: {
         id: true,

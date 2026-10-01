@@ -114,7 +114,7 @@ export async function GET(
             invoiceItems: {
               select: {
                 quantity: true,
-                invoice: { select: { status: true } },
+                invoice: { select: { status: true, transactionType: true } },
               },
             },
           },

@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { QuoteStatus, DeliveryNoteStatus, Prisma } from '@prisma/client';
 import { logger } from '@/lib/logger';
 import { sincronizarComisionesDeQuote } from '@/lib/comisiones/liquidacion';
+import { signoCantidad } from '@/lib/facturacion/cantidades';
 
 /**
  * Ejecuta `fn` dentro de una transacción Serializable, con reintentos
@@ -227,14 +228,17 @@ export async function anularBorradoresColppy(
     where: { quoteId },
     include: {
       invoiceItems: {
-        include: { invoice: { select: { status: true } } },
+        include: { invoice: { select: { status: true, transactionType: true } } },
       },
     },
   });
   for (const item of items) {
-    const vigente = item.invoiceItems
-      .filter((ii) => ii.invoice.status !== 'CANCELLED')
-      .reduce((sum, ii) => sum + Number(ii.quantity), 0);
+    const vigente = Math.max(
+      0,
+      item.invoiceItems
+        .filter((ii) => ii.invoice.status !== 'CANCELLED')
+        .reduce((sum, ii) => sum + signoCantidad(ii.invoice) * Number(ii.quantity), 0)
+    );
     if (Number(item.cantidadFacturada) !== vigente) {
       await tx.quoteItem.update({
         where: { id: item.id },

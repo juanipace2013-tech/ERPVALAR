@@ -17,6 +17,7 @@ import { crearHookEmisionArca, getEmisorFacturacion } from '@/lib/facturacion/em
 import { facturaEnPesos, itemsEnPesos, type MonedaFactura } from '@/lib/facturacion/moneda';
 import { esClienteExterior } from '@/lib/cliente-exterior';
 import { archivarFacturaEnSharePointBg } from '@/lib/sharepoint/facturas-emitidas';
+import { signoCantidad } from '@/lib/facturacion/cantidades';
 
 // ============================================================================
 // TIPOS
@@ -103,7 +104,7 @@ export async function POST(
             },
             invoiceItems: {
               include: {
-                invoice: { select: { status: true } },
+                invoice: { select: { status: true, transactionType: true } },
               },
             },
           },
@@ -151,7 +152,7 @@ export async function POST(
     for (const item of quote.items) {
       const fromInvoiceItems = item.invoiceItems
         .filter((ii) => ii.invoice.status !== 'CANCELLED')
-        .reduce((sum, ii) => sum + Number(ii.quantity), 0);
+        .reduce((sum, ii) => sum + signoCantidad(ii.invoice) * Number(ii.quantity), 0);
       const fromColumn = Number(item.cantidadFacturada);
       alreadyInvoicedByItem.set(item.id, Math.max(fromInvoiceItems, fromColumn));
     }

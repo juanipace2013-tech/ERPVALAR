@@ -9,6 +9,7 @@ import {
   type KanbanColumn,
   type NextTrancheInfo,
 } from '@/lib/facturacion-utils'
+import { signoCantidad } from '@/lib/facturacion/cantidades'
 
 /**
  * Indica si el deliveryTime del vendedor es inmediato.
@@ -152,7 +153,7 @@ export async function GET(request: NextRequest) {
               invoiceItems: {
                 select: {
                   quantity: true,
-                  invoice: { select: { status: true, notes: true } },
+                  invoice: { select: { status: true, notes: true, transactionType: true } },
                 },
               },
             },
@@ -256,7 +257,7 @@ export async function GET(request: NextRequest) {
         // la reimporte sin items (caso VAL-2026-2331).
         const fromInvoiceItems = item.invoiceItems
           .filter((ii) => ii.invoice.status !== 'CANCELLED')
-          .reduce((sum, ii) => sum + Number(ii.quantity), 0)
+          .reduce((sum, ii) => sum + signoCantidad(ii.invoice) * Number(ii.quantity), 0)
         const invoicedQuantity = Math.max(fromInvoiceItems, Number(item.cantidadFacturada))
 
         const remainingQuantity = item.quantity - invoicedQuantity

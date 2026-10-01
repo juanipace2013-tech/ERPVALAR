@@ -121,6 +121,17 @@ const statusColors: Record<string, string> = {
   CANCELLED: 'bg-gray-200 text-gray-700 line-through',
 }
 
+interface LineaNc {
+  index: number
+  codigo: string | null
+  descripcion: string
+  cantidadFacturada: number
+  cantidadAcreditada: number
+  cantidadDisponible: number
+  netoUnitario: number
+  conStock: boolean
+}
+
 const claseLabel = (t: string) =>
   t === 'CREDIT_NOTE' ? 'Nota de Crédito' : t === 'DEBIT_NOTE' ? 'Nota de Débito' : 'Factura'
 
@@ -133,6 +144,11 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const [ncOpen, setNcOpen] = useState(false)
   const [ncMotivo, setNcMotivo] = useState('')
   const [ncParcial, setNcParcial] = useState('')
+  // Devolución por unidades: líneas de la factura con lo disponible
+  const [ncModo, setNcModo] = useState<'UNIDADES' | 'IMPORTE' | 'TOTAL'>('UNIDADES')
+  const [ncLineas, setNcLineas] = useState<LineaNc[] | null>(null)
+  const [ncLineasError, setNcLineasError] = useState<string | null>(null)
+  const [ncCantidades, setNcCantidades] = useState<Record<number, string>>({})
   const [ncLoading, setNcLoading] = useState(false)
 
   const fetchInvoice = useCallback(async () => {
@@ -186,8 +202,18 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const emitirNC = async () => {
     try {
       setNcLoading(true)
-      const body: { motivo?: string; netoParcial?: number } = { motivo: ncMotivo.trim() || undefined }
-      if (ncParcial.trim()) body.netoParcial = Number(ncParcial.replace(',', '.'))
+      const body: { motivo?: string; netoParcial?: number; unidades?: Array<{ index: number; cantidad: number }> } = {
+        motivo: ncMotivo.trim() || undefined,
+      }
+      if (ncModo === 'UNIDADES') {
+        body.unidades = Object.entries(ncCantidades)
+          .map(([index, c]) => ({ index: Number(index), cantidad: Number(String(c).replace(',', '.')) }))
+          .filter((u) => u.cantidad > 0)
+        if (!body.unidades.length) throw new Error('Indicá cuántas unidades se devuelven')
+      } else if (ncModo === 'IMPORTE') {
+        body.netoParcial = Number(ncParcial.replace(',', '.'))
+        if (!(body.netoParcial > 0)) throw new Error('Indicá el neto del ajuste')
+      }
       const r = await fetch(`/api/facturas/${id}/nota-credito`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -204,6 +230,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
       setNcOpen(false)
       setNcMotivo('')
       setNcParcial('')
+      setNcCantidades({})
       fetchInvoice()
     } catch (e) {
       toast.error('No se pudo emitir la nota de crédito', { description: (e as Error).message, duration: 15000 })
@@ -211,6 +238,25 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
       setNcLoading(false)
     }
   }
+
+  // Al abrir el diálogo de NC: líneas para la devolución por unidades
+  useEffect(() => {
+    if (!ncOpen) return
+    setNcLineas(null)
+    setNcLineasError(null)
+    setNcCantidades({})
+    fetch(`/api/facturas/${id}/nota-credito`)
+      .then(async (r) => {
+        const d = await r.json()
+        if (!r.ok) throw new Error(d.error || 'No se pudieron cargar las líneas')
+        setNcLineas(d.lineas)
+        setNcModo('UNIDADES')
+      })
+      .catch((e) => {
+        setNcLineasError((e as Error).message)
+        setNcModo('IMPORTE')
+      })
+  }, [ncOpen, id])
 
   if (loading) {
     return (
@@ -601,17 +647,119 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               )}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="nc-parcial">Neto parcial (opcional — vacío = NC total)</Label>
-              <Input
-                id="nc-parcial"
-                placeholder={`Neto de la factura: ${Number(invoice.subtotal).toLocaleString('es-AR')}`}
-                value={ncParcial}
-                onChange={(e) => setNcParcial(e.target.value)}
-                inputMode="decimal"
-              />
-              <p className="text-xs text-gray-500">Sobre el neto se calcula el IVA 21%. Una NC parcial no anula la factura ni toca la cotización.</p>
+            <div className="flex gap-2">
+              {([
+                ['UNIDADES', 'Devolución por unidades'],
+                ['IMPORTE', 'Ajuste por importe'],
+                ['TOTAL', 'Total (anula la factura)'],
+              ] as const).map(([m, label]) => (
+                <Button
+                  key={m}
+                  type="button"
+                  size="sm"
+                  variant={ncModo === m ? 'default' : 'outline'}
+                  disabled={(m === 'UNIDADES' && !ncLineas) || (m === 'TOTAL' && acreditado > 0)}
+                  onClick={() => setNcModo(m)}
+                  className="h-8 text-xs"
+                >
+                  {label}
+                </Button>
+              ))}
             </div>
+
+            {ncModo === 'UNIDADES' && (
+              <div className="space-y-2">
+                {!ncLineas && !ncLineasError && <Loader2 className="h-4 w-4 animate-spin" />}
+                {ncLineas && (
+                  <>
+                    <div className="max-h-64 overflow-auto rounded border">
+                      <table className="w-full text-xs">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="p-2 text-left">Producto</th>
+                            <th className="p-2 text-right">Facturado</th>
+                            <th className="p-2 text-right">Devuelto</th>
+                            <th className="p-2 text-right w-24">Devolver</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ncLineas.map((l) => {
+                            const valor = ncCantidades[l.index] ?? ''
+                            const n = Number(String(valor).replace(',', '.')) || 0
+                            const invalida = n < 0 || n > l.cantidadDisponible
+                            return (
+                              <tr key={l.index} className="border-t align-top">
+                                <td className="p-2">
+                                  {l.codigo && <span className="font-mono text-gray-500 mr-1">{l.codigo}</span>}
+                                  {l.descripcion.slice(0, 80)}
+                                  <div className="text-gray-500">
+                                    {formatCurrency(l.netoUnitario, invoice.currency)} neto c/u
+                                    {!l.conStock && ' · sin artículo de stock'}
+                                  </div>
+                                </td>
+                                <td className="p-2 text-right">{l.cantidadFacturada}</td>
+                                <td className="p-2 text-right">{l.cantidadAcreditada || '—'}</td>
+                                <td className="p-2 text-right">
+                                  <Input
+                                    value={valor}
+                                    onChange={(e) => setNcCantidades((c) => ({ ...c, [l.index]: e.target.value }))}
+                                    inputMode="decimal"
+                                    placeholder="0"
+                                    disabled={l.cantidadDisponible <= 0}
+                                    className={`h-7 text-right text-xs ${invalida ? 'border-red-500' : ''}`}
+                                    title={`Máximo ${l.cantidadDisponible}`}
+                                  />
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {(() => {
+                      const neto = Math.round(
+                        ncLineas.reduce((acc, l) => acc + Math.round(l.netoUnitario * (Number(String(ncCantidades[l.index] ?? '').replace(',', '.')) || 0) * 100) / 100, 0) * 100
+                      ) / 100
+                      const iva = Math.round(neto * 0.21 * 100) / 100
+                      return (
+                        <div className="rounded bg-gray-50 p-2 text-sm">
+                          <div className="flex justify-between"><span>Neto</span><span>{formatCurrency(neto, invoice.currency)}</span></div>
+                          <div className="flex justify-between"><span>IVA 21%</span><span>{formatCurrency(iva, invoice.currency)}</span></div>
+                          <div className="flex justify-between font-semibold"><span>Total NC</span><span>{formatCurrency(neto + iva, invoice.currency)}</span></div>
+                        </div>
+                      )
+                    })()}
+                    <p className="text-xs text-gray-500">
+                      Devuelve el stock en Colppy, las unidades vuelven a quedar pendientes en la cotización y la comisión baja en el mes de la NC. Si se devuelve todo, sale como NC total.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
+            {ncLineasError && ncModo !== 'TOTAL' && (
+              <p className="text-xs text-amber-700">Devolución por unidades no disponible: {ncLineasError}</p>
+            )}
+
+            {ncModo === 'IMPORTE' && (
+              <div className="space-y-2">
+                <Label htmlFor="nc-parcial">Neto del ajuste</Label>
+                <Input
+                  id="nc-parcial"
+                  placeholder={`Neto de la factura: ${Number(invoice.subtotal).toLocaleString('es-AR')}`}
+                  value={ncParcial}
+                  onChange={(e) => setNcParcial(e.target.value)}
+                  inputMode="decimal"
+                />
+                <p className="text-xs text-gray-500">
+                  Sobre el neto se calcula el IVA 21%. Para diferencias de precio o bonificaciones: no devuelve stock ni toca la cotización.
+                </p>
+              </div>
+            )}
+            {ncModo === 'TOTAL' && (
+              <p className="text-sm text-red-700">
+                Anula la factura completa: devuelve todo el stock, los ítems vuelven a estar pendientes en la cotización y se quita la comisión.
+              </p>
+            )}
             <div className="space-y-2">
               <Label htmlFor="nc-motivo">Motivo</Label>
               <Textarea id="nc-motivo" value={ncMotivo} onChange={(e) => setNcMotivo(e.target.value)} placeholder="Ej.: cambio de CUIT / error en importe / devolución" rows={2} />
@@ -623,7 +771,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
             </Button>
             <Button variant="destructive" onClick={emitirNC} disabled={ncLoading}>
               {ncLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <FileMinus className="h-4 w-4 mr-2" />}
-              {ncParcial.trim() ? 'Emitir NC parcial' : 'Emitir NC total y anular'}
+              {ncModo === 'UNIDADES' ? 'Emitir NC por devolución' : ncModo === 'IMPORTE' ? 'Emitir NC por importe' : 'Emitir NC total y anular'}
             </Button>
           </DialogFooter>
         </DialogContent>

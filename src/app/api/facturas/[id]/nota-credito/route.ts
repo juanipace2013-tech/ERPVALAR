@@ -38,12 +38,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       entity: 'INVOICE',
       entityId: r.invoiceId,
       entityRef: r.numero,
-      description: `Nota de crédito ${r.esTotal ? 'total' : 'parcial'} ${r.numero} (CAE ${r.cae}) sobre factura ${id}${body.motivo ? ` — ${body.motivo}` : ''}${r.colppyPendiente ? ' [PENDIENTE Colppy]' : ''}`,
+      description: `Nota de crédito ${r.esTotal ? 'total' : 'parcial'} ${r.numero} (CAE ${r.cae}) sobre factura ${id}${body.motivo ? ` — ${body.motivo}` : ''}${r.colppyPendiente ? ' [PENDIENTE Colppy]' : r.colppyBorradorFce ? ' [BORRADOR FCE en Colppy]' : ''}`,
     })
     return NextResponse.json({
       ...r,
       pdfUrl: `/api/facturas/${r.invoiceId}/pdf`,
-      message: `Nota de crédito ${r.numero} emitida (CAE ${r.cae})${r.colppyPendiente ? '. ATENCIÓN: no se pudo registrar en Colppy, reintentar.' : ' y registrada en Colppy'}`,
+      message: `Nota de crédito ${r.numero} emitida (CAE ${r.cae})${r.colppyPendiente ? '. ATENCIÓN: no se pudo registrar en Colppy, reintentar.' : r.colppyBorradorFce ? '. En Colppy quedó como BORRADOR: tildá "Factura de crédito electrónica MiPyME (FCE)" y aprobala.' : ' y registrada en Colppy'}`,
     })
   } catch (e) {
     if (e instanceof NotaCreditoError) {

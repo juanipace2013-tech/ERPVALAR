@@ -195,9 +195,9 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
       })
       const data = await r.json()
       if (!r.ok) throw new Error(data.error || 'Error al emitir la nota de crédito')
-      toast.success(data.colppyPendiente ? 'NC emitida (pendiente en Colppy)' : 'Nota de crédito emitida', {
-        description: `${data.numero} · CAE ${data.cae}`,
-        duration: 12000,
+      toast.success(data.colppyPendiente ? 'NC emitida (pendiente en Colppy)' : data.colppyBorradorFce ? 'NC MiPyME emitida: borrador en Colppy' : 'Nota de crédito emitida', {
+        description: `${data.numero} · CAE ${data.cae}${data.colppyBorradorFce ? ' — en Colppy tildá FCE y aprobala' : ''}`,
+        duration: data.colppyBorradorFce ? 20000 : 12000,
         action: data.pdfUrl ? { label: 'Ver PDF', onClick: () => window.open(data.pdfUrl, '_blank') } : undefined,
       })
       if (data.pdfUrl) window.open(data.pdfUrl, '_blank')
@@ -295,7 +295,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
             </Button>
           </>
         )}
-        {esArca && invoice.colppySyncStatus && invoice.colppySyncStatus !== 'OK' && invoice.colppySyncStatus !== 'BORRADOR_FCE' && (
+        {esArca && invoice.colppySyncStatus && invoice.colppySyncStatus !== 'OK' && invoice.colppySyncStatus !== 'BORRADOR_FCE' && !invoice.colppyId && (
           <Button variant="outline" onClick={reintentarColppy} disabled={retrying}>
             {retrying ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
             Reintentar registro en Colppy
@@ -535,7 +535,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                   ) : (
                     <div>
                       <p className="font-semibold text-amber-700 flex items-center">
-                        <AlertTriangle className="h-4 w-4 mr-1" /> {invoice.colppySyncStatus === 'ERROR' ? 'Error al registrar' : 'Pendiente de registrar'}
+                        <AlertTriangle className="h-4 w-4 mr-1" /> {invoice.colppySyncStatus === 'ERROR' && invoice.colppyId ? `Revisar en Colppy (ID ${invoice.colppyId})` : invoice.colppySyncStatus === 'ERROR' ? 'Error al registrar' : 'Pendiente de registrar'}
                       </p>
                       {invoice.colppySyncError && <p className="text-xs text-gray-600 mt-1 break-words">{invoice.colppySyncError}</p>}
                     </div>

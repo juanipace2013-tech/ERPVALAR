@@ -231,6 +231,8 @@ export interface ResultadoFacturaMl {
   invoiceNumber: string
   cae: string
   colppyPendiente: boolean
+  /** FCE MiPyME: quedó como BORRADOR en Colppy (tildar FCE y aprobar). */
+  colppyBorradorFce: boolean
   mlUpload: { ok: boolean; error?: string }
 }
 
@@ -479,9 +481,9 @@ export async function facturarVentaMl(params: {
 
     archivarFacturaEnSharePointBg(invoiceId)
     const mlUpload = await subirFacturaAMl(packId)
-    logger.info(`[ML Facturación] ${referencia} → ${invoiceNumber} CAE ${emitida.cae} (Colppy ${colppyPendiente ? 'PENDIENTE' : 'OK'}, ML ${mlUpload.ok ? 'OK' : 'ERROR'})`)
+    logger.info(`[ML Facturación] ${referencia} → ${invoiceNumber} CAE ${emitida.cae} (Colppy ${colppyPendiente ? 'PENDIENTE' : colppyResult.colppyBorradorFce ? 'BORRADOR_FCE' : 'OK'}, ML ${mlUpload.ok ? 'OK' : 'ERROR'})`)
 
-    return { invoiceId, invoiceNumber, cae: emitida.cae, colppyPendiente, mlUpload }
+    return { invoiceId, invoiceNumber, cae: emitida.cae, colppyPendiente, colppyBorradorFce: !!colppyResult.colppyBorradorFce, mlUpload }
   } catch (e) {
     // Si ARCA no llegó a emitir, se libera el candado para poder reintentar.
     // Si emitió (p. ej. falló la persistencia), el candado queda: nunca re-emitir.

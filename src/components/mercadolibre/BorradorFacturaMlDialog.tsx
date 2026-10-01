@@ -145,6 +145,8 @@ export function BorradorFacturaMlDialog({
       if (!res.ok) throw new Error(json.error || 'Error al facturar')
       toast.success(`Factura ${json.invoiceNumber} emitida (CAE ${json.cae})`)
       if (json.colppyPendiente) toast.warning('No se pudo registrar en Colppy: reintentalo desde la factura')
+      if (json.colppyBorradorFce)
+        toast.warning('Salió como Factura de Crédito MiPyME: en Colppy quedó como BORRADOR. Tildá "Factura de crédito electrónica MiPyME (FCE)" y aprobala.', { duration: 20000 })
       if (!json.mlUpload?.ok) toast.warning(`La factura no se pudo subir a Mercado Libre: ${json.mlUpload?.error ?? ''}`)
       onEmitida()
     } catch (e) {

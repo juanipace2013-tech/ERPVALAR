@@ -49,6 +49,8 @@ export interface NotaCreditoResult {
   total: number
   esTotal: boolean
   colppyPendiente: boolean
+  /** NC sobre FCE: quedó como BORRADOR en Colppy (tildar FCE y aprobar). */
+  colppyBorradorFce: boolean
   colppyId: string | null
 }
 
@@ -68,7 +70,7 @@ export async function emitirNotaCredito(invoiceId: string, opts: EmitirNotaCredi
     where: { id: invoiceId },
     include: {
       customer: { select: { id: true, name: true, cuit: true, taxCondition: true } },
-      items: { select: { quoteItemId: true, quantity: true, description: true, unitPrice: true, subtotal: true, productId: true, sku: true } },
+      items: { select: { quoteItemId: true, quantity: true, description: true, unitPrice: true, subtotal: true, productId: true, sku: true, comment: true } },
       relatedInvoices: { select: { id: true, transactionType: true, total: true, status: true } },
       cotizacionFactura: { select: { id: true, estado: true } },
       quote: { select: { id: true, status: true, quoteNumber: true } },
@@ -182,6 +184,7 @@ export async function emitirNotaCredito(invoiceId: string, opts: EmitirNotaCredi
         claseComprobante: 'NOTA_CREDITO',
         // NC sobre FCE (203/208): NCV MiPyme en Colppy
         mipyme: em.cbteTipo >= 201,
+        cae: em.cae,
         nroFactura1: String(em.puntoVenta).padStart(4, '0'),
         nroFactura2: String(em.numero).padStart(8, '0'),
         netoGravado: neto,
@@ -258,6 +261,7 @@ export async function emitirNotaCredito(invoiceId: string, opts: EmitirNotaCredi
                 productId: it.productId,
                 sku: it.sku,
                 description: it.description,
+                comment: it.comment,
                 quantity: it.quantity,
                 unitPrice: it.unitPrice,
                 discount: 0,
@@ -340,6 +344,7 @@ export async function emitirNotaCredito(invoiceId: string, opts: EmitirNotaCredi
   // 4. Colppy
   let colppyId: string | null = null
   let colppyPendiente = false
+  let colppyBorradorFce = false
   if (colppyPayload) {
     try {
       let session = await getCachedColppySession()
@@ -356,6 +361,7 @@ export async function emitirNotaCredito(invoiceId: string, opts: EmitirNotaCredi
         }
       }
       colppyId = res.idFactura
+      colppyBorradorFce = !!res.borradorFce
       await prisma.invoice.update({
         where: { id: ncId },
         data: { colppyId, colppySyncStatus: res.borradorFce ? 'BORRADOR_FCE' : 'OK', colppySyncError: null },
@@ -381,6 +387,7 @@ export async function emitirNotaCredito(invoiceId: string, opts: EmitirNotaCredi
     total,
     esTotal,
     colppyPendiente,
+    colppyBorradorFce,
     colppyId,
   }
 }

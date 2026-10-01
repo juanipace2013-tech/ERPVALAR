@@ -912,8 +912,10 @@ export type ColppyInvoicePayload = {
     nroFactura2?: string;
     /** Clase de comprobante (default FACTURA). Define idTipoComprobante segun la letra. */
     claseComprobante?: 'FACTURA' | 'NOTA_CREDITO' | 'NOTA_DEBITO';
-    /** FCE MiPyME (cbteTipo ARCA 201+): idTipoComprobante 51/52/53 en Colppy. */
+    /** FCE MiPyME (cbteTipo ARCA 201+): se carga como BORRADOR (ver colppyCreateInvoice). */
     mipyme?: boolean;
+    /** CAE del comprobante emitido por el ERP (para la descripción del borrador FCE). */
+    cae?: string;
     items: Array<{
       // Estructura alineada al ejemplo oficial del soporte de Colppy:
       // numéricos como number, subtotal en vez de importeTotal/importeIva,
@@ -991,14 +993,31 @@ export async function colppyCreateInvoice(
   if (!invoice.mipyme) return colppyCreateInvoiceRaw(session, invoice);
 
   const nro = `${invoice.nroFactura1 ?? ''}-${invoice.nroFactura2 ?? ''}`;
-  const cae = invoice.descripcion.match(/CAE (\d+)/)?.[1];
+  const cae = invoice.cae ?? invoice.descripcion.match(/CAE (\d{14})/)?.[1];
   const clase = invoice.claseComprobante === 'NOTA_CREDITO' ? 'NC FCE' : invoice.claseComprobante === 'NOTA_DEBITO' ? 'ND FCE' : 'FCE';
+  const marca = `${clase} ${nro}`;
+  // La descripción original (cotización / venta ML / motivo de la NC) se
+  // conserva después de la marca, sin el " - CAE ..." que ya va adelante.
+  const original = invoice.descripcion.replace(/\s*-\s*CAE\s*\d*\s*$/, '').trim();
   const borrador: ColppyInvoicePayload = {
     ...invoice,
     estado: 'Borrador',
     mipyme: false, // tipo de comprobante "común" (4/NCV/6): el único que acepta la API
-    descripcion: `${clase} ${nro}${cae ? ` CAE ${cae}` : ''} - tildar FCE MiPyME y aprobar`.slice(0, 100),
+    descripcion: `${marca}${cae ? ` CAE ${cae}` : ''} (tildar FCE)${original ? ` | ${original}` : ''}`.slice(0, 100),
   };
+
+  // Idempotencia: si un intento anterior ya lo creó (respuesta perdida,
+  // timeout, doble clic en "Reintentar"), reusar ese comprobante.
+  try {
+    const previo = await colppyBuscarComprobantePorMarca(session, marca, invoice.fechaFactura);
+    if (previo) {
+      logger.warn(`[Colppy] ${marca} ya existe en Colppy (idFactura ${previo.idFactura}): se reutiliza`);
+      return { idFactura: previo.idFactura, numeroFactura: previo.nroFactura, borradorFce: !previo.aprobada };
+    }
+  } catch (e) {
+    logger.warn(`[Colppy] No se pudo buscar ${marca} antes de crearlo: ${(e as Error).message}`);
+  }
+
   try {
     const r = await colppyCreateInvoiceRaw(session, borrador);
     return { ...r, borradorFce: true };
@@ -1010,10 +1029,43 @@ export async function colppyCreateInvoice(
     const r = await colppyCreateInvoiceRaw(session, {
       ...borrador,
       nroFactura2: undefined,
-      descripcion: `${clase} ${nro} (poner este N° al aprobar)${cae ? ` CAE ${cae}` : ''} - tildar FCE`.slice(0, 100),
+      descripcion: `${marca}${cae ? ` CAE ${cae}` : ''} (tildar FCE y poner este N° al aprobar)`.slice(0, 100),
     });
     return { ...r, borradorFce: true, numeroProvisorio: true };
   }
+}
+
+/**
+ * Busca un comprobante de venta cuya descripción empiece con la marca
+ * ("FCE 0007-00000001"), en los días alrededor de su fecha. Para no duplicar
+ * borradores FCE al reintentar.
+ */
+async function colppyBuscarComprobantePorMarca(
+  session: ColppySession,
+  marca: string,
+  fechaFactura: string // DD-MM-YYYY
+): Promise<{ idFactura: string; nroFactura: string; aprobada: boolean } | null> {
+  const config = getColppyConfig();
+  const [dd, mm, yyyy] = fechaFactura.split('-');
+  const desde = new Date(Number(yyyy), Number(mm) - 1, Number(dd) - 3);
+  const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const response = await callColppyAPI<any>({
+    auth: { usuario: config.user, password: md5Hash(config.password) },
+    service: { provision: 'FacturaVenta', operacion: 'listar_facturasventa' },
+    parameters: {
+      sesion: { usuario: session.usuario, claveSesion: session.claveSesion },
+      idEmpresa: session.idEmpresa,
+      start: 0,
+      limit: 1000,
+      filter: [{ field: 'fechaFactura', op: '>=', value: ymd(desde) }],
+      order: { field: ['idFactura'], order: 'desc' },
+    },
+  } as any);
+  const data: any[] = response.response?.data ?? [];
+  const f = data.find((x) => String(x.descripcion || '').startsWith(marca));
+  if (!f) return null;
+  const estado = String(f.idEstadoFactura || '');
+  return { idFactura: String(f.idFactura), nroFactura: String(f.nroFactura || ''), aprobada: estado === '3' || estado === '5' };
 }
 
 async function colppyCreateInvoiceRaw(
@@ -1909,7 +1961,10 @@ export async function sendQuoteToColppy(
         facturaPayload.estado = 'Aprobada';
         // FCE MiPyME (201/206): la API no la acepta aprobada → borrador para
         // tildar FCE y aprobar en Colppy (ver colppyCreateInvoice)
-        if (emision.cbteTipo >= 201) facturaPayload.mipyme = true;
+        if (emision.cbteTipo >= 201) {
+          facturaPayload.mipyme = true;
+          facturaPayload.cae = emision.cae;
+        }
         // Al entrar directamente como Aprobada (sin pasar por la pantalla de
         // Colppy) hay que decirle explícitamente que la línea es un producto de
         // inventario y de qué depósito sale; si no, no mueve stock ni genera

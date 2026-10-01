@@ -11,6 +11,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { getLocalDateString } from '@/lib/utils'
+import type { InvoiceStatus } from '@prisma/client'
 import {
   colppyLogin as colppyLoginCentral,
   getColppyConfig,
@@ -104,6 +105,53 @@ function arcaCbteTipo(transactionType: string, letra: string, tipoCompColppy?: s
   if (transactionType === 'CREDIT_NOTE') return esB ? 8 : 3
   if (transactionType === 'DEBIT_NOTE') return esB ? 7 : 2
   return null
+}
+
+/**
+ * Qué escribe el sync sobre un comprobante emitido por el ERP (ARCA) que
+ * encontró en Colppy. El ERP es la fuente fiscal; de Colppy solo interesa el
+ * cobro y, para las FCE, que la hayan aprobado bien.
+ *
+ * - Status: cobrada → PAID; si Colppy ya no la ve cobrada (recibo anulado o
+ *   re-imputado) vuelve a AUTHORIZED, el estado de una emitida impaga. Nunca
+ *   PENDING: la limpieza de borradores usaba PENDING para borrar.
+ * - Anulada por NC total del ERP (CANCELLED): no se tocan status ni saldo (en
+ *   Colppy la NC no queda imputada a la factura).
+ * - FCE MiPyME (201+): se carga como borrador y el usuario la aprueba tildando
+ *   FCE. Es "OK" solo si quedó como comprobante MiPyME (51/52/53) con el mismo
+ *   número que el ERP; si no, ERROR con el motivo.
+ */
+export function resolverSyncArca(
+  existing: { status: InvoiceStatus; cbteTipo: number | null; pointOfSale: number | null; cbteNumero: number | null },
+  colppy: { statusColppy: string; tipoComp: string; nroFactura: string }
+): { status: InvoiceStatus; actualizarSaldo: boolean; colppySyncStatus: string; colppySyncError: string | null } {
+  const anulada = existing.status === 'CANCELLED'
+  const status: InvoiceStatus = anulada
+    ? existing.status
+    : colppy.statusColppy === 'PAID'
+      ? 'PAID'
+      : existing.status === 'PAID' || existing.status === 'PENDING'
+        ? 'AUTHORIZED'
+        : existing.status
+
+  let colppySyncStatus = 'OK'
+  let colppySyncError: string | null = null
+  if ((existing.cbteTipo ?? 0) >= 201) {
+    const m = colppy.nroFactura.match(/^(\d{4,5})-(\d{8})$/)
+    const esperado = `${String(existing.pointOfSale ?? 0).padStart(4, '0')}-${String(existing.cbteNumero ?? 0).padStart(8, '0')}`
+    const tipoOk = ['51', '52', '53'].includes(colppy.tipoComp)
+    const nroOk = !!m && Number(m[1]) === existing.pointOfSale && Number(m[2]) === existing.cbteNumero
+    if (!tipoOk || !nroOk) {
+      colppySyncStatus = 'ERROR'
+      colppySyncError = `Aprobada en Colppy ${[
+        !tipoOk ? 'sin tildar "Factura de crédito electrónica MiPyME (FCE)"' : null,
+        !nroOk ? `con el N° ${colppy.nroFactura || '?'} (tiene que ser ${esperado})` : null,
+      ]
+        .filter(Boolean)
+        .join(' y ')}: corregirla en Colppy (el próximo sync lo vuelve a revisar)`
+    }
+  }
+  return { status, actualizarSaldo: !anulada, colppySyncStatus, colppySyncError }
 }
 
 function mapInvoiceType(idTipoFactura: string): 'A' | 'B' | 'C' | 'E' {
@@ -692,18 +740,16 @@ export async function syncColppyFacturas(dateFrom: Date, dateTo: Date): Promise<
         // Factura emitida por el ERP (ARCA) y cargada en Colppy como Aprobada:
         // el ERP es la fuente de verdad fiscal (número, CAE, importes). De
         // Colppy solo interesa lo que pasa DESPUÉS: cobros, saldo, estado.
-        // Status: solo avanza a PAID cuando Colppy la ve cobrada. Nunca pasa a
-        // PENDING (AUTHORIZED es el estado de una emitida impaga) ni pisa un
-        // CANCELLED puesto por una NC total del ERP.
-        const statusArca =
-          existing.status === 'CANCELLED' ? existing.status : invoiceData.status === 'PAID' ? 'PAID' : existing.status
+        const { status: statusArca, actualizarSaldo, colppySyncStatus: syncStatusArca, colppySyncError: syncErrorArca } =
+          resolverSyncArca(existing, { statusColppy: invoiceData.status, tipoComp, nroFactura: String(f.nroFactura || '') })
+
         await prisma.invoice.update({
           where: { id: existing.id },
           data: {
             status: statusArca,
-            paymentStatus: invoiceData.paymentStatus,
-            balance: invoiceData.balance,
-            colppySyncStatus: 'OK',
+            ...(actualizarSaldo ? { paymentStatus: invoiceData.paymentStatus, balance: invoiceData.balance } : {}),
+            colppySyncStatus: syncStatusArca,
+            colppySyncError: syncErrorArca,
           },
         })
         updated++

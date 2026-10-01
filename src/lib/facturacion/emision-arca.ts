@@ -165,7 +165,7 @@ export function crearHookEmisionArca(cliente: ClienteFiscal): HookEmisionArca {
 export async function reintentarAltaColppy(invoiceId: string): Promise<{ ok: boolean; colppyId?: string; error?: string; borradorFce?: boolean }> {
   const inv = await prisma.invoice.findUnique({
     where: { id: invoiceId },
-    select: { id: true, invoiceNumber: true, colppyId: true, colppyPayload: true, emitidaPor: true, colppySyncStatus: true, cbteTipo: true },
+    select: { id: true, invoiceNumber: true, colppyId: true, colppyPayload: true, emitidaPor: true, colppySyncStatus: true, cbteTipo: true, notes: true },
   })
   if (!inv) return { ok: false, error: 'Factura no encontrada' }
   if (inv.emitidaPor !== 'ARCA') return { ok: false, error: 'La factura no fue emitida por el ERP' }
@@ -191,7 +191,18 @@ export async function reintentarAltaColppy(invoiceId: string): Promise<{ ok: boo
     }
     await prisma.invoice.update({
       where: { id: inv.id },
-      data: { colppyId: res.idFactura, colppySyncStatus: res.borradorFce ? 'BORRADOR_FCE' : 'OK', colppySyncError: null },
+      data: {
+        colppyId: res.idFactura,
+        colppySyncStatus: res.borradorFce ? 'BORRADOR_FCE' : 'OK',
+        colppySyncError: null,
+        // La nota de la emisión decía "PENDIENTE de registrar en Colppy."
+        notes: (inv.notes ?? '').replace(
+          'PENDIENTE de registrar en Colppy.',
+          res.borradorFce
+            ? `Borrador FCE en Colppy (${res.idFactura}): tildar FCE MiPyME y aprobar.`
+            : `Registrada en Colppy (${res.idFactura}).`
+        ),
+      },
     })
     await prisma.cotizacionFactura.updateMany({
       where: { invoiceId: inv.id },

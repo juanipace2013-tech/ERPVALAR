@@ -524,7 +524,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                         <AlertTriangle className="h-4 w-4 mr-1" /> Borrador en Colppy (ID {invoice.colppyId})
                       </p>
                       <p className="text-xs text-gray-600 mt-1">
-                        Abrilo en Colppy, tildá &quot;Factura de crédito electrónica MiPyME (FCE)&quot; y aprobalo. Revisá que quede con el
+                        Abrilo en Colppy, verificá que esté tildada &quot;Factura de crédito electrónica MiPyME (FCE)&quot; y aprobalo. Revisá que quede con el
                         número {String(invoice.pointOfSale ?? 7).padStart(4, '0')}-{String(invoice.cbteNumero ?? '').padStart(8, '0')}.
                       </p>
                     </div>

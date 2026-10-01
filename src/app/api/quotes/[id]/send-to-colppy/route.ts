@@ -703,7 +703,7 @@ export async function POST(
         ? colppyPendiente
           ? `Factura ${emisionArca.numeroFormateado} emitida (CAE ${emisionArca.cae}). ATENCIÓN: no se pudo registrar en Colppy, reintentar desde la factura.`
           : result.colppyBorradorFce
-            ? `Factura de Crédito MiPyME ${emisionArca.numeroFormateado} emitida (CAE ${emisionArca.cae}). En Colppy quedó como BORRADOR: abrilo, tildá "Factura de crédito electrónica MiPyME (FCE)" y aprobalo.`
+            ? `Factura de Crédito MiPyME ${emisionArca.numeroFormateado} emitida (CAE ${emisionArca.cae}). En Colppy quedó como BORRADOR: abrilo, verificá que esté tildada "Factura de crédito electrónica MiPyME (FCE)" y el N° ${emisionArca.numeroFormateado}, y aprobalo.`
             : `Factura ${emisionArca.numeroFormateado} emitida (CAE ${emisionArca.cae}) y registrada en Colppy`
         : 'Cotización enviada a Colppy exitosamente',
       remitoId: result.remitoId,

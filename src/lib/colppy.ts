@@ -11,7 +11,7 @@
 import * as crypto from 'crypto';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
-import { isArcaConfigured } from '@/lib/arca/config';
+import { isArcaConfigured, getArcaConfig } from '@/lib/arca/config';
 import { consultarPersona } from '@/lib/arca/padron';
 
 // ============================================================================
@@ -916,6 +916,10 @@ export type ColppyInvoicePayload = {
     mipyme?: boolean;
     /** CAE del comprobante emitido por el ERP (para la descripción del borrador FCE). */
     cae?: string;
+    /** Marca "Factura de crédito electrónica MiPyME (FCE)" en Colppy (is_fce) + CBU y transmisión. */
+    isFce?: boolean;
+    fceCbu?: string;
+    fceTransmision?: string;
     items: Array<{
       // Estructura alineada al ejemplo oficial del soporte de Colppy:
       // numéricos como number, subtotal en vez de importeTotal/importeIva,
@@ -973,6 +977,8 @@ export interface ColppyCreateInvoiceResult {
   borradorFce?: boolean;
   /** El borrador FCE no aceptó el número real: va con uno provisorio (corregirlo al aprobar). */
   numeroProvisorio?: boolean;
+  /** El borrador FCE ya quedó marcado como FCE MiPyME en Colppy: solo hay que aprobarlo. */
+  fcePretildada?: boolean;
 }
 
 /**
@@ -1018,13 +1024,34 @@ export async function colppyCreateInvoice(
     logger.warn(`[Colppy] No se pudo buscar ${marca} antes de crearlo: ${(e as Error).message}`);
   }
 
+  // 1) Borrador ya marcado como FCE (is_fce) con el número real: así Colppy
+  //    no lo choca con la Factura A común del mismo número y en la pantalla
+  //    solo queda aprobar. 2) Si la API no lo acepta: borrador común con el
+  //    número real (hay que tildar FCE). 3) Si ese número "ya existe" (la
+  //    factura A común): número provisorio y el real en la descripción
+  //    (caso de la FCEA-0007-00000001 de Navíos, 1/10/2026).
+  let cbu = '';
+  try {
+    cbu = isArcaConfigured() ? getArcaConfig().cbu ?? '' : '';
+  } catch {
+    cbu = '';
+  }
+  try {
+    const r = await colppyCreateInvoiceRaw(session, {
+      ...borrador,
+      isFce: true,
+      fceCbu: cbu,
+      fceTransmision: 'SCA',
+      descripcion: `${marca}${cae ? ` CAE ${cae}` : ''} (aprobar)${original ? ` | ${original}` : ''}`.slice(0, 100),
+    });
+    return { ...r, borradorFce: true, fcePretildada: true };
+  } catch (e) {
+    logger.warn(`[Colppy] ${marca}: el borrador con FCE marcada no se pudo crear (${(e as Error).message}); se intenta como borrador común`);
+  }
   try {
     const r = await colppyCreateInvoiceRaw(session, borrador);
     return { ...r, borradorFce: true };
   } catch (e) {
-    // Si Colppy valida el número también en borradores, choca con la factura
-    // común del mismo número: va con número provisorio y el real en la
-    // descripción (se corrige al aprobar).
     if (!/ya existe/i.test((e as Error).message)) throw e;
     const r = await colppyCreateInvoiceRaw(session, {
       ...borrador,
@@ -1033,6 +1060,24 @@ export async function colppyCreateInvoice(
     });
     return { ...r, borradorFce: true, numeroProvisorio: true };
   }
+}
+
+/** Datos de un comprobante de venta (leer_facturaventa): trae is_fce, que el listado no. */
+export async function colppyLeerFacturaVenta(
+  session: ColppySession,
+  idFactura: string
+): Promise<Record<string, unknown> | null> {
+  const config = getColppyConfig();
+  const r = await callColppyAPI<any>(
+    {
+      auth: { usuario: config.user, password: md5Hash(config.password) },
+      service: { provision: 'FacturaVenta', operacion: 'leer_facturaventa' },
+      parameters: { sesion: { usuario: session.usuario, claveSesion: session.claveSesion }, idEmpresa: session.idEmpresa, idFactura },
+    },
+    30000,
+    { throwOnEstadoError: false }
+  );
+  return (r?.response?.infofactura as Record<string, unknown>) ?? null;
 }
 
 /**
@@ -1142,9 +1187,11 @@ async function colppyCreateInvoiceRaw(
       isFront: '0',
       price_list_id: '',
       // Campos adicionales de factura
-      cbu: '',
-      is_fce: '0',
-      transmision_fce: '',
+      // FCE MiPyME: el mismo tilde "Factura de crédito electrónica MiPyME
+      // (FCE)" de la pantalla (leer_facturaventa lo devuelve como is_fce).
+      cbu: invoice.isFce ? invoice.fceCbu || '' : '',
+      is_fce: invoice.isFce ? '1' : '0',
+      transmision_fce: invoice.isFce ? invoice.fceTransmision || 'SCA' : '',
       codigoActividad: '',
       codigoOperacion: '',
       extra_data: '',

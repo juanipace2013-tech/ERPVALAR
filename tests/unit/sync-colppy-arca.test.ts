@@ -35,7 +35,7 @@ describe('sync Colppy sobre comprobantes emitidos por el ERP (ARCA)', () => {
   })
 
   it('FCE aprobada sin tildar FCE → ERROR con el motivo', () => {
-    const r = resolverSyncArca(fce, colppy('PENDING', '4', '0007-00000001'))
+    const r = resolverSyncArca(fce, { ...colppy('PENDING', '4', '0007-00000001'), isFce: false })
     expect(r.colppySyncStatus).toBe('ERROR')
     expect(r.colppySyncError).toMatch(/sin tildar/)
   })
@@ -44,5 +44,24 @@ describe('sync Colppy sobre comprobantes emitidos por el ERP (ARCA)', () => {
     const r = resolverSyncArca(fce, colppy('PENDING', '51', '0007-12345678'))
     expect(r.colppySyncStatus).toBe('ERROR')
     expect(r.colppySyncError).toMatch(/0007-00000001/)
+  })
+})
+
+describe('FCE: el tilde viene en is_fce (el listado de Colppy la informa como tipo 4)', () => {
+  it('tipo 4 + is_fce 1 + mismo número → OK (caso real de Navíos, 1/10/2026)', () => {
+    const r = resolverSyncArca(fce, { statusColppy: 'PENDING', tipoComp: '4', nroFactura: '0007-00000001', isFce: true })
+    expect(r.colppySyncStatus).toBe('OK')
+  })
+
+  it('is_fce 0 → ERROR "sin tildar"', () => {
+    const r = resolverSyncArca(fce, { statusColppy: 'PENDING', tipoComp: '4', nroFactura: '0007-00000001', isFce: false })
+    expect(r.colppySyncStatus).toBe('ERROR')
+    expect(r.colppySyncError).toMatch(/sin tildar/)
+  })
+
+  it('no se pudo leer is_fce → deja el estado como estaba (no marca error)', () => {
+    const r = resolverSyncArca({ ...fce, colppySyncStatus: 'BORRADOR_FCE', colppySyncError: null }, { statusColppy: 'PENDING', tipoComp: '4', nroFactura: '0007-00000001' })
+    expect(r.colppySyncStatus).toBe('BORRADOR_FCE')
+    expect(r.colppySyncError).toBeNull()
   })
 })

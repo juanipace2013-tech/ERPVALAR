@@ -21,6 +21,7 @@ import {
   ColppyRateLimitError,
 } from '@/lib/colppy'
 import { mapColppyTaxCondition } from '@/lib/colppy-tax-map'
+import { colppyLeerFacturaVenta, getCachedColppySession } from '@/lib/colppy'
 import { logger } from '@/lib/logger'
 
 const PAGE_SIZE = 500
@@ -118,12 +119,20 @@ function arcaCbteTipo(transactionType: string, letra: string, tipoCompColppy?: s
  * - Anulada por NC total del ERP (CANCELLED): no se tocan status ni saldo (en
  *   Colppy la NC no queda imputada a la factura).
  * - FCE MiPyME (201+): se carga como borrador y el usuario la aprueba tildando
- *   FCE. Es "OK" solo si quedó como comprobante MiPyME (51/52/53) con el mismo
+ *   FCE. Es "OK" solo si quedó marcada FCE (is_fce de leer_facturaventa; el
+ *   listado la sigue informando tipo 4) o como MiPyME (51/52/53), con el mismo
  *   número que el ERP; si no, ERROR con el motivo.
  */
 export function resolverSyncArca(
-  existing: { status: InvoiceStatus; cbteTipo: number | null; pointOfSale: number | null; cbteNumero: number | null },
-  colppy: { statusColppy: string; tipoComp: string; nroFactura: string }
+  existing: {
+    status: InvoiceStatus
+    cbteTipo: number | null
+    pointOfSale: number | null
+    cbteNumero: number | null
+    colppySyncStatus?: string | null
+    colppySyncError?: string | null
+  },
+  colppy: { statusColppy: string; tipoComp: string; nroFactura: string; isFce?: boolean }
 ): { status: InvoiceStatus; actualizarSaldo: boolean; colppySyncStatus: string; colppySyncError: string | null } {
   const anulada = existing.status === 'CANCELLED'
   const status: InvoiceStatus = anulada
@@ -139,7 +148,18 @@ export function resolverSyncArca(
   if ((existing.cbteTipo ?? 0) >= 201) {
     const m = colppy.nroFactura.match(/^(\d{4,5})-(\d{8})$/)
     const esperado = `${String(existing.pointOfSale ?? 0).padStart(4, '0')}-${String(existing.cbteNumero ?? 0).padStart(8, '0')}`
-    const tipoOk = ['51', '52', '53'].includes(colppy.tipoComp)
+    const tipoMipyme = ['51', '52', '53'].includes(colppy.tipoComp)
+    // No se pudo saber si está tildada (falló leer_facturaventa): no se
+    // marca nada, se vuelve a revisar en la próxima corrida.
+    if (colppy.isFce === undefined && !tipoMipyme) {
+      return {
+        status,
+        actualizarSaldo: !anulada,
+        colppySyncStatus: existing.colppySyncStatus ?? 'BORRADOR_FCE',
+        colppySyncError: existing.colppySyncError ?? null,
+      }
+    }
+    const tipoOk = !!colppy.isFce || tipoMipyme
     const nroOk = !!m && Number(m[1]) === existing.pointOfSale && Number(m[2]) === existing.cbteNumero
     if (!tipoOk || !nroOk) {
       colppySyncStatus = 'ERROR'
@@ -740,8 +760,26 @@ export async function syncColppyFacturas(dateFrom: Date, dateTo: Date): Promise<
         // Factura emitida por el ERP (ARCA) y cargada en Colppy como Aprobada:
         // el ERP es la fuente de verdad fiscal (número, CAE, importes). De
         // Colppy solo interesa lo que pasa DESPUÉS: cobros, saldo, estado.
-        const { status: statusArca, actualizarSaldo, colppySyncStatus: syncStatusArca, colppySyncError: syncErrorArca } =
-          resolverSyncArca(existing, { statusColppy: invoiceData.status, tipoComp, nroFactura: String(f.nroFactura || '') })
+        // FCE: el tilde "FCE MiPyME" no viene en el listado, solo en
+        // leer_facturaventa (is_fce). Se consulta mientras no esté confirmada.
+        let isFce: boolean | undefined
+        if ((existing.cbteTipo ?? 0) >= 201 && existing.colppySyncStatus !== 'OK') {
+          try {
+            const det = await colppyLeerFacturaVenta(await getCachedColppySession(), idFactura)
+            isFce = String(det?.is_fce ?? '') === '1'
+          } catch (e) {
+            logger.warn(`[Sync Colppy] No se pudo leer is_fce de ${idFactura}: ${(e as Error).message}`)
+          }
+        }
+        const fceSinVerificar = (existing.cbteTipo ?? 0) >= 201 && existing.colppySyncStatus === 'OK'
+        const r = resolverSyncArca(existing, {
+          statusColppy: invoiceData.status,
+          tipoComp,
+          nroFactura: String(f.nroFactura || ''),
+          // ya confirmada en una corrida anterior: no se vuelve a consultar
+          isFce: fceSinVerificar ? true : isFce,
+        })
+        const { status: statusArca, actualizarSaldo, colppySyncStatus: syncStatusArca, colppySyncError: syncErrorArca } = r
 
         await prisma.invoice.update({
           where: { id: existing.id },

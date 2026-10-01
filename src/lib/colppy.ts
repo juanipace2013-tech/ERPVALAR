@@ -11,6 +11,8 @@
 import * as crypto from 'crypto';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
+import { isArcaConfigured } from '@/lib/arca/config';
+import { consultarPersona } from '@/lib/arca/padron';
 
 // ============================================================================
 // CONFIGURACIÓN
@@ -480,7 +482,13 @@ export async function colppyFindCustomerByCUIT(
       return null;
     }
 
-    const cliente = response.response.data[0];
+    // Colppy permite clientes con CUIT repetido: si hay más de uno, usar el
+    // original (idCliente más bajo), que es el que tiene la cuenta corriente.
+    const data = response.response.data as any[];
+    const cliente = data.reduce((a, b) => (Number(b.idCliente) < Number(a.idCliente) ? b : a));
+    if (data.length > 1) {
+      logger.warn(`[Colppy] CUIT ${cuitFormatted} duplicado en Colppy (ids ${data.map((c) => c.idCliente).join(', ')}): se usa ${cliente.idCliente}`);
+    }
 
     // === DIAGNÓSTICO: Log de todos los campos del cliente de Colppy ===
     logger.info('=== CAMPOS DEL CLIENTE EN COLPPY ===');
@@ -511,8 +519,29 @@ export async function colppyFindCustomerByCUIT(
 }
 
 /**
- * Crea un nuevo cliente en Colppy
+ * Crea un nuevo cliente en Colppy (alta_cliente). Formato de la API:
+ * parameters.info_general (datos y domicilio) + parameters.info_otra
+ * (condición IVA/pago, domicilio fiscal); todos los campos van, vacíos si no
+ * hay dato. Colppy NO valida CUIT repetido: buscar antes de dar de alta.
+ *
+ * Si ARCA está configurado, completa razón social, domicilio, localidad, CP,
+ * provincia y condición de IVA desde la Constancia de Inscripción (lo mismo
+ * que el botón "Buscar en AFIP" de Colppy); si la consulta falla, usa los
+ * datos recibidos.
  */
+// idCondicionIva de Colppy (relevado de los clientes existentes, 2026-09-30)
+const COLPPY_ID_CONDICION_IVA: Record<string, string> = {
+  RESPONSABLE_INSCRIPTO: '1',
+  EXENTO: '2',
+  CONSUMIDOR_FINAL: '3',
+  MONOTRIBUTO: '4',
+  RESPONSABLE_NO_INSCRIPTO: '6',
+  NO_RESPONSABLE: '6',
+};
+
+// Colppy escribe "Santa Fé"; el resto coincide con los nombres del padrón.
+const colppyProvincia = (p: string) => (p === 'Santa Fe' ? 'Santa Fé' : p);
+
 export async function colppyCreateCustomer(
   session: ColppySession,
   customer: {
@@ -520,6 +549,9 @@ export async function colppyCreateCustomer(
     cuit: string;
     condicionIva: string;
     direccion?: string;
+    ciudad?: string;
+    codigoPostal?: string;
+    provincia?: string;
     telefono?: string;
     email?: string;
   }
@@ -530,16 +562,22 @@ export async function colppyCreateCustomer(
   // Formatear CUIT con guiones para coincidir con formato de Colppy: XX-XXXXXXXX-X
   const cuitFormatted = formatCuit(customer.cuit);
 
-  // Mapear condición IVA a formato Colppy
-  const condicionIvaMap: Record<string, string> = {
-    RESPONSABLE_INSCRIPTO: 'Responsable Inscripto',
-    MONOTRIBUTO: 'Monotributo',
-    EXENTO: 'Exento',
-    CONSUMIDOR_FINAL: 'Consumidor Final',
-    NO_RESPONSABLE: 'No Responsable',
-    RESPONSABLE_NO_INSCRIPTO: 'Responsable No Inscripto',
-  };
+  const datos = { ...customer };
+  if (isArcaConfigured() && customer.cuit.replace(/D/g, '').length === 11) {
+    try {
+      const p = await consultarPersona(customer.cuit);
+      datos.razonSocial = p.razonSocial || datos.razonSocial;
+      datos.direccion = p.domicilio.direccion || datos.direccion;
+      datos.ciudad = p.domicilio.localidad || datos.ciudad;
+      datos.codigoPostal = p.domicilio.codigoPostal || datos.codigoPostal;
+      datos.provincia = p.domicilio.provincia || datos.provincia;
+      if (p.condicionIva) datos.condicionIva = p.condicionIva;
+    } catch (e: any) {
+      logger.warn(`[Colppy] Alta de cliente ${cuitFormatted} sin datos de ARCA: ${e?.message}`);
+    }
+  }
 
+  const provincia = colppyProvincia(datos.provincia || '');
   const payload = {
     auth: {
       usuario: config.user,
@@ -554,14 +592,40 @@ export async function colppyCreateCustomer(
         usuario: session.usuario,
         claveSesion: session.claveSesion,
       },
-      idEmpresa: session.idEmpresa,
-      RazonSocial: customer.razonSocial,
-      NombreFantasia: customer.razonSocial,
-      CUIT: cuitFormatted,
-      CondicionIVA: condicionIvaMap[customer.condicionIva] || 'Responsable Inscripto',
-      Direccion: customer.direccion || '',
-      Telefono: customer.telefono || '',
-      Email: customer.email || '',
+      info_general: {
+        idUsuario: '',
+        idCliente: '',
+        idEmpresa: session.idEmpresa,
+        NombreFantasia: datos.razonSocial,
+        RazonSocial: datos.razonSocial,
+        CUIT: cuitFormatted,
+        DirPostal: datos.direccion || '',
+        DirPostalCiudad: (datos.ciudad || '').slice(0, 40),
+        DirPostalCodigoPostal: datos.codigoPostal || '',
+        DirPostalProvincia: provincia,
+        DirPostalPais: 'Argentina',
+        Telefono: datos.telefono || '',
+        Email: datos.email || '',
+      },
+      info_otra: {
+        Activo: '1',
+        FechaAlta: '',
+        DirFiscal: datos.direccion || '',
+        DirFiscalCiudad: (datos.ciudad || '').slice(0, 40),
+        DirFiscalCodigoPostal: datos.codigoPostal || '',
+        DirFiscalProvincia: provincia,
+        DirFiscalPais: 'Argentina',
+        idCondicionPago: '0',
+        idCondicionIva: COLPPY_ID_CONDICION_IVA[datos.condicionIva] || '1',
+        porcentajeIVA: '21',
+        idPlanCuenta: '',
+        CuentaCredito: '',
+        DirEnvio: '',
+        DirEnvioCiudad: '',
+        DirEnvioCodigoPostal: '',
+        DirEnvioProvincia: '',
+        DirEnvioPais: '',
+      },
     },
   };
 
@@ -573,18 +637,21 @@ export async function colppyCreateCustomer(
       throw new Error(`Error de Colppy: ${response.response?.message || 'Error desconocido'}`);
     }
 
-    // Extraer idcliente (minúscula) de la respuesta
-    const idCliente = response.response?.idcliente || response.response?.idCliente;
+    // La respuesta trae { success, message, data: { idCliente } }
+    const r = response.response;
+    const idCliente = r?.data?.idCliente || r?.idcliente || r?.idCliente;
 
     if (!idCliente) {
-      throw new Error('Colppy no retornó idcliente en la respuesta');
+      throw new Error('Colppy no retornó idCliente en la respuesta');
     }
 
+    logger.info(`[Colppy] Cliente creado: ${datos.razonSocial} (${cuitFormatted}) idCliente=${idCliente}`);
     return {
-      idEntidad: idCliente,
-      razonSocial: customer.razonSocial,
+      idEntidad: String(idCliente),
+      razonSocial: datos.razonSocial,
       cuit: customer.cuit,
-      condicionIva: customer.condicionIva,
+      condicionIva: datos.condicionIva,
+      idCondicionPago: '0',
     };
   } catch (error: any) {
     throw new Error(`Error al crear cliente en Colppy: ${error.message}`);

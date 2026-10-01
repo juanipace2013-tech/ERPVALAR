@@ -966,6 +966,15 @@ export async function colppyCreateInvoice(
   session: ColppySession,
   invoice: ColppyInvoicePayload
 ): Promise<{ idFactura: string; numeroFactura: string }> {
+  // La API (alta_facturaventa) solo acepta idTipoComprobante 4/6/8/NCV/9: no
+  // hay forma de cargar una FCE MiPyME (51/52/53), y como FAV común (4) choca
+  // con la Factura A del mismo número (las FCE numeran aparte). Probado el
+  // 1/10/2026 con la FCEA-0007-00000001. Se cargan a mano en Colppy.
+  if (invoice.mipyme) {
+    throw new Error(
+      `Colppy no acepta Facturas de Crédito MiPyME por API: cargá la ${invoice.nroFactura1 ?? ''}-${invoice.nroFactura2 ?? ''} a mano en Colppy como Factura MiPyME y avisá para vincularla`
+    );
+  }
   const config = getColppyConfig();
   const passwordMD5 = md5Hash(config.password);
 

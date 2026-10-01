@@ -614,6 +614,9 @@ export async function colppyCreateCustomer(
         DirPostalCodigoPostal: datos.codigoPostal || '',
         DirPostalProvincia: provincia,
         DirPostalPais: 'Argentina',
+        // La pantalla de Colppy muestra el país desde countryId (Argentina = 12,
+        // relevado de los clientes existentes); DirPostalPais solo no alcanza.
+        countryId: '12',
         Telefono: datos.telefono || '',
         Email: datos.email || '',
       },

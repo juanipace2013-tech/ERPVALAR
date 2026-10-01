@@ -258,7 +258,8 @@ function drawFactura(doc: jsPDF, data: FacturaPDFData, logoBase64: string, qrBas
     doc.text(`COD.${CODIGO_CBTE[data.cbteTipo] ?? String(data.cbteTipo)}`, midX, hy + 12, { align: 'center' })
 
     // Derecha: número + título + fecha + datos fiscales
-    const rx = midX + 8
+    // 4 mm de aire a la derecha del recuadro de la letra (antes quedaba pegado)
+    const rx = midX + boxW / 2 + 4
     const titulo = tituloComprobante(data)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(13)

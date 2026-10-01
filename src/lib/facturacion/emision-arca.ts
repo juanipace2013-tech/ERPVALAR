@@ -165,7 +165,7 @@ export function crearHookEmisionArca(cliente: ClienteFiscal): HookEmisionArca {
 export async function reintentarAltaColppy(invoiceId: string): Promise<{ ok: boolean; colppyId?: string; error?: string }> {
   const inv = await prisma.invoice.findUnique({
     where: { id: invoiceId },
-    select: { id: true, invoiceNumber: true, colppyId: true, colppyPayload: true, emitidaPor: true, colppySyncStatus: true },
+    select: { id: true, invoiceNumber: true, colppyId: true, colppyPayload: true, emitidaPor: true, colppySyncStatus: true, cbteTipo: true },
   })
   if (!inv) return { ok: false, error: 'Factura no encontrada' }
   if (inv.emitidaPor !== 'ARCA') return { ok: false, error: 'La factura no fue emitida por el ERP' }
@@ -173,6 +173,8 @@ export async function reintentarAltaColppy(invoiceId: string): Promise<{ ok: boo
   if (!inv.colppyPayload) return { ok: false, error: 'La factura no tiene payload de Colppy guardado' }
 
   const payload = inv.colppyPayload as unknown as ColppyInvoicePayload
+  // FCE MiPyME: payloads guardados antes del fix no traen el flag
+  if ((inv.cbteTipo ?? 0) >= 201) payload.mipyme = true
   try {
     let session = await getCachedColppySession()
     let res

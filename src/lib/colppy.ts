@@ -910,6 +910,8 @@ export type ColppyInvoicePayload = {
     nroFactura2?: string;
     /** Clase de comprobante (default FACTURA). Define idTipoComprobante segun la letra. */
     claseComprobante?: 'FACTURA' | 'NOTA_CREDITO' | 'NOTA_DEBITO';
+    /** FCE MiPyME (cbteTipo ARCA 201+): idTipoComprobante 51/52/53 en Colppy. */
+    mipyme?: boolean;
     items: Array<{
       // Estructura alineada al ejemplo oficial del soporte de Colppy:
       // numéricos como number, subtotal en vez de importeTotal/importeIva,
@@ -936,8 +938,18 @@ export type ColppyInvoicePayload = {
 
 export function colppyTipoComprobante(
   clase: 'FACTURA' | 'NOTA_CREDITO' | 'NOTA_DEBITO',
-  tipoFactura: string
+  tipoFactura: string,
+  mipyme = false
 ): string {
+  // FCE MiPyME: tipos propios en Colppy (51 FAV, 52 NDV, 53 NCV MiPyme, los
+  // mismos que trae el sync de las FCE que emitía Colppy). Numeran aparte de
+  // las facturas comunes: mandarla como '4' choca con la Factura A del mismo
+  // número ("Ya existe una factura A con el número ...", 1/10/2026).
+  if (mipyme) {
+    if (clase === 'NOTA_CREDITO') return '53';
+    if (clase === 'NOTA_DEBITO') return '52';
+    return '51';
+  }
   // Comportamiento probado: las facturas B se vienen cargando con '4' (la letra
   // la define idTipoFactura) y Colppy las toma bien. Se mantiene el mismo
   // criterio para NC/ND: 5 = NCV, 8 = NDV.
@@ -992,7 +1004,7 @@ export async function colppyCreateInvoice(
       idEstadoFactura: estado,
       idTipoFactura: invoice.tipoFactura,
       // 4 = Factura, NCV = Nota de Credito, 6 = Nota de Debito (la letra va en idTipoFactura)
-      idTipoComprobante: colppyTipoComprobante(invoice.claseComprobante || 'FACTURA', invoice.tipoFactura),
+      idTipoComprobante: colppyTipoComprobante(invoice.claseComprobante || 'FACTURA', invoice.tipoFactura, !!invoice.mipyme),
       nroFactura1: nroFactura1,
       nroFactura2: nroFactura2,
       fechaFactura: invoice.fechaFactura,
@@ -1841,6 +1853,8 @@ export async function sendQuoteToColppy(
         result.emision = emision;
         emisionRealizada = emision;
         facturaPayload.estado = 'Aprobada';
+        // FCE MiPyME (201/206): tipo de comprobante propio en Colppy
+        if (emision.cbteTipo >= 201) facturaPayload.mipyme = true;
         // Al entrar directamente como Aprobada (sin pasar por la pantalla de
         // Colppy) hay que decirle explícitamente que la línea es un producto de
         // inventario y de qué depósito sale; si no, no mueve stock ni genera

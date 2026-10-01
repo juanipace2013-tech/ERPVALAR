@@ -180,6 +180,8 @@ export async function emitirNotaCredito(invoiceId: string, opts: EmitirNotaCredi
         fechaVto: fmtColppy(now),
         estado: 'Aprobada',
         claseComprobante: 'NOTA_CREDITO',
+        // NC sobre FCE (203/208): NCV MiPyme en Colppy
+        mipyme: em.cbteTipo >= 201,
         nroFactura1: String(em.puntoVenta).padStart(4, '0'),
         nroFactura2: String(em.numero).padStart(8, '0'),
         netoGravado: neto,

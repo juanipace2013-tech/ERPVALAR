@@ -65,10 +65,13 @@ async function main() {
   // 1. La NC no tiene que existir más en Colppy
   if (nc.colppyId) {
     const vieja = await colppyLeerFacturaVenta(session, nc.colppyId)
-    if (vieja && vieja.idFactura) throw new Error(`La NC sigue existiendo en Colppy (id ${nc.colppyId}): borrala primero`)
+    // "Borrar" en Colppy la deja Anulada (estado 4): eso cuenta como borrada
+    if (vieja && vieja.idFactura && vieja.idEstadoFactura !== 'Anulada') {
+      throw new Error(`La NC sigue vigente en Colppy (id ${nc.colppyId}, ${vieja.idEstadoFactura}): borrala primero`)
+    }
   }
   const nroColppy = `${payload.nroFactura1}-${payload.nroFactura2}`
-  const mismas = (await listarPorNumero(nroColppy, payload.idCliente)).filter((x) => String(x.idTipoComprobante) === '5')
+  const mismas = (await listarPorNumero(nroColppy, payload.idCliente)).filter((x) => String(x.idTipoComprobante) === '5' && String(x.idEstadoFactura) !== '4')
   if (mismas.length) throw new Error(`Ya hay una NC ${nroColppy} del cliente en Colppy: ${JSON.stringify(mismas.map((x) => x.idFactura))}`)
 
   // 2. Imputación a la factura

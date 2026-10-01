@@ -22,6 +22,7 @@ import { consultarPersona } from '@/lib/arca/padron'
 import { crearHookEmisionArca, getEmisorFacturacion, type HookEmisionArca } from '@/lib/facturacion/emision-arca'
 import { buildFacturaPdfData } from '@/lib/facturacion/factura-pdf-data'
 import { generateFacturaPDF, facturaPdfFilename } from '@/lib/pdf/factura-generator'
+import { archivarFacturaEnSharePointBg } from '@/lib/sharepoint/facturas-emitidas'
 import {
   MlApiError,
   getBuyerFiscal,
@@ -476,6 +477,7 @@ export async function facturarVentaMl(params: {
     const skus = lineas.map((l) => l.productSku).filter(Boolean)
     if (skus.length) syncStockForSkusFireAndForget(skus, { quoteNumber: `ML ${packId}`, action: 'factura-ml' })
 
+    archivarFacturaEnSharePointBg(invoiceId)
     const mlUpload = await subirFacturaAMl(packId)
     logger.info(`[ML Facturación] ${referencia} → ${invoiceNumber} CAE ${emitida.cae} (Colppy ${colppyPendiente ? 'PENDIENTE' : 'OK'}, ML ${mlUpload.ok ? 'OK' : 'ERROR'})`)
 

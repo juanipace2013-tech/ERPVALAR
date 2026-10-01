@@ -16,6 +16,7 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { archivarFacturaEnSharePointBg } from '@/lib/sharepoint/facturas-emitidas'
 import {
   colppyCreateInvoice,
   getCachedColppySession,
@@ -363,6 +364,8 @@ export async function emitirNotaCredito(invoiceId: string, opts: EmitirNotaCredi
   } else {
     logger.warn('[NC] La factura no tiene colppyPayload; la NC no se registra en Colppy automáticamente', { invoiceId })
   }
+
+  archivarFacturaEnSharePointBg(ncId)
 
   return {
     ok: true,

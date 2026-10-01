@@ -25,6 +25,7 @@ import { syncStockForSkusFireAndForget } from '@/lib/colppy-inventory'
 import { sincronizarComisionesDeQuote } from '@/lib/comisiones/liquidacion'
 import { crearHookEmisionArca, getEmisorFacturacion } from '@/lib/facturacion/emision-arca'
 import { facturaEnPesos, itemsEnPesos, type MonedaFactura } from '@/lib/facturacion/moneda'
+import { archivarFacturaEnSharePointBg } from '@/lib/sharepoint/facturas-emitidas'
 
 interface InvoiceItemRequest {
   quoteItemId: string
@@ -657,6 +658,9 @@ export async function POST(request: NextRequest) {
         if (add.product?.sku) skusFacturados.push(add.product.sku)
       }
     }
+    // PDF a SharePoint (Facturas Emitidas / VAL ARG S.R.L / "MM AAAA")
+    if (emisionArca) archivarFacturaEnSharePointBg(invoiceIdCreado)
+
     syncStockForSkusFireAndForget(skusFacturados, {
       quoteId: quote.id,
       quoteNumber: quote.quoteNumber,

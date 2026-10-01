@@ -32,7 +32,7 @@ import { emitirComprobante, receptorDesdeCondicion, type LetraComprobante } from
 import { buildQrUrl, toCbteFch } from '@/lib/arca/wsfe'
 import { sincronizarComisionesDeQuote } from '@/lib/comisiones/liquidacion'
 import { signoCantidad } from '@/lib/facturacion/cantidades'
-import { armarImputacionNc, type ItemCobroColppy } from '@/lib/facturacion/imputacion-nc'
+import { armarImputacionNc, type ImputacionNc } from '@/lib/facturacion/imputacion-nc'
 import {
   acreditadoVacio,
   calcularNcImporte,
@@ -758,16 +758,15 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
       // Imputación a la factura, como "Emitir NC" de Colppy (best effort: si
       // no se puede, la NC queda como crédito a favor y se aplica a mano).
       // No en NC FCE: van como borrador y se aprueban (y aplican) en Colppy.
-      let imputacion: ItemCobroColppy | null = null
+      let imputacion: ImputacionNc | null = null
       let facturaSaldada = false
       if (inv.colppyId && !colppyPayload.mipyme) {
         try {
           const info = await colppyLeerFacturaVenta(session, inv.colppyId)
-          const montoNcArs = esUsd ? r2(total * cotizacion) : total
-          imputacion = info ? armarImputacionNc(info, montoNcArs) : null
+          imputacion = info ? armarImputacionNc(info, { total, moneda: esUsd ? 'USD' : 'ARS', tipoCambio: cotizacion }) : null
           facturaSaldada = !!info && Number(info.saldoaaplicar) <= 0.01
           if (imputacion) {
-            colppyPayload.itemsCobro = [imputacion]
+            colppyPayload.itemsCobro = [imputacion.item]
             // Como el front de Colppy: una NC imputada va de contado
             colppyPayload.idCondicionPago = 'Contado'
           }
@@ -802,12 +801,24 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
       }
       colppyId = res.idFactura
       colppyBorradorFce = !!res.borradorFce
-      // ¿Quedó imputada? El saldo de la factura en Colppy tiene que haber bajado
+      // ¿Quedó imputada? El saldo de la factura en Colppy tiene que ser el
+      // esperado (±1 peso de redondeo): ni sin aplicar ni aplicada de más
       if (imputacion && inv.colppyId) {
         try {
           const despues = await colppyLeerFacturaVenta(session, inv.colppyId)
           const saldo = Number(despues?.saldoaaplicar)
-          colppyImputada = Number.isFinite(saldo) && saldo <= imputacion.Saldo + 0.05
+          colppyImputada = Number.isFinite(saldo) && Math.abs(saldo - imputacion.saldoEsperadoArs) <= 1
+          if (Number.isFinite(saldo) && saldo < imputacion.saldoEsperadoArs - 1) {
+            logger.error('[NC] La imputación en Colppy dejó la factura con menos saldo del esperado', {
+              ncId,
+              colppyId,
+              saldo,
+              esperado: imputacion.saldoEsperadoArs,
+            })
+            advertencias.push(
+              `Revisar en Colppy la aplicación de la NC a la factura ${inv.invoiceNumber}: el saldo quedó en ${saldo} y se esperaba ${imputacion.saldoEsperadoArs}.`
+            )
+          }
         } catch {
           /* se informa como no verificada */
         }

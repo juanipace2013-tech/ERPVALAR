@@ -318,20 +318,24 @@ function drawFactura(doc: jsPDF, data: FacturaPDFData, logoBase64: string, qrBas
   drawEncabezado()
 
   // ═══ ITEMS (pagina solo; el encabezado se redibuja en cada página nueva) ═══
-  const head = [['Cantidad', 'Código/Descripción', 'IVA %', `Precio Unit.${esUsd ? ' (USD)' : ''}`, 'Total', 'Dto', 'Precio Total']]
+  // Columnas: Código | Descripción | Cantidad | Precio Unit. | Dto | Precio Total
+  const head = [['Código', 'Descripción', 'Cantidad', `Precio Unit.${esUsd ? ' (USD)' : ''}`, 'Dto %', 'Precio Total']]
   const body = data.items.map((it) => {
-    // Muchos nombres de producto ya empiezan con el SKU ("2025 04 Válvula..."): no repetirlo
-    const yaTieneCodigo = !!it.codigo && it.descripcion.trim().toUpperCase().startsWith(it.codigo.trim().toUpperCase())
-    const desc = `${it.codigo && !yaTieneCodigo ? `${it.codigo} - ` : ''}${it.descripcion}${it.detalle ? `\n${it.detalle}` : ''}`
-    const bonif = it.bonifPct ?? 0
-    const totalPre = it.cantidad * it.precioUnitario
+    // Muchos nombres de producto ya empiezan con el SKU ("2025 04 Válvula..."):
+    // el código va en su columna, así que se lo saca de la descripción
+    const codigo = (it.codigo ?? '').trim()
+    let descripcion = it.descripcion.trim()
+    if (codigo && descripcion.toUpperCase().startsWith(codigo.toUpperCase())) {
+      descripcion = descripcion.slice(codigo.length).replace(/^[s-–]+/, '')
+    }
+    const desc = `${descripcion}${it.detalle ? `
+${it.detalle}` : ''}`
     return [
-      fmtNum(it.cantidad, 2),
+      codigo || '-',
       desc,
-      esA ? `( ${fmtNum(it.alicuotaIva, 2)} )` : '',
+      fmtNum(it.cantidad, 2),
       fmtNum(it.precioUnitario),
-      fmtNum(totalPre),
-      fmtNum(bonif),
+      fmtNum(it.bonifPct ?? 0),
       fmtNum(it.subtotal),
     ]
   })
@@ -349,13 +353,12 @@ function drawFactura(doc: jsPDF, data: FacturaPDFData, logoBase64: string, qrBas
     styles: { font: 'helvetica', fontSize: 7.5, cellPadding: { top: 2, bottom: 2, left: 1.5, right: 1.5 }, textColor: DARK, valign: 'top', overflow: 'linebreak' },
     headStyles: { fillColor: TABLE_HEAD_BG, textColor: BLACK, fontStyle: 'bold', halign: 'center', lineColor: BLACK, lineWidth: 0.3, fontSize: 7.5 },
     columnStyles: {
-      0: { halign: 'right', cellWidth: 15 },
-      1: { cellWidth: 77 },
-      2: { halign: 'center', cellWidth: 15 },
+      0: { cellWidth: 22 },
+      1: { cellWidth: 90 },
+      2: { halign: 'right', cellWidth: 16 },
       3: { halign: 'right', cellWidth: 24 },
-      4: { halign: 'right', cellWidth: 25 },
-      5: { halign: 'right', cellWidth: 11 },
-      6: { halign: 'right', cellWidth: 23 },
+      4: { halign: 'right', cellWidth: 13 },
+      5: { halign: 'right', cellWidth: 25 },
     },
     didDrawPage: (d) => {
       if (d.pageNumber > 1) drawEncabezado()

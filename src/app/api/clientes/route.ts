@@ -3,7 +3,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/prisma'
-import { customerSchema } from '@/lib/validations'
+import { customerSchema, normalizarClienteBody } from '@/lib/validations'
 import { normalizeCuit, buildCuitWhereClause } from '@/lib/cuit-utils'
 import { z } from 'zod'
 import { logAudit } from '@/lib/audit'
@@ -149,7 +149,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
 
     // Validar datos
-    const validatedData = customerSchema.parse(body)
+    const validatedData = customerSchema.parse(normalizarClienteBody(body))
 
     // Cliente del exterior: clave canónica en cuit, ID tal cual en taxIdExterior
     const exterior = esClienteExterior(validatedData)

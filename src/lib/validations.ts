@@ -33,7 +33,7 @@ const customerBaseSchema = z.object({
     'NO_RESPONSABLE',
     'RESPONSABLE_NO_INSCRIPTO',
     'CLIENTE_EXTERIOR',
-  ]),
+  ], { message: 'Elegí la condición fiscal del cliente' }),
 
   // Contacto
   email: z.string().email('Email inválido').optional().or(z.literal('')),
@@ -72,6 +72,18 @@ const customerBaseSchema = z.object({
   // Notas
   notes: z.string().optional(),
 })
+
+/**
+ * Normaliza el body antes de validar: un cliente de otro país es siempre
+ * "Cliente del Exterior", venga lo que venga en taxCondition (p. ej. vacío
+ * por el autocompletado del navegador).
+ */
+export function normalizarClienteBody(body: unknown): unknown {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return body
+  const b = body as Record<string, unknown>
+  if (typeof b.country === 'string' && !esArgentina(b.country)) return { ...b, taxCondition: 'CLIENTE_EXTERIOR' }
+  return b
+}
 
 export const customerSchema = customerBaseSchema.superRefine((d, ctx) => {
   const exterior = esClienteExterior(d)

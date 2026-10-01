@@ -6,7 +6,7 @@ import {
   idFiscalParaMostrar,
   parametroBusquedaCliente,
 } from '@/lib/cliente-exterior'
-import { customerSchema } from '@/lib/validations'
+import { customerSchema, normalizarClienteBody } from '@/lib/validations'
 
 const base = { name: 'Cliente', type: 'BUSINESS' as const, priceMultiplier: 1 }
 
@@ -57,5 +57,23 @@ describe('validación de alta', () => {
     expect(customerSchema.safeParse({ ...base, cuit: '76.123.456-7', taxCondition: 'RESPONSABLE_INSCRIPTO', country: 'Chile' }).success).toBe(false)
     // exterior con país Argentina → rechazado
     expect(customerSchema.safeParse({ ...base, cuit: '', taxCondition: 'CLIENTE_EXTERIOR', country: 'Argentina' }).success).toBe(false)
+  })
+})
+
+describe('normalizarClienteBody', () => {
+  const base = { name: 'Cliente Chile', type: 'BUSINESS' }
+  it('país distinto de Argentina: condición Cliente del Exterior aunque venga vacía (autocompletado del navegador)', () => {
+    const r = customerSchema.safeParse(normalizarClienteBody({ ...base, cuit: '76.123.456-7', taxCondition: '', country: 'Chile' }))
+    expect(r.success).toBe(true)
+    expect(r.success && r.data.taxCondition).toBe('CLIENTE_EXTERIOR')
+  })
+  it('Argentina sin condición: error claro', () => {
+    const r = customerSchema.safeParse(normalizarClienteBody({ ...base, cuit: '30-71652080-9', taxCondition: '', country: 'Argentina' }))
+    expect(r.success).toBe(false)
+    expect(!r.success && r.error.issues[0].message).toBe('Elegí la condición fiscal del cliente')
+  })
+  it('no toca bodies sin país o que no son objetos', () => {
+    expect(normalizarClienteBody({ taxCondition: 'MONOTRIBUTO' })).toEqual({ taxCondition: 'MONOTRIBUTO' })
+    expect(normalizarClienteBody(null)).toBeNull()
   })
 })

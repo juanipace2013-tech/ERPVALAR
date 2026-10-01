@@ -735,7 +735,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
                   <p className="text-xs text-gray-500 mb-1">Condición IVA</p>
                   <Select
                     value={editForm.taxCondition}
-                    onValueChange={(v) => setEditForm({ ...editForm, taxCondition: v })}
+                    onValueChange={(v) => v && setEditForm({ ...editForm, taxCondition: v })}
                   >
                     <SelectTrigger className="h-8 text-sm">
                       <SelectValue placeholder="Seleccionar condición IVA" />

@@ -101,6 +101,7 @@ export default function NewCustomerPage() {
   const pais = paisCliente(formData.country)
 
   const cambiarPais = (valor: string) => {
+    if (!valor) return // autocompletado del navegador sobre el <select> oculto
     if (valor === '__OTRO__') {
       setPaisOtro(true)
       setFormData((prev) => ({ ...prev, country: '', taxCondition: 'CLIENTE_EXTERIOR', province: '' }))
@@ -221,7 +222,7 @@ export default function NewCustomerPage() {
         businessName: formData.businessName || undefined,
         type: formData.type,
         cuit: formData.cuit,
-        taxCondition: formData.taxCondition,
+        taxCondition: exterior ? 'CLIENTE_EXTERIOR' : formData.taxCondition,
         email: formData.email || undefined,
         phone: formData.phone || undefined,
         mobile: formData.mobile || undefined,
@@ -275,7 +276,12 @@ export default function NewCustomerPage() {
   }
 
   const handleInputChange = (field: string, value: string) => {
-    setFormData({ ...formData, [field]: value })
+    setFormData((prev) => ({ ...prev, [field]: value }))
+  }
+  // Para los Select: el autocompletado del navegador puede mandar "" por el
+  // <select> oculto de Radix y dejar el campo en un valor inválido
+  const handleSelectChange = (field: string) => (value: string) => {
+    if (value) handleInputChange(field, value)
   }
 
   return (
@@ -341,7 +347,7 @@ export default function NewCustomerPage() {
                   </Label>
                   <Select
                     value={formData.type}
-                    onValueChange={(value) => handleInputChange('type', value)}
+                    onValueChange={handleSelectChange('type')}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -432,7 +438,7 @@ export default function NewCustomerPage() {
                   </Label>
                   <Select
                     value={formData.taxCondition}
-                    onValueChange={(value) => handleInputChange('taxCondition', value)}
+                    onValueChange={handleSelectChange('taxCondition')}
                     disabled={exterior}
                   >
                     <SelectTrigger>
@@ -542,7 +548,7 @@ export default function NewCustomerPage() {
                   ) : (
                   <Select
                     value={formData.province}
-                    onValueChange={(value) => handleInputChange('province', value)}
+                    onValueChange={handleSelectChange('province')}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Seleccionar..." />
@@ -592,7 +598,7 @@ export default function NewCustomerPage() {
                     />
                     <Select
                       value={formData.creditCurrency}
-                      onValueChange={(value) => handleInputChange('creditCurrency', value)}
+                      onValueChange={handleSelectChange('creditCurrency')}
                     >
                       <SelectTrigger className="w-24">
                         <SelectValue />
@@ -653,7 +659,7 @@ export default function NewCustomerPage() {
                   <Label htmlFor="salesPersonId">Vendedor asignado</Label>
                   <Select
                     value={formData.salesPersonId}
-                    onValueChange={(value) => handleInputChange('salesPersonId', value)}
+                    onValueChange={handleSelectChange('salesPersonId')}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Sin asignar" />
@@ -673,7 +679,7 @@ export default function NewCustomerPage() {
                   <Label htmlFor="status">Estado</Label>
                   <Select
                     value={formData.status}
-                    onValueChange={(value) => handleInputChange('status', value)}
+                    onValueChange={handleSelectChange('status')}
                   >
                     <SelectTrigger>
                       <SelectValue />

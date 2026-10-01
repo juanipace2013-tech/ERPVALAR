@@ -2,6 +2,7 @@ import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger'
+import { customerIdsPorCuit } from '@/lib/cuit-search'
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,6 +18,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json([]);
     }
 
+    // CUIT con o sin guiones
+    const idsCuit = await customerIdsPorCuit(q);
+
     // Buscar en clientes y proveedores en paralelo
     const [customers, suppliers] = await Promise.all([
       prisma.customer.findMany({
@@ -26,6 +30,7 @@ export async function GET(request: NextRequest) {
             { name: { contains: q, mode: 'insensitive' } },
             { businessName: { contains: q, mode: 'insensitive' } },
             { cuit: { contains: q, mode: 'insensitive' } },
+            ...(idsCuit?.length ? [{ id: { in: idsCuit } }] : []),
           ],
         },
         select: {

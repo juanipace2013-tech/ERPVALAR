@@ -8,6 +8,7 @@ import { normalizeCuit, buildCuitWhereClause } from '@/lib/cuit-utils'
 import { z } from 'zod'
 import { logAudit } from '@/lib/audit'
 import { colppyEnsureCustomer } from '@/lib/colppy'
+import { customerIdsPorCuit } from '@/lib/cuit-search'
 import { parsePage, parseLimit } from '@/lib/pagination'
 
 // GET /api/clientes - Listar clientes con filtros y paginación
@@ -42,6 +43,9 @@ export async function GET(request: NextRequest) {
         { cuit: { contains: search, mode: 'insensitive' } },
         { email: { contains: search, mode: 'insensitive' } },
       ]
+      // CUIT con o sin guiones ("20184212553" encuentra "20-18421255-3")
+      const idsCuit = await customerIdsPorCuit(search)
+      if (idsCuit?.length) (where.OR as unknown[]).push({ id: { in: idsCuit } })
     }
 
     if (status) {

@@ -64,6 +64,13 @@ export async function buildFacturaPdfData(invoiceId: string): Promise<FacturaPDF
   const total = Number(inv.total)
   const payload = (inv.colppyPayload ?? null) as null | { idCondicionPago?: string; items?: Array<{ porcDesc?: number }> }
   const bonifPct = Number(inv.quote?.bonification ?? 0) || 0
+  // Ventas de Mercado Libre facturadas desde el ERP (sin cotización)
+  const ventaMl = inv.notes?.match(/Venta Mercado Libre #(\d+)/)?.[1]
+  const referencia = inv.quote?.quoteNumber
+    ? `Cotización ${inv.quote.quoteNumber}`
+    : ventaMl
+      ? `Mercado Libre - Venta #${ventaMl}`
+      : null
 
   // Escala: las líneas se muestran de modo que sumen exactamente el neto (A) o
   // el total (B) de la cabecera, sea cual sea cómo se guardaron los precios
@@ -82,7 +89,7 @@ export async function buildFacturaPdfData(invoiceId: string): Promise<FacturaPDF
     return {
       codigo: it.sku || it.product?.sku || null,
       descripcion: it.description || '',
-      detalle: inv.quote?.quoteNumber ? `Cotización ${inv.quote.quoteNumber}` : null,
+      detalle: referencia,
       cantidad,
       unidad: 'Un',
       precioUnitario: Math.round(unitPre * 100) / 100,
@@ -109,7 +116,7 @@ export async function buildFacturaPdfData(invoiceId: string): Promise<FacturaPDF
     moneda: inv.currency === 'USD' ? 'USD' : 'ARS',
     cotizacion: inv.currency === 'USD' ? Number(inv.exchangeRate ?? 1) : 1,
     condicionVenta: condicionVentaLabel(payload?.idCondicionPago),
-    referencia: inv.quote?.quoteNumber ? `Cotización ${inv.quote.quoteNumber}` : null,
+    referencia,
     receptor: {
       nombre: r.businessName || r.name,
       docTipoLabel: DOC_LABEL[inv.docTipo ?? 80] ?? 'CUIT',

@@ -89,6 +89,12 @@ const navItems: NavItem[] = [
         icon: Store,
         roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
       },
+      {
+        title: 'Facturar ventas',
+        href: '/mercadolibre/facturacion',
+        icon: Receipt,
+        roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
+      },
     ],
   },
   {

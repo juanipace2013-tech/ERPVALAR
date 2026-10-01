@@ -718,7 +718,7 @@ model PurchaseInvoiceMailIngest {
   fromAddress    String
   subject        String?
   receivedAt     DateTime
-  attachmentName String @default("") // "" = el mail no tenía PDF
+  attachmentName String   @default("") // "" = el mail no tenía PDF
 
   // PROCESSED | DUPLICATE | NO_PDF | SUPPLIER_NOT_FOUND | ERROR
   status   String
@@ -1116,16 +1116,16 @@ model Quote {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  customer       Customer             @relation(fields: [customerId], references: [id])
-  opportunity    Opportunity?         @relation(fields: [opportunityId], references: [id])
-  salesPerson    User                 @relation("QuoteSalesPerson", fields: [salesPersonId], references: [id])
-  creador        User?                @relation("QuoteCreador", fields: [creadoPorId], references: [id])
-  items          QuoteItem[]
-  deliveryNotes  DeliveryNote[] // Remitos generados
-  invoices       Invoice[] // Facturas generadas
-  statusHistory  QuoteStatusHistory[]
-  publicToken    QuotePublicToken? // Token para acceso público
-  emailLogs      QuoteEmailLog[] // Log de emails enviados
+  customer          Customer                @relation(fields: [customerId], references: [id])
+  opportunity       Opportunity?            @relation(fields: [opportunityId], references: [id])
+  salesPerson       User                    @relation("QuoteSalesPerson", fields: [salesPersonId], references: [id])
+  creador           User?                   @relation("QuoteCreador", fields: [creadoPorId], references: [id])
+  items             QuoteItem[]
+  deliveryNotes     DeliveryNote[] // Remitos generados
+  invoices          Invoice[] // Facturas generadas
+  statusHistory     QuoteStatusHistory[]
+  publicToken       QuotePublicToken? // Token para acceso público
+  emailLogs         QuoteEmailLog[] // Log de emails enviados
   seguimientos      QuoteSeguimiento[] // Seguimientos de contacto
   facturas          CotizacionFactura[] // Facturas parciales generadas
   auditLogs         CotizacionAuditLog[]
@@ -1151,7 +1151,7 @@ model Quote {
 // "no facturar hasta X" hasta DIAS_AVISO_ENTREGA días antes de cada tramo
 // pendiente. Solo informativo: NO bloquea la facturación manual.
 model QuoteDeliverySchedule {
-  id       String  @id @default(cuid())
+  id       String   @id @default(cuid())
   quoteId  String
   fecha    DateTime // Fecha civil de entrega, pineada a 12:00 UTC
   cantidad Decimal  @db.Decimal(12, 2) // Unidades totales del tramo
@@ -1566,6 +1566,9 @@ model Invoice {
 
   // Crosslink al modelo CotizacionFactura (mismo envío a Colppy en el modelo nuevo).
   cotizacionFactura CotizacionFactura?
+
+  // Venta de Mercado Libre facturada desde el ERP (si corresponde)
+  mlOrderInvoice MlOrderInvoice?
 
   // NC/ND <-> factura original (emision propia)
   relatedInvoice  Invoice?  @relation("InvoiceRelated", fields: [relatedInvoiceId], references: [id])
@@ -3629,4 +3632,28 @@ model WintersStockImport {
 
   @@index([receivedAt])
   @@map("winters_stock_imports")
+}
+
+// Venta de Mercado Libre (pack) facturada desde el ERP: ARCA PV 7 → Colppy →
+// PDF subido a ML. La fila se crea ANTES de emitir (packId unique) y actúa de
+// candado contra la doble facturación; si ARCA rechaza se borra.
+model MlOrderInvoice {
+  id                 String   @id @default(cuid())
+  packId             String   @unique // pack_id de ML, o el order id si la venta no tiene pack
+  orderIds           String[]
+  buyerNickname      String?
+  cuit               String?
+  total              Decimal? @db.Decimal(14, 2) // total ML con IVA
+  invoiceId          String?  @unique
+  invoice            Invoice? @relation(fields: [invoiceId], references: [id])
+  status             String   @default("EMITIENDO") // EMITIENDO | EMITIDA
+  // Subida del PDF a ML (POST /packs/{id}/fiscal_documents)
+  mlUploadStatus     String? // OK | ERROR
+  mlUploadError      String?  @db.Text
+  mlFiscalDocumentId String?
+  createdById        String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("ml_order_invoices")
 }

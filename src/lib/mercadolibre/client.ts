@@ -588,3 +588,147 @@ export async function setUserProductSellerStock(userProductId: string, quantity:
     )
   }
 }
+
+// ---------------------------------------------------------------------------
+// Ventas: órdenes, datos fiscales del comprador y facturas (fiscal documents)
+// Docs: https://developers.mercadolibre.com.ar/es_ar/gestiona-ventas
+//       https://developers.mercadolibre.com.ar/es_ar/facturacion
+// OJO: billing-info y fiscal_documents requieren el permiso funcional
+// "Facturación" en la app de ML; sin él responden 403 (PolicyAgent).
+// ---------------------------------------------------------------------------
+
+export interface MlSaleOrder {
+  id: number
+  status: string
+  date_closed?: string
+  date_created?: string
+  pack_id?: number | null
+  total_amount?: number
+  currency_id?: string
+  tags?: string[]
+  context?: { flows?: string[] }
+  buyer?: { id?: number; nickname?: string; first_name?: string; last_name?: string; billing_info?: { id?: string } | null }
+  order_items: Array<{
+    item: { id: string; title?: string; seller_sku?: string | null; variation_id?: number | null }
+    quantity: number
+    unit_price: number
+    full_unit_price?: number
+  }>
+  shipping?: { id?: number | null }
+}
+
+interface MlOrdersSearch {
+  results: MlSaleOrder[]
+  paging?: { total: number; offset: number; limit: number }
+}
+
+/** Órdenes pagadas del seller desde una fecha (más nuevas primero, tope `max`). */
+export async function searchPaidOrdersSince(desde: Date, max = 200): Promise<MlSaleOrder[]> {
+  const sellerId = await getMlUserId()
+  const out: MlSaleOrder[] = []
+  const limit = 50
+  const from = encodeURIComponent(desde.toISOString().replace('Z', '-00:00'))
+  for (let offset = 0; offset < max; offset += limit) {
+    const page = await mlFetch<MlOrdersSearch>(
+      `/orders/search?seller=${sellerId}&order.status=paid&order.date_created.from=${from}&sort=date_desc&limit=${limit}&offset=${offset}`
+    )
+    out.push(...(page.results ?? []))
+    if ((page.results ?? []).length < limit) break
+  }
+  return out
+}
+
+export function getSaleOrder(orderId: string | number): Promise<MlSaleOrder> {
+  return mlFetch<MlSaleOrder>(`/orders/${orderId}`)
+}
+
+export interface MlPack {
+  id: number
+  status?: string
+  orders: { id: number }[]
+}
+
+export function getPack(packId: string | number): Promise<MlPack> {
+  return mlFetch<MlPack>(`/packs/${packId}`)
+}
+
+/** Datos fiscales normalizados del comprador (de billing-info v1 o v2). */
+export interface MlBuyerFiscal {
+  docType: string | null // "CUIT" | "DNI" | ...
+  docNumber: string | null
+  name: string | null
+  taxpayerType: string | null // ej "IVA Responsable Inscripto"
+}
+
+function pickAdditional(info: Array<{ type?: string; value?: string }> | undefined, ...types: string[]) {
+  return info?.find((a) => a.type && types.includes(a.type))?.value ?? null
+}
+
+/**
+ * Datos fiscales del comprador. Prueba el endpoint nuevo (billing-info/MLA/{id},
+ * x-version 2) y cae al viejo (/orders/{id}/billing_info). Lanza MlApiError
+ * (403 si la app no tiene el permiso "Facturación").
+ */
+export async function getBuyerFiscal(order: MlSaleOrder): Promise<MlBuyerFiscal> {
+  const billingId = order.buyer?.billing_info?.id
+  if (billingId) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const r = await mlFetch<any>(`/orders/billing-info/MLA/${billingId}`, { headers: { 'x-version': '2' } })
+      const b = r?.buyer?.billing_info ?? r?.billing_info ?? r
+      const ident = b?.identification ?? {}
+      const name = [b?.name, b?.last_name].filter(Boolean).join(' ') || b?.business_name || null
+      return {
+        docType: ident.type ?? null,
+        docNumber: ident.number ? String(ident.number) : null,
+        name,
+        taxpayerType: b?.taxes?.taxpayer_type?.description ?? b?.taxpayer_type?.description ?? null,
+      }
+    } catch (e) {
+      if (!(e instanceof MlApiError) || e.status !== 404) throw e
+    }
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const r = await mlFetch<any>(`/orders/${order.id}/billing_info`)
+  const b = r?.billing_info ?? {}
+  const extra = b.additional_info as Array<{ type?: string; value?: string }> | undefined
+  return {
+    docType: b.doc_type ?? null,
+    docNumber: b.doc_number ? String(b.doc_number) : null,
+    name: pickAdditional(extra, 'BUSINESS_NAME') ?? ([pickAdditional(extra, 'FIRST_NAME'), pickAdditional(extra, 'LAST_NAME')].filter(Boolean).join(' ') || null),
+    taxpayerType: pickAdditional(extra, 'TAXPAYER_TYPE_ID', 'TAXPAYER_TYPE'),
+  }
+}
+
+/** Facturas ya adjuntas a un pack (las sube el vendedor o Colppy). */
+export async function getPackFiscalDocuments(packId: string | number): Promise<{ id: string; filename?: string }[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const r = await mlFetch<any>(`/packs/${packId}/fiscal_documents`)
+  const docs = r?.fiscal_documents ?? r?.results ?? (Array.isArray(r) ? r : [])
+  return docs.map((d: { id?: string | number; file_name?: string; filename?: string }) => ({ id: String(d.id), filename: d.file_name ?? d.filename }))
+}
+
+/** Sube el PDF de la factura al pack: el comprador la ve en el detalle de la compra. */
+export async function uploadPackFiscalDocument(packId: string | number, pdf: Buffer, filename: string): Promise<{ id: string | null }> {
+  const token = await getValidAccessToken()
+  const form = new FormData()
+  form.append('fiscal_document', new Blob([new Uint8Array(pdf)], { type: 'application/pdf' }), filename)
+  const res = await fetch(`${ML_API}/packs/${packId}/fiscal_documents`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    body: form,
+  })
+  const raw = await res.text()
+  let parsed: unknown = raw
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    // texto plano
+  }
+  if (!res.ok) {
+    throw new MlApiError(`[ML] POST /packs/${packId}/fiscal_documents -> HTTP ${res.status}`, res.status, parsed)
+  }
+  const p = parsed as { ids?: (string | number)[]; id?: string | number } | null
+  const id = p?.ids?.[0] ?? p?.id ?? null
+  return { id: id != null ? String(id) : null }
+}

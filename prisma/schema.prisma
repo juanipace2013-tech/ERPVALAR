@@ -1624,6 +1624,9 @@ model InvoiceItem {
   // Comentario de línea cargado al facturar (N° de ítem/SOLPED de la OC, etc.):
   // sale impreso en el PDF debajo de la descripción.
   comment     String? @db.Text
+  // NC por unidades: índice de la línea de la factura original
+  // (colppyPayload.items) que devuelve este ítem.
+  lineaFactura Int?
 
   invoice   Invoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   product   Product?   @relation(fields: [productId], references: [id])

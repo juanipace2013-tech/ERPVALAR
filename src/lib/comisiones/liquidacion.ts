@@ -73,6 +73,21 @@ async function anularFacturasPorNC(vendedorId: string, anio: number, mes: number
         fecha: { gte: desde, lt: hasta },
         estado: { notIn: ESTADOS_FACTURA_EXCLUIDOS },
         cotizacion: { salesPersonId: vendedorId },
+        // Factura anulada o con NC emitida por el ERP: la NC ya impactó (fila
+        // negativa / ANULADA); una NC de Colppy no puede descontarla otra vez.
+        // (Filtro positivo: un NOT sobre la relación opcional excluiría en SQL
+        // las filas sin factura vinculada, que son las de Colppy.)
+        OR: [
+          { invoiceId: null },
+          {
+            invoice: {
+              is: {
+                status: { not: 'CANCELLED' },
+                relatedInvoices: { none: { transactionType: 'CREDIT_NOTE', status: { not: 'CANCELLED' } } },
+              },
+            },
+          },
+        ],
       },
       include: { cotizacion: { select: { customerId: true, quoteNumber: true } } },
     })

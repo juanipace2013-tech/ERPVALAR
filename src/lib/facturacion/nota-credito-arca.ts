@@ -5,10 +5,12 @@
  * Flujo:
  *   1. Emite la NC en ARCA asociada a la factura (misma letra, moneda y TC).
  *   2. Persiste la NC como Invoice (transactionType CREDIT_NOTE, relatedInvoiceId).
- *   3. NC total: anula la factura en el ERP (status CANCELLED), marca la
- *      CotizacionFactura como ANULADA, devuelve las cantidades a la cotización
- *      (cantidadFacturada) y reabre la cotización si corresponde; re-sincroniza
- *      comisiones.
+ *   3. NC total: anula la factura en el ERP (status CANCELLED), devuelve las
+ *      cantidades a la cotización (cantidadFacturada) y reabre la cotización si
+ *      corresponde. Comisiones: si la factura es del mes de la NC se marca
+ *      ANULADA; si es de un mes anterior resta con una fila negativa en el mes
+ *      de la NC. NC por unidades: ver nc-unidades.ts (stock, cotización y
+ *      comisión de las unidades devueltas). NC por importe: solo saldo.
  *   4. Registra la NC en Colppy como Aprobada no-electrónica (idTipoComprobante
  *      5) para que mueva CC/asiento/stock. Si Colppy falla, la NC queda
  *      PENDIENTE con su payload para reintentar (mismo mecanismo que facturas).
@@ -28,22 +30,38 @@ import { getArcaConfig } from '@/lib/arca/config'
 import { emitirComprobante, receptorDesdeCondicion, type LetraComprobante } from '@/lib/arca/emitir'
 import { buildQrUrl, toCbteFch } from '@/lib/arca/wsfe'
 import { sincronizarComisionesDeQuote } from '@/lib/comisiones/liquidacion'
+import { signoCantidad } from '@/lib/facturacion/cantidades'
 import {
+  acreditadoVacio,
+  calcularNcImporte,
   calcularNcUnidades,
   claveLinea,
   lineasAcreditables,
+  prepararContextoNc,
+  vincularLineasFactura,
+  type Acreditado,
   type CalculoNcUnidades,
+  type ContextoNc,
+  type ItemFacturaVinculable,
   type LineaAcreditable,
   type SeleccionUnidades,
+  type VinculoLinea,
 } from '@/lib/facturacion/nc-unidades'
+
+export type ModoNotaCredito = 'TOTAL' | 'IMPORTE' | 'UNIDADES'
 
 export interface EmitirNotaCreditoOpts {
   userId: string
   motivo?: string
   /**
-   * Importe NETO de la NC. Si se omite o es >= neto de la factura → NC TOTAL
-   * (anula la factura y reabre la cotización). Si es menor → NC parcial: solo
-   * ajusta saldo/total, no toca la cotización.
+   * Modo elegido. Si se omite: UNIDADES con `unidades`, IMPORTE con
+   * `netoParcial`, TOTAL sin ninguno. Nunca se pasa de IMPORTE a TOTAL; de
+   * UNIDADES a TOTAL solo si devuelve todo y no hubo NC antes.
+   */
+  modo?: ModoNotaCredito
+  /**
+   * IMPORTE: neto de la NC (ajuste/bonificación: solo saldo y total, no
+   * devuelve stock ni toca la cotización). Hasta el neto pendiente de acreditar.
    */
   netoParcial?: number
   /**
@@ -63,7 +81,9 @@ export interface NotaCreditoResult {
   caeVencimiento: Date
   total: number
   esTotal: boolean
-  modo: 'TOTAL' | 'IMPORTE' | 'UNIDADES'
+  modo: ModoNotaCredito
+  /** Avisos para el usuario (p. ej. líneas que no se pudieron vincular a la cotización) */
+  advertencias: string[]
   colppyPendiente: boolean
   /** NC sobre FCE: quedó como BORRADOR en Colppy (tildar FCE y aprobar). */
   colppyBorradorFce: boolean
@@ -81,25 +101,132 @@ function r2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
-/** Cantidades ya devueltas por línea (claveLinea) en NC por unidades anteriores. */
-function acreditadoPorLinea(ncs: Array<{ transactionType: string; status: string; items: Array<{ sku: string | null; description: string | null; quantity: unknown }> }>) {
-  const map = new Map<string, number>()
+type NcPrevia = {
+  transactionType: string
+  status: string
+  subtotal: unknown
+  taxAmount: unknown
+  items: Array<{ sku: string | null; description: string | null; quantity: unknown; lineaFactura: number | null }>
+}
+
+/** Cantidades ya devueltas en NC por unidades anteriores (por índice de línea; las viejas sin índice, por código+descripción). */
+function acreditadoPorLinea(ncs: NcPrevia[]): Acreditado {
+  const acc = acreditadoVacio()
   for (const nc of ncs) {
     if (nc.transactionType !== 'CREDIT_NOTE' || nc.status === 'CANCELLED') continue
     for (const it of nc.items) {
-      const k = claveLinea(it.sku, it.description)
-      map.set(k, (map.get(k) ?? 0) + Number(it.quantity))
+      if (it.lineaFactura != null) {
+        acc.porIndice.set(it.lineaFactura, (acc.porIndice.get(it.lineaFactura) ?? 0) + Number(it.quantity))
+      } else {
+        const k = claveLinea(it.sku, it.description)
+        acc.porClave.set(k, (acc.porClave.get(k) ?? 0) + Number(it.quantity))
+      }
     }
   }
-  return map
+  return acc
+}
+
+const SELECT_NC_PREVIA = {
+  id: true,
+  transactionType: true,
+  status: true,
+  total: true,
+  subtotal: true,
+  taxAmount: true,
+  items: { select: { sku: true, description: true, quantity: true, lineaFactura: true } },
+} as const
+
+/** Ítems de la factura con lo necesario para vincular cada línea a la cotización (en orden de creación). */
+const SELECT_ITEMS_VINCULO = {
+  orderBy: { id: 'asc' as const },
+  select: {
+    id: true,
+    quoteItemId: true,
+    quantity: true,
+    description: true,
+    unitPrice: true,
+    subtotal: true,
+    productId: true,
+    sku: true,
+    comment: true,
+    product: { select: { sku: true, name: true } },
+    quoteItem: {
+      select: {
+        manualSku: true,
+        description: true,
+        product: { select: { sku: true, name: true } },
+        additionals: { select: { description: true, product: { select: { sku: true, name: true } } } },
+      },
+    },
+  },
+}
+
+type ItemConVinculo = {
+  id: string
+  quoteItemId: string | null
+  quantity: unknown
+  description: string | null
+  sku: string | null
+  product: { sku: string; name: string } | null
+  quoteItem: {
+    manualSku: string | null
+    description: string | null
+    product: { sku: string; name: string } | null
+    additionals: Array<{ description: string | null; product: { sku: string; name: string } | null }>
+  } | null
+}
+
+function vincular(payload: ColppyInvoicePayload, items: ItemConVinculo[]): VinculoLinea[] {
+  const vinculables: ItemFacturaVinculable[] = items.map((it) => ({
+    id: it.id,
+    quoteItemId: it.quoteItemId,
+    quantity: Number(it.quantity),
+    codigos: [it.sku, it.product?.sku, it.quoteItem?.product?.sku, it.quoteItem?.manualSku],
+    nombres: [it.description, it.product?.name, it.quoteItem?.description, it.quoteItem?.product?.name],
+    adicionales: (it.quoteItem?.additionals ?? []).map((a) => ({
+      codigos: [a.product?.sku],
+      nombres: [a.product?.name, a.description],
+    })),
+  }))
+  return vincularLineasFactura(payload.items, vinculables)
+}
+
+/** Líneas acreditables con el ajuste por NC previas y el vínculo con la cotización. */
+function armarLineas(
+  payload: ColppyInvoicePayload,
+  factura: { neto: number; iva: number; tieneCotizacion: boolean },
+  ncs: NcPrevia[],
+  items: ItemConVinculo[]
+): { lineas: LineaAcreditable[]; contexto: ContextoNc; vinculos: VinculoLinea[] } {
+  const vigentes = ncs.filter((r) => r.transactionType === 'CREDIT_NOTE' && r.status !== 'CANCELLED')
+  const base = lineasAcreditables(payload, acreditadoPorLinea(vigentes))
+  const { lineas, contexto } = prepararContextoNc(
+    base,
+    factura,
+    vigentes.map((n) => ({
+      subtotal: Number(n.subtotal),
+      taxAmount: Number(n.taxAmount),
+      // NC por importe: sin líneas devueltas (bonificación sobre el precio)
+      porImporte: !n.items.some((it) => it.lineaFactura != null),
+    }))
+  )
+  const vinculos = vincular(payload, items)
+  for (const l of lineas) {
+    const v = vinculos[l.index]
+    l.vinculo = !factura.tieneCotizacion ? null : !v || !v.quoteItemId ? 'SIN_VINCULO' : v.adicional ? 'ADICIONAL' : 'COTIZACION'
+    l.adicionalDe = v?.adicional ? v.principal : null
+  }
+  return { lineas, contexto, vinculos }
 }
 
 /**
- * Líneas de la factura para una NC por unidades, con lo ya devuelto y lo
- * disponible. null si la factura no tiene las líneas de Colppy guardadas.
+ * Líneas de la factura para una NC por unidades, con lo ya devuelto, lo
+ * disponible y el contexto para calcular los importes igual que el servidor.
+ * null si la factura no tiene las líneas de Colppy guardadas.
  */
 export async function obtenerLineasNcUnidades(invoiceId: string): Promise<{
   lineas: LineaAcreditable[]
+  contexto: ContextoNc
   moneda: string
   letra: string
   pendienteAcreditar: number
@@ -110,19 +237,28 @@ export async function obtenerLineasNcUnidades(invoiceId: string): Promise<{
       colppyPayload: true,
       currency: true,
       invoiceType: true,
+      subtotal: true,
+      taxAmount: true,
       total: true,
-      relatedInvoices: {
-        select: { transactionType: true, status: true, total: true, items: { select: { sku: true, description: true, quantity: true } } },
-      },
+      quoteId: true,
+      items: SELECT_ITEMS_VINCULO,
+      relatedInvoices: { select: SELECT_NC_PREVIA },
     },
   })
   const payload = (inv?.colppyPayload ?? null) as ColppyInvoicePayload | null
-  if (!inv || !payload?.items?.length) return null
+  if (!inv || !payload || !Array.isArray(payload.items) || !payload.items.length) return null
+  const { lineas, contexto } = armarLineas(
+    payload,
+    { neto: Number(inv.subtotal), iva: Number(inv.taxAmount), tieneCotizacion: !!inv.quoteId },
+    inv.relatedInvoices,
+    inv.items
+  )
   const ncPrevias = inv.relatedInvoices
     .filter((r) => r.transactionType === 'CREDIT_NOTE' && r.status !== 'CANCELLED')
     .reduce((s, r) => s + Number(r.total), 0)
   return {
-    lineas: lineasAcreditables(payload, acreditadoPorLinea(inv.relatedInvoices)),
+    lineas,
+    contexto,
     moneda: inv.currency,
     letra: inv.invoiceType,
     pendienteAcreditar: r2(Number(inv.total) - ncPrevias),
@@ -148,14 +284,10 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
     where: { id: invoiceId },
     include: {
       customer: { select: { id: true, name: true, cuit: true, taxCondition: true } },
-      items: {
-        select: { id: true, quoteItemId: true, quantity: true, description: true, unitPrice: true, subtotal: true, productId: true, sku: true, comment: true, product: { select: { sku: true } } },
-      },
-      relatedInvoices: {
-        select: { id: true, transactionType: true, total: true, subtotal: true, taxAmount: true, status: true, items: { select: { sku: true, description: true, quantity: true } } },
-      },
+      items: SELECT_ITEMS_VINCULO,
+      relatedInvoices: { select: SELECT_NC_PREVIA },
       cotizacionFactura: {
-        select: { id: true, estado: true, montoUSD: true, montoARS: true, tipoCambio: true, items: { select: { cotizacionItemId: true, precioUnitario: true } } },
+        select: { id: true, estado: true, fecha: true, montoUSD: true, montoARS: true, tipoCambio: true, items: { select: { cotizacionItemId: true, cantidad: true, precioUnitario: true, subtotal: true } } },
       },
       quote: { select: { id: true, status: true, quoteNumber: true } },
     },
@@ -178,39 +310,45 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
   const facturaPayload = (inv.colppyPayload ?? null) as ColppyInvoicePayload | null
   const ncsVigentes = inv.relatedInvoices.filter((r) => r.transactionType === 'CREDIT_NOTE' && r.status !== 'CANCELLED')
 
-  // Modo e importes de la NC
-  let modo: 'TOTAL' | 'IMPORTE' | 'UNIDADES'
+  // Modo e importes de la NC. El modo lo elige el usuario: un ajuste por
+  // importe nunca se convierte en NC total.
+  const modoPedido: ModoNotaCredito =
+    opts.modo ?? (opts.unidades !== undefined ? 'UNIDADES' : opts.netoParcial !== undefined ? 'IMPORTE' : 'TOTAL')
+  let modo: ModoNotaCredito
   let calc: CalculoNcUnidades | null = null
+  let vinculos: VinculoLinea[] = []
   let neto: number
   let iva: number
-  if (opts.unidades?.length) {
-    if (!facturaPayload?.items?.length) {
+  if (modoPedido === 'UNIDADES') {
+    if (!Array.isArray(opts.unidades) || !opts.unidades.length) throw new NotaCreditoError('Indicá cuántas unidades se devuelven')
+    if (!facturaPayload || !Array.isArray(facturaPayload.items) || !facturaPayload.items.length) {
       throw new NotaCreditoError('La factura no tiene el detalle de líneas guardado: usá el ajuste por importe')
     }
-    const lineas = lineasAcreditables(facturaPayload, acreditadoPorLinea(inv.relatedInvoices))
+    const armado = armarLineas(facturaPayload, { neto: netoFactura, iva: ivaFactura, tieneCotizacion: !!inv.quote }, inv.relatedInvoices, inv.items)
+    vinculos = armado.vinculos
     try {
-      calc = calcularNcUnidades(facturaPayload, lineas, opts.unidades)
+      calc = calcularNcUnidades(facturaPayload, armado.lineas, opts.unidades, armado.contexto)
     } catch (e) {
       throw new NotaCreditoError((e as Error).message)
     }
-    // Devuelve todo y no hubo NC antes: es una NC total (anula la factura)
-    modo = calc.devuelveTodo && ncsVigentes.length === 0 ? 'TOTAL' : 'UNIDADES'
+    // Devuelve todo y no hubo NC antes: es una NC total (anula la factura).
+    // Si devuelve lo último que quedaba, calc ya trae el remanente exacto.
+    modo = calc.devuelveTodo ? 'TOTAL' : 'UNIDADES'
     neto = calc.neto
     iva = calc.iva
-    // Si con esta NC se devuelve todo lo que quedaba, toma el remanente exacto
-    // del encabezado (evita diferencias de centavos por redondeo por línea)
-    const agotaTodo = lineas.every((l) => {
-      const sel = opts.unidades!.find((u) => u.index === l.index)
-      return l.cantidadDisponible === 0 || (!!sel && Number(sel.cantidad) >= l.cantidadDisponible)
-    })
-    if (modo === 'UNIDADES' && agotaTodo && ncsVigentes.length > 0) {
-      neto = r2(netoFactura - ncsVigentes.reduce((acc, r) => acc + Number(r.subtotal), 0))
-      iva = r2(ivaFactura - ncsVigentes.reduce((acc, r) => acc + Number(r.taxAmount), 0))
+  } else if (modoPedido === 'IMPORTE') {
+    try {
+      const imp = calcularNcImporte(Number(opts.netoParcial), {
+        netoPendiente: r2(netoFactura - ncsVigentes.reduce((acc, r) => acc + Number(r.subtotal), 0)),
+        ivaPendiente: r2(ivaFactura - ncsVigentes.reduce((acc, r) => acc + Number(r.taxAmount), 0)),
+        hayNcPrevias: ncsVigentes.length > 0,
+      })
+      neto = imp.neto
+      iva = imp.iva
+    } catch (e) {
+      throw new NotaCreditoError((e as Error).message)
     }
-  } else if (opts.netoParcial && opts.netoParcial > 0 && opts.netoParcial < netoFactura - 0.01) {
     modo = 'IMPORTE'
-    neto = r2(opts.netoParcial)
-    iva = r2(neto * 0.21)
   } else {
     modo = 'TOTAL'
     neto = r2(netoFactura)
@@ -328,7 +466,7 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
                 codigo: '',
                 Descripcion: `Nota de crédito s/Fact ${inv.invoiceNumber}${motivo ? ` - ${motivo}` : ''}`,
                 ImporteUnitario: letra === 'A' ? neto : total,
-                subtotal: neto,
+                subtotal: letra === 'A' ? neto : total,
                 IVA: 21,
                 Cantidad: 1,
                 unidadMedida: 'Un',
@@ -344,26 +482,88 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
       }
     : null
 
-  // Por unidades: cada línea devuelta se vincula al ítem de la factura (y de
-  // la cotización) por código de artículo, o por descripción si no tiene. Las
-  // líneas de adicionales o manuales no tienen ítem de cotización propio.
-  const norm = (x: string | null | undefined) => (x ?? '').trim().toUpperCase()
+  // Por unidades: cada línea devuelta va al ítem de la factura (y de la
+  // cotización) que la generó (vincularLineasFactura). Solo las líneas
+  // principales devuelven unidades a la cotización: un adicional va dentro de
+  // la unidad de su ítem principal, y las manuales no tienen ítem.
   const devueltas = (calc?.detalle ?? []).map((d) => {
-    const it =
-      (d.linea.codigo && inv.items.find((i) => norm(i.sku || i.product?.sku) === norm(d.linea.codigo))) ||
-      inv.items.find((i) => norm(i.description) === norm(d.linea.descripcion)) ||
-      null
-    return { ...d, invoiceItem: it }
+    const v = vinculos[d.linea.index] ?? null
+    const invoiceItem = v ? inv.items.find((i) => i.id === v.invoiceItemId) ?? null : null
+    return { ...d, invoiceItem, adicional: !!v?.adicional }
   })
+  const advertencias: string[] = []
+  // Una unidad de la cotización = la línea principal + sus adicionales: solo
+  // vuelve a pendiente si se devuelve completa (si no, al re-facturarla se
+  // cobraría de nuevo el adicional que el cliente se quedó).
   const devueltasPorQuoteItem = new Map<string, number>()
   for (const d of devueltas) {
-    const qi = d.invoiceItem?.quoteItemId
-    if (qi) devueltasPorQuoteItem.set(qi, (devueltasPorQuoteItem.get(qi) ?? 0) + d.cantidad)
+    const qi = d.adicional ? null : d.invoiceItem?.quoteItemId
+    if (!qi) continue
+    const adicionales = vinculos
+      .map((v, i) => ({ v, i }))
+      .filter(({ v }) => v?.adicional && v.principal === d.linea.index)
+      .map(({ i }) => calc?.cantidades.get(i) ?? 0)
+    const completas = Math.min(d.cantidad, ...adicionales)
+    if (completas < d.cantidad) {
+      advertencias.push(
+        `${d.linea.codigo || d.linea.descripcion.slice(0, 40)}: ${r2(d.cantidad - completas)} unidad(es) se devolvieron sin sus adicionales y no vuelven a quedar pendientes en la cotización.`
+      )
+    }
+    if (completas > 0) devueltasPorQuoteItem.set(qi, (devueltasPorQuoteItem.get(qi) ?? 0) + completas)
   }
   const detalleDevolucion = devueltas.map((d) => `${d.cantidad} × ${d.linea.codigo || d.linea.descripcion.slice(0, 40)}`).join(', ')
+  if (modo === 'UNIDADES' && inv.quote) {
+    const sinVinculo = devueltas.filter((d) => !d.adicional && !d.invoiceItem?.quoteItemId)
+    if (sinVinculo.length) {
+      advertencias.push(
+        `No se pudo vincular con la cotización: ${sinVinculo.map((d) => d.linea.codigo || d.linea.descripcion.slice(0, 40)).join(', ')}. ` +
+          'Esas unidades no vuelven a quedar pendientes en la cotización (el stock en Colppy sí se devuelve).'
+      )
+    }
+  }
+
+  // Comisiones: ¿la fila de la factura todavía cuenta? ¿La NC resta con una
+  // fila negativa en su mes? (devolución por unidades, o NC total de una
+  // factura de un mes anterior). Si la fila ya no cuenta (ANULADA), nada.
+  const cfCuenta = !!inv.cotizacionFactura && !['ANULADA', 'ERROR_GUARDADO'].includes(inv.cotizacionFactura.estado)
+  const cfMesAnterior =
+    !!inv.cotizacionFactura &&
+    (inv.cotizacionFactura.fecha.getFullYear() !== now.getFullYear() || inv.cotizacionFactura.fecha.getMonth() !== now.getMonth())
+  const filaNegativa = !!inv.quote && cfCuenta && netoFactura > 0 && (modo === 'UNIDADES' || (esTotal && cfMesAnterior))
 
   // 2./3. Persistir NC + efectos sobre la factura/cotización
   const ncId = await prisma.$transaction(async (tx) => {
+    /**
+     * Estado de la cotización según lo facturado NETO (facturas vigentes menos
+     * devoluciones): nada → Aceptada; algo → Facturada parcial. Una factura
+     * devuelta entera por unidades sigue vigente pero ya no cuenta.
+     */
+    const actualizarEstadoCotizacion = async (tx2: Prisma.TransactionClient, nota: string) => {
+      if (!inv.quote || (inv.quote.status !== 'CONVERTED' && inv.quote.status !== 'FACTURADA_PARCIAL')) return
+      const itemsCoti = await tx2.quoteItem.findMany({
+        where: { quoteId: inv.quote.id, isAlternative: false },
+        select: {
+          cantidadFacturada: true,
+          invoiceItems: { select: { quantity: true, invoice: { select: { status: true, transactionType: true } } } },
+        },
+      })
+      const quedaFacturado = itemsCoti.some((it) => {
+        const porFacturas = it.invoiceItems
+          .filter((ii) => ii.invoice.status !== 'CANCELLED')
+          .reduce((s, ii) => s + signoCantidad(ii.invoice) * Number(ii.quantity), 0)
+        return Math.max(porFacturas, Number(it.cantidadFacturada)) > 0
+      })
+      const nuevoEstado = quedaFacturado ? 'FACTURADA_PARCIAL' : 'ACCEPTED'
+      if (nuevoEstado === inv.quote.status) return
+      await tx2.quote.update({
+        where: { id: inv.quote.id },
+        data: { status: nuevoEstado, statusUpdatedAt: now, statusUpdatedBy: opts.userId },
+      })
+      await tx2.quoteStatusHistory.create({
+        data: { quoteId: inv.quote.id, fromStatus: inv.quote.status, toStatus: nuevoEstado, changedBy: opts.userId, notes: nota },
+      })
+    }
+
     const nc = await tx.invoice.create({
       data: {
         invoiceNumber: numeroErp,
@@ -418,8 +618,9 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
               // quoteItemId en las devoluciones: restan en lo facturado de la
               // cotización (signoCantidad) → las unidades vuelven a pendientes
               create: devueltas.map((d) => ({
-                quoteItemId: d.invoiceItem?.quoteItemId ?? null,
-                productId: d.invoiceItem?.productId ?? null,
+                quoteItemId: d.adicional ? null : d.invoiceItem?.quoteItemId ?? null,
+                productId: d.adicional ? null : d.invoiceItem?.productId ?? null,
+                lineaFactura: d.linea.index,
                 sku: d.linea.codigo,
                 description: d.linea.descripcion,
                 quantity: d.cantidad,
@@ -443,7 +644,11 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
           notes: `${inv.notes || ''}\nANULADA por NC ${numeroErp} (CAE ${em.cae}) el ${now.toLocaleString('es-AR')}${motivo ? ` — ${motivo}` : ''}`.trim(),
         },
       })
-      if (inv.cotizacionFactura) {
+      // Comisiones: factura del mismo mes que la NC → deja de contar
+      // (ANULADA). De un mes anterior (que puede estar cerrado y pagado) → la
+      // factura queda en su mes y la NC resta en el mes actual (fila negativa
+      // más abajo, igual que una devolución por unidades).
+      if (inv.cotizacionFactura && cfCuenta && !filaNegativa) {
         await tx.cotizacionFactura.update({
           where: { id: inv.cotizacionFactura.id },
           data: { estado: 'ANULADA', errorMessage: `NC ${numeroErp}${motivo ? ` — ${motivo}` : ''}` },
@@ -465,26 +670,8 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
           WHERE qi.id = v.id
         `
       }
-      // Reabrir la cotización si estaba completamente facturada
-      if (inv.quote && (inv.quote.status === 'CONVERTED' || inv.quote.status === 'FACTURADA_PARCIAL')) {
-        const otrasVigentes = await tx.invoice.count({
-          where: { quoteId: inv.quote.id, transactionType: 'SALE', status: { not: 'CANCELLED' }, id: { not: inv.id } },
-        })
-        const nuevoEstado = otrasVigentes > 0 ? 'FACTURADA_PARCIAL' : 'ACCEPTED'
-        await tx.quote.update({
-          where: { id: inv.quote.id },
-          data: { status: nuevoEstado, statusUpdatedAt: now, statusUpdatedBy: opts.userId },
-        })
-        await tx.quoteStatusHistory.create({
-          data: {
-            quoteId: inv.quote.id,
-            fromStatus: inv.quote.status,
-            toStatus: nuevoEstado,
-            changedBy: opts.userId,
-            notes: `Factura ${inv.invoiceNumber} anulada por NC ${numeroErp}${motivo ? ` — ${motivo}` : ''}`,
-          },
-        })
-      }
+      // Reabrir la cotización si estaba facturada
+      await actualizarEstadoCotizacion(tx, `Factura ${inv.invoiceNumber} anulada por NC ${numeroErp}${motivo ? ` — ${motivo}` : ''}`)
     } else {
       await tx.invoice.update({
         where: { id: inv.id },
@@ -502,30 +689,34 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
         FROM (VALUES ${Prisma.join(values)}) AS v(id, qty)
         WHERE qi.id = v.id
       `
-      if (inv.quote && inv.quote.status === 'CONVERTED') {
-        await tx.quote.update({
-          where: { id: inv.quote.id },
-          data: { status: 'FACTURADA_PARCIAL', statusUpdatedAt: now, statusUpdatedBy: opts.userId },
-        })
-        await tx.quoteStatusHistory.create({
-          data: {
-            quoteId: inv.quote.id,
-            fromStatus: 'CONVERTED',
-            toStatus: 'FACTURADA_PARCIAL',
-            changedBy: opts.userId,
-            notes: `Devolución por NC ${numeroErp} (${detalleDevolucion})${motivo ? ` — ${motivo}` : ''}: unidades pendientes de nuevo`,
-          },
-        })
-      }
+      await actualizarEstadoCotizacion(
+        tx,
+        `Devolución por NC ${numeroErp} (${detalleDevolucion})${motivo ? ` — ${motivo}` : ''}: unidades pendientes de nuevo`
+      )
     }
 
-    // Comisiones: la devolución resta en el mes de la NC con una fila
-    // negativa proporcional al importe devuelto (la factura original no se
-    // toca; sirve aunque su mes ya esté cerrado).
-    if (modo === 'UNIDADES' && inv.quote && inv.cotizacionFactura && netoFactura > 0) {
-      const cf = inv.cotizacionFactura
-      const proporcion = neto / netoFactura
+    // Comisiones: la devolución (o la NC total de una factura de un mes
+    // anterior) resta en el mes de la NC con una fila negativa, a precio de
+    // factura. La fila original no se toca: sirve aunque su mes ya esté cerrado.
+    const cf = inv.cotizacionFactura
+    if (filaNegativa && inv.quote && cf) {
+      const proporcion = esTotal ? 1 : Math.min(1, (calc?.netoFactura ?? neto) / netoFactura)
       const precioPorItem = new Map(cf.items.map((i) => [i.cotizacionItemId, Number(i.precioUnitario)]))
+      const itemsNegativos = esTotal
+        ? cf.items.map((i) => ({
+            cotizacionItemId: i.cotizacionItemId,
+            cantidad: -Number(i.cantidad),
+            precioUnitario: Number(i.precioUnitario),
+            subtotal: -Number(i.subtotal),
+          }))
+        : Array.from(devueltasPorQuoteItem.entries())
+            .filter(([qi]) => precioPorItem.has(qi))
+            .map(([qi, qty]) => ({
+              cotizacionItemId: qi,
+              cantidad: -qty,
+              precioUnitario: precioPorItem.get(qi)!,
+              subtotal: -r2(precioPorItem.get(qi)! * qty),
+            }))
       await tx.cotizacionFactura.create({
         data: {
           cotizacionId: inv.quote.id,
@@ -536,18 +727,9 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
           montoARS: -r2(Number(cf.montoARS) * proporcion),
           tipoCambio: cf.tipoCambio,
           estado: 'NOTA_CREDITO',
-          errorMessage: `Devolución s/ ${inv.invoiceNumber}: ${detalleDevolucion}`.slice(0, 2000),
+          errorMessage: `${esTotal ? 'NC total' : 'Devolución'} s/ ${inv.invoiceNumber}: ${esTotal ? 'todo' : detalleDevolucion}`.slice(0, 2000),
           createdById: opts.userId,
-          items: {
-            create: Array.from(devueltasPorQuoteItem.entries())
-              .filter(([qi]) => precioPorItem.has(qi))
-              .map(([qi, qty]) => ({
-                cotizacionItemId: qi,
-                cantidad: -qty,
-                precioUnitario: precioPorItem.get(qi)!,
-                subtotal: -r2(precioPorItem.get(qi)! * qty),
-              })),
-          },
+          items: { create: itemsNegativos },
         },
       })
     }
@@ -556,7 +738,7 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
 
   // Comisiones (best effort, fuera de la tx)
   if (inv.quote) {
-    sincronizarComisionesDeQuote(inv.quote.id, { crearLiquidacion: modo === 'UNIDADES' }).catch((err) =>
+    sincronizarComisionesDeQuote(inv.quote.id, { crearLiquidacion: filaNegativa }).catch((err) =>
       logger.error('[NC] Error re-sincronizando comisiones', { quoteId: inv.quote!.id, error: err?.message })
     )
   }
@@ -607,6 +789,7 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
     total,
     esTotal,
     modo,
+    advertencias,
     colppyPendiente,
     colppyBorradorFce,
     colppyId,

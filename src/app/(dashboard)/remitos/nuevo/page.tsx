@@ -95,6 +95,7 @@ interface Quote {
   facturas?: Array<{
     id: string
     numeroFactura: string | null
+    estado?: string | null
     items: Array<{ cotizacionItemId: string; cantidad: number | string }>
   }>
 }
@@ -370,6 +371,22 @@ export default function NuevoRemitoPage() {
     if (!quote?.purchaseOrderNumber) return
     setPurchaseOrder((prev) => prev || quote.purchaseOrderNumber || '')
   }, [quote?.purchaseOrderNumber])
+
+  // "Factura del cliente": pre-cargar el número de la factura emitida por el
+  // ERP (A-0007-00000003). Si el remito viene de una factura puntual, esa; si
+  // no, la única emitida de la cotización. Los borradores de Colppy no traen
+  // número real, así que no se usan. Editable.
+  useEffect(() => {
+    if (!quote?.facturas?.length) return
+    const esNumeroReal = (n: string | null) => !!n && /^(FCE)?[AB]-\d{4}-\d{8}$/.test(n)
+    const emitidas = quote.facturas.filter((f) => f.estado !== 'ANULADA' && esNumeroReal(f.numeroFactura))
+    const factura = cotizacionFacturaId
+      ? emitidas.find((f) => f.id === cotizacionFacturaId)
+      : emitidas.length === 1
+        ? emitidas[0]
+        : undefined
+    if (factura?.numeroFactura) setCustomerInvoiceNumber((prev) => prev || factura.numeroFactura!)
+  }, [quote?.facturas, cotizacionFacturaId])
 
   // Armar las filas editables cuando carga la cotización. Si viene de una
   // factura parcial, arrancan tildados solo los items de esa factura, con la

@@ -86,6 +86,8 @@ export interface ColppySendPayload {
     descripcion: string;
     /** N° de remito que acompaña la factura (referencia; propuesto = próximo del talonario) */
     remitoNumero?: string;
+    /** N° de OC del cliente (pre-cargado de la cotización; si cambia se guarda en ella) */
+    ordenCompra?: string;
     /** Solo cotizaciones en USD: TC con el que se emite la factura
      *  (cotización del comprobante en ARCA, tipoCambio en Colppy, PDF). */
     exchangeRate?: number;
@@ -171,9 +173,10 @@ export function SendToColppyDialog({
   // Estados editables
   const [items, setItems] = useState<EditableItem[]>([]);
   const [condicionPago, setCondicionPago] = useState('Contado');
-  const [puntoVenta, setPuntoVenta] = useState('0003');
+  const [puntoVenta] = useState('0003'); // Ignorado con emisión ARCA (el PV lo asigna AFIP)
   const [descripcionFactura, setDescripcionFactura] = useState('');
   const [remitoNumero, setRemitoNumero] = useState('');
+  const [ordenCompra, setOrdenCompra] = useState('');
   const [remitoSugerido, setRemitoSugerido] = useState('');
 
   // Tipo de cambio actual del ERP (billete, de /tipo-cambio)
@@ -199,7 +202,7 @@ export function SendToColppyDialog({
     if (remitoNumero.trim()) {
       partes.push(`Remito N° ${formatRemitoRef(remitoNumero)}`);
     }
-    const oc = (quote.purchaseOrderNumber ?? '').replace(/^OC\s*(N[°º]?\s*)?/i, '').trim();
+    const oc = ordenCompra.replace(/^OC\s*(N[°º]?\s*)?/i, '').trim();
     if (oc) {
       partes.push(`OC N° ${oc}`);
     }
@@ -308,8 +311,9 @@ export function SendToColppyDialog({
         }
       }
 
-      // Inicializar descripción
+      // Inicializar descripción y OC (la de la cotización)
       setDescripcionFactura(`Cotización ${quote.quoteNumber}`);
+      setOrdenCompra(quote.purchaseOrderNumber ?? '');
     }
   }, [open, quote]);
 
@@ -325,7 +329,7 @@ export function SendToColppyDialog({
       prev.map((item) => (item.comentario === previo ? { ...item, comentario: nuevo } : item))
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, remitoNumero, quote]);
+  }, [open, remitoNumero, ordenCompra, quote]);
 
   // Determinar tipo de factura según condición IVA
   const invoiceType = quote.customer.taxCondition === 'RESPONSABLE_INSCRIPTO' ? 'A' : 'B';
@@ -392,6 +396,7 @@ export function SendToColppyDialog({
       puntoVenta,
       descripcion: descripcionFactura,
       remitoNumero: remitoNumero.trim() || undefined,
+      ordenCompra: ordenCompra.trim() || undefined,
       ...(quote.currency === 'USD' && tcEfectivo
         ? { exchangeRate: tcEfectivo, exchangeRateModo: tcModo }
         : {}),
@@ -512,10 +517,10 @@ export function SendToColppyDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Send className="h-5 w-5 text-blue-600" />
-            Enviar a Colppy
+            Facturar
           </DialogTitle>
           <DialogDescription>
-            Revisa y ajusta los datos antes de crear el borrador en Colppy
+            Revisá y ajustá los datos. La factura se emite en AFIP (punto de venta 0007) y se registra sola en Colppy.
             {subtitle && (
               <span className="block mt-1 text-blue-600 font-medium">{subtitle}</span>
             )}
@@ -547,7 +552,7 @@ export function SendToColppyDialog({
                     {loadingRate ? (
                       <span className="flex items-center gap-1"><RefreshCw className="h-3 w-3 animate-spin" /> Cargando...</span>
                     ) : tcEfectivo ? (
-                      <>$ {tcEfectivo.toLocaleString('es-AR', { minimumFractionDigits: 2 })} <span className="text-xs text-blue-500">({tcModo === 'DIVISA' ? 'divisa / manual' : latestRate ? `billete del ${new Date(latestRate.date).toLocaleDateString('es-AR')}` : 'de la cotización'})</span></>
+                      <>$ {tcEfectivo.toLocaleString('es-AR', { minimumFractionDigits: 2 })} <span className="text-xs text-blue-500">({tcModo === 'DIVISA' ? 'divisa / manual' : latestRate ? `billete del ${new Date(latestRate.date).toLocaleDateString('es-AR', { timeZone: 'UTC' })}` : 'de la cotización'})</span></>
                     ) : 'N/A'}
                   </span>
                 </div>
@@ -612,13 +617,11 @@ export function SendToColppyDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="punto-venta">Punto de venta</Label>
-            <Input
-              id="punto-venta"
-              value={puntoVenta}
-              onChange={(e) => setPuntoVenta(e.target.value)}
-              placeholder="0003"
-            />
+            <Label>Punto de venta</Label>
+            {/* Lo asigna AFIP (emisión propia, PV 0007); el valor del input no se usa */}
+            <div className="flex h-9 items-center rounded-md border bg-muted/40 px-3 text-sm text-muted-foreground">
+              0007 (AFIP)
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -644,6 +647,17 @@ export function SendToColppyDialog({
                 ? `Propuesto: ${remitoSugerido} (próximo del talonario). Editalo si la factura acompaña un remito anterior, o dejalo vacío.`
                 : 'Remito que acompaña la factura (opcional).'}
             </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="orden-compra">N° de OC del cliente</Label>
+            <Input
+              id="orden-compra"
+              value={ordenCompra}
+              onChange={(e) => setOrdenCompra(e.target.value)}
+              placeholder="Ej: OC-2026-0451"
+            />
+            <p className="text-xs text-gray-500">Sale en la factura. Si lo cambiás, se guarda en la cotización.</p>
           </div>
         </div>
 
@@ -826,7 +840,7 @@ export function SendToColppyDialog({
           <div className="text-sm">
             <p className="font-semibold text-amber-900">Operación irreversible</p>
             <p className="text-amber-700 mt-1">
-              Esta operación no se puede deshacer. Los documentos se crearán directamente en Colppy.
+              No se puede deshacer: la factura sale con CAE de AFIP (para anularla hay que hacer una nota de crédito) y se registra en Colppy.
             </p>
           </div>
         </div>
@@ -856,12 +870,12 @@ export function SendToColppyDialog({
             {sending ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Enviando...
+                Emitiendo...
               </>
             ) : (
               <>
                 <Send className="h-4 w-4 mr-2" />
-                Crear borrador en Colppy
+                Emitir factura
               </>
             )}
           </Button>

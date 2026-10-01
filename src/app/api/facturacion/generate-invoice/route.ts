@@ -66,6 +66,7 @@ export async function POST(request: NextRequest) {
         descripcion: string
         /** N° de remito que acompaña la factura (referencia para notas y PDF) */
         remitoNumero?: string
+        ordenCompra?: string
         exchangeRate?: number
         exchangeRateModo?: 'BILLETE' | 'DIVISA'
       }
@@ -234,6 +235,13 @@ export async function POST(request: NextRequest) {
     const colppyItems = lineItems.map((l) => l.split)
 
     logger.info('[Generate Invoice] Items a enviar:', JSON.stringify(colppyItems, null, 2))
+
+    // N° de OC del diálogo: si cambió, se guarda en la cotización (el PDF de la
+    // factura lo toma de ahí, fila "Orden de Compra N°").
+    const ocDialogo = (editedData?.ordenCompra || '').trim();
+    if (ocDialogo && ocDialogo !== (quote.purchaseOrderNumber || '')) {
+      await prisma.quote.update({ where: { id: quote.id }, data: { purchaseOrderNumber: ocDialogo } });
+    }
 
     // Enviar a Colppy usando la función existente
     const colppyAction = action || 'factura-cuenta-corriente'

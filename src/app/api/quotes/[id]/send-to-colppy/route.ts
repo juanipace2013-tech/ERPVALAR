@@ -36,6 +36,8 @@ interface SendToColppyRequest {
     condicionPago: string;
     puntoVenta: string;
     descripcion: string;
+    remitoNumero?: string;
+    ordenCompra?: string;
     exchangeRate?: number;
     exchangeRateModo?: 'BILLETE' | 'DIVISA';
   };
@@ -277,6 +279,13 @@ export async function POST(
       items: quoteItems,
     };
 
+    // N° de OC del diálogo: si cambió, se guarda en la cotización (el PDF de la
+    // factura lo toma de ahí, fila "Orden de Compra N°").
+    const ocDialogo = (editedData?.ordenCompra || '').trim();
+    if (ocDialogo && ocDialogo !== (quote.purchaseOrderNumber || '')) {
+      await prisma.quote.update({ where: { id: quote.id }, data: { purchaseOrderNumber: ocDialogo } });
+    }
+
     // 9. Llamar a sendQuoteToColppy
     // Emisor: 'arca' → el ERP pide el CAE (PV 7) y Colppy recibe la factura ya
     // emitida (Aprobada). Mismo circuito que /api/facturacion/generate-invoice.
@@ -328,6 +337,8 @@ export async function POST(
     const letraArca = emisionArca ? ([1, 201].includes(emisionArca.cbteTipo) ? 'A' : 'B') : null;
     const numeroArca = emisionArca ? `${esFceEmitida ? 'FCE' : ''}${letraArca}-${emisionArca.numeroFormateado}` : null;
     let invoiceIdCreado: string | null = null;
+    // Referencia de remito (diálogo) para las notas y el PDF ("Remito N°")
+    const remitoRef: string | null = (editedData?.remitoNumero || '').trim() || result.remitoNumber || null;
 
     // 11. Persistir resultado en una transacción:
     //   - crear Invoice + InvoiceItem (legacy tracking)
@@ -400,7 +411,7 @@ export async function POST(
             issueDate: now,
             dueDate: calcDueDate(now, quote.customer.paymentTerms),
             notes: emisionArca
-              ? `Emitida por el ERP (ARCA) el ${now.toLocaleString('es-AR')}. CAE ${emisionArca.cae}. ${colppyPendiente ? 'PENDIENTE de registrar en Colppy.' : `Registrada en Colppy (${result.facturaId}).`} ${result.remitoNumber ? `Remito: ${result.remitoNumber}` : ''}`.trim()
+              ? `Emitida por el ERP (ARCA) el ${now.toLocaleString('es-AR')}. CAE ${emisionArca.cae}. ${colppyPendiente ? 'PENDIENTE de registrar en Colppy.' : `Registrada en Colppy (${result.facturaId}).`} ${remitoRef ? `Remito: ${remitoRef}` : ''}`.trim()
               : `Borrador enviado a Colppy el ${now.toLocaleString('es-AR')}. ${result.facturaNumber ? `Factura: ${result.facturaNumber}` : ''} ${result.remitoNumber ? `Remito: ${result.remitoNumber}` : ''}`.trim(),
             afipStatus: emisionArca ? 'APPROVED' : 'PENDING',
             paymentStatus: 'UNPAID',

@@ -1550,7 +1550,7 @@ function QuoteCard({
                 }}
               >
                 <Send className="h-3 w-3 mr-1" />
-                Enviar a Colppy
+                Facturar
               </Button>
             )}
 

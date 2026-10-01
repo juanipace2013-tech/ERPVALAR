@@ -859,7 +859,7 @@ export default function QuoteViewPage() {
               <>
                 <Button onClick={() => setShowColppyDialog(true)} disabled={actionLoading} className="bg-blue-600 hover:bg-blue-700">
                   <Send className="h-4 w-4 mr-2" />
-                  Enviar a Colppy
+                  Facturar
                 </Button>
                 <Button onClick={() => router.push(`/remitos/nuevo?quoteId=${id}`)} variant="outline">
                   <Package className="h-4 w-4 mr-2" />
@@ -919,7 +919,7 @@ export default function QuoteViewPage() {
                 {quote.colppySyncedAt && (
                   <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100 py-2 px-3">
                     <Send className="h-3.5 w-3.5 mr-1.5" />
-                    Factura enviada a Colppy
+                    Facturada
                   </Badge>
                 )}
                 {quote.deliveryNotes.length === 0 && (

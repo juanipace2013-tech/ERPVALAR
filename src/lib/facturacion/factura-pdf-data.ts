@@ -152,6 +152,6 @@ export async function buildFacturaPdfData(invoiceId: string): Promise<FacturaPDF
     ordenCompra: inv.quote?.purchaseOrderNumber ?? null,
     clienteNro: inv.customer.colppyId ?? null,
     // El nro de remito queda en las notas al emitir ("Remito: XXXX-XXXXXXXX")
-    remito: inv.notes?.match(/Remito:\s*([\w-]+)/)?.[1] ?? null,
+    remito: inv.notes?.match(/Remito:\s*((?:RE\s*)?[\w-]+)/)?.[1] ?? null,
   }
 }

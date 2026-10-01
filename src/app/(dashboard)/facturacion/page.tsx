@@ -185,6 +185,8 @@ interface HistorialItem {
   id: string
   date: string
   colppyRef: string
+  /** Otras facturas vigentes de la misma cotización */
+  facturasExtra: number
   quoteNumber: string
   purchaseOrderNumber: string | null
   customer: { id: string; name: string; cuit: string }
@@ -956,91 +958,90 @@ export default function FacturacionPage() {
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>Fecha</TableHead>
-                      <TableHead>Nº Factura / Remito</TableHead>
-                      <TableHead>Cotización</TableHead>
-                      <TableHead>OC Cliente</TableHead>
-                      <TableHead>Cliente</TableHead>
-                      <TableHead>CUIT</TableHead>
-                      <TableHead>Vendedor</TableHead>
-                      <TableHead className="text-right">Total USD</TableHead>
-                      <TableHead className="text-right">Total ARS</TableHead>
-                      <TableHead className="text-center">Estado</TableHead>
-                      <TableHead className="text-right">Acciones</TableHead>
+                    <TableRow className="text-xs">
+                      <TableHead className="px-2">Fecha</TableHead>
+                      <TableHead className="px-2">Nº Factura</TableHead>
+                      <TableHead className="px-2">Cotización / OC</TableHead>
+                      <TableHead className="px-2">Cliente</TableHead>
+                      <TableHead className="px-2">Vendedor</TableHead>
+                      <TableHead className="px-2 text-right">Total</TableHead>
+                      <TableHead className="px-2 text-center">Estado</TableHead>
+                      <TableHead className="px-2" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {historialData.historial.map((item) => (
-                      <TableRow key={item.id} className="hover:bg-blue-50/30">
-                        <TableCell className="whitespace-nowrap text-sm">
-                          {new Date(item.date).toLocaleDateString('es-AR', {
-                            day: '2-digit',
-                            month: '2-digit',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </TableCell>
-                        <TableCell className="font-mono text-sm font-medium">
-                          {item.colppyRef}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          <Link
-                            href={`/cotizaciones/${item.id}/ver`}
-                            className="text-blue-600 hover:underline"
-                          >
-                            {item.quoteNumber}
-                          </Link>
-                        </TableCell>
-                        <TableCell className="font-mono text-sm">
-                          {item.purchaseOrderNumber || '—'}
-                        </TableCell>
-                        <TableCell className="text-sm font-medium max-w-[200px] truncate" title={item.customer.name}>
-                          {item.customer.name}
-                        </TableCell>
-                        <TableCell className="font-mono text-sm">
-                          {formatCUIT(item.customer.cuit)}
-                        </TableCell>
-                        <TableCell className="text-sm text-gray-600">
-                          {item.salesPerson?.name || '—'}
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-sm">
-                          {item.totalUSD != null ? `USD ${formatNumber(item.totalUSD)}` : '—'}
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-sm">
-                          {item.totalARS != null ? `$ ${formatNumber(item.totalARS)}` : '—'}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            {item.isFactura && (
-                              <Badge className="bg-green-100 text-green-800 hover:bg-green-100 text-xs">
-                                <FileText className="h-3 w-3 mr-1" />
-                                Factura
-                              </Badge>
+                    {historialData.historial.map((item) => {
+                      const fecha = new Date(item.date)
+                      return (
+                        <TableRow key={item.id} className="hover:bg-blue-50/30">
+                          <TableCell className="px-2 py-1.5 whitespace-nowrap text-xs">
+                            {fecha.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                            <div className="text-gray-500">
+                              {fecha.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </TableCell>
+                          <TableCell className="px-2 py-1.5 whitespace-nowrap font-mono text-xs font-medium">
+                            {item.colppyRef}
+                            {item.facturasExtra > 0 && (
+                              <span className="ml-1 font-sans text-gray-500" title={`${item.facturasExtra + 1} facturas`}>
+                                +{item.facturasExtra}
+                              </span>
                             )}
-                            {item.isRemito && (
-                              <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100 text-xs">
-                                <Truck className="h-3 w-3 mr-1" />
-                                Remito
-                              </Badge>
-                            )}
-                            {!item.isFactura && !item.isRemito && (
-                              <Badge className="bg-green-100 text-green-800 hover:bg-green-100 text-xs">
-                                Facturado
-                              </Badge>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="outline" size="sm" asChild>
-                            <Link href={`/cotizaciones/${item.id}/ver`}>
-                              <Eye className="h-4 w-4 mr-1" /> Ver
+                          </TableCell>
+                          <TableCell className="px-2 py-1.5 text-xs max-w-[190px]">
+                            <Link href={`/cotizaciones/${item.id}/ver`} className="text-blue-600 hover:underline whitespace-nowrap">
+                              {item.quoteNumber}
                             </Link>
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                            {item.purchaseOrderNumber && (
+                              <div className="truncate font-mono text-gray-500" title={item.purchaseOrderNumber}>
+                                {item.purchaseOrderNumber}
+                              </div>
+                            )}
+                          </TableCell>
+                          <TableCell className="px-2 py-1.5 text-xs max-w-[220px]">
+                            <div className="truncate font-medium" title={item.customer.name}>
+                              {item.customer.name}
+                            </div>
+                            <div className="font-mono text-gray-500">{formatCUIT(item.customer.cuit)}</div>
+                          </TableCell>
+                          <TableCell className="px-2 py-1.5 text-xs text-gray-600 max-w-[110px] truncate" title={item.salesPerson?.name || ''}>
+                            {item.salesPerson?.name || '—'}
+                          </TableCell>
+                          <TableCell className="px-2 py-1.5 whitespace-nowrap text-right font-mono text-xs">
+                            {item.totalUSD != null ? `USD ${formatNumber(item.totalUSD)}` : '—'}
+                            <div className="text-gray-500">{item.totalARS != null ? `$ ${formatNumber(item.totalARS)}` : '—'}</div>
+                          </TableCell>
+                          <TableCell className="px-2 py-1.5 text-center">
+                            <div className="flex flex-col items-center gap-0.5">
+                              {item.isFactura && (
+                                <Badge className="bg-green-100 text-green-800 hover:bg-green-100 text-[11px] px-1.5 py-0">
+                                  <FileText className="h-3 w-3 mr-1" />
+                                  Factura
+                                </Badge>
+                              )}
+                              {item.isRemito && (
+                                <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100 text-[11px] px-1.5 py-0">
+                                  <Truck className="h-3 w-3 mr-1" />
+                                  Remito
+                                </Badge>
+                              )}
+                              {!item.isFactura && !item.isRemito && (
+                                <Badge className="bg-green-100 text-green-800 hover:bg-green-100 text-[11px] px-1.5 py-0">
+                                  Facturado
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="px-2 py-1.5 text-right">
+                            <Button variant="ghost" size="icon" className="h-7 w-7" asChild title="Ver cotización">
+                              <Link href={`/cotizaciones/${item.id}/ver`}>
+                                <Eye className="h-4 w-4" />
+                              </Link>
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
                   </TableBody>
                 </Table>
               </div>

@@ -54,6 +54,12 @@ export async function GET(request: NextRequest) {
         include: {
           customer: { select: { id: true, name: true, cuit: true } },
           salesPerson: { select: { id: true, name: true } },
+          // Número fiscal de las facturas vigentes (A-0007-00000005), la última primero
+          facturas: {
+            where: { estado: { notIn: ['ANULADA', 'ERROR_GUARDADO', 'NOTA_CREDITO'] } },
+            select: { numeroFactura: true },
+            orderBy: { fecha: 'desc' },
+          },
         },
         orderBy: { colppySyncedAt: 'desc' },
         take: pageSize,
@@ -69,7 +75,9 @@ export async function GET(request: NextRequest) {
       return {
         id: q.id,
         date: q.colppySyncedAt!.toISOString(),
-        colppyRef: q.colppyInvoiceId || '—',
+        // Número de factura real; si no hay (borradores viejos), el id de Colppy
+        colppyRef: q.facturas.find((f) => f.numeroFactura && /\d{4,5}-\d{8}/.test(f.numeroFactura))?.numeroFactura || q.colppyInvoiceId || '—',
+        facturasExtra: Math.max(0, q.facturas.length - 1),
         quoteNumber: q.quoteNumber,
         purchaseOrderNumber: q.purchaseOrderNumber,
         customer: q.customer,
@@ -77,7 +85,7 @@ export async function GET(request: NextRequest) {
         currency: q.currency,
         totalUSD: q.currency === 'USD' ? total : (exchangeRate ? total / exchangeRate : null),
         totalARS: q.currency === 'USD' ? (exchangeRate ? total * exchangeRate : null) : total,
-        isFactura: !!q.colppyInvoiceId,
+        isFactura: !!q.colppyInvoiceId || q.facturas.length > 0,
         isRemito: !!q.colppyDeliveryNoteId,
         status: q.status,
       }

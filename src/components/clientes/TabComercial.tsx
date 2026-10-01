@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/table'
 import { Loader2, AlertCircle, FileText, Truck, ExternalLink, BarChart3 } from 'lucide-react'
 import { formatNumber, formatDateAR, formatCurrency } from '@/lib/utils'
+import { parametroBusquedaCliente } from '@/lib/cliente-exterior'
 
 interface Props {
   cuit: string
@@ -97,8 +98,7 @@ export default function TabComercial({ cuit }: Props) {
     setLoading(true)
     setError('')
     try {
-      const cleanCuit = cuit.replace(/\D/g, '')
-      const res = await fetch(`/api/clientes/by-cuit/${cleanCuit}`)
+      const res = await fetch(`/api/clientes/by-cuit/${parametroBusquedaCliente(cuit) ?? cuit.replace(/\D/g, '')}`)
       if (!res.ok) throw new Error('Error al cargar datos comerciales')
       const result = await res.json()
       setData(result)

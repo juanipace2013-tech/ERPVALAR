@@ -417,6 +417,11 @@ export function receptorDesdeCondicion(condicion: string | null | undefined, cui
   receptor: ReceptorInput
 } {
   const c = (condicion ?? '').toLowerCase().replace(/_/g, ' ')
+  // Cliente del exterior: WSFE (A/B) no corresponde; la Factura E va por WSFEX
+  // (no implementada). Nunca caer al default de consumidor final.
+  if (c.includes('exterior') || /^[A-Z]{2}-/.test(cuit ?? '')) {
+    throw new Error('Cliente del exterior: requiere Factura E de exportación, que todavía no está disponible en el ERP')
+  }
   const doc = (cuit ?? '').replace(/\D/g, '')
   const tieneCuit = doc.length === 11
 

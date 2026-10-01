@@ -61,6 +61,7 @@ import { formatNumber, formatCurrency as formatCurrencyAR, getLocalDateString } 
 import { SendQuoteDialog } from '@/components/quotes/SendQuoteDialog'
 import { SendToColppyDialog } from '@/components/quotes/SendToColppyDialog'
 import { DuplicateQuoteDialog } from '@/components/quotes/DuplicateQuoteDialog'
+import { esClienteExterior, etiquetaIdFiscal, idFiscalParaMostrar } from '@/lib/cliente-exterior'
 
 interface Quote {
   id: string
@@ -93,6 +94,8 @@ interface Quote {
     businessName: string | null
     cuit: string
     taxCondition: string
+    country?: string | null
+    taxIdExterior?: string | null
     email: string | null
     phone: string | null
     address: string | null
@@ -273,7 +276,7 @@ export default function QuoteViewPage() {
         )
       )
       // Fetch BCRA indicator from session cache or API (background, no await)
-      if (!bcraFetched.current && data?.customer?.cuit) {
+      if (!bcraFetched.current && data?.customer?.cuit && !esClienteExterior(data.customer)) {
         bcraFetched.current = true
         const cuitClean = data.customer.cuit.replace(/\D/g, '')
         if (cuitClean.length === 11) {
@@ -1468,7 +1471,9 @@ export default function QuoteViewPage() {
                     quote.pricesIncludeTax ? 'text-amber-700' : 'text-gray-500'
                   }`}
                 >
-                  {quote.pricesIncludeTax
+                  {quote.customer?.taxCondition === 'CLIENTE_EXTERIOR' && !quote.pricesIncludeTax
+                    ? 'Cliente del exterior: exportación, precios sin IVA (Factura E, todavía no disponible en el ERP)'
+                    : quote.pricesIncludeTax
                     ? 'Los precios INCLUYEN IVA (21%) — Factura B'
                     : 'Los precios NO incluyen IVA (21%) — Factura A'}
                 </div>
@@ -1664,8 +1669,8 @@ export default function QuoteViewPage() {
                 <p className="font-semibold">{quote.customer.name}</p>
               </div>
               <div>
-                <p className="text-sm text-gray-600">CUIT</p>
-                <p className="font-mono text-sm">{quote.customer.cuit}</p>
+                <p className="text-sm text-gray-600">{esClienteExterior(quote.customer) ? `${etiquetaIdFiscal(quote.customer.country)} · ${quote.customer.country}` : 'CUIT'}</p>
+                <p className="font-mono text-sm">{esClienteExterior(quote.customer) ? idFiscalParaMostrar(quote.customer) : quote.customer.cuit}</p>
               </div>
               {quote.customer.email && (
                 <div>
@@ -1682,12 +1687,14 @@ export default function QuoteViewPage() {
               <Button variant="outline" className="w-full mt-2" asChild>
                 <Link href={`/clientes/${quote.customer.id}`}>Ver Cliente</Link>
               </Button>
+              {!esClienteExterior(quote.customer) && (
               <Button variant="outline" className="w-full" asChild>
                 <Link href={`/analisis-crediticio?cuit=${quote.customer.cuit.replace(/\D/g, '')}`}>
                   <ShieldCheck className="h-4 w-4 mr-2" />
                   Consultar BCRA
                 </Link>
               </Button>
+              )}
             </CardContent>
           </Card>
 

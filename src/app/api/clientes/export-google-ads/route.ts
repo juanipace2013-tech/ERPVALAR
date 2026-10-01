@@ -88,6 +88,8 @@ export async function GET() {
     where: {
       status: 'ACTIVE',
       email: { not: null },
+      // El CSV va con Country=AR y teléfonos +54: sin clientes del exterior
+      taxCondition: { not: 'CLIENTE_EXTERIOR' },
     },
     select: {
       name: true,

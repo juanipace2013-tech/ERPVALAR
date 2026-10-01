@@ -163,6 +163,7 @@ enum TaxCondition {
   CONSUMIDOR_FINAL
   NO_RESPONSABLE
   RESPONSABLE_NO_INSCRIPTO
+  CLIENTE_EXTERIOR // Chile, Paraguay, ... (ver src/lib/cliente-exterior.ts)
 }
 
 enum CustomerStatus {
@@ -182,9 +183,12 @@ model Customer {
   businessName String? // Razón social
   type         CustomerType @default(BUSINESS)
 
-  // Datos fiscales argentinos
-  cuit         String       @unique
-  taxCondition TaxCondition @default(RESPONSABLE_INSCRIPTO)
+  // Datos fiscales argentinos. Cliente del exterior: cuit = clave canónica
+  // "<ISO2>-<ID>" o "<ISO2>-SN-<aleatorio>" y el ID tal como se escribió en
+  // taxIdExterior (RUT, RUC, ...). Ver src/lib/cliente-exterior.ts.
+  cuit          String       @unique
+  taxIdExterior String?
+  taxCondition  TaxCondition @default(RESPONSABLE_INSCRIPTO)
 
   // Contacto
   email   String?

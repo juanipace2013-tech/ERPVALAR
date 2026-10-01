@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { esArgentina, esClienteExterior } from '@/lib/cliente-exterior'
 import { validateCUIT } from './utils'
 
 // ========================================
@@ -16,20 +17,14 @@ export type LoginInput = z.infer<typeof loginSchema>
 // CLIENTES
 // ========================================
 
-export const customerSchema = z.object({
+const customerBaseSchema = z.object({
   name: z.string().min(2, 'El nombre debe tener al menos 2 caracteres'),
   businessName: z.string().optional(),
   type: z.enum(['BUSINESS', 'INDIVIDUAL']),
 
-  // Datos fiscales
-  cuit: z
-    .string()
-    .min(11, 'El CUIT debe tener 11 dígitos')
-    .max(13, 'El CUIT es inválido')
-    .refine(
-      (val) => validateCUIT(val),
-      'El CUIT ingresado no es válido'
-    ),
+  // Datos fiscales. Argentina: CUIT obligatorio y válido. Exterior: el ID
+  // fiscal del país (RUT, RUC, ...) es opcional (ver superRefine abajo).
+  cuit: z.string().default(''),
   taxCondition: z.enum([
     'RESPONSABLE_INSCRIPTO',
     'MONOTRIBUTO',
@@ -37,6 +32,7 @@ export const customerSchema = z.object({
     'CONSUMIDOR_FINAL',
     'NO_RESPONSABLE',
     'RESPONSABLE_NO_INSCRIPTO',
+    'CLIENTE_EXTERIOR',
   ]),
 
   // Contacto
@@ -75,6 +71,27 @@ export const customerSchema = z.object({
 
   // Notas
   notes: z.string().optional(),
+})
+
+export const customerSchema = customerBaseSchema.superRefine((d, ctx) => {
+  const exterior = esClienteExterior(d)
+  if (!exterior) {
+    if (d.cuit.replace(/\D/g, '').length !== 11) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['cuit'], message: 'El CUIT debe tener 11 dígitos' })
+    } else if (!validateCUIT(d.cuit)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['cuit'], message: 'El CUIT ingresado no es válido' })
+    }
+    return
+  }
+  if (esArgentina(d.country)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['country'], message: 'Un cliente del exterior tiene que tener un país distinto de Argentina' })
+  }
+  if (d.taxCondition !== 'CLIENTE_EXTERIOR') {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['taxCondition'], message: 'Un cliente de otro país tiene que ser "Cliente del Exterior"' })
+  }
+  if (d.cuit && !/^[0-9A-Za-z.\-\s/]{1,30}$/.test(d.cuit.trim())) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['cuit'], message: 'ID fiscal inválido (solo letras, números, puntos, guiones y barras)' })
+  }
 })
 
 export type CustomerInput = z.infer<typeof customerSchema>

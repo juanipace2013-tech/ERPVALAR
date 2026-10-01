@@ -60,6 +60,7 @@ const IVA_LABELS: Record<string, string> = {
   CONSUMIDOR_FINAL: 'Consumidor Final',
   NO_RESPONSABLE: 'No Responsable',
   RESPONSABLE_NO_INSCRIPTO: 'Resp. No Inscripto',
+  CLIENTE_EXTERIOR: 'Cliente del Exterior',
 }
 
 const MIN_ITEM_ROWS = 12 // mínimo de filas visibles en la tabla (incluye vacías)
@@ -282,10 +283,15 @@ function drawRemitoCopy(doc: jsPDF, data: RemitoPDFData, copyLabel: string, logo
   ry += 6
   if (data.customer.cuit) {
     doc.setFont('helvetica', 'bold')
-    doc.text('C.U.I.T.:', rx2, ry)
+    doc.text(/^[A-Z]{2}-/.test(data.customer.cuit) ? 'ID fiscal:' : 'C.U.I.T.:', rx2, ry)
     doc.setFont('courier', 'normal')
     doc.setFontSize(8)
-    doc.text(data.customer.cuit, rx2 + 17, ry)
+    // Cliente del exterior: la clave "CL-761234567" se muestra sin el prefijo
+    doc.text(
+      /^[A-Z]{2}-SN-/.test(data.customer.cuit) ? 'Sin ID fiscal' : data.customer.cuit.replace(/^[A-Z]{2}-/, ''),
+      rx2 + 17,
+      ry
+    )
     doc.setFont('helvetica', 'normal')
   }
 

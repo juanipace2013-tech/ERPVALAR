@@ -625,6 +625,9 @@ export async function generateDeliveryNoteFromQuote(
  */
 export function determineInvoiceType(taxCondition: string): 'A' | 'B' | 'C' | 'E' {
   switch (taxCondition) {
+    case 'CLIENTE_EXTERIOR':
+      // Factura E (exportación, WSFEX) no implementada: nunca A/B
+      throw new Error('Cliente del exterior: requiere Factura E de exportación, que todavía no está disponible en el ERP');
     case 'RESPONSABLE_INSCRIPTO':
       return 'A';
     case 'EXENTO':

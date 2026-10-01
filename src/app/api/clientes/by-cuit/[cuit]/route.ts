@@ -2,6 +2,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { esClaveExterior } from '@/lib/cliente-exterior'
 
 /**
  * GET /api/clientes/by-cuit/[cuit]
@@ -18,11 +19,14 @@ export async function GET(
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
 
-    const { cuit: rawCuit } = await params
+    const { cuit: rawParam } = await params
+    const rawCuit = decodeURIComponent(rawParam)
+    // Cliente del exterior: se busca por la clave exacta ("CL-761234567")
+    const claveExterior = esClaveExterior(rawCuit)
     // Normalizar CUIT: quitar todo excepto dígitos
     const normalizedCuit = rawCuit.replace(/\D/g, '')
 
-    if (normalizedCuit.length < 7) {
+    if (!claveExterior && normalizedCuit.length < 7) {
       return NextResponse.json(
         { error: 'CUIT inválido', found: false },
         { status: 400 }
@@ -31,13 +35,17 @@ export async function GET(
 
     // Buscar por CUIT exacto o parcial (el CUIT puede estar guardado con o sin guiones)
     const customer = await prisma.customer.findFirst({
-      where: {
-        OR: [
-          { cuit: normalizedCuit },
-          { cuit: `${normalizedCuit.slice(0, 2)}-${normalizedCuit.slice(2, 10)}-${normalizedCuit.slice(10)}` },
-          { cuit: { contains: normalizedCuit } },
-        ],
-      },
+      where: claveExterior
+        ? { cuit: rawCuit }
+        : {
+            // Un ID del exterior con los mismos dígitos no es este CUIT
+            taxCondition: { not: 'CLIENTE_EXTERIOR' },
+            OR: [
+              { cuit: normalizedCuit },
+              { cuit: `${normalizedCuit.slice(0, 2)}-${normalizedCuit.slice(2, 10)}-${normalizedCuit.slice(10)}` },
+              { cuit: { contains: normalizedCuit } },
+            ],
+          },
       include: {
         salesPerson: {
           select: { id: true, name: true, email: true },

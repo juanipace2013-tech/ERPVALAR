@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/select'
 import { ArrowLeft, Save, Loader2, Search } from 'lucide-react'
 import { toast } from 'sonner'
+import { PAISES_CLIENTE, esArgentina, etiquetaIdFiscal, paisCliente } from '@/lib/cliente-exterior'
 
 interface User {
   id: string
@@ -30,6 +31,7 @@ const TAX_CONDITIONS = [
   { value: 'CONSUMIDOR_FINAL', label: 'Consumidor Final' },
   { value: 'NO_RESPONSABLE', label: 'No Responsable' },
   { value: 'RESPONSABLE_NO_INSCRIPTO', label: 'Responsable No Inscripto' },
+  { value: 'CLIENTE_EXTERIOR', label: 'Cliente del Exterior' },
 ]
 
 const PROVINCIAS = [
@@ -65,6 +67,8 @@ export default function NewCustomerPage() {
   const [loading, setLoading] = useState(false)
   const [loadingAFIP, setLoadingAFIP] = useState(false)
   const [users, setUsers] = useState<User[]>([])
+  // País fuera de la lista ("Otro"): se escribe a mano
+  const [paisOtro, setPaisOtro] = useState(false)
 
   const [formData, setFormData] = useState({
     name: '',
@@ -90,6 +94,29 @@ export default function NewCustomerPage() {
     salesPersonId: 'NONE',
     notes: '',
   })
+
+  // Cliente del exterior: país distinto de Argentina (RUT/RUC opcional, sin AFIP,
+  // región libre, condición "Cliente del Exterior", no se sube a Colppy)
+  const exterior = paisOtro || !esArgentina(formData.country)
+  const pais = paisCliente(formData.country)
+
+  const cambiarPais = (valor: string) => {
+    if (valor === '__OTRO__') {
+      setPaisOtro(true)
+      setFormData((prev) => ({ ...prev, country: '', taxCondition: 'CLIENTE_EXTERIOR', province: '' }))
+      return
+    }
+    const eraExterior = paisOtro || !esArgentina(formData.country)
+    setPaisOtro(false)
+    const esAr = esArgentina(valor)
+    setFormData((prev) => ({
+      ...prev,
+      country: valor,
+      taxCondition: esAr ? (prev.taxCondition === 'CLIENTE_EXTERIOR' ? 'RESPONSABLE_INSCRIPTO' : prev.taxCondition) : 'CLIENTE_EXTERIOR',
+      // la lista de provincias es argentina: al cambiar de país se vacía
+      province: esAr === !eraExterior ? prev.province : '',
+    }))
+  }
 
   useEffect(() => {
     fetchUsers()
@@ -230,7 +257,9 @@ export default function NewCustomerPage() {
       }
 
       const customer = await response.json()
-      if (customer.colppy?.ok) {
+      if (customer.colppy?.omitido === 'exterior') {
+        toast.success('Cliente del exterior creado (queda solo en el ERP, no se sube a Colppy)')
+      } else if (customer.colppy?.ok) {
         toast.success(customer.colppy.creado ? 'Cliente creado en el ERP y dado de alta en Colppy' : 'Cliente creado y vinculado al que ya existía en Colppy')
       } else {
         toast.success('Cliente creado exitosamente')
@@ -325,19 +354,52 @@ export default function NewCustomerPage() {
                 </div>
 
                 <div className="space-y-2">
+                  <Label htmlFor="country">
+                    País <span className="text-red-500">*</span>
+                  </Label>
+                  <Select value={paisOtro ? '__OTRO__' : pais?.nombre ?? formData.country} onValueChange={cambiarPais}>
+                    <SelectTrigger id="country">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAISES_CLIENTE.map((p) => (
+                        <SelectItem key={p.iso} value={p.nombre}>
+                          {p.nombre}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="__OTRO__">Otro…</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {paisOtro && (
+                    <Input
+                      value={formData.country}
+                      onChange={(e) => handleInputChange('country', e.target.value)}
+                      placeholder="Nombre del país"
+                      required
+                    />
+                  )}
+                  {exterior && (
+                    <p className="text-xs text-amber-700">
+                      Cliente del exterior: queda solo en el ERP (no se sube a Colppy) y por ahora no se le puede facturar (Factura E de exportación no disponible).
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="cuit">
-                    CUIT <span className="text-red-500">*</span>
+                    {exterior ? `${pais?.idFiscal ?? (formData.country ? etiquetaIdFiscal(formData.country) : 'ID fiscal')} (opcional)` : 'CUIT'}{' '}
+                    {!exterior && <span className="text-red-500">*</span>}
                   </Label>
                   <div className="flex gap-2">
                     <Input
                       id="cuit"
                       value={formData.cuit}
                       onChange={(e) => handleInputChange('cuit', e.target.value)}
-                      placeholder="20-12345678-9"
-                      required
+                      placeholder={exterior ? pais?.placeholder ?? 'ID fiscal' : '20-12345678-9'}
+                      required={!exterior}
                       className="flex-1"
                     />
-                    <Button
+                    {!exterior && <Button
                       type="button"
                       variant="outline"
                       onClick={fetchAFIPData}
@@ -355,10 +417,12 @@ export default function NewCustomerPage() {
                           Buscar en AFIP
                         </>
                       )}
-                    </Button>
+                    </Button>}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Formato: XX-XXXXXXXX-X • Haz clic en &quot;Buscar en AFIP&quot; para autocompletar
+                    {exterior
+                      ? 'Identificación fiscal del país del cliente, tal como figura en sus documentos.'
+                      : <>Formato: XX-XXXXXXXX-X • Haz clic en &quot;Buscar en AFIP&quot; para autocompletar</>}
                   </p>
                 </div>
 
@@ -369,12 +433,13 @@ export default function NewCustomerPage() {
                   <Select
                     value={formData.taxCondition}
                     onValueChange={(value) => handleInputChange('taxCondition', value)}
+                    disabled={exterior}
                   >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {TAX_CONDITIONS.map((tc) => (
+                      {TAX_CONDITIONS.filter((tc) => exterior === (tc.value === 'CLIENTE_EXTERIOR')).map((tc) => (
                         <SelectItem key={tc.value} value={tc.value}>
                           {tc.label}
                         </SelectItem>
@@ -466,7 +531,15 @@ export default function NewCustomerPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="province">Provincia</Label>
+                  <Label htmlFor="province">{exterior ? 'Provincia / Región / Departamento' : 'Provincia'}</Label>
+                  {exterior ? (
+                    <Input
+                      id="province"
+                      value={formData.province}
+                      onChange={(e) => handleInputChange('province', e.target.value)}
+                      placeholder="Ej: Región Metropolitana, Central"
+                    />
+                  ) : (
                   <Select
                     value={formData.province}
                     onValueChange={(value) => handleInputChange('province', value)}
@@ -482,6 +555,7 @@ export default function NewCustomerPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -494,15 +568,6 @@ export default function NewCustomerPage() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="country">País</Label>
-                  <Input
-                    id="country"
-                    value={formData.country}
-                    onChange={(e) => handleInputChange('country', e.target.value)}
-                    disabled
-                  />
-                </div>
               </div>
             </CardContent>
           </Card>

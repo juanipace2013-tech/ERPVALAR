@@ -9,6 +9,8 @@ import { z } from 'zod'
 import { logAudit } from '@/lib/audit'
 import { colppyEnsureCustomer } from '@/lib/colppy'
 import { customerIdsPorCuit } from '@/lib/cuit-search'
+import { claveClienteExterior, esClienteExterior, etiquetaIdFiscal } from '@/lib/cliente-exterior'
+import { Prisma } from '@prisma/client'
 import { parsePage, parseLimit } from '@/lib/pagination'
 
 // GET /api/clientes - Listar clientes con filtros y paginación
@@ -90,6 +92,8 @@ export async function GET(request: NextRequest) {
           name: true,
           businessName: true,
           cuit: true,
+          taxIdExterior: true,
+          country: true,
           taxCondition: true,
           email: true,
           phone: true,
@@ -147,15 +151,23 @@ export async function POST(request: NextRequest) {
     // Validar datos
     const validatedData = customerSchema.parse(body)
 
-    // Verificar si el CUIT ya existe (buscar ambos formatos)
-    const normalizedCuit = normalizeCuit(validatedData.cuit)
-    const existingCustomer = normalizedCuit
-      ? await prisma.customer.findFirst({ where: buildCuitWhereClause(normalizedCuit) })
-      : null
+    // Cliente del exterior: clave canónica en cuit, ID tal cual en taxIdExterior
+    const exterior = esClienteExterior(validatedData)
+    const taxIdExterior = exterior ? validatedData.cuit.trim() || null : null
+    const normalizedCuit = exterior ? claveClienteExterior(validatedData.country, taxIdExterior) : normalizeCuit(validatedData.cuit)
+
+    // Verificar si el CUIT / ID fiscal ya existe (CUIT: ambos formatos)
+    const existingCustomer = exterior
+      ? taxIdExterior
+        ? await prisma.customer.findFirst({ where: { cuit: normalizedCuit! } })
+        : null
+      : normalizedCuit
+        ? await prisma.customer.findFirst({ where: buildCuitWhereClause(normalizedCuit) })
+        : null
 
     if (existingCustomer) {
       return NextResponse.json(
-        { error: 'Ya existe un cliente con este CUIT' },
+        { error: `Ya existe un cliente con este ${etiquetaIdFiscal(validatedData.country)}: ${existingCustomer.name}` },
         { status: 400 }
       )
     }
@@ -167,7 +179,8 @@ export async function POST(request: NextRequest) {
         businessName: validatedData.businessName,
         type: validatedData.type,
         cuit: normalizedCuit || validatedData.cuit,
-        taxCondition: validatedData.taxCondition,
+        taxIdExterior,
+        taxCondition: exterior ? 'CLIENTE_EXTERIOR' : validatedData.taxCondition,
         email: validatedData.email || null,
         phone: validatedData.phone,
         mobile: validatedData.mobile,
@@ -215,8 +228,11 @@ export async function POST(request: NextRequest) {
 
     // Alta en Colppy (o vínculo si ya existía). Si falla, el cliente queda
     // creado en el ERP y se da de alta en Colppy con la primera factura.
-    let colppy: { ok: boolean; creado?: boolean; idCliente?: string; error?: string } = { ok: false }
-    if (customer.cuit.replace(/\D/g, '').length === 11) {
+    let colppy: { ok: boolean; creado?: boolean; idCliente?: string; error?: string; omitido?: 'exterior' } = { ok: false }
+    if (exterior) {
+      // Clientes del exterior: solo en el ERP (no hay Factura E todavía)
+      colppy = { ok: false, omitido: 'exterior' }
+    } else if (customer.cuit.replace(/\D/g, '').length === 11) {
       try {
         const r = await colppyEnsureCustomer(customer)
         await prisma.customer.update({ where: { id: customer.id }, data: { colppyId: r.idCliente } })
@@ -236,6 +252,9 @@ export async function POST(request: NextRequest) {
         { error: 'Datos inválidos', details: error.issues },
         { status: 400 }
       )
+    }
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return NextResponse.json({ error: 'Ya existe un cliente con ese CUIT / ID fiscal' }, { status: 409 })
     }
 
     logger.error('Error creating customer:', error)

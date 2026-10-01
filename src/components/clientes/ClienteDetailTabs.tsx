@@ -15,6 +15,7 @@ import TabCuentaCorriente from './TabCuentaCorriente'
 import TabFacturasAdeudadas from './TabFacturasAdeudadas'
 import TabComercial from './TabComercial'
 import TabAnalisisBCRA from './TabAnalisisBCRA'
+import { esClienteExterior } from '@/lib/cliente-exterior'
 
 interface ColppyCustomer {
   id: string
@@ -39,6 +40,9 @@ interface ColppyCustomer {
   defaultTransportAddress: string
   defaultTransportSchedule: string
   exchangeRateType?: string | null
+  /** Cliente del exterior: país e ID fiscal (RUT, RUC...) tal como se cargó */
+  country?: string
+  taxIdExterior?: string | null
 }
 
 interface Props {
@@ -58,11 +62,13 @@ export default function ClienteDetailTabs({ colppyCustomer, cuit, onCustomerUpda
   }
 
   const colppyId = colppyCustomer.colppyId || ''
+  // Cliente del exterior: sin análisis BCRA (no tiene CUIT argentino)
+  const exterior = esClienteExterior(colppyCustomer)
   const hasColppy = !!colppyId
 
   return (
     <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-      <TabsList className="grid w-full grid-cols-5 h-auto">
+      <TabsList className={`grid w-full ${exterior ? 'grid-cols-4' : 'grid-cols-5'} h-auto`}>
         <TabsTrigger value="general" className="flex items-center gap-1.5 text-xs py-2">
           <User className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">Datos Generales</span>
@@ -82,10 +88,12 @@ export default function ClienteDetailTabs({ colppyCustomer, cuit, onCustomerUpda
           <BarChart3 className="h-3.5 w-3.5" />
           Comercial
         </TabsTrigger>
-        <TabsTrigger value="bcra" className="flex items-center gap-1.5 text-xs py-2">
-          <ShieldCheck className="h-3.5 w-3.5" />
-          BCRA
-        </TabsTrigger>
+        {!exterior && (
+          <TabsTrigger value="bcra" className="flex items-center gap-1.5 text-xs py-2">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            BCRA
+          </TabsTrigger>
+        )}
       </TabsList>
 
       <div className="mt-4">

@@ -243,6 +243,53 @@ function mapCustomers(data: any[], localMultipliers: Map<string, number>): Cache
 // ENDPOINTS
 // ============================================================================
 
+/** Clientes del exterior del ERP que coinciden con la búsqueda, con la forma del buscador. */
+async function buscarClientesExterior(search: string, limit: number) {
+  const terms = search.split(/\s+/).filter(Boolean);
+  if (!terms.length) return [];
+  const rows = await prisma.customer.findMany({
+    where: {
+      taxCondition: 'CLIENTE_EXTERIOR',
+      status: 'ACTIVE',
+      AND: terms.map((t) => ({
+        OR: [
+          { name: { contains: t, mode: 'insensitive' as const } },
+          { businessName: { contains: t, mode: 'insensitive' as const } },
+          { taxIdExterior: { contains: t, mode: 'insensitive' as const } },
+          { cuit: { contains: t.toUpperCase().replace(/[^0-9A-Z]/g, '') || t } },
+          { country: { contains: t, mode: 'insensitive' as const } },
+          { email: { contains: t, mode: 'insensitive' as const } },
+        ],
+      })),
+    },
+    take: limit,
+    orderBy: { name: 'asc' },
+  });
+  return rows.map((c) => ({
+    id: c.id,
+    colppyId: '',
+    name: c.name,
+    businessName: c.businessName || c.name,
+    cuit: c.cuit,
+    taxCondition: 'CLIENTE_EXTERIOR',
+    taxConditionDisplay: `Cliente del Exterior · ${c.country}`,
+    address: c.address || '',
+    city: c.city || '',
+    province: c.province || '',
+    postalCode: c.postalCode || '',
+    phone: c.phone || '',
+    mobile: c.mobile || '',
+    email: c.email || '',
+    saldo: 0,
+    priceMultiplier: Number(c.priceMultiplier) || 1,
+    paymentTerms: c.paymentTerms ? `a ${c.paymentTerms} Dias` : 'Contado',
+    paymentTermsDays: c.paymentTerms || 0,
+    country: c.country,
+    taxIdExterior: c.taxIdExterior,
+    searchText: '',
+  }));
+}
+
 /**
  * GET /api/colppy/clientes
  * Busca clientes en el cache local
@@ -308,9 +355,21 @@ export async function GET(request: NextRequest) {
       )
       .slice(0, limit);
 
+    // Clientes del exterior: existen solo en el ERP (no en Colppy), así que
+    // se suman desde la base local para poder cotizarles. Best-effort (si la
+    // base falla, la búsqueda de Colppy sigue andando) y con cupo de 5 al
+    // final para no desplazar a los clientes argentinos.
+    let exteriores: Awaited<ReturnType<typeof buscarClientesExterior>> = [];
+    try {
+      exteriores = (await buscarClientesExterior(search, 5)).slice(0, 5);
+    } catch (e) {
+      logger.warn('[Clientes] No se pudieron buscar clientes del exterior:', e);
+    }
+    const combinados = [...results.slice(0, Math.max(0, limit - exteriores.length)), ...exteriores];
+
     return NextResponse.json({
-      customers: results,
-      total: results.length,
+      customers: combinados,
+      total: combinados.length,
       totalInCache: allCustomers.length,
       cached: true,
     });

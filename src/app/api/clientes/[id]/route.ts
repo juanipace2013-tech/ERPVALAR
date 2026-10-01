@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/prisma'
 import { customerSchema } from '@/lib/validations'
+import { claveClienteExterior, esArgentina, esClienteExterior, isoPais, normalizarIdExterior } from '@/lib/cliente-exterior'
 import { z } from 'zod'
 import { logAudit } from '@/lib/audit'
 import { invalidateCustomerCache } from '@/lib/colppy/customer-cache'
@@ -126,6 +127,14 @@ export async function PUT(
       return NextResponse.json(
         { error: 'Cliente no encontrado' },
         { status: 404 }
+      )
+    }
+
+    // Cliente del exterior: la clave única se mantiene salvo que cambie el ID
+    if (esClienteExterior(validatedData) || esClienteExterior(existingCustomer)) {
+      return NextResponse.json(
+        { error: 'Para clientes del exterior usá la edición de la ficha (PATCH)' },
+        { status: 400 }
       )
     }
 
@@ -285,6 +294,35 @@ export async function PATCH(
       if (field in body) {
         updateData[field] = body[field] ?? null
       }
+    }
+
+    // Cliente del exterior: país e ID fiscal editables (recalcula la clave
+    // única en cuit). Un cliente argentino no puede pasar a exterior ni al
+    // revés por acá (eso cambia CUIT, Colppy, facturación).
+    if (esClienteExterior(existingCustomer)) {
+      if (updateData.taxCondition && updateData.taxCondition !== 'CLIENTE_EXTERIOR') delete updateData.taxCondition
+      const country = typeof body.country === 'string' && body.country.trim() ? body.country.trim() : existingCustomer.country
+      if (esArgentina(country)) {
+        return NextResponse.json({ error: 'Un cliente del exterior no puede tener país Argentina' }, { status: 400 })
+      }
+      if ('country' in body || 'taxIdExterior' in body) {
+        const taxIdExterior = 'taxIdExterior' in body ? String(body.taxIdExterior ?? '').trim() || null : existingCustomer.taxIdExterior
+        const sinCambioDeId =
+          normalizarIdExterior(taxIdExterior) === normalizarIdExterior(existingCustomer.taxIdExterior) &&
+          isoPais(country) === isoPais(existingCustomer.country)
+        if (!sinCambioDeId) {
+          const cuit = claveClienteExterior(country, taxIdExterior)
+          const otro = await prisma.customer.findFirst({ where: { cuit, id: { not: id } }, select: { name: true } })
+          if (otro) {
+            return NextResponse.json({ error: `Ya existe otro cliente con ese ID fiscal: ${otro.name}` }, { status: 400 })
+          }
+          updateData.cuit = cuit
+        }
+        updateData.country = country
+        updateData.taxIdExterior = taxIdExterior
+      }
+    } else if (updateData.taxCondition === 'CLIENTE_EXTERIOR') {
+      delete updateData.taxCondition
     }
 
     if (Object.keys(updateData).length === 0) {

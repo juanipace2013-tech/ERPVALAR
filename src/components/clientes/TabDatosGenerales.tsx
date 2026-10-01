@@ -44,6 +44,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { CONDICIONES_IVA } from '@/lib/constants'
+import { esClienteExterior, etiquetaIdFiscal, idFiscalParaMostrar, parametroBusquedaCliente } from '@/lib/cliente-exterior'
 
 interface DeliveryAddress {
   id: string
@@ -107,6 +108,9 @@ interface ColppyCustomer {
   defaultTransportSchedule: string
   exchangeRateType?: string | null
   fceObligado?: boolean
+  /** Cliente del exterior: país e ID fiscal (RUT, RUC...) tal como se cargó */
+  country?: string
+  taxIdExterior?: string | null
 }
 
 interface Props {
@@ -276,14 +280,14 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
 
   // Cargar vendedor actual y lista de usuarios
   useEffect(() => {
-    const normalizedCuit = cuit.replace(/\D/g, '')
-    if (!normalizedCuit || normalizedCuit.length < 7) {
+    const parametro = parametroBusquedaCliente(cuit)
+    if (!parametro) {
       setLoadingSalesPerson(false)
       return
     }
 
     Promise.all([
-      fetch(`/api/clientes/by-cuit/${normalizedCuit}`).then((r) => r.ok ? r.json() : null),
+      fetch(`/api/clientes/by-cuit/${parametro}`).then((r) => r.ok ? r.json() : null),
       fetch('/api/users?vendedores=true').then((r) => r.ok ? r.json() : null),
     ]).then(([customerData, usersData]) => {
       if (customerData?.found && customerData.customer?.salesPerson) {
@@ -608,14 +612,22 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
 
     try {
       const normalizedCuit = cuit.replace(/\D/g, '')
-      const res = await fetch('/api/clientes/assign-salesperson', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cuit: normalizedCuit,
-          salesPersonId: newSalesPersonId,
-        }),
-      })
+      // Cliente del exterior: assign-salesperson exige CUIT de 11 dígitos →
+      // se asigna por id local (PATCH ya permite salesPersonId)
+      const res = esClienteExterior(customer) && localCustomerId
+        ? await fetch(`/api/clientes/${localCustomerId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ salesPersonId: newSalesPersonId }),
+          })
+        : await fetch('/api/clientes/assign-salesperson', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              cuit: normalizedCuit,
+              salesPersonId: newSalesPersonId,
+            }),
+          })
 
       if (!res.ok) {
         throw new Error('Error al asignar vendedor')
@@ -653,6 +665,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
             )}
             {isEditing && (
               <div className="flex items-center gap-2">
+                {!esClienteExterior(customer) && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -663,6 +676,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
                   {loadingAFIP ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Search className="h-3.5 w-3.5 mr-1" />}
                   Buscar en AFIP
                 </Button>
+                )}
                 <Button
                   size="sm"
                   variant="outline"
@@ -704,7 +718,14 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
             )}
 
             {/* CUIT — NO editable */}
-            <InfoRow icon={Hash} label="CUIT" value={customer.cuit ? formatCUIT(customer.cuit) : '—'} />
+            {esClienteExterior(customer) ? (
+              <>
+                <InfoRow icon={Hash} label={etiquetaIdFiscal(customer.country)} value={idFiscalParaMostrar(customer)} />
+                <InfoRow icon={Building2} label="País" value={customer.country || '—'} />
+              </>
+            ) : (
+              <InfoRow icon={Hash} label="CUIT" value={customer.cuit ? formatCUIT(customer.cuit) : '—'} />
+            )}
 
             {/* Condición IVA — editable */}
             {isEditing ? (
@@ -720,7 +741,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
                       <SelectValue placeholder="Seleccionar condición IVA" />
                     </SelectTrigger>
                     <SelectContent>
-                      {CONDICIONES_IVA.map((c) => (
+                      {CONDICIONES_IVA.filter((c) => esClienteExterior(customer) === (c.value === 'CLIENTE_EXTERIOR')).map((c) => (
                         <SelectItem key={c.value} value={c.value}>
                           {c.label}
                         </SelectItem>
@@ -801,7 +822,8 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
             {/* Condición de pago — read only (viene de Colppy) */}
             <InfoRow icon={Clock} label="Condición de Pago" value={customer.paymentTerms} />
 
-            {/* FCE MiPyME */}
+            {/* FCE MiPyME (no aplica a clientes del exterior) */}
+            {!esClienteExterior(customer) && (
             <div className="flex items-start gap-3 py-2">
               <CreditCard className="h-4 w-4 text-gray-400 mt-0.5 shrink-0" />
               <div className="flex-1">
@@ -839,6 +861,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
                 </label>
               </div>
             </div>
+            )}
 
             {/* Vendedor Asignado */}
             <div className="flex items-start gap-3 py-2">

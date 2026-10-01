@@ -8,6 +8,7 @@ import { normalizeCuit, buildCuitWhereClause } from '@/lib/cuit-utils'
 import { logger } from '@/lib/logger'
 import { parseCivilDate } from '@/lib/date-helpers'
 import { generateNextQuoteNumber } from '@/lib/quotes/generate-quote-number'
+import { esClaveExterior } from '@/lib/cliente-exterior'
 
 /**
  * GET /api/quotes
@@ -191,13 +192,24 @@ export async function POST(request: NextRequest) {
     if (body.colppyCustomer) {
       const colppyCustomer = body.colppyCustomer
 
+      // Cliente del exterior (solo existe en el ERP): se usa tal cual, sin
+      // recrearlo ni pisarle la condición con datos del buscador.
+      const exteriorExistente = esClaveExterior(colppyCustomer.cuit)
+        ? await prisma.customer.findUnique({ where: { cuit: colppyCustomer.cuit } })
+        : null
+      if (esClaveExterior(colppyCustomer.cuit) && !exteriorExistente) {
+        return NextResponse.json({ error: 'Cliente del exterior no encontrado' }, { status: 400 })
+      }
+
       // Buscar o crear el cliente por CUIT (ambos formatos)
       const normalizedCuit = normalizeCuit(colppyCustomer.cuit)
       const existingCustomer = normalizedCuit
         ? await prisma.customer.findFirst({ where: buildCuitWhereClause(normalizedCuit) })
         : null
 
-      if (existingCustomer) {
+      if (exteriorExistente) {
+        customerId = exteriorExistente.id
+      } else if (existingCustomer) {
         // Actualizar datos del cliente existente.
         // OJO: no tocar priceMultiplier acá. Es un dato local editable por el
         // usuario ("Guardar en cliente para futuras cotizaciones"); un valor de
@@ -267,9 +279,11 @@ export async function POST(request: NextRequest) {
     // Clientes que NO son Responsable Inscripto reciben Factura B: los precios
     // de la cotización deben incluir IVA 21% (regla fiscal AR). Default true
     // para CF / Monotributo / Exento / NO_RESPONSABLE / RNI; false para RI.
+    // Cliente del exterior: exportación (Factura E), precios sin IVA.
     const defaultPricesIncludeTax =
       customerForMultiplier?.taxCondition !== undefined &&
-      customerForMultiplier.taxCondition !== 'RESPONSABLE_INSCRIPTO'
+      customerForMultiplier.taxCondition !== 'RESPONSABLE_INSCRIPTO' &&
+      customerForMultiplier.taxCondition !== 'CLIENTE_EXTERIOR'
 
     // Generar número + crear cotización en transacción para evitar race conditions.
     // Timeout extendido (default 5s) por la latencia transcontinental ARG↔Oregon

@@ -5,6 +5,7 @@ import { normalizeCuit, buildCuitWhereClause } from '@/lib/cuit-utils';
 import { logger } from '@/lib/logger'
 import { generateNextQuoteNumber } from '@/lib/quotes/generate-quote-number'
 import { getBCRAUSDRate } from '@/lib/bcra'
+import { esClaveExterior } from '@/lib/cliente-exterior';
 
 export async function POST(
   request: NextRequest,
@@ -52,12 +53,23 @@ export async function POST(
     if (body.colppyCustomer) {
       const colppyCustomer = body.colppyCustomer;
 
+      // Cliente del exterior (solo en el ERP): se usa tal cual
+      const exteriorExistente = esClaveExterior(colppyCustomer.cuit)
+        ? await prisma.customer.findUnique({ where: { cuit: colppyCustomer.cuit } })
+        : null;
+      if (esClaveExterior(colppyCustomer.cuit) && !exteriorExistente) {
+        return NextResponse.json({ error: 'Cliente del exterior no encontrado' }, { status: 400 });
+      }
+
       const normalizedCuit = normalizeCuit(colppyCustomer.cuit);
       const existingCustomer = normalizedCuit
         ? await prisma.customer.findFirst({ where: buildCuitWhereClause(normalizedCuit) })
         : null;
 
-      if (existingCustomer) {
+      if (exteriorExistente) {
+        targetCustomerId = exteriorExistente.id;
+        newMultiplier = exteriorExistente.priceMultiplier;
+      } else if (existingCustomer) {
         await prisma.customer.update({
           where: { id: existingCustomer.id },
           data: {

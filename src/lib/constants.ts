@@ -54,6 +54,7 @@ export const CONDICIONES_IVA = [
   { value: 'CONSUMIDOR_FINAL', label: 'Consumidor Final' },
   { value: 'NO_RESPONSABLE', label: 'No Responsable' },
   { value: 'RESPONSABLE_NO_INSCRIPTO', label: 'Responsable No Inscripto' },
+  { value: 'CLIENTE_EXTERIOR', label: 'Cliente del Exterior' },
 ]
 
 export const TIPOS_FACTURA = [

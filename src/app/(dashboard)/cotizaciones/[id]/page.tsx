@@ -2957,12 +2957,15 @@ export default function QuoteDetailPage() {
                       : 'bg-blue-100 text-blue-800 border border-blue-300'
                   }`}
                 >
-                  {quote.pricesIncludeTax
+                  {quote.customer.taxCondition === 'CLIENTE_EXTERIOR' && !quote.pricesIncludeTax
+                    ? 'Exportación (sin IVA)'
+                    : quote.pricesIncludeTax
                     ? 'IVA incluido (Factura B)'
                     : 'IVA aparte (Factura A)'}
                 </span>
                 {quote.customer.taxCondition &&
                   quote.customer.taxCondition !== 'RESPONSABLE_INSCRIPTO' &&
+                  quote.customer.taxCondition !== 'CLIENTE_EXTERIOR' &&
                   !quote.pricesIncludeTax && (
                     <span
                       className="text-xs text-red-600"
@@ -2972,6 +2975,11 @@ export default function QuoteDetailPage() {
                     </span>
                   )}
               </div>
+              {quote.customer.taxCondition === 'CLIENTE_EXTERIOR' && quote.pricesIncludeTax && (
+                <span className="text-xs text-red-600" title="Exportación: los precios van sin IVA">
+                  ⚠ cliente del exterior: no debería incluir IVA
+                </span>
+              )}
               {isEditable && (
                 <Button
                   size="sm"

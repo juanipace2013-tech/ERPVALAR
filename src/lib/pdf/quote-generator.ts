@@ -10,7 +10,11 @@ interface QuotePDFData {
     name: string
     legalName?: string
     taxId?: string
+    /** "CUIT" (default), "RUT", "RUC"... según el país del cliente */
+    taxIdLabel?: string
     address?: string
+    /** Cliente del exterior: exportación, precios sin IVA */
+    exterior?: boolean
   }
   salesPerson: {
     name: string
@@ -149,7 +153,7 @@ function drawFirstPageHeader(doc: jsPDF, data: QuotePDFData): number {
   doc.setFontSize(9)
   let yClient = 59 + nameLines.length * 5
   if (data.customer.taxId) {
-    doc.text(`CUIT: ${data.customer.taxId}`, MARGIN_LEFT, yClient)
+    doc.text(`${data.customer.taxIdLabel || 'CUIT'}: ${data.customer.taxId}`, MARGIN_LEFT, yClient)
     yClient += 5
   }
   if (data.customer.address) {
@@ -392,7 +396,9 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
 
-  const ivaLegend = data.pricesIncludeTax
+  const ivaLegend = data.customer.exterior && !data.pricesIncludeTax
+    ? 'Operación de exportación: los precios no incluyen IVA y están expresados en dólares americanos.'
+    : data.pricesIncludeTax
     ? 'Los precios INCLUYEN IVA (21%) y están expresados en dólares americanos cotización BNA billete vendedor.'
     : 'Los precios No incluyen IVA (21%) y estan expresados en dólares americanos cotización BNA billete vendedor.'
   const conditions = [

@@ -14,6 +14,7 @@ const CONDICION_IVA_LABEL: Record<string, string> = {
   CONSUMIDOR_FINAL: 'Consumidor Final',
   NO_RESPONSABLE: 'Sujeto No Categorizado',
   RESPONSABLE_NO_INSCRIPTO: 'Sujeto No Categorizado',
+  CLIENTE_EXTERIOR: 'Cliente del Exterior',
 }
 
 const DOC_LABEL: Record<number, string> = { 80: 'CUIT', 86: 'CUIL', 96: 'DNI', 99: '' }

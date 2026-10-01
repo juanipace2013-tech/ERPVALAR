@@ -8,6 +8,7 @@ import { sendMail, getEmailConfig } from './microsoft-graph'
 import { generateQuoteEmailHTML, generateQuoteEmailText } from './templates/quote-email'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { esClienteExterior, etiquetaIdFiscal, idFiscalParaMostrar } from '@/lib/cliente-exterior'
 
 interface SendQuoteEmailOptions {
   quoteId: string
@@ -122,10 +123,14 @@ export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
       customer: {
         name: quote.customer.name,
         legalName: quote.customer.businessName || undefined,
-        taxId: quote.customer.cuit || undefined,
+        taxId: esClienteExterior(quote.customer)
+          ? idFiscalParaMostrar(quote.customer)
+          : quote.customer.cuit || undefined,
+        taxIdLabel: etiquetaIdFiscal(quote.customer.country),
+        exterior: esClienteExterior(quote.customer),
         address: quote.customer.address
-          ? `${quote.customer.address}${quote.customer.city ? ', ' + quote.customer.city : ''}${quote.customer.province ? ', ' + quote.customer.province : ''}`
-          : undefined,
+          ? `${quote.customer.address}${quote.customer.city ? ', ' + quote.customer.city : ''}${quote.customer.province ? ', ' + quote.customer.province : ''}${esClienteExterior(quote.customer) && quote.customer.country ? ', ' + quote.customer.country : ''}`
+          : esClienteExterior(quote.customer) ? quote.customer.country : undefined,
       },
       salesPerson: {
         name: quote.salesPerson.name,

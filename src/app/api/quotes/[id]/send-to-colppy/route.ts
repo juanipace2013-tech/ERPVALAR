@@ -15,6 +15,7 @@ import { syncStockForSkusFireAndForget } from '@/lib/colppy-inventory';
 import { sincronizarComisionesDeQuote } from '@/lib/comisiones/liquidacion';
 import { crearHookEmisionArca, getEmisorFacturacion } from '@/lib/facturacion/emision-arca';
 import { facturaEnPesos, itemsEnPesos, type MonedaFactura } from '@/lib/facturacion/moneda';
+import { esClienteExterior } from '@/lib/cliente-exterior';
 import { archivarFacturaEnSharePointBg } from '@/lib/sharepoint/facturas-emitidas';
 
 // ============================================================================
@@ -125,6 +126,15 @@ export async function POST(
       return NextResponse.json(
         { error: `La cotización debe estar en estado ACCEPTED o FACTURADA_PARCIAL (actual: ${quote.status})` },
         { status: 400 }
+      );
+    }
+
+    // Cliente del exterior: solo existe en el ERP (no en Colppy) y no se le
+    // puede emitir Factura A/B; la Factura E (WSFEX) no está implementada.
+    if (esClienteExterior(quote.customer)) {
+      return NextResponse.json(
+        { error: 'Cliente del exterior: requiere Factura E de exportación, que todavía no está disponible en el ERP. Tampoco se envía a Colppy.' },
+        { status: 422 }
       );
     }
 

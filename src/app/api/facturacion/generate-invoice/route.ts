@@ -25,6 +25,7 @@ import { syncStockForSkusFireAndForget } from '@/lib/colppy-inventory'
 import { sincronizarComisionesDeQuote } from '@/lib/comisiones/liquidacion'
 import { crearHookEmisionArca, getEmisorFacturacion } from '@/lib/facturacion/emision-arca'
 import { facturaEnPesos, itemsEnPesos, type MonedaFactura } from '@/lib/facturacion/moneda'
+import { esClienteExterior } from '@/lib/cliente-exterior'
 import { archivarFacturaEnSharePointBg } from '@/lib/sharepoint/facturas-emitidas'
 
 interface InvoiceItemRequest {
@@ -116,6 +117,12 @@ export async function POST(request: NextRequest) {
         { error: `Solo se pueden facturar cotizaciones aceptadas o con facturación parcial (estado actual: ${quote.status})` },
         { status: 400 }
       )
+    }
+
+    // Cliente del exterior: no se le puede emitir Factura A/B (WSFE). La
+    // Factura E (exportación, WSFEX) todavía no está implementada.
+    if (esClienteExterior(quote.customer)) {
+      return NextResponse.json({ error: 'Cliente del exterior: requiere Factura E de exportación, que todavía no está disponible en el ERP' }, { status: 422 })
     }
 
     // TC de la factura (solo USD): el elegido en el dialogo (billete del

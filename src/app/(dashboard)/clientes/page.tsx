@@ -44,6 +44,7 @@ import { toast } from 'sonner'
 import { formatNumber, formatCUIT, formatDateAR } from '@/lib/utils'
 import ImportarAsignacionesModal from '@/components/clientes/ImportarAsignacionesModal'
 import { CONDICIONES_IVA } from '@/lib/constants'
+import { esClienteExterior, idFiscalParaMostrar } from '@/lib/cliente-exterior'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -52,6 +53,8 @@ interface Customer {
   name: string
   businessName: string | null
   cuit: string
+  taxIdExterior?: string | null
+  country?: string | null
   taxCondition: string
   email: string | null
   phone: string | null
@@ -550,7 +553,12 @@ export default function ClientesPage() {
                             )}
                           </TableCell>
                           <TableCell className="font-mono text-sm">
-                            {customer.cuit ? formatCUIT(customer.cuit) : '—'}
+                            {esClienteExterior(customer) ? (
+                              <span>
+                                {idFiscalParaMostrar(customer)}{' '}
+                                <span className="rounded bg-sky-100 px-1 text-[10px] font-sans text-sky-800">{customer.country}</span>
+                              </span>
+                            ) : customer.cuit ? formatCUIT(customer.cuit) : '—'}
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline" className="text-xs font-normal">

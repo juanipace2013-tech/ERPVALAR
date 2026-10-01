@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/prisma'
 import { generateQuotePDF } from '@/lib/pdf/quote-generator'
+import { esClienteExterior, etiquetaIdFiscal, idFiscalParaMostrar } from '@/lib/cliente-exterior'
 
 export async function GET(
   request: NextRequest,
@@ -28,6 +29,9 @@ export async function GET(
             address: true,
             city: true,
             province: true,
+            country: true,
+            taxIdExterior: true,
+            taxCondition: true,
           },
         },
         salesPerson: {
@@ -74,10 +78,14 @@ export async function GET(
       customer: {
         name: quote.customer.name,
         legalName: quote.customer.businessName || undefined,
-        taxId: quote.customer.cuit || undefined,
+        taxId: esClienteExterior(quote.customer)
+          ? idFiscalParaMostrar(quote.customer)
+          : quote.customer.cuit || undefined,
+        taxIdLabel: etiquetaIdFiscal(quote.customer.country),
+        exterior: esClienteExterior(quote.customer),
         address: quote.customer.address
-          ? `${quote.customer.address}${quote.customer.city ? ', ' + quote.customer.city : ''}${quote.customer.province ? ', ' + quote.customer.province : ''}`
-          : undefined,
+          ? `${quote.customer.address}${quote.customer.city ? ', ' + quote.customer.city : ''}${quote.customer.province ? ', ' + quote.customer.province : ''}${esClienteExterior(quote.customer) && quote.customer.country ? ', ' + quote.customer.country : ''}`
+          : esClienteExterior(quote.customer) ? quote.customer.country : undefined,
       },
       salesPerson: {
         name: quote.salesPerson.name,

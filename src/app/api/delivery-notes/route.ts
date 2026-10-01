@@ -6,6 +6,7 @@ import { parseCivilDate } from '@/lib/date-helpers';
 import { logAudit } from '@/lib/audit';
 import { normalizeCuit, buildCuitWhereClause } from '@/lib/cuit-utils';
 import { logger } from '@/lib/logger'
+import { esClaveExterior } from '@/lib/cliente-exterior';
 
 export async function GET(request: NextRequest) {
   try {
@@ -144,12 +145,22 @@ export async function POST(request: NextRequest) {
 
     // Si viene colppyCustomer, upsert en la base local (igual que en quotes)
     if (colppyCustomer && colppyCustomer.cuit) {
+      // Cliente del exterior (solo en el ERP): se usa tal cual
+      const exteriorExistente = esClaveExterior(colppyCustomer.cuit)
+        ? await prisma.customer.findUnique({ where: { cuit: colppyCustomer.cuit } })
+        : null;
+      if (esClaveExterior(colppyCustomer.cuit) && !exteriorExistente) {
+        return NextResponse.json({ error: 'Cliente del exterior no encontrado' }, { status: 400 });
+      }
+
       const normalizedCuit = normalizeCuit(colppyCustomer.cuit);
       const existing = normalizedCuit
         ? await prisma.customer.findFirst({ where: buildCuitWhereClause(normalizedCuit) })
         : null;
 
-      if (existing) {
+      if (exteriorExistente) {
+        customerId = exteriorExistente.id;
+      } else if (existing) {
         await prisma.customer.update({
           where: { id: existing.id },
           data: {

@@ -18,6 +18,8 @@ function getTCBadgeClass(type: string): string {
   return TC_BADGE_COLORS[type] || 'bg-orange-100 text-orange-800 border border-orange-300'
 }
 import ClienteDetailTabs from '@/components/clientes/ClienteDetailTabs'
+import { esClienteExterior, etiquetaIdFiscal, idFiscalParaMostrar, esClaveExterior } from '@/lib/cliente-exterior'
+import { CONDICIONES_IVA } from '@/lib/constants'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -44,6 +46,9 @@ interface ColppyCustomer {
   defaultTransportAddress: string
   defaultTransportSchedule: string
   exchangeRateType?: string | null
+  /** Cliente del exterior: país e ID fiscal (RUT, RUC...) tal como se cargó */
+  country?: string
+  taxIdExterior?: string | null
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -80,7 +85,9 @@ export default function ClienteDetailPage() {
       businessName: localData.businessName || localData.name || '',
       cuit: localData.cuit || '',
       taxCondition: localData.taxCondition || '',
-      taxConditionDisplay: localData.taxCondition || '',
+      taxConditionDisplay: CONDICIONES_IVA.find((c) => c.value === localData.taxCondition)?.label || localData.taxCondition || '',
+      country: localData.country || 'Argentina',
+      taxIdExterior: localData.taxIdExterior ?? null,
       address: localData.address || '',
       city: localData.city || '',
       province: localData.province || '',
@@ -206,7 +213,9 @@ export default function ClienteDetailPage() {
         if (!localRes.ok) throw new Error('Cliente no encontrado')
         const localData = await localRes.json()
 
-        const localCuit = localData.cuit?.replace(/\D/g, '') || ''
+        // Cliente del exterior: la clave "CL-761234567" se pasa entera (sus
+        // dígitos sueltos podrían coincidir con un CUIT argentino)
+        const localCuit = esClaveExterior(localData.cuit) ? localData.cuit : localData.cuit?.replace(/\D/g, '') || ''
         setCuit(localCuit)
 
         // Intentar enriquecer con Colppy (sin bloquear)
@@ -315,8 +324,13 @@ export default function ClienteDetailPage() {
                 )}
                 <div className="flex items-center gap-3 mt-1 flex-wrap">
                   <span className="font-mono text-sm text-gray-600">
-                    {customer.cuit ? formatCUIT(customer.cuit) : 'Sin CUIT'}
+                    {esClienteExterior(customer)
+                      ? `${etiquetaIdFiscal(customer.country)} ${idFiscalParaMostrar(customer)}`
+                      : customer.cuit ? formatCUIT(customer.cuit) : 'Sin CUIT'}
                   </span>
+                  {esClienteExterior(customer) && (
+                    <Badge className="text-xs bg-sky-100 text-sky-800">{customer.country}</Badge>
+                  )}
                   <Badge variant="outline" className="text-xs">
                     {customer.taxConditionDisplay || customer.taxCondition}
                   </Badge>
@@ -349,7 +363,7 @@ export default function ClienteDetailPage() {
       {/* Tabs */}
       <ClienteDetailTabs
         colppyCustomer={customer}
-        cuit={cuit || customer.cuit?.replace(/\D/g, '') || ''}
+        cuit={cuit || (esClaveExterior(customer.cuit) ? customer.cuit : customer.cuit?.replace(/\D/g, '')) || ''}
         onCustomerUpdate={(updated) => setCustomer((prev) => prev ? { ...prev, ...updated } : prev)}
       />
     </div>

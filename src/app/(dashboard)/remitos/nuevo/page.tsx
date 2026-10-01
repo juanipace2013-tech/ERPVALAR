@@ -47,6 +47,7 @@ import {
   type ColppyCustomer,
 } from '@/components/ColppyCustomerSearch'
 import DeliveryAddressSelector from '@/components/remitos/DeliveryAddressSelector'
+import { parametroBusquedaCliente } from '@/lib/cliente-exterior'
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
 
@@ -319,7 +320,7 @@ export default function NuevoRemitoPage() {
       setLocalCustomerId(null)
       return
     }
-    const normalizedCuit = customer.cuit.replace(/\D/g, '')
+    const normalizedCuit = parametroBusquedaCliente(customer.cuit) ?? customer.cuit.replace(/\D/g, '')
     fetch(`/api/clientes/by-cuit/${normalizedCuit}`)
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {

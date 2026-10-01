@@ -18,6 +18,7 @@ import { ArrowLeft, Save, Loader2, DollarSign, UserCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber, getLocalDateString } from '@/lib/utils'
 import { ColppyCustomerSearch, type ColppyCustomer } from '@/components/ColppyCustomerSearch'
+import { esClaveExterior, parametroBusquedaCliente } from '@/lib/cliente-exterior'
 
 const TC_BADGE_COLORS: Record<string, string> = {
   'TC Billete SIN IVA': 'bg-amber-100 text-amber-800 border-amber-300',
@@ -158,8 +159,9 @@ export default function NuevaCotizacionPage() {
       // Pre-cargar vendedor asignado y TC del cliente
       try {
         const cleanCuit = customer.cuit?.replace(/\D/g, '')
-        if (cleanCuit && cleanCuit.length === 11) {
-          const res = await fetch(`/api/clientes/by-cuit/${cleanCuit}`)
+        const parametro = esClaveExterior(customer.cuit) ? parametroBusquedaCliente(customer.cuit) : cleanCuit && cleanCuit.length === 11 ? cleanCuit : null
+        if (parametro) {
+          const res = await fetch(`/api/clientes/by-cuit/${parametro}`)
           if (res.ok) {
             const data = await res.json()
             if (data.found && data.customer?.salesPerson) {

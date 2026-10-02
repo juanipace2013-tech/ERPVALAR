@@ -51,6 +51,7 @@ import { FamiqStock } from '@/components/productos/FamiqStock'
 import { WintersStock } from '@/components/productos/WintersStock'
 import { getConjuntosGenebre, type ConjuntoOpcion, type ConjuntoTipo } from '@/lib/genebre-conjuntos'
 import { getBobinasElectrovalvula, type BobinaKit, ELECTROVALVULAS_NAMUR, type NamurKit } from '@/lib/genebre-electrovalvulas'
+import { getPosicionadores, type PosicionadorOpcion } from '@/lib/genebre-posicionadores'
 
 interface Product {
   id: string
@@ -278,6 +279,9 @@ export default function QuoteDetailPage() {
   const [bobinaKitLoading, setBobinaKitLoading] = useState<string | null>(null)
   // SKUs agregados por el último kit de bobina elegido: al elegir otra tensión, se reemplazan
   const [lastBobinaKitSkus, setLastBobinaKitSkus] = useState<string[]>([])
+
+  // Posicionador opcional para válvulas de control GENEBRE (ej: 5065A)
+  const [posicionadorLoading, setPosicionadorLoading] = useState<string | null>(null)
 
   // Product search
   const [productSearch, setProductSearch] = useState('')
@@ -1257,6 +1261,52 @@ export default function QuoteDetailPage() {
     }
   }
 
+  // Agrega el posicionador elegido como adicional de la válvula de control.
+  // Va uno solo por válvula: si ya había otro de las opciones, se reemplaza.
+  const handleAddPosicionador = async (opcion: PosicionadorOpcion, opciones: PosicionadorOpcion[]) => {
+    if (itemFormData.additionals.some((a) => a.productSku === opcion.sku)) return
+    setPosicionadorLoading(opcion.sku)
+    try {
+      const params = new URLSearchParams({ search: opcion.sku, limit: '10', status: 'ACTIVE' })
+      const response = await fetch(`/api/productos?${params.toString()}`)
+      const data = response.ok ? await response.json() : { products: [] }
+      const product = ((data.products || []) as Product[]).find((p) => p.sku === opcion.sku)
+
+      if (!product) {
+        toast.warning(`Posicionador no encontrado en el catálogo: ${opcion.sku}`)
+        return
+      }
+
+      const skusOpciones = opciones.map((o) => o.sku)
+      const restantes = itemFormData.additionals.filter(
+        (a) => !a.productSku || !skusOpciones.includes(a.productSku)
+      )
+
+      if (restantes.length + 1 > 5) {
+        toast.error('Ya hay 5 adicionales — eliminá uno para agregar el posicionador.')
+        return
+      }
+
+      setItemFormData({
+        ...itemFormData,
+        additionals: [
+          ...restantes,
+          {
+            productId: product.id,
+            listPrice: product.listPriceUSD ? Number(product.listPriceUSD) : 0,
+            productName: product.name,
+            productSku: product.sku,
+          },
+        ],
+      })
+      toast.success(`Posicionador ${opcion.label} agregado (${product.sku})`)
+    } catch {
+      toast.error('Error al buscar el posicionador')
+    } finally {
+      setPosicionadorLoading(null)
+    }
+  }
+
   const handleUpdateAdditional = (index: number, product: Product) => {
     const listPrice = product.listPriceUSD ? Number(product.listPriceUSD) : 0
 
@@ -1305,6 +1355,7 @@ export default function QuoteDetailPage() {
     setLastBobinaKitSkus([])
     setNamurLoading(null)
     setLastNamurSku(null)
+    setPosicionadorLoading(null)
   }
 
   const handleOpenAlternativeDialog = (parentItemId: string) => {
@@ -2262,6 +2313,46 @@ export default function QuoteDetailPage() {
                                     {kit.tension}
                                   </Button>
                                 ))}
+                              </div>
+                            </div>
+                          )
+                        })()}
+
+                        {/* Posicionador opcional para válvulas de control GENEBRE (5065A) */}
+                        {!itemFormData.isManual && selectedProduct && (() => {
+                          const opciones = getPosicionadores(selectedProduct.sku)
+                          if (opciones.length === 0) return null
+                          return (
+                            <div className="rounded-md border border-teal-200 bg-teal-50/60 p-2 space-y-1.5">
+                              <p className="text-xs font-semibold text-teal-800">
+                                🎛 Posicionador (opcional)
+                              </p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {opciones.map((opcion) => {
+                                  const elegido = itemFormData.additionals.some((a) => a.productSku === opcion.sku)
+                                  return (
+                                    <Button
+                                      key={opcion.sku}
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      disabled={posicionadorLoading !== null}
+                                      title={opcion.sku}
+                                      className={
+                                        elegido
+                                          ? 'h-7 text-xs bg-teal-600 border-teal-600 text-white hover:bg-teal-600 hover:text-white'
+                                          : 'h-7 text-xs bg-white border-teal-300 text-teal-700 hover:bg-teal-100'
+                                      }
+                                      onClick={() => handleAddPosicionador(opcion, opciones)}
+                                    >
+                                      {posicionadorLoading === opcion.sku && (
+                                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                      )}
+                                      {elegido ? '✓ ' : ''}
+                                      {opcion.label}
+                                    </Button>
+                                  )
+                                })}
                               </div>
                             </div>
                           )

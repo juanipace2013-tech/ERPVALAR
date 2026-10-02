@@ -187,6 +187,8 @@ interface HistorialItem {
   colppyRef: string
   /** Otras facturas vigentes de la misma cotización */
   facturasExtra: number
+  /** Factura del ERP del número mostrado (link a /facturas/[id]) */
+  facturaId: string | null
   quoteNumber: string
   purchaseOrderNumber: string | null
   customer: { id: string; name: string; cuit: string }
@@ -841,13 +843,13 @@ export default function FacturacionPage() {
         />
       </div>
 
-      {/* ─── Últimas Facturas Enviadas a Colppy ─── */}
+      {/* ─── Últimas Facturas Emitidas ─── */}
       <Card className="mt-8">
         <div className="p-6 pb-4">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <History className="h-5 w-5 text-blue-600" />
-              Últimas Facturas Enviadas a Colppy
+              Últimas Facturas Emitidas
               {historialData && (
                 <span className="text-sm font-normal text-gray-500">
                   {historialData.total} registros
@@ -951,7 +953,7 @@ export default function FacturacionPage() {
           ) : !historialData || historialData.historial.length === 0 ? (
             <div className="text-center py-8 text-gray-400">
               <Receipt className="h-10 w-10 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">No hay facturas enviadas a Colppy</p>
+              <p className="text-sm">No hay facturas emitidas</p>
             </div>
           ) : (
             <>
@@ -981,7 +983,13 @@ export default function FacturacionPage() {
                             </div>
                           </TableCell>
                           <TableCell className="px-2 py-1.5 whitespace-nowrap font-mono text-xs font-medium">
-                            {item.colppyRef}
+                            {item.facturaId ? (
+                              <Link href={`/facturas/${item.facturaId}`} className="text-blue-600 hover:underline" title="Ver factura">
+                                {item.colppyRef}
+                              </Link>
+                            ) : (
+                              item.colppyRef
+                            )}
                             {item.facturasExtra > 0 && (
                               <span className="ml-1 font-sans text-gray-500" title={`${item.facturasExtra + 1} facturas`}>
                                 +{item.facturasExtra}

@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
           // Número fiscal de las facturas vigentes (A-0007-00000005), la última primero
           facturas: {
             where: { estado: { notIn: ['ANULADA', 'ERROR_GUARDADO', 'NOTA_CREDITO'] } },
-            select: { numeroFactura: true },
+            select: { numeroFactura: true, invoice: { select: { id: true, invoiceNumber: true } } },
             orderBy: { fecha: 'desc' },
           },
         },
@@ -67,16 +67,40 @@ export async function GET(request: NextRequest) {
       }),
     ])
 
+    // Cotizaciones viejas sin envío (CotizacionFactura): la factura del ERP por id de Colppy
+    const colppyIdsSinEnvio = quotes.filter((q) => !q.facturas.length && q.colppyInvoiceId).map((q) => q.colppyInvoiceId!)
+    const facturasPorColppyId = new Map(
+      (colppyIdsSinEnvio.length
+        ? await prisma.invoice.findMany({
+            where: { colppyId: { in: colppyIdsSinEnvio } },
+            select: { id: true, colppyId: true, invoiceNumber: true },
+          })
+        : []
+      ).map((i) => [i.colppyId!, i])
+    )
+    // A-0007-00000017, FCEA-0007-00000001, 0003-00015423 (no "BORRADOR-COLPPY-...")
+    const esNumero = (n: string | null | undefined) => !!n && /^(?:[A-Z]{1,5}-)?\d{4,5}-\d{8}$/.test(n)
+
     // Formatear para el frontend
     const historial = quotes.map((q) => {
       const total = Number(q.total)
       const exchangeRate = q.exchangeRate ? Number(q.exchangeRate) : null
+      // Número de factura real (el de la factura del ERP si está vinculada) y su
+      // id para el link; si no hay (borradores viejos), el id de Colppy
+      const envio = q.facturas.find((f) => esNumero(f.invoice?.invoiceNumber) || esNumero(f.numeroFactura))
+      const viejaPorColppy = !q.facturas.length && q.colppyInvoiceId ? facturasPorColppyId.get(q.colppyInvoiceId) : undefined
+      const numero = envio
+        ? (esNumero(envio.invoice?.invoiceNumber) ? envio.invoice!.invoiceNumber : envio.numeroFactura)
+        : esNumero(viejaPorColppy?.invoiceNumber)
+          ? viejaPorColppy!.invoiceNumber
+          : null
 
       return {
         id: q.id,
         date: q.colppySyncedAt!.toISOString(),
-        // Número de factura real; si no hay (borradores viejos), el id de Colppy
-        colppyRef: q.facturas.find((f) => f.numeroFactura && /\d{4,5}-\d{8}/.test(f.numeroFactura))?.numeroFactura || q.colppyInvoiceId || '—',
+        colppyRef: numero || q.colppyInvoiceId || '—',
+        // Factura del ERP para el link del número (null: no hay factura vinculada)
+        facturaId: envio?.invoice?.id ?? viejaPorColppy?.id ?? null,
         facturasExtra: Math.max(0, q.facturas.length - 1),
         quoteNumber: q.quoteNumber,
         purchaseOrderNumber: q.purchaseOrderNumber,

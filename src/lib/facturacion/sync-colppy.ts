@@ -23,6 +23,7 @@ import {
 import { mapColppyTaxCondition } from '@/lib/colppy-tax-map'
 import { colppyLeerFacturaVenta, getCachedColppySession } from '@/lib/colppy'
 import { logger } from '@/lib/logger'
+import { vincularEnvioColppy } from '@/lib/facturacion/vincular-envio-colppy'
 
 const PAGE_SIZE = 500
 
@@ -450,31 +451,13 @@ export async function syncColppyFacturas(dateFrom: Date, dateTo: Date): Promise<
       logger.info(`[Sync Colppy] Eliminados ${deletedREC.count} recibos (REC) de syncs anteriores`)
     }
 
-    // Eliminar borradores: nroFactura con números muy altos (ej: 83957509)
-    // La numeración real de VAL ARG es 0003-13xxx y 0003-00001xxx
-    const deletedDrafts = await prisma.invoice.deleteMany({
-      where: {
-        colppyId: { not: null },
-        status: 'PENDING',
-        AND: [
-          { invoiceNumber: { not: { startsWith: '0003-0000' } } },
-          // Nunca borrar los borradores creados por el ERP: al importarse la
-          // factura emitida (mismo colppyId) pasan a PENDING y esta limpieza
-          // los eliminaba, destruyendo los InvoiceItems que vinculan la
-          // factura con los items de la cotización (caso VAL-2026-2331).
-          { invoiceNumber: { not: { startsWith: 'BORRADOR-COLPPY-' } } },
-          // Nunca borrar comprobantes emitidos por el ERP (ARCA, PV 7): tienen
-          // CAE/QR/items y numeran "A-0007-..." (no "0003-0000"). Con la rama
-          // ARCA de abajo pasando el status a PENDING, esta limpieza los
-          // borraba en la corrida siguiente (detectado 1/10/2026, antes de que
-          // ocurriera). OR explícito: { not: 'ARCA' } solo excluye NULLs.
-          { OR: [{ emitidaPor: null }, { emitidaPor: { not: 'ARCA' } }] },
-        ],
-      },
-    })
-    if (deletedDrafts.count > 0) {
-      logger.info(`[Sync Colppy] Eliminados ${deletedDrafts.count} borradores de syncs anteriores`)
-    }
+    // (Hasta el 1/10/2026 acá se "limpiaban borradores": facturas PENDING cuyo
+    // número no empezaba con "0003-0000". Desde que la numeración pasó la
+    // 0003-00010000 eso borraba TODAS las facturas reales impagas, que el
+    // mismo sync volvía a crear sin ítems ni cotización. El sync solo importa
+    // comprobantes emitidos (ver filtro de estado), así que no hay borradores
+    // que limpiar. Los envíos que quedaron sin factura se reparan con
+    // scripts/reparar-envios-colppy.ts.)
   } catch (err) {
     logger.warn('[Sync Colppy] No se pudieron eliminar registros antiguos:', err instanceof Error ? err.message : err)
   }
@@ -516,6 +499,25 @@ export async function syncColppyFacturas(dateFrom: Date, dateTo: Date): Promise<
     return closestRate || DEFAULT_EXCHANGE_RATE
   }
 
+  // Factura que el ERP mandó a Colppy (CotizacionFactura con el mismo id):
+  // recupera cotización, número real e ítems. Best effort: no corta el sync.
+  let vinculadasEnvio = 0
+  const vincularConEnvio = async (inv: { id: string; colppyId: string | null; invoiceNumber: string; currency: string; quoteId: string | null }) => {
+    if (!inv.colppyId) return
+    try {
+      const r = await prisma.$transaction((tx) =>
+        vincularEnvioColppy(
+          tx,
+          { id: inv.id, colppyId: inv.colppyId!, invoiceNumber: inv.invoiceNumber, currency: inv.currency, quoteId: inv.quoteId },
+          { systemUserId: systemUser.id }
+        )
+      )
+      if (r.vinculado && (r.quoteCambiado || r.itemsCreados)) vinculadasEnvio++
+    } catch (e) {
+      logger.warn(`[Sync Colppy] No se pudo vincular la factura ${inv.invoiceNumber} con su envío: ${(e as Error).message}`)
+    }
+  }
+
   for (const f of colppyFacturas) {
     const idFactura = String(f.idFactura || '')
     if (!idFactura) {
@@ -523,9 +525,11 @@ export async function syncColppyFacturas(dateFrom: Date, dateTo: Date): Promise<
       skipped++; continue
     }
 
-    // Solo importar facturas EMITIDAS (idEstadoFactura=3 o 5=pagada)
+    // Solo importar facturas EMITIDAS: 3 = Aprobada, 5 = Cobrada, 6 =
+    // Parcialmente Cobrada (antes se salteaba: esas facturas no existían en
+    // el ERP). 1/2 = borrador, 4 = anulada.
     const idEstado = String(f.idEstadoFactura || '')
-    if (idEstado !== '3' && idEstado !== '5') {
+    if (idEstado !== '3' && idEstado !== '5' && idEstado !== '6') {
       skipReasons[`estado_${idEstado}`] = (skipReasons[`estado_${idEstado}`] || 0) + 1
       skipped++; continue
     }
@@ -817,10 +821,12 @@ export async function syncColppyFacturas(dateFrom: Date, dateTo: Date): Promise<
           },
         })
         updated++
+        await vincularConEnvio({ ...existing, currency: invoiceData.currency, invoiceNumber: existing.invoiceNumber.startsWith('BORRADOR-COLPPY-') ? invoiceData.invoiceNumber : existing.invoiceNumber })
       } else {
-        await prisma.invoice.create({ data: invoiceData })
+        const nueva = await prisma.invoice.create({ data: invoiceData })
         if (matchedQuoteId) linkedToQuote++
         created++
+        await vincularConEnvio(nueva)
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error'
@@ -828,7 +834,7 @@ export async function syncColppyFacturas(dateFrom: Date, dateTo: Date): Promise<
     }
   }
 
-  logger.info(`[Sync Colppy] Resultado: ${created} creadas (${linkedToQuote} vinculadas a cotización), ${updated} actualizadas, ${skipped} omitidas, ${errors.length} errores`)
+  logger.info(`[Sync Colppy] Resultado: ${created} creadas (${linkedToQuote} vinculadas a cotización), ${updated} actualizadas, ${skipped} omitidas, ${errors.length} errores, ${vinculadasEnvio} vinculadas a su envío del ERP`)
   logger.info(`[Sync Colppy] Clientes: ${customersCreated} creados, ${customersLinkedByCuit} vinculados por CUIT`)
   if (Object.keys(skipReasons).length > 0) {
     logger.info('[Sync Colppy] Razones de omisión:', JSON.stringify(skipReasons))

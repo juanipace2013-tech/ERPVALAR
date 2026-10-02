@@ -1688,9 +1688,9 @@ export async function sendQuoteToColppy(
 
   try {
     // 0. Cliente del exterior: ni alta en Colppy ni Factura A/B (ver
-    //    src/lib/cliente-exterior.ts; la Factura E no está implementada)
+    //    src/lib/cliente-exterior.ts); va con Factura E (factura-exportacion.ts)
     if (quote.customer.taxCondition === 'CLIENTE_EXTERIOR' || /^[A-Z]{2}-/.test(quote.customer.cuit)) {
-      throw new Error('Cliente del exterior: requiere Factura E de exportación, que todavía no está disponible en el ERP');
+      throw new Error('Cliente del exterior: se factura con Factura E de exportación (botón «Emitir Factura E» en la cotización o el tablero), no con Factura A/B');
     }
 
     // 1. Sesión cacheada (antes: login + logout contra Colppy en cada envío)

@@ -130,11 +130,11 @@ export async function POST(
       );
     }
 
-    // Cliente del exterior: solo existe en el ERP (no en Colppy) y no se le
-    // puede emitir Factura A/B; la Factura E (WSFEX) no está implementada.
+    // Cliente del exterior: no se le puede emitir Factura A/B ni se envía a
+    // Colppy desde acá; va con Factura E (POST /api/quotes/[id]/factura-exportacion).
     if (esClienteExterior(quote.customer)) {
       return NextResponse.json(
-        { error: 'Cliente del exterior: requiere Factura E de exportación, que todavía no está disponible en el ERP. Tampoco se envía a Colppy.' },
+        { error: 'Cliente del exterior: se factura con Factura E de exportación (botón «Emitir Factura E» en la cotización o el tablero), no con Factura A/B. Tampoco se envía a Colppy desde acá.' },
         { status: 422 }
       );
     }

@@ -7,6 +7,9 @@
  * - Importa FAV/NDV/NCV emitidas (ignora borradores y recibos)
  * - Crea facturas nuevas (por colppyId) y actualiza las existentes
  * - Auto-crea/vincula clientes por colppyId o CUIT
+ * - Letra E (exportación, cargada a mano en Colppy): solo se vincula con la
+ *   Factura E que emitió el ERP (colppyId o PV + número); nunca crea la
+ *   factura ni un cliente por el CUIT país genérico
  */
 
 import { prisma } from '@/lib/prisma'
@@ -24,6 +27,8 @@ import { mapColppyTaxCondition } from '@/lib/colppy-tax-map'
 import { colppyLeerFacturaVenta, getCachedColppySession } from '@/lib/colppy'
 import { logger } from '@/lib/logger'
 import { vincularEnvioColppy } from '@/lib/facturacion/vincular-envio-colppy'
+import { COLPPY_SYNC_MANUAL, notaCargadaEnColppy } from '@/lib/facturacion/colppy-manual'
+import { FEX_CBTE, FEX_PUNTO_VENTA_PROD, esCbteExportacion, esCuitPaisArca } from '@/lib/arca/fex-params'
 
 const PAGE_SIZE = 500
 
@@ -94,8 +99,16 @@ const DEBIT_NOTE_TIPOS = new Set(['8', '12', '52'])
  * Tipo de comprobante ARCA (1/6 FA-FB, 3/8 NC, 2/7 ND) segun clase y letra.
  * FCE MiPyME (Colppy 51/52/53) → 201/206, 203/208, 202/207: numeran aparte,
  * así que nunca se deben cruzar con la factura común del mismo número.
+ * Letra E (exportación, WSFEX; en la v1 se carga a mano en Colppy con el
+ * talonario E del PV 0010) → 19 Factura E, 21 NC E, 20 ND E.
  */
-function arcaCbteTipo(transactionType: string, letra: string, tipoCompColppy?: string): number | null {
+export function arcaCbteTipo(transactionType: string, letra: string, tipoCompColppy?: string): number | null {
+  if (letra === 'E') {
+    if (transactionType === 'SALE') return FEX_CBTE.FACTURA_E
+    if (transactionType === 'CREDIT_NOTE') return FEX_CBTE.NOTA_CREDITO_E
+    if (transactionType === 'DEBIT_NOTE') return FEX_CBTE.NOTA_DEBITO_E
+    return null
+  }
   const esB = letra === 'B' || letra === 'C'
   if (tipoCompColppy === '51' || tipoCompColppy === '52' || tipoCompColppy === '53') {
     if (transactionType === 'SALE') return esB ? 206 : 201
@@ -123,6 +136,10 @@ function arcaCbteTipo(transactionType: string, letra: string, tipoCompColppy?: s
  *   FCE. Es "OK" solo si quedó marcada FCE (is_fce de leer_facturaventa; el
  *   listado la sigue informando tipo 4) o como MiPyME (51/52/53), con el mismo
  *   número que el ERP; si no, ERROR con el motivo.
+ * - Exportación (19/20/21, cargada a mano en Colppy): pasa de MANUAL a OK si
+ *   en Colppy tiene letra E y el mismo PV + número que el ERP. Si no coincide
+ *   puede ser un id de Colppy mal pegado: ERROR con el motivo y NO se tocan
+ *   estado ni saldo (serían los de otra factura).
  */
 export function resolverSyncArca(
   existing: {
@@ -133,7 +150,7 @@ export function resolverSyncArca(
     colppySyncStatus?: string | null
     colppySyncError?: string | null
   },
-  colppy: { statusColppy: string; tipoComp: string; nroFactura: string; isFce?: boolean }
+  colppy: { statusColppy: string; tipoComp: string; nroFactura: string; isFce?: boolean; letra?: string }
 ): { status: InvoiceStatus; actualizarSaldo: boolean; colppySyncStatus: string; colppySyncError: string | null } {
   const anulada = existing.status === 'CANCELLED'
   const status: InvoiceStatus = anulada
@@ -143,6 +160,27 @@ export function resolverSyncArca(
       : existing.status === 'PAID' || existing.status === 'PENDING'
         ? 'AUTHORIZED'
         : existing.status
+
+  if (esCbteExportacion(existing.cbteTipo)) {
+    const m = colppy.nroFactura.match(/^(\d{4,5})-(\d{8})$/)
+    const esperado = `${String(existing.pointOfSale ?? 0).padStart(4, '0')}-${String(existing.cbteNumero ?? 0).padStart(8, '0')}`
+    const nroOk = !!m && Number(m[1]) === existing.pointOfSale && Number(m[2]) === existing.cbteNumero
+    const letraOk = colppy.letra === undefined || colppy.letra === 'E'
+    if (!nroOk || !letraOk) {
+      return {
+        status: existing.status,
+        actualizarSaldo: false,
+        colppySyncStatus: 'ERROR',
+        colppySyncError: `Cargada en Colppy ${[
+          !letraOk ? `con letra ${colppy.letra} (tiene que ser E)` : null,
+          !nroOk ? `con el N° ${colppy.nroFactura || '?'} (tiene que ser ${esperado})` : null,
+        ]
+          .filter(Boolean)
+          .join(' y ')}: corregirla en Colppy o revisar el id de Colppy vinculado (el próximo sync lo vuelve a revisar)`,
+      }
+    }
+    return { status, actualizarSaldo: !anulada, colppySyncStatus: 'OK', colppySyncError: null }
+  }
 
   let colppySyncStatus = 'OK'
   let colppySyncError: string | null = null
@@ -544,10 +582,34 @@ export async function syncColppyFacturas(dateFrom: Date, dateTo: Date): Promise<
 
     const idCliente = String(f.idCliente || '')
 
-    // Estrategia de matching de cliente: 1) colppyId, 2) CUIT, 3) auto-crear
-    let localCustomerId = customerByColppyId.get(idCliente)
+    // Factura/NC/ND E (exportación): en Colppy el cliente del exterior lleva el
+    // "CUIT país" genérico de ARCA (55000000034 = cualquier persona jurídica de
+    // Chile), que comparten todos los clientes de ese país. Nunca se vincula
+    // ni se crea un cliente por ese CUIT (sería un cliente fantasma que junta
+    // a todos): la E se engancha con la Factura E que emitió el ERP (por
+    // colppyId o PV + número, más abajo) y usa su cliente. Nunca se importa
+    // una E que el ERP no emitió.
+    const letraColppy = mapInvoiceType(String(f.idTipoFactura || '0'))
+    const pvColppy = Number(String(f.nroFactura || '').match(/^(\d{4,5})-\d{8}$/)?.[1] ?? NaN)
+    const esExportacion = letraColppy === 'E' || pvColppy === FEX_PUNTO_VENTA_PROD
+    if (esExportacion && letraColppy !== 'E') {
+      // El PV 0010 es solo de exportación (en ARCA "Comprobantes de
+      // Exportación - Web Services"): con otra letra está mal cargada.
+      skipReasons['exportacion_letra_incorrecta'] = (skipReasons['exportacion_letra_incorrecta'] || 0) + 1
+      skipped++
+      errors.push(
+        `Factura ${idFactura}: ${String(f.nroFactura)} está cargada en Colppy con letra ${letraColppy} en el PV ` +
+          `${String(FEX_PUNTO_VENTA_PROD).padStart(4, '0')}, que es solo de exportación: tiene que ser letra E. No se importa.`
+      )
+      continue
+    }
 
-    if (!localCustomerId) {
+    // Estrategia de matching de cliente: 1) colppyId, 2) CUIT, 3) auto-crear.
+    // Un CUIT país genérico de ARCA (cliente del exterior) nunca vincula ni crea.
+    let localCustomerId = customerByColppyId.get(idCliente)
+    const cuitEsPais = esCuitPaisArca(colppyClientMap.get(idCliente)?.cuit)
+
+    if (!localCustomerId && !esExportacion && !cuitEsPais) {
       const colppyClient = colppyClientMap.get(idCliente)
       if (colppyClient?.cuit) {
         const cuitClean = colppyClient.cuit.replace(/\D/g, '')
@@ -564,7 +626,9 @@ export async function syncColppyFacturas(dateFrom: Date, dateTo: Date): Promise<
       }
     }
 
-    if (!localCustomerId) {
+    if (!localCustomerId && !esExportacion && cuitEsPais) {
+      skipReasons['cliente_cuit_pais'] = (skipReasons['cliente_cuit_pais'] || 0) + 1
+    } else if (!localCustomerId && !esExportacion) {
       // Auto-crear cliente desde datos de Colppy
       const colppyClient = colppyClientMap.get(idCliente)
       if (colppyClient && colppyClient.cuit) {
@@ -608,7 +672,7 @@ export async function syncColppyFacturas(dateFrom: Date, dateTo: Date): Promise<
       }
     }
 
-    if (!localCustomerId) {
+    if (!localCustomerId && !esExportacion) {
       skipped++
       continue
     }
@@ -699,7 +763,7 @@ export async function syncColppyFacturas(dateFrom: Date, dateTo: Date): Promise<
     // Solo para FAV/NDV, no para notas de crédito
     let matchedQuoteId: string | null = null
     let matchedSalesPersonId: string | null = null
-    if (!esNotaCredito) {
+    if (!esNotaCredito && localCustomerId) {
       const customerQuotes = quotesByCustomer.get(localCustomerId)
       if (customerQuotes && total > 0) {
         const tolerance = 0.05 // 5%
@@ -720,7 +784,6 @@ export async function syncColppyFacturas(dateFrom: Date, dateTo: Date): Promise<
       invoiceNumber: String(f.nroFactura || `COLPPY-${idFactura}`),
       invoiceType: mapInvoiceType(String(f.idTipoFactura || '0')),
       transactionType,
-      customerId: localCustomerId,
       quoteId: matchedQuoteId,
       // Si se vinculó con cotización, usar su vendedor; si no, fallback a usuario del sistema
       userId: matchedSalesPersonId || systemUser.id,
@@ -754,9 +817,29 @@ export async function syncColppyFacturas(dateFrom: Date, dateTo: Date): Promise<
             where: { emitidaPor: 'ARCA', pointOfSale: Number(m[1]), cbteTipo: cbteTipoArca, cbteNumero: Number(m[2]) },
           })
         }
+        if (existing && existing.colppyId && esExportacion) {
+          // La Factura E del ERP ya está vinculada a OTRA factura de Colppy con
+          // el mismo número: esta es una segunda carga a mano. No se toca nada.
+          skipReasons['exportacion_duplicada_en_colppy'] = (skipReasons['exportacion_duplicada_en_colppy'] || 0) + 1
+          skipped++
+          errors.push(
+            `Factura ${idFactura}: ${tipoKey} ${String(f.nroFactura)} parece cargada dos veces en Colppy ` +
+              `(la ${existing.invoiceNumber} del ERP ya está vinculada a la factura ${existing.colppyId} de Colppy): anular la que sobra`
+          )
+          continue
+        }
         if (existing && !existing.colppyId) {
-          await prisma.invoice.update({ where: { id: existing.id }, data: { colppyId: idFactura } })
+          // Carga manual (Factura E) que nadie vinculó a mano antes del sync:
+          // se vincula acá y la nota deja de decir "PENDIENTE de cargar"
+          const manual = existing.colppySyncStatus === COLPPY_SYNC_MANUAL
+          await prisma.invoice.update({
+            where: { id: existing.id },
+            data: { colppyId: idFactura, ...(manual ? { notes: notaCargadaEnColppy(existing.notes, idFactura) } : {}) },
+          })
           await prisma.cotizacionFactura.updateMany({ where: { invoiceId: existing.id }, data: { colppyInvoiceId: idFactura } })
+          if (manual) {
+            logger.info(`[Sync Colppy] ${existing.invoiceNumber} (carga manual) vinculada por PV + número a la factura ${idFactura} de Colppy`)
+          }
         }
       }
 
@@ -782,6 +865,7 @@ export async function syncColppyFacturas(dateFrom: Date, dateTo: Date): Promise<
           nroFactura: String(f.nroFactura || ''),
           // ya confirmada en una corrida anterior: no se vuelve a consultar
           isFce: fceSinVerificar ? true : isFce,
+          letra: invoiceData.invoiceType,
         })
         const { status: statusArca, actualizarSaldo, colppySyncStatus: syncStatusArca, colppySyncError: syncErrorArca } = r
 
@@ -822,8 +906,22 @@ export async function syncColppyFacturas(dateFrom: Date, dateTo: Date): Promise<
         })
         updated++
         await vincularConEnvio({ ...existing, currency: invoiceData.currency, invoiceNumber: existing.invoiceNumber.startsWith('BORRADOR-COLPPY-') ? invoiceData.invoiceNumber : existing.invoiceNumber })
+      } else if (esExportacion || !localCustomerId) {
+        // E en Colppy sin la Factura E del ERP que la respalde: no se importa
+        // (ni se crea su cliente). Casi siempre es un número mal cargado.
+        skipReasons['exportacion_sin_factura_erp'] = (skipReasons['exportacion_sin_factura_erp'] || 0) + 1
+        skipped++
+        errors.push(
+          esExportacion && transactionType === 'CREDIT_NOTE'
+            ? // El ERP todavía no emite NC E (se hacen en RCEL): la comisión de la Factura E no se anula sola
+              `Factura ${idFactura}: NC E ${String(f.nroFactura || '?')} está en Colppy y el ERP no importa NC E. ` +
+                'Si anula una Factura E emitida por el ERP, anular A MANO su comisión (envío de la cotización): ' +
+                'el ERP la va a mostrar cobrada por el saldo 0 de Colppy. No se importa.'
+            : `Factura ${idFactura}: ${tipoKey} ${String(f.nroFactura || '?')} está en Colppy pero no coincide con ninguna Factura E ` +
+                'emitida por el ERP (se busca por PV + número): revisar el número en Colppy o pegar su id en la factura del ERP. No se importa.'
+        )
       } else {
-        const nueva = await prisma.invoice.create({ data: invoiceData })
+        const nueva = await prisma.invoice.create({ data: { ...invoiceData, customerId: localCustomerId } })
         if (matchedQuoteId) linkedToQuote++
         created++
         await vincularConEnvio(nueva)

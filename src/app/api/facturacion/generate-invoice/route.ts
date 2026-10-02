@@ -120,10 +120,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Cliente del exterior: no se le puede emitir Factura A/B (WSFE). La
-    // Factura E (exportación, WSFEX) todavía no está implementada.
+    // Cliente del exterior: no se le puede emitir Factura A/B (WSFE). Va con
+    // Factura E (exportación, WSFEX): POST /api/quotes/[id]/factura-exportacion.
     if (esClienteExterior(quote.customer)) {
-      return NextResponse.json({ error: 'Cliente del exterior: requiere Factura E de exportación, que todavía no está disponible en el ERP' }, { status: 422 })
+      return NextResponse.json({ error: 'Cliente del exterior: se factura con Factura E de exportación (botón «Emitir Factura E» en la cotización o el tablero), no con Factura A/B' }, { status: 422 })
     }
 
     // TC de la factura (solo USD): el elegido en el dialogo (billete del

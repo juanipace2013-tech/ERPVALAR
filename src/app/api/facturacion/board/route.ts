@@ -125,7 +125,8 @@ export async function GET(request: NextRequest) {
             orderBy: { fecha: 'asc' },
           },
           customer: {
-            select: { id: true, name: true, cuit: true, taxCondition: true, paymentTerms: true, exchangeRateType: true },
+            // country/taxIdExterior: clientes del exterior se facturan con Factura E (exportación)
+            select: { id: true, name: true, cuit: true, taxCondition: true, country: true, taxIdExterior: true, paymentTerms: true, exchangeRateType: true },
           },
           salesPerson: {
             select: { id: true, name: true },

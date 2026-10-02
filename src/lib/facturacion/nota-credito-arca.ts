@@ -30,6 +30,7 @@ import {
 import { getArcaConfig } from '@/lib/arca/config'
 import { emitirComprobante, receptorDesdeCondicion, type LetraComprobante } from '@/lib/arca/emitir'
 import { buildQrUrl, toCbteFch } from '@/lib/arca/wsfe'
+import { esCbteExportacion } from '@/lib/arca/fex-params'
 import { MARCA_NC_SIN_PENDIENTE, sincronizarComisionesDeQuote } from '@/lib/comisiones/liquidacion'
 import { signoCantidad } from '@/lib/facturacion/cantidades'
 import { armarImputacionNc, type ImputacionNc } from '@/lib/facturacion/imputacion-nc'
@@ -107,6 +108,19 @@ export class NotaCreditoError extends Error {
     super(message)
     this.name = 'NotaCreditoError'
   }
+}
+
+/**
+ * Las NC de este módulo son A/B (WSFE). Un comprobante de exportación
+ * (Factura/ND/NC E, tipos 19/20/21, WSFEX) se acredita con una NC E por WSFEX
+ * (fase 2 del plan de Factura E), nunca con una NC A/B.
+ */
+export const MENSAJE_NC_EXPORTACION =
+  'Nota de crédito sobre un comprobante de exportación (E): va como NC E por WSFEX, que todavía no está disponible en el ERP. ' +
+  'No se puede emitir una NC A/B contra una Factura E.'
+
+export function assertNoEsExportacion(cbteTipo: number | null | undefined): void {
+  if (esCbteExportacion(cbteTipo)) throw new NotaCreditoError(MENSAJE_NC_EXPORTACION, 422)
 }
 
 function r2(n: number): number {
@@ -249,6 +263,7 @@ export async function obtenerLineasNcUnidades(invoiceId: string): Promise<{
       colppyPayload: true,
       currency: true,
       invoiceType: true,
+      cbteTipo: true,
       subtotal: true,
       taxAmount: true,
       total: true,
@@ -257,6 +272,7 @@ export async function obtenerLineasNcUnidades(invoiceId: string): Promise<{
       relatedInvoices: { select: SELECT_NC_PREVIA },
     },
   })
+  assertNoEsExportacion(inv?.cbteTipo)
   const payload = (inv?.colppyPayload ?? null) as ColppyInvoicePayload | null
   if (!inv || !payload || !Array.isArray(payload.items) || !payload.items.length) return null
   const { lineas, contexto } = armarLineas(
@@ -305,6 +321,8 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
     },
   })
   if (!inv) throw new NotaCreditoError('Factura no encontrada', 404)
+  // Guard explícito: este flujo emite NC A/B por WSFE y nunca puede asociarse a un comprobante E
+  assertNoEsExportacion(inv.cbteTipo)
   if (inv.emitidaPor !== 'ARCA' || !inv.cae || !inv.pointOfSale || !inv.cbteTipo || !inv.cbteNumero) {
     throw new NotaCreditoError('Solo se pueden emitir notas de crédito sobre facturas emitidas por el ERP (ARCA)')
   }

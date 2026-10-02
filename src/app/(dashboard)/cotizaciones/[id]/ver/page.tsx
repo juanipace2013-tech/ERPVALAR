@@ -55,11 +55,13 @@ import {
   X,
   Truck,
   Plus,
+  Globe,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber, formatCurrency as formatCurrencyAR, getLocalDateString } from '@/lib/utils'
 import { SendQuoteDialog } from '@/components/quotes/SendQuoteDialog'
 import { SendToColppyDialog } from '@/components/quotes/SendToColppyDialog'
+import { FacturaExportacionDialog } from '@/components/quotes/FacturaExportacionDialog'
 import { DuplicateQuoteDialog } from '@/components/quotes/DuplicateQuoteDialog'
 import { esClienteExterior, etiquetaIdFiscal, idFiscalParaMostrar } from '@/lib/cliente-exterior'
 
@@ -205,6 +207,8 @@ export default function QuoteViewPage() {
   const [showAcceptDialog, setShowAcceptDialog] = useState(false)
   const [customerResponse, setCustomerResponse] = useState('')
   const [showColppyDialog, setShowColppyDialog] = useState(false)
+  // Cliente del exterior: se factura con Factura E (WSFEX), no con el dialog A/B
+  const [showFacturaEDialog, setShowFacturaEDialog] = useState(false)
 
   // Duplicate dialog
   const [showDuplicateDialog, setShowDuplicateDialog] = useState(false)
@@ -860,10 +864,17 @@ export default function QuoteViewPage() {
             {/* ACEPTADA - lista para facturar */}
             {quote.status === 'ACCEPTED' && (
               <>
-                <Button onClick={() => setShowColppyDialog(true)} disabled={actionLoading} className="bg-blue-600 hover:bg-blue-700">
-                  <Send className="h-4 w-4 mr-2" />
-                  Facturar
-                </Button>
+                {esClienteExterior(quote.customer) ? (
+                  <Button onClick={() => setShowFacturaEDialog(true)} disabled={actionLoading} className="bg-blue-600 hover:bg-blue-700">
+                    <Globe className="h-4 w-4 mr-2" />
+                    Emitir Factura E
+                  </Button>
+                ) : (
+                  <Button onClick={() => setShowColppyDialog(true)} disabled={actionLoading} className="bg-blue-600 hover:bg-blue-700">
+                    <Send className="h-4 w-4 mr-2" />
+                    Facturar
+                  </Button>
+                )}
                 <Button onClick={() => router.push(`/remitos/nuevo?quoteId=${id}`)} variant="outline">
                   <Package className="h-4 w-4 mr-2" />
                   Generar Remito
@@ -883,10 +894,17 @@ export default function QuoteViewPage() {
             {/* FACTURADA PARCIAL - permitir facturar lo que quedó pendiente */}
             {quote.status === 'FACTURADA_PARCIAL' && (
               <>
-                <Button onClick={() => setShowColppyDialog(true)} disabled={actionLoading} className="bg-blue-600 hover:bg-blue-700">
-                  <Send className="h-4 w-4 mr-2" />
-                  Facturar pendiente
-                </Button>
+                {esClienteExterior(quote.customer) ? (
+                  <Button onClick={() => setShowFacturaEDialog(true)} disabled={actionLoading} className="bg-blue-600 hover:bg-blue-700">
+                    <Globe className="h-4 w-4 mr-2" />
+                    Emitir Factura E (pendiente)
+                  </Button>
+                ) : (
+                  <Button onClick={() => setShowColppyDialog(true)} disabled={actionLoading} className="bg-blue-600 hover:bg-blue-700">
+                    <Send className="h-4 w-4 mr-2" />
+                    Facturar pendiente
+                  </Button>
+                )}
                 {quote.colppySyncedAt && (
                   <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 py-2 px-3">
                     <Send className="h-3.5 w-3.5 mr-1.5" />
@@ -1471,8 +1489,8 @@ export default function QuoteViewPage() {
                     quote.pricesIncludeTax ? 'text-amber-700' : 'text-gray-500'
                   }`}
                 >
-                  {quote.customer?.taxCondition === 'CLIENTE_EXTERIOR' && !quote.pricesIncludeTax
-                    ? 'Cliente del exterior: exportación, precios sin IVA (Factura E, todavía no disponible en el ERP)'
+                  {esClienteExterior(quote.customer) && !quote.pricesIncludeTax
+                    ? 'Cliente del exterior: exportación, precios sin IVA — se factura con «Emitir Factura E»'
                     : quote.pricesIncludeTax
                     ? 'Los precios INCLUYEN IVA (21%) — Factura B'
                     : 'Los precios NO incluyen IVA (21%) — Factura A'}
@@ -2156,6 +2174,17 @@ export default function QuoteViewPage() {
           />
         )
       })()}
+
+      {/* Dialog: Factura E (exportación) para clientes del exterior */}
+      {quote && esClienteExterior(quote.customer) && (
+        <FacturaExportacionDialog
+          quoteId={quote.id}
+          open={showFacturaEDialog}
+          onOpenChange={setShowFacturaEDialog}
+          onEmitted={() => fetchQuote()}
+          subtitle={quote.status === 'FACTURADA_PARCIAL' ? 'Facturación parcial: se proponen los ítems pendientes de facturar' : undefined}
+        />
+      )}
 
       {/* Dialog: Duplicar Cotización */}
       {quote && (

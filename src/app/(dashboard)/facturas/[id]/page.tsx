@@ -25,10 +25,12 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { ArrowLeft, Loader2, FileText, Download, RefreshCw, FileMinus, ExternalLink, AlertTriangle, CheckCircle2, Copy } from 'lucide-react'
+import { ArrowLeft, Loader2, FileText, Download, RefreshCw, FileMinus, ExternalLink, AlertTriangle, CheckCircle2, Copy, Globe, Link2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatCurrency as formatCurrencyAR } from '@/lib/utils'
 import { calcularImportesNc, calcularNcImporte, parseNumeroAr, type ContextoNc, type LineaAcreditable } from '@/lib/facturacion/nc-unidades'
+import { esCbteExportacion } from '@/lib/arca/fex-params'
+import { esClienteExterior, etiquetaIdFiscal, idFiscalParaMostrar } from '@/lib/cliente-exterior'
 
 interface InvoiceItem {
   id: string
@@ -54,6 +56,34 @@ interface RelatedInvoice {
   colppySyncStatus: string | null
 }
 
+/** Datos de exportación de una Factura E (FacturaExportacion; Decimal llega como string) */
+interface ExportacionInfo {
+  fexId: string
+  estado: string
+  regimen: string
+  tipoExpo: number
+  desNumero: string | null
+  fobUSD: number | string | null
+  permisoExistente: string | null
+  dstCmp: number
+  cuitPais: string | null
+  idImpositivo: string | null
+  domicilio: string
+  incoterm: string | null
+  incotermDs: string | null
+  formaPago: string | null
+  idioma: number
+  monedaCtz: number | string
+  canMisMonExt: string | null
+  obsComerciales: string | null
+  totalUSD: number | string
+  mercaderiaUSD: number | string
+  manualUSD: number | string
+  reproceso: boolean
+  recuperado: boolean
+  fechaCbte: string | null
+}
+
 interface Invoice {
   id: string
   invoiceNumber: string
@@ -73,7 +103,11 @@ interface Invoice {
     email: string | null
     phone: string | null
     address: string | null
+    city?: string | null
     taxCondition?: string | null
+    country?: string | null
+    taxIdExterior?: string | null
+    colppyId?: string | null
   }
   quote?: { id: string; quoteNumber: string; status: string } | null
   items: InvoiceItem[]
@@ -100,6 +134,13 @@ interface Invoice {
   pdfUrl: string | null
   relatedInvoice?: { id: string; invoiceNumber: string; invoiceType: string; total: number | string; cae: string | null } | null
   relatedInvoices: RelatedInvoice[]
+  /** Solo Factura E (exportación) */
+  exportacion?: ExportacionInfo | null
+}
+
+const REGIMEN_LABEL: Record<string, string> = {
+  EXPORTA_SIMPLE: 'Exporta Simple',
+  DESPACHANTE: 'Con despachante',
 }
 
 const statusLabels: Record<string, string> = {
@@ -151,6 +192,10 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   // Devolución: ¿las unidades vuelven a quedar pendientes en la cotización? (default no)
   const [ncPendiente, setNcPendiente] = useState(false)
   const [ncLoading, setNcLoading] = useState(false)
+  // Factura E: carga manual en Colppy (pegar el id)
+  const [colppyIdManual, setColppyIdManual] = useState('')
+  const [colppyClienteIdManual, setColppyClienteIdManual] = useState('')
+  const [vinculandoColppy, setVinculandoColppy] = useState(false)
 
   const fetchInvoice = useCallback(async () => {
     try {
@@ -197,6 +242,41 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
       toast.error('No se pudo registrar en Colppy', { description: (e as Error).message })
     } finally {
       setRetrying(false)
+    }
+  }
+
+  // Factura E (v1): se carga a mano en Colppy y acá se pega el id que le dio Colppy
+  const vincularColppy = async () => {
+    try {
+      setVinculandoColppy(true)
+      const colppyId = colppyIdManual.trim()
+      const colppyClienteId = colppyClienteIdManual.trim()
+      const r = await fetch(`/api/facturas/${id}/colppy-id`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ colppyId, ...(colppyClienteId ? { colppyClienteId } : {}) }),
+      })
+      const data = await r.json().catch(() => ({}))
+      if (!r.ok || !data.success) throw new Error(data.error || 'No se pudo vincular con Colppy')
+      toast.success('Factura vinculada con Colppy', {
+        description: `ID Colppy ${data.colppyId}${data.colppyClienteId ? ` · cliente ${data.colppyClienteId}` : ''}`,
+      })
+      setColppyIdManual('')
+      setColppyClienteIdManual('')
+      fetchInvoice()
+    } catch (e) {
+      toast.error('No se pudo vincular con Colppy', { description: (e as Error).message })
+    } finally {
+      setVinculandoColppy(false)
+    }
+  }
+
+  const copiar = async (texto: string, que: string) => {
+    try {
+      await navigator.clipboard.writeText(texto)
+      toast.success(`${que} copiado`)
+    } catch {
+      toast.error('No se pudo copiar al portapapeles')
     }
   }
 
@@ -306,6 +386,11 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
 
   const esArca = invoice.emitidaPor === 'ARCA'
   const esFactura = invoice.transactionType === 'SALE'
+  // Factura/NC/ND E (exportación, WSFEX): sin IVA, sin NC A/B y carga manual en Colppy
+  const esExportacion = esCbteExportacion(invoice.cbteTipo) || invoice.invoiceType === 'E'
+  const exportacion = invoice.exportacion ?? null
+  const cargaManualColppy = invoice.colppySyncStatus === 'MANUAL' && !invoice.colppyId
+  const clienteExterior = esClienteExterior(invoice.customer)
   const ncVigentes = invoice.relatedInvoices.filter((r) => r.transactionType === 'CREDIT_NOTE' && r.status !== 'CANCELLED')
   const acreditado = ncVigentes.reduce((s, r) => s + Number(r.total), 0)
 
@@ -340,11 +425,38 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
       return { error: (e as Error).message }
     }
   })()
-  const puedeNC = esArca && esFactura && invoice.status !== 'CANCELLED' && acreditado < Number(invoice.total) - 0.01
+  // La NC de una Factura E va por WSFEX (NC E, fase 2): este diálogo emite NC A/B y no aplica
+  const puedeNC = esArca && esFactura && !esExportacion && invoice.status !== 'CANCELLED' && acreditado < Number(invoice.total) - 0.01
   const nroFiscal =
     invoice.pointOfSale && invoice.cbteNumero
       ? `${String(invoice.pointOfSale).padStart(4, '0')}-${String(invoice.cbteNumero).padStart(8, '0')}`
       : invoice.invoiceNumber
+
+  // Factura E: datos para cargarla a mano en Colppy (montos en formato argentino)
+  const nro2 = (n: number | string | null | undefined) =>
+    Number(n ?? 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const nombreCliente = invoice.customer.businessName || invoice.customer.name
+  const idFiscalCliente = clienteExterior ? idFiscalParaMostrar(invoice.customer) : invoice.customer.cuit
+  const etiquetaIdCliente = clienteExterior ? etiquetaIdFiscal(invoice.customer.country) : 'CUIT'
+  const tcFactura = exportacion?.monedaCtz ?? invoice.exchangeRate
+  const textoColppy = [
+    `Factura E ${nroFiscal} — fecha ${formatDate(invoice.issueDate)}`,
+    `Cliente: ${nombreCliente} — ${etiquetaIdCliente} ${idFiscalCliente}${invoice.customer.country ? ` — ${invoice.customer.country}` : ''}`,
+    exportacion?.domicilio ? `Domicilio: ${exportacion.domicilio}` : '',
+    `Moneda USD — TC ARCA ${tcFactura ? Number(tcFactura).toLocaleString('es-AR') : '—'} — IVA exento (exportación)`,
+    `CAE ${invoice.cae ?? '—'} (vence ${formatDate(invoice.caeExpiration)})`,
+    exportacion?.desNumero ? `Exporta Simple: DES ${exportacion.desNumero}, FOB USD ${nro2(exportacion.fobUSD)}` : '',
+    exportacion?.incoterm ? `Incoterm ${exportacion.incoterm}${exportacion.incotermDs ? ` ${exportacion.incotermDs}` : ''} — Forma de pago: ${exportacion.formaPago ?? '—'}` : '',
+    'Ítems:',
+    ...invoice.items.map(
+      (it) =>
+        `${it.sku || it.product?.sku || '(sin código)'} | ${it.description ?? ''} | ${Number(it.quantity)} x USD ${nro2(it.unitPrice)}` +
+        `${Number(it.discount) ? ` | Dto ${Number(it.discount)}%` : ''} | USD ${nro2(it.subtotal)}`
+    ),
+    `Total USD ${nro2(invoice.total)}`,
+  ]
+    .filter(Boolean)
+    .join('\n')
 
   return (
     <div className="container mx-auto px-6 py-8">
@@ -395,7 +507,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
             </Button>
           </>
         )}
-        {esArca && invoice.colppySyncStatus && invoice.colppySyncStatus !== 'OK' && invoice.colppySyncStatus !== 'BORRADOR_FCE' && !invoice.colppyId && (
+        {esArca && invoice.colppySyncStatus && invoice.colppySyncStatus !== 'OK' && invoice.colppySyncStatus !== 'BORRADOR_FCE' && invoice.colppySyncStatus !== 'MANUAL' && !invoice.colppyId && (
           <Button variant="outline" onClick={reintentarColppy} disabled={retrying}>
             {retrying ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
             Reintentar registro en Colppy
@@ -421,6 +533,94 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
+          {/* Factura E: carga manual en Colppy (v1) */}
+          {cargaManualColppy && (
+            <Card id="cargar-colppy" className="border-amber-300">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-amber-900">
+                  <AlertTriangle className="h-5 w-5 text-amber-600" />
+                  Cargar en Colppy (a mano)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4 text-sm">
+                <ol className="list-decimal pl-5 space-y-1 text-gray-700">
+                  <li>
+                    Solo la primera vez: en Colppy, dar de alta el cliente del exterior y el talonario no electrónico letra E, punto de venta{' '}
+                    {String(invoice.pointOfSale ?? 10).padStart(4, '0')}.
+                  </li>
+                  <li>
+                    Cargar la factura de venta <b>E {nroFiscal}</b> en dólares, exenta (exportación) y aprobada, con los códigos de producto
+                    para que mueva el stock. Los datos están abajo.
+                  </li>
+                  <li>Pegar acá el id que le dio Colppy, antes del sync de las 9:00 (si no, el sync la toma como una factura nueva).</li>
+                </ol>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 rounded border bg-gray-50 p-3">
+                  <CampoCopiable etiqueta="Cliente" valor={nombreCliente} onCopiar={copiar} />
+                  <CampoCopiable etiqueta={etiquetaIdCliente} valor={idFiscalCliente} onCopiar={copiar} mono />
+                  <CampoCopiable etiqueta="País" valor={invoice.customer.country ?? '—'} onCopiar={copiar} />
+                  <CampoCopiable etiqueta="Domicilio" valor={exportacion?.domicilio ?? invoice.customer.address ?? '—'} onCopiar={copiar} />
+                  <CampoCopiable etiqueta="Comprobante" valor={`E ${nroFiscal}`} onCopiar={copiar} mono />
+                  <CampoCopiable etiqueta="Fecha" valor={formatDate(invoice.issueDate)} onCopiar={copiar} />
+                  <CampoCopiable etiqueta="Moneda / TC ARCA" valor={`USD / ${tcFactura ? Number(tcFactura).toLocaleString('es-AR') : '—'}`} onCopiar={copiar} />
+                  <CampoCopiable etiqueta="Total USD (exento)" valor={nro2(invoice.total)} onCopiar={copiar} />
+                  <CampoCopiable etiqueta="CAE" valor={invoice.cae ?? '—'} onCopiar={copiar} mono />
+                  <CampoCopiable etiqueta="Vencimiento CAE" valor={formatDate(invoice.caeExpiration)} onCopiar={copiar} />
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-gray-500">Los ítems (códigos, cantidades y precios) son los del detalle de abajo.</p>
+                  <Button type="button" variant="outline" size="sm" onClick={() => copiar(textoColppy, 'Datos de la factura')}>
+                    <Copy className="h-4 w-4 mr-1" />
+                    Copiar todo
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end border-t pt-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="colppy-id-manual">Id de la factura en Colppy</Label>
+                    <Input
+                      id="colppy-id-manual"
+                      value={colppyIdManual}
+                      onChange={(e) => setColppyIdManual(e.target.value.replace(/\D/g, ''))}
+                      inputMode="numeric"
+                      placeholder="Ej.: 123456789"
+                      autoComplete="off"
+                    />
+                  </div>
+                  {!invoice.customer.colppyId ? (
+                    <div className="space-y-1">
+                      <Label htmlFor="colppy-cliente-id-manual">Id del cliente en Colppy (opcional)</Label>
+                      <Input
+                        id="colppy-cliente-id-manual"
+                        value={colppyClienteIdManual}
+                        onChange={(e) => setColppyClienteIdManual(e.target.value.replace(/\D/g, ''))}
+                        inputMode="numeric"
+                        placeholder="Si no, se toma de la factura en Colppy"
+                        autoComplete="off"
+                      />
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500 pb-2">Cliente ya vinculado en Colppy (id {invoice.customer.colppyId}).</p>
+                  )}
+                  <Button
+                    type="button"
+                    onClick={vincularColppy}
+                    disabled={vinculandoColppy || !/^\d{1,20}$/.test(colppyIdManual.trim())}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    {vinculandoColppy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Link2 className="h-4 w-4 mr-2" />}
+                    Vincular con Colppy
+                  </Button>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Antes de vincular, el ERP lee esa factura en Colppy y controla que sea esta (letra E, número, cliente y total).
+                  Pasa la factura a «Registrada», vincula la comisión y vuelve a sincronizar el stock de los artículos facturados.
+                  Lo pueden hacer administración, gerencia o contaduría.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Datos */}
           <Card>
             <CardHeader>
@@ -465,6 +665,73 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
             </CardContent>
           </Card>
 
+          {/* Factura E: datos de exportación */}
+          {esExportacion && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Globe className="h-5 w-5 text-blue-600" />
+                  Exportación
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {exportacion ? (
+                  <>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      <DatoExportacion etiqueta="Régimen" valor={REGIMEN_LABEL[exportacion.regimen] ?? exportacion.regimen} />
+                      <DatoExportacion etiqueta="N° de DES" valor={exportacion.desNumero ?? '—'} mono />
+                      <DatoExportacion
+                        etiqueta="FOB del DES"
+                        valor={exportacion.fobUSD !== null ? formatCurrency(exportacion.fobUSD, 'USD') : '—'}
+                      />
+                      <DatoExportacion
+                        etiqueta="Incoterm"
+                        valor={exportacion.incoterm ? `${exportacion.incoterm}${exportacion.incotermDs ? ` ${exportacion.incotermDs}` : ''}` : '—'}
+                      />
+                      <DatoExportacion etiqueta="Forma de pago" valor={exportacion.formaPago ?? '—'} />
+                      <DatoExportacion
+                        etiqueta="Destino"
+                        valor={`${invoice.customer.country ?? '—'} (código ARCA ${exportacion.dstCmp})`}
+                      />
+                      <DatoExportacion etiqueta="CUIT país" valor={exportacion.cuitPais ?? '—'} mono />
+                      <DatoExportacion etiqueta={`${etiquetaIdCliente} (Id impositivo)`} valor={exportacion.idImpositivo ?? '—'} mono />
+                      <DatoExportacion
+                        etiqueta="TC oficial ARCA"
+                        valor={`${Number(exportacion.monedaCtz).toLocaleString('es-AR')}${exportacion.canMisMonExt === 'S' ? ' · paga en dólares' : ''}`}
+                      />
+                      <DatoExportacion etiqueta="Mercadería (comisiona)" valor={formatCurrency(exportacion.mercaderiaUSD, 'USD')} />
+                      <DatoExportacion etiqueta="Flete / seguro" valor={formatCurrency(exportacion.manualUSD, 'USD')} />
+                      <DatoExportacion
+                        etiqueta="Punto de venta / Id ARCA"
+                        valor={`${String(invoice.pointOfSale ?? '').padStart(4, '0')} · Id ${exportacion.fexId}`}
+                        mono
+                      />
+                    </div>
+                    {exportacion.obsComerciales && (
+                      <div>
+                        <p className="text-sm text-gray-600">Observaciones comerciales</p>
+                        <p className="text-sm whitespace-pre-line">{exportacion.obsComerciales}</p>
+                      </div>
+                    )}
+                    {(exportacion.recuperado || exportacion.reproceso) && (
+                      <p className="text-xs text-gray-500">
+                        {exportacion.recuperado
+                          ? 'El CAE se recuperó consultando el comprobante en ARCA después de un corte.'
+                          : 'ARCA la devolvió como reproceso del mismo Id.'}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-gray-500">La factura no tiene datos de exportación vinculados.</p>
+                )}
+                <p className="text-xs text-gray-500">
+                  Para anularla o corregirla hace falta una nota de crédito o débito E (exportación), que todavía no está disponible en el
+                  ERP. Una NC E además mueve el saldo FOB del DES.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Items */}
           <Card>
             <CardHeader>
@@ -478,7 +745,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                       <TableHead>Descripción</TableHead>
                       <TableHead className="w-[90px] text-right">Cantidad</TableHead>
                       <TableHead className="w-[120px] text-right">Precio Unit.</TableHead>
-                      <TableHead className="w-[70px] text-right">IVA %</TableHead>
+                      {!esExportacion && <TableHead className="w-[70px] text-right">IVA %</TableHead>}
                       <TableHead className="w-[140px] text-right">Subtotal</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -493,13 +760,13 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                         </TableCell>
                         <TableCell className="text-right">{Number(item.quantity)}</TableCell>
                         <TableCell className="text-right">{formatCurrency(item.unitPrice, invoice.currency)}</TableCell>
-                        <TableCell className="text-right">{Number(item.taxRate)}%</TableCell>
+                        {!esExportacion && <TableCell className="text-right">{Number(item.taxRate)}%</TableCell>}
                         <TableCell className="text-right font-semibold">{formatCurrency(item.subtotal, invoice.currency)}</TableCell>
                       </TableRow>
                     ))}
                     {invoice.items.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center text-gray-500 py-6">Sin detalle de ítems</TableCell>
+                        <TableCell colSpan={esExportacion ? 4 : 5} className="text-center text-gray-500 py-6">Sin detalle de ítems</TableCell>
                       </TableRow>
                     )}
                   </TableBody>
@@ -507,14 +774,39 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
               </div>
 
               <div className="mt-4 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Neto gravado:</span>
-                  <span className="font-semibold">{formatCurrency(invoice.subtotal, invoice.currency)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">IVA:</span>
-                  <span className="font-semibold">{formatCurrency(invoice.taxAmount, invoice.currency)}</span>
-                </div>
+                {esExportacion ? (
+                  <>
+                    {exportacion && (
+                      <>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Mercadería:</span>
+                          <span className="font-semibold">{formatCurrency(exportacion.mercaderiaUSD, invoice.currency)}</span>
+                        </div>
+                        {Number(exportacion.manualUSD) > 0 && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-600">Flete / seguro:</span>
+                            <span className="font-semibold">{formatCurrency(exportacion.manualUSD, invoice.currency)}</span>
+                          </div>
+                        )}
+                      </>
+                    )}
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">IVA:</span>
+                      <span className="font-semibold">Exento — operación de exportación</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Neto gravado:</span>
+                      <span className="font-semibold">{formatCurrency(invoice.subtotal, invoice.currency)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">IVA:</span>
+                      <span className="font-semibold">{formatCurrency(invoice.taxAmount, invoice.currency)}</span>
+                    </div>
+                  </>
+                )}
                 <div className="flex justify-between text-lg pt-2 border-t">
                   <span className="font-bold">Total:</span>
                   <span className="font-bold text-blue-600">{formatCurrency(invoice.total, invoice.currency)}</span>
@@ -628,6 +920,15 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                         número {String(invoice.pointOfSale ?? 7).padStart(4, '0')}-{String(invoice.cbteNumero ?? '').padStart(8, '0')}.
                       </p>
                     </div>
+                  ) : cargaManualColppy ? (
+                    <div>
+                      <p className="font-semibold text-amber-700 flex items-center">
+                        <AlertTriangle className="h-4 w-4 mr-1" /> Pendiente de cargar a mano
+                      </p>
+                      <p className="text-xs text-gray-600 mt-1">
+                        La Factura E no se registra sola en Colppy: cargala con los datos de «Cargar en Colppy» y pegá el id.
+                      </p>
+                    </div>
                   ) : invoice.colppySyncStatus === 'OK' || (!invoice.colppySyncStatus && invoice.colppyId) ? (
                     <p className="font-semibold text-green-700 flex items-center">
                       <CheckCircle2 className="h-4 w-4 mr-1" /> Registrada (ID {invoice.colppyId})
@@ -655,8 +956,8 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                 <p className="font-semibold">{invoice.customer.businessName || invoice.customer.name}</p>
               </div>
               <div>
-                <p className="text-sm text-gray-600">CUIT</p>
-                <p className="font-mono text-sm">{invoice.customer.cuit}</p>
+                <p className="text-sm text-gray-600">{clienteExterior ? `${etiquetaIdFiscal(invoice.customer.country)} · ${invoice.customer.country ?? ''}` : 'CUIT'}</p>
+                <p className="font-mono text-sm">{clienteExterior ? idFiscalParaMostrar(invoice.customer) : invoice.customer.cuit}</p>
               </div>
               {invoice.customer.email && (
                 <div>
@@ -896,6 +1197,49 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+/** Dato de la tarjeta de exportación */
+function DatoExportacion({ etiqueta, valor, mono }: { etiqueta: string; valor: string; mono?: boolean }) {
+  return (
+    <div>
+      <p className="text-sm text-gray-600">{etiqueta}</p>
+      <p className={`font-semibold break-words ${mono ? 'font-mono text-sm' : ''}`}>{valor}</p>
+    </div>
+  )
+}
+
+/** Dato para copiar a Colppy, con botón de copiar */
+function CampoCopiable({
+  etiqueta,
+  valor,
+  onCopiar,
+  mono,
+}: {
+  etiqueta: string
+  valor: string
+  onCopiar: (texto: string, que: string) => void
+  mono?: boolean
+}) {
+  return (
+    <div className="flex items-start justify-between gap-2 border-b border-dashed border-gray-200 py-1">
+      <div className="min-w-0">
+        <p className="text-xs text-gray-500">{etiqueta}</p>
+        <p className={`break-words ${mono ? 'font-mono' : 'font-medium'}`}>{valor}</p>
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 flex-shrink-0 text-gray-500"
+        onClick={() => onCopiar(valor, etiqueta)}
+        aria-label={`Copiar ${etiqueta}`}
+        title={`Copiar ${etiqueta}`}
+      >
+        <Copy className="h-3.5 w-3.5" />
+      </Button>
     </div>
   )
 }

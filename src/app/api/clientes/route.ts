@@ -230,7 +230,7 @@ export async function POST(request: NextRequest) {
     // creado en el ERP y se da de alta en Colppy con la primera factura.
     let colppy: { ok: boolean; creado?: boolean; idCliente?: string; error?: string; omitido?: 'exterior' } = { ok: false }
     if (exterior) {
-      // Clientes del exterior: solo en el ERP (no hay Factura E todavía)
+      // Clientes del exterior: solo en el ERP (la Factura E se carga a mano en Colppy)
       colppy = { ok: false, omitido: 'exterior' }
     } else if (customer.cuit.replace(/\D/g, '').length === 11) {
       try {

@@ -386,7 +386,7 @@ export default function NewCustomerPage() {
                   )}
                   {exterior && (
                     <p className="text-xs text-amber-700">
-                      Cliente del exterior: queda solo en el ERP (no se sube a Colppy) y por ahora no se le puede facturar (Factura E de exportación no disponible).
+                      Cliente del exterior: queda solo en el ERP (no se sube a Colppy). Se le factura con Factura E de exportación: cargá dirección, ciudad, país y su ID fiscal.
                     </p>
                   )}
                 </div>

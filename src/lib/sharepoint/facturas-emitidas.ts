@@ -2,7 +2,9 @@
  * Archiva en SharePoint el PDF de cada comprobante emitido por el ERP (ARCA):
  *   SP - VALARG / Documentos / Facturas Emitidas / VAL ARG S.R.L / "10 2026" /
  *     "Factura A 0007-00000006 CLORO MENDOZA SOCIEDAD ANONIMA.pdf"
- * (misma carpeta y mismo nombre que se usaban al descargar a mano).
+ * (misma carpeta y mismo nombre que se usaban al descargar a mano). La Factura
+ * E de exportación va en la misma carpeta del mes, con su letra y su PV:
+ *     "Factura E 0010-00000001 <CLIENTE>.pdf"
  *
  * Usa la app de Azure del ERP (getGraphToken, client credentials) con el
  * permiso Graph "Sites.Selected" + permiso write otorgado SOLO sobre el sitio.

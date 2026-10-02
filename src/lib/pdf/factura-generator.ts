@@ -3,6 +3,12 @@
  * (RG 4892). Layout calcado de las facturas que Colppy emitía para VAL ARG
  * (PV 0003), para que el cliente reciba un comprobante igual al de siempre.
  *
+ * Letra E (exportación, WSFEX 19/20/21; plan Factura E, sección 8): mismo
+ * layout, con el receptor del exterior (CUIT país, RUT/Tax ID, destino y
+ * divisa), Forma de pago e Incoterm, sin filas de IVA ni régimen de
+ * transparencia ("IVA Exento - Operación de Exportación"), la leyenda de
+ * Exporta Simple (DES y FOB), el TC de ARCA y el importe en letras en dólares.
+ *
  * Corre del lado del servidor (jsPDF en Node, igual que el PDF de
  * cotizaciones) — ver GET /api/facturas/[id]/pdf.
  */
@@ -12,9 +18,27 @@ import QRCode from 'qrcode'
 import { getLogo } from '@/lib/logo-base64'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
+/** Datos propios de un comprobante de exportación (letra E) */
+export interface ExportacionPDFData {
+  /** País de destino en mayúsculas ("CHILE") */
+  destino: string
+  /** CUIT país genérico de ARCA que se informó (null si el país no tiene) */
+  cuitPais: string | null
+  /** "CHILE - Persona Jurídica" (null si el CUIT país no es de la tabla) */
+  cuitPaisDetalle: string | null
+  /** "USD - Dólar Estadounidense" */
+  divisa: string
+  incoterm: string | null
+  incotermLugar: string | null
+  /** Tipo de cambio oficial de ARCA del comprobante (Moneda_ctz) */
+  tipoCambioArca: number
+  /** Exporta Simple: N° de DES (opcional 2401) y FOB del DES / de la factura (2402) */
+  exportaSimple: { desNumero: string; fobDesUSD: number | null; fobFacturaUSD: number | null } | null
+}
+
 export interface FacturaPDFData {
-  letra: 'A' | 'B' | 'C'
-  cbteTipo: number // 1, 6, 3, 8, ...
+  letra: 'A' | 'B' | 'C' | 'E'
+  cbteTipo: number // 1, 6, 3, 8, ... (19/20/21 exportación)
   clase: 'FACTURA' | 'NOTA DE CRÉDITO' | 'NOTA DE DÉBITO'
   puntoVenta: number
   numero: number
@@ -66,6 +90,8 @@ export interface FacturaPDFData {
   clienteNro?: string | null
   /** Número de remito asociado */
   remito?: string | null
+  /** Letra E (exportación): receptor del exterior, Incoterm, DES/FOB y TC ARCA */
+  exportacion?: ExportacionPDFData | null
 }
 
 // ── Constantes de página / estilo ─────────────────────────────────────────────
@@ -93,6 +119,7 @@ const EMISOR = {
 
 const CODIGO_CBTE: Record<number, string> = {
   1: '01', 2: '02', 3: '03', 6: '06', 7: '07', 8: '08', 11: '11', 12: '12', 13: '13',
+  19: '19', 20: '20', 21: '21',
   201: '201', 202: '202', 203: '203', 206: '206', 207: '207', 208: '208',
 }
 
@@ -105,6 +132,11 @@ function fmtDate(d: Date): string {
 
 function fmtNum(n: number, dec = 2): string {
   return n.toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec })
+}
+
+/** TC con los decimales que informa ARCA (hasta 6), mínimo 2 */
+function fmtCotizacion(n: number): string {
+  return n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 6 })
 }
 
 function fmtCuit(doc: string): string {
@@ -123,8 +155,17 @@ function claseTitulo(clase: FacturaPDFData['clase']): string {
   return 'Nota de Débito'
 }
 
-/** Título del comprobante; los FCE MiPyME (201-208) llevan su denominación RG 4367. */
-function tituloComprobante(data: Pick<FacturaPDFData, 'clase' | 'cbteTipo'>): string {
+/** 19 Factura E, 20 ND E, 21 NC E (WSFEX) */
+function esCbteExportacionPdf(cbteTipo: number): boolean {
+  return cbteTipo >= 19 && cbteTipo <= 21
+}
+
+/**
+ * Título del comprobante; los FCE MiPyME (201-208) llevan su denominación RG
+ * 4367 y los de exportación (19-21) "de Exportación".
+ */
+export function tituloComprobante(data: Pick<FacturaPDFData, 'clase' | 'cbteTipo'>): string {
+  if (esCbteExportacionPdf(data.cbteTipo)) return `${claseTitulo(data.clase)} de Exportación`
   if (data.cbteTipo >= 201 && data.cbteTipo <= 208) {
     if (data.clase === 'FACTURA') return 'Factura de Crédito MiPyME'
     if (data.clase === 'NOTA DE CRÉDITO') return 'Nota de Crédito MiPyME'
@@ -177,11 +218,40 @@ function importeEnLetras(totalPesos: number): string {
   return s
 }
 
+/**
+ * Importe en letras en dólares estadounidenses (Factura E: la operación se
+ * expresa en la divisa, no en su equivalente en pesos).
+ * 2078.88 → "dos mil setenta y ocho dólares estadounidenses con 88/100"
+ */
+export function importeEnLetrasUsd(total: number): string {
+  const cent = Math.round(Math.abs(total) * 100)
+  const entero = Math.floor(cent / 100)
+  const centavos = cent % 100
+  // Apócope delante del sustantivo: "un dólar", "veintiún", "ciento un mil"
+  const palabras = numeroALetras(entero).replace(/veintiuno$/, 'veintiún').replace(/uno$/, 'un')
+  const de = entero >= 1_000_000 && entero % 1_000_000 === 0 ? ' de' : ''
+  let s = `${palabras}${de} ${entero === 1 ? 'dólar estadounidense' : 'dólares estadounidenses'}`
+  if (centavos > 0) s += ` con ${String(centavos).padStart(2, '0')}/100`
+  return s
+}
+
+/** Leyenda de Exporta Simple: N° de DES y montos FOB (plan Factura E, sección 8) */
+export function leyendaExportaSimple(es: NonNullable<ExportacionPDFData['exportaSimple']>): string[] {
+  const fob = (n: number | null) => (n === null ? '-' : `USD ${fmtNum(n)}`)
+  return [
+    'Régimen de Exportación Simplificada (Exporta Simple)',
+    `Documento de Exportación Simplificada N° ${es.desNumero}`,
+    `Monto FOB DES: ${fob(es.fobDesUSD)} - Monto FOB en esta factura: ${fob(es.fobFacturaUSD)}`,
+  ]
+}
+
 // ── Dibujo ────────────────────────────────────────────────────────────────────
 function drawFactura(doc: jsPDF, data: FacturaPDFData, logoBase64: string, qrBase64: string) {
   const esUsd = data.moneda === 'USD'
   const sym = esUsd ? 'USD' : '$'
   const esA = data.letra === 'A'
+  // Letra E (exportación): bloques propios en receptor, condiciones y totales
+  const exp = data.letra === 'E' ? data.exportacion ?? null : null
 
   // Etiqueta "Negrita: valor" con recorte "…" si no entra
   const label = (t: string, v: string, x: number, yy: number, maxX: number, size = 8) => {
@@ -202,7 +272,8 @@ function drawFactura(doc: jsPDF, data: FacturaPDFData, logoBase64: string, qrBas
   const hh = 44
   const midX = PAGE_W / 2
   const ry = hy + hh + 2
-  const rh = 24
+  // La E suma una línea al receptor (CUIT país / RUT y destino / divisa)
+  const rh = exp ? 28 : 24
   const gy = ry + rh + 1.5
   const rowH = 8
   const gy2 = gy + rowH
@@ -266,7 +337,8 @@ function drawFactura(doc: jsPDF, data: FacturaPDFData, logoBase64: string, qrBas
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(13)
     doc.text(`N°:  ${String(data.puntoVenta).padStart(4, '0')}  -  ${String(data.numero).padStart(8, '0')}`, rx, hy + 8)
-    doc.setFontSize(titulo.length > 16 ? 11 : 13)
+    // "NOTA DE CRÉDITO DE EXPORTACIÓN" no entra en 11
+    doc.setFontSize(exp && titulo.length > 24 ? 10 : titulo.length > 16 ? 11 : 13)
     doc.text(titulo.toUpperCase(), rx, hy + 15)
     doc.setFontSize(9)
     doc.text(`FECHA: ${fmtDate(data.fecha)}`, rx, hy + 22)
@@ -296,8 +368,20 @@ function drawFactura(doc: jsPDF, data: FacturaPDFData, logoBase64: string, qrBas
       doc.setFontSize(8)
       doc.text(lines, ML + 24, ry + 11.5)
     }
-    label('IVA:', r.condicionIva.toUpperCase(), ML + 3, ry + 21, ML + 110, 8.5)
-    {
+    if (exp) {
+      // Exportación: CUIT país + ID fiscal del exterior, destino y divisa
+      const cuitPais = exp.cuitPais ? `${exp.cuitPais}${exp.cuitPaisDetalle ? ` (${exp.cuitPaisDetalle})` : ''}` : '-'
+      label('CUIT País:', cuitPais, ML + 3, ry + 19.5, ML + 128, 8.5)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(9)
+      doc.text(`${r.docTipoLabel || 'ID fiscal'}: ${r.docNro || '-'}`, ML + USABLE_W - 3, ry + 19.5, { align: 'right' })
+      label('Destino:', exp.destino || '-', ML + 3, ry + 25, ML + 48, 8.5)
+      label('Divisa:', exp.divisa, ML + 50, ry + 25, ML + 118, 8.5)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(8)
+      doc.text(r.condicionIva, ML + USABLE_W - 3, ry + 25, { align: 'right' })
+    } else {
+      label('IVA:', r.condicionIva.toUpperCase(), ML + 3, ry + 21, ML + 110, 8.5)
       const docLabel = r.docTipoLabel ? `${r.docTipoLabel}:` : 'Doc:'
       const docVal = r.docTipoLabel === 'CUIT' ? fmtCuit(r.docNro) : r.docNro || '-'
       doc.setFont('helvetica', 'bold')
@@ -312,11 +396,22 @@ function drawFactura(doc: jsPDF, data: FacturaPDFData, logoBase64: string, qrBas
     label('Referencia:', data.referencia || '-', ML + USABLE_W * 0.55 + 3, gy + 5.3, ML + USABLE_W - 2, 8.5)
 
     doc.rect(ML, gy2, USABLE_W, rowH)
-    doc.line(ML + USABLE_W * 0.48, gy2, ML + USABLE_W * 0.48, gy2 + rowH)
-    doc.line(ML + USABLE_W * 0.73, gy2, ML + USABLE_W * 0.73, gy2 + rowH)
-    label('Condiciones de Pago:', data.condicionVenta, ML + 3, gy2 + 5.3, ML + USABLE_W * 0.48 - 2, 8.5)
-    label('Vencimiento:', fmtDate(data.fechaVencimiento ?? data.fecha), ML + USABLE_W * 0.48 + 3, gy2 + 5.3, ML + USABLE_W * 0.73 - 2, 8.5)
-    label('Remito N°:', data.remito || '-', ML + USABLE_W * 0.73 + 3, gy2 + 5.3, ML + USABLE_W - 2, 8.5)
+    if (exp) {
+      // Exportación: Forma de pago (texto libre, hasta 50) + Incoterm y lugar
+      const c1 = ML + USABLE_W * 0.5
+      const c2 = ML + USABLE_W * 0.76
+      doc.line(c1, gy2, c1, gy2 + rowH)
+      doc.line(c2, gy2, c2, gy2 + rowH)
+      label('Forma de Pago:', data.condicionVenta || '-', ML + 3, gy2 + 5.3, c1 - 2, 8)
+      label('Incoterm:', [exp.incoterm, exp.incotermLugar].filter(Boolean).join(' ') || '-', c1 + 3, gy2 + 5.3, c2 - 2, 8)
+      label('Vencimiento:', fmtDate(data.fechaVencimiento ?? data.fecha), c2 + 3, gy2 + 5.3, ML + USABLE_W - 2, 8)
+    } else {
+      doc.line(ML + USABLE_W * 0.48, gy2, ML + USABLE_W * 0.48, gy2 + rowH)
+      doc.line(ML + USABLE_W * 0.73, gy2, ML + USABLE_W * 0.73, gy2 + rowH)
+      label('Condiciones de Pago:', data.condicionVenta, ML + 3, gy2 + 5.3, ML + USABLE_W * 0.48 - 2, 8.5)
+      label('Vencimiento:', fmtDate(data.fechaVencimiento ?? data.fecha), ML + USABLE_W * 0.48 + 3, gy2 + 5.3, ML + USABLE_W * 0.73 - 2, 8.5)
+      label('Remito N°:', data.remito || '-', ML + USABLE_W * 0.73 + 3, gy2 + 5.3, ML + USABLE_W - 2, 8.5)
+    }
   }
 
   drawEncabezado()
@@ -384,7 +479,7 @@ ${it.detalle}` : ''}`
   }
 
   // ═══ TOTALES (solo última página, anclados abajo) ═══
-  let y = totY
+  const y = totY
   doc.setDrawColor(...BLACK)
   doc.setLineWidth(0.4)
   doc.rect(ML, y, USABLE_W, totBoxH)
@@ -392,8 +487,11 @@ ${it.detalle}` : ''}`
   const lblX = ML + USABLE_W - 42
   const valX = ML + USABLE_W - 3
 
-  // Izquierda: importe en letras + Régimen de Transparencia Fiscal
-  const letras = `${importeEnLetras(esUsd ? Math.round(t.total * data.cotizacion * 100) / 100 : t.total).toUpperCase()} ---`
+  // Izquierda: importe en letras + Régimen de Transparencia Fiscal (en la E:
+  // en dólares + IVA exento por exportación + leyenda de Exporta Simple)
+  const letras = exp
+    ? `${importeEnLetrasUsd(t.total).toUpperCase()} ---`
+    : `${importeEnLetras(esUsd ? Math.round(t.total * data.cotizacion * 100) / 100 : t.total).toUpperCase()} ---`
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(6.8)
   {
@@ -406,13 +504,26 @@ ${it.detalle}` : ''}`
   doc.rect(ML + 4, bandY, 112, 6, 'FD')
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(7.5)
-  doc.text('Régimen de Transparencia Fiscal al Consumidor (Ley 27.743)', ML + 4 + 56, bandY + 4, { align: 'center' })
-  const ivaContenido = t.iva.reduce((s, i) => s + i.importe, 0)
-  doc.rect(ML + 4, bandY + 6, 112, 5.5)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(7.5)
-  doc.text('IVA Contenido', ML + 78, bandY + 10, { align: 'right' })
-  doc.text(fmtNum(ivaContenido), ML + 114, bandY + 10, { align: 'right' })
+  if (exp) {
+    doc.text('IVA Exento - Operación de Exportación', ML + 4 + 56, bandY + 4, { align: 'center' })
+    if (exp.exportaSimple) {
+      doc.rect(ML + 4, bandY + 6, 112, 14)
+      const [titulo, ...resto] = leyendaExportaSimple(exp.exportaSimple)
+      doc.setFontSize(7)
+      doc.text(titulo, ML + 6, bandY + 10)
+      doc.setFont('helvetica', 'normal')
+      const lines: string[] = resto.flatMap((l) => doc.splitTextToSize(l, 108) as string[])
+      doc.text(lines.slice(0, 3), ML + 6, bandY + 13.5)
+    }
+  } else {
+    doc.text('Régimen de Transparencia Fiscal al Consumidor (Ley 27.743)', ML + 4 + 56, bandY + 4, { align: 'center' })
+    const ivaContenido = t.iva.reduce((s, i) => s + i.importe, 0)
+    doc.rect(ML + 4, bandY + 6, 112, 5.5)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7.5)
+    doc.text('IVA Contenido', ML + 78, bandY + 10, { align: 'right' })
+    doc.text(fmtNum(ivaContenido), ML + 114, bandY + 10, { align: 'right' })
+  }
 
   // Derecha: totales
   let ty = y + 6
@@ -424,7 +535,18 @@ ${it.detalle}` : ''}`
     if (val !== null) doc.text(fmtNum(val), valX, ty, { align: 'right' })
     ty += 5
   }
-  if (esA) {
+  if (exp) {
+    // Exportación: sin filas de IVA; total en la divisa y el TC oficial de ARCA
+    totLine('Subtotal', t.total - t.otrosTributos)
+    ty += 1.5
+    totLine('Importe Total', t.total, true, 9.5)
+    ty += 1
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8)
+    doc.text('Tipo de cambio ARCA:', lblX, ty, { align: 'right' })
+    doc.setFont('helvetica', 'normal')
+    doc.text(fmtCotizacion(exp.tipoCambioArca), valX, ty, { align: 'right' })
+  } else if (esA) {
     totLine('Subtotal', t.netoGravado)
     for (const iva of t.iva) totLine(`IVA ${fmtNum(iva.alicuota, 1)}%`, iva.importe)
     totLine('IVA Exento', t.exento + t.netoNoGravado)
@@ -440,7 +562,8 @@ ${it.detalle}` : ''}`
 
   // ═══ OBSERVACIONES (última página) ═══
   const obsParts: string[] = []
-  if (esUsd) {
+  // La E ya muestra el total en dólares, en letras en dólares y el TC de ARCA
+  if (esUsd && !exp) {
     const enPesos = Math.round(t.total * data.cotizacion * 100) / 100
     obsParts.push(`Importe expresado en Dólares Estadounidenses, equivalente a Pesos ${fmtNum(enPesos)} al Tipo de Cambio ${fmtNum(data.cotizacion, 2)} ---`)
   }

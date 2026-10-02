@@ -374,12 +374,12 @@ export default function NuevoRemitoPage() {
   }, [quote?.purchaseOrderNumber])
 
   // "Factura del cliente": pre-cargar el número de la factura emitida por el
-  // ERP (A-0007-00000003). Si el remito viene de una factura puntual, esa; si
+  // ERP (A-0007-00000003, o E-0010-00000001 la de exportación). Si el remito viene de una factura puntual, esa; si
   // no, la única emitida de la cotización. Los borradores de Colppy no traen
   // número real, así que no se usan. Editable.
   useEffect(() => {
     if (!quote?.facturas?.length) return
-    const esNumeroReal = (n: string | null) => !!n && /^(FCE)?[AB]-\d{4}-\d{8}$/.test(n)
+    const esNumeroReal = (n: string | null) => !!n && /^((FCE)?[AB]|E)-\d{4}-\d{8}$/.test(n)
     const emitidas = quote.facturas.filter((f) => f.estado !== 'ANULADA' && esNumeroReal(f.numeroFactura))
     const factura = cotizacionFacturaId
       ? emitidas.find((f) => f.id === cotizacionFacturaId)

@@ -295,7 +295,7 @@ export function SendToColppyDialog({
 
   // Determinar tipo de factura según condición IVA
   const invoiceType = quote.customer.taxCondition === 'RESPONSABLE_INSCRIPTO' ? 'A' : 'B';
-  // Cliente del exterior: requiere Factura E (exportación), no disponible todavía
+  // Cliente del exterior: se factura con Factura E (exportación, FacturaExportacionDialog), nunca A/B
   const clienteExterior = quote.customer.taxCondition === 'CLIENTE_EXTERIOR';
 
   // Cantidad pendiente de facturar de un ítem (tope del input de cantidad)
@@ -528,7 +528,7 @@ export function SendToColppyDialog({
               )}
               <div className="flex justify-between">
                 <span className="font-medium text-blue-900">Tipo de factura:</span>
-                <span className="text-blue-700 font-semibold">{clienteExterior ? 'Factura E (no disponible)' : `Factura ${invoiceType}`}</span>
+                <span className="text-blue-700 font-semibold">{clienteExterior ? 'Factura E (usar «Emitir Factura E»)' : `Factura ${invoiceType}`}</span>
               </div>
             </div>
           </div>
@@ -819,7 +819,7 @@ export function SendToColppyDialog({
           <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
             <AlertTriangle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
             <p className="text-sm text-red-800">
-              <span className="font-semibold">Cliente del exterior:</span> requiere Factura E de exportación, que todavía no está disponible en el ERP. No se puede facturar desde acá.
+              <span className="font-semibold">Cliente del exterior:</span> se factura con Factura E de exportación, no desde acá. Usá el botón «Emitir Factura E» de la cotización o del tablero de facturación.
             </p>
           </div>
         )}

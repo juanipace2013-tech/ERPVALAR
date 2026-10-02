@@ -35,6 +35,7 @@ import {
   Calendar as CalendarIcon,
   MessageSquare,
   Pencil,
+  Globe,
 } from 'lucide-react'
 import {
   Table,
@@ -50,7 +51,9 @@ import {
   SendToColppyDialog,
   type ColppySendPayload,
 } from '@/components/quotes/SendToColppyDialog'
+import { FacturaExportacionDialog } from '@/components/quotes/FacturaExportacionDialog'
 import { BillingScheduleDialog } from '@/components/facturacion/BillingScheduleDialog'
+import { esClienteExterior, etiquetaIdFiscal, idFiscalParaMostrar } from '@/lib/cliente-exterior'
 import { refreshInventoryCache } from '@/hooks/useColppyStock'
 
 // ─── Helpers ─────────────────────────────────────────
@@ -130,6 +133,9 @@ interface BoardCard {
     name: string
     cuit: string
     taxCondition: string | null
+    /** Clientes del exterior: país e ID fiscal (se facturan con Factura E) */
+    country?: string | null
+    taxIdExterior?: string | null
     paymentTerms: number | null
     exchangeRateType: string | null
   }
@@ -238,6 +244,9 @@ export default function FacturacionPage() {
   // Colppy dialog state
   const [showColppyDialog, setShowColppyDialog] = useState(false)
   const [colppyQuoteId, setColppyQuoteId] = useState<string | null>(null)
+
+  // Factura E (exportación): clientes del exterior, con los ítems elegidos
+  const [facturaE, setFacturaE] = useState<{ quoteId: string; itemIds: string[] } | null>(null)
 
   // Billing schedule dialog state
   const [billingScheduleQuote, setBillingScheduleQuote] = useState<BoardCard | null>(null)
@@ -418,8 +427,18 @@ export default function FacturacionPage() {
     [boardData, selectedItems]
   )
 
-  // Open the Colppy dialog for a specific quote
+  // Open the Colppy dialog for a specific quote. Cliente del exterior: Factura E
+  // (exportación, WSFEX) con los mismos ítems, nunca el dialog de Factura A/B.
   const openColppyDialog = (quoteId: string) => {
+    const quote = boardData
+      ? [...boardData.columns.ready.quotes, ...boardData.columns.partial.quotes, ...boardData.columns.pending.quotes].find(
+          (q) => q.id === quoteId
+        )
+      : undefined
+    if (quote && esClienteExterior(quote.customer)) {
+      setFacturaE({ quoteId, itemIds: (getItemsForColppy(quoteId) ?? []).map((i) => i.id) })
+      return
+    }
     setColppyQuoteId(quoteId)
     setShowColppyDialog(true)
   }
@@ -454,8 +473,12 @@ export default function FacturacionPage() {
         const selectable = quote.items.filter((i) => ids.has(i.id) && i.remainingQuantity > 0).map((i) => i.id)
         if (selectable.length === 0) throw new Error('Ninguna linea de esa factura tiene cantidad pendiente de facturar')
         setSelectedItems(new Map([[quote.id, new Set(selectable)]]))
-        setColppyQuoteId(quote.id)
-        setShowColppyDialog(true)
+        if (esClienteExterior(quote.customer)) {
+          setFacturaE({ quoteId: quote.id, itemIds: selectable })
+        } else {
+          setColppyQuoteId(quote.id)
+          setShowColppyDialog(true)
+        }
         toast.info(`Repetir factura ${inv.invoiceNumber}`, {
           description: `${selectable.length} linea(s) preseleccionadas. Revisa cantidades, precios y TC antes de emitir.`,
         })
@@ -1114,6 +1137,24 @@ export default function FacturacionPage() {
         />
       )}
 
+      {/* Factura E (exportación) para clientes del exterior */}
+      {facturaE && (
+        <FacturaExportacionDialog
+          quoteId={facturaE.quoteId}
+          quoteItemIds={facturaE.itemIds}
+          open={!!facturaE}
+          onOpenChange={(o) => {
+            if (!o) setFacturaE(null)
+          }}
+          onEmitted={() => {
+            setSelectedItems(new Map())
+            fetchBoard()
+            fetchHistorial()
+          }}
+          subtitle={`${facturaE.itemIds.length} ítem(s) seleccionado(s) en el tablero`}
+        />
+      )}
+
       {/* Programación de facturación */}
       <BillingScheduleDialog
         open={billingScheduleQuote !== null}
@@ -1256,6 +1297,8 @@ function QuoteCard({
 }: QuoteCardProps) {
   const hasSelectedItems = selectedItems.size > 0
   const allSentToColppy = quote.colppySyncedAt !== null
+  // Cliente del exterior: se factura con Factura E (exportación)
+  const exterior = esClienteExterior(quote.customer)
   const hasUnsent = quote.items.some((i) => i.remainingQuantity > 0 && !i.sentToColppy)
 
   // Estado de programación de facturación (comparación de fechas civiles)
@@ -1308,7 +1351,16 @@ function QuoteCard({
         <div className="ml-5.5 space-y-1">
           <p className="text-sm font-medium text-gray-800 truncate">{quote.customer.name}</p>
           <div className="flex items-center gap-2">
-            <p className="text-xs text-gray-500 font-mono">{formatCUIT(quote.customer.cuit)}</p>
+            <p className="text-xs text-gray-500 font-mono">
+              {exterior
+                ? `${etiquetaIdFiscal(quote.customer.country)} ${idFiscalParaMostrar(quote.customer)}`
+                : formatCUIT(quote.customer.cuit)}
+            </p>
+            {exterior && (
+              <span className="text-xs font-medium px-1.5 py-0.5 rounded border bg-sky-100 text-sky-800 border-sky-300">
+                Exportación{quote.customer.country ? ` · ${quote.customer.country}` : ''}
+              </span>
+            )}
             {quote.customer.exchangeRateType && (
               <span className={`text-xs font-medium px-1.5 py-0.5 rounded border ${getTCBadgeClass(quote.customer.exchangeRateType)}`}>
                 {quote.customer.exchangeRateType}
@@ -1558,8 +1610,8 @@ function QuoteCard({
                   onSendToColppy()
                 }}
               >
-                <Send className="h-3 w-3 mr-1" />
-                Facturar
+                {exterior ? <Globe className="h-3 w-3 mr-1" /> : <Send className="h-3 w-3 mr-1" />}
+                {exterior ? 'Emitir Factura E' : 'Facturar'}
               </Button>
             )}
 
@@ -1594,8 +1646,8 @@ function QuoteCard({
                       onSendToColppy()
                     }}
                   >
-                    <Send className="h-3 w-3 mr-1" />
-                    Enviar Parcial ({selectedItems.size})
+                    {exterior ? <Globe className="h-3 w-3 mr-1" /> : <Send className="h-3 w-3 mr-1" />}
+                    {exterior ? `Factura E parcial (${selectedItems.size})` : `Enviar Parcial (${selectedItems.size})`}
                   </Button>
                 )}
                 {allSentToColppy && !hasUnsent && (

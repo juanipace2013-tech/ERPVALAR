@@ -8,6 +8,8 @@
  *      o  { modo: 'IMPORTE', netoParcial, motivo? }                      (ajuste)
  *      o  { modo: 'TOTAL', motivo? }                                     (anula la factura)
  *   modo es obligatorio: un comprobante fiscal no se emite deduciendo la intención.
+ *   Comprobantes de exportación (E, tipos 19/20/21): 422, no admiten NC A/B
+ *   (guard explícito en nota-credito-arca.ts, assertNoEsExportacion).
  */
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
@@ -31,6 +33,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     if (!r) return NextResponse.json({ error: 'La factura no tiene el detalle de líneas para devolver por unidades' }, { status: 404 })
     return NextResponse.json(r)
   } catch (e) {
+    // p. ej. comprobante de exportación (E): no admite NC A/B
+    if (e instanceof NotaCreditoError) return NextResponse.json({ error: e.message }, { status: e.status })
     logger.error('[NC] Error cargando las líneas para NC por unidades', { invoiceId: id, error: (e as Error).message })
     return NextResponse.json({ error: 'No se pudieron cargar las líneas de la factura' }, { status: 500 })
   }

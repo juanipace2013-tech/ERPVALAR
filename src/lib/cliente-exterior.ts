@@ -1,7 +1,8 @@
 /**
- * Clientes del exterior (Chile, Paraguay, ...): se cargan solo en el ERP, para
- * leads y cotizaciones. No se suben a Colppy y no se les puede facturar hasta
- * que exista la Factura E de exportación (WSFEX).
+ * Clientes del exterior (Chile, Paraguay, ...): se cargan solo en el ERP. No se
+ * suben a Colppy ni se les emite Factura A/B: se facturan con Factura E de
+ * exportación (WSFEX, src/lib/facturacion/factura-exportacion.ts), que en la
+ * v1 se carga a mano en Colppy.
  *
  * Customer.cuit sigue siendo la clave única (NOT NULL @unique): para un
  * cliente del exterior guarda una clave canónica "<ISO2>-<ID en mayúsculas

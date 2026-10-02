@@ -170,6 +170,10 @@ export async function reintentarAltaColppy(invoiceId: string): Promise<{ ok: boo
   if (!inv) return { ok: false, error: 'Factura no encontrada' }
   if (inv.emitidaPor !== 'ARCA') return { ok: false, error: 'La factura no fue emitida por el ERP' }
   if (inv.colppyId) return { ok: true, colppyId: inv.colppyId }
+  // Factura E (exportación): se carga a mano en Colppy y se vincula pegando el id
+  if (inv.colppySyncStatus === 'MANUAL') {
+    return { ok: false, error: 'Esta factura se carga a mano en Colppy: cargala allá y pegá el id de Colppy en la factura' }
+  }
   if (!inv.colppyPayload) return { ok: false, error: 'La factura no tiene payload de Colppy guardado' }
 
   const payload = inv.colppyPayload as unknown as ColppyInvoicePayload

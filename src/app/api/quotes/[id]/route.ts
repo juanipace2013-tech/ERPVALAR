@@ -33,6 +33,9 @@ export async function GET(
             businessName: true,
             cuit: true,
             taxCondition: true,
+            // Clientes del exterior: país e ID fiscal (Factura E, cartel de exportación)
+            country: true,
+            taxIdExterior: true,
             address: true,
             city: true,
             province: true,

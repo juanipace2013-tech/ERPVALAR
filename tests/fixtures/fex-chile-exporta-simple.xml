@@ -1,0 +1,59 @@
+<!--
+  Cmp de FEXAuthorize de referencia para el primer caso real: Factura E (19),
+  Chile, Exporta Simple, CPT con una línea de flete. Datos de PRUEBA: domicilio,
+  RUT, N° de DES (el ejemplo oficial del manual), cotización e importe del flete
+  son inventados (el flete real todavía no se conoce). Lo arma
+  buildFexAuthorizeBody y tests/unit/arca-wsfex.test.ts lo compara quitando este
+  comentario y los espacios entre etiquetas. El orden es el del XSD (ClsFEXRequest).
+-->
+<ar:Cmp>
+  <ar:Id>1</ar:Id>
+  <ar:Fecha_cbte>20261005</ar:Fecha_cbte>
+  <ar:Cbte_Tipo>19</ar:Cbte_Tipo>
+  <ar:Punto_vta>10</ar:Punto_vta>
+  <ar:Cbte_nro>1</ar:Cbte_nro>
+  <ar:Tipo_expo>1</ar:Tipo_expo>
+  <ar:Permiso_existente>N</ar:Permiso_existente>
+  <ar:Dst_cmp>208</ar:Dst_cmp>
+  <ar:Cliente>CLAUGER CHILE SPA</ar:Cliente>
+  <ar:Cuit_pais_cliente>55000000034</ar:Cuit_pais_cliente>
+  <ar:Domicilio_cliente>Av. Ejemplo 1234, Santiago, Chile</ar:Domicilio_cliente>
+  <ar:Id_impositivo>76.123.456-7</ar:Id_impositivo>
+  <ar:Moneda_Id>DOL</ar:Moneda_Id>
+  <ar:Moneda_ctz>1450.5</ar:Moneda_ctz>
+  <ar:CanMisMonExt>S</ar:CanMisMonExt>
+  <ar:Imp_total>2198.88</ar:Imp_total>
+  <ar:Forma_pago>Transferencia bancaria</ar:Forma_pago>
+  <ar:Incoterms>CPT</ar:Incoterms>
+  <ar:Incoterms_Ds>Santiago</ar:Incoterms_Ds>
+  <ar:Idioma_cbte>1</ar:Idioma_cbte>
+  <ar:Items>
+    <ar:Item>
+      <ar:Pro_codigo>2228 12</ar:Pro_codigo>
+      <ar:Pro_ds>Válvula GENEBRE art. 2228 12</ar:Pro_ds>
+      <ar:Pro_qty>3</ar:Pro_qty>
+      <ar:Pro_umed>7</ar:Pro_umed>
+      <ar:Pro_precio_uni>692.96</ar:Pro_precio_uni>
+      <ar:Pro_bonificacion>0.00</ar:Pro_bonificacion>
+      <ar:Pro_total_item>2078.88</ar:Pro_total_item>
+    </ar:Item>
+    <ar:Item>
+      <ar:Pro_ds>Flete internacional</ar:Pro_ds>
+      <ar:Pro_qty>1</ar:Pro_qty>
+      <ar:Pro_umed>7</ar:Pro_umed>
+      <ar:Pro_precio_uni>120.00</ar:Pro_precio_uni>
+      <ar:Pro_bonificacion>0.00</ar:Pro_bonificacion>
+      <ar:Pro_total_item>120.00</ar:Pro_total_item>
+    </ar:Item>
+  </ar:Items>
+  <ar:Opcionales>
+    <ar:Opcional>
+      <ar:Id>2401</ar:Id>
+      <ar:Valor>2133ECSI12</ar:Valor>
+    </ar:Opcional>
+    <ar:Opcional>
+      <ar:Id>2402</ar:Id>
+      <ar:Valor>2078.88</ar:Valor>
+    </ar:Opcional>
+  </ar:Opcionales>
+</ar:Cmp>

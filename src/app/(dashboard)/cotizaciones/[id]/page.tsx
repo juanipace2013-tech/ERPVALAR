@@ -51,7 +51,7 @@ import { FamiqStock } from '@/components/productos/FamiqStock'
 import { WintersStock } from '@/components/productos/WintersStock'
 import { getConjuntosGenebre, type ConjuntoOpcion, type ConjuntoTipo } from '@/lib/genebre-conjuntos'
 import { getBobinasElectrovalvula, type BobinaKit, ELECTROVALVULAS_NAMUR, type NamurKit } from '@/lib/genebre-electrovalvulas'
-import { getPosicionadores, type PosicionadorOpcion } from '@/lib/genebre-posicionadores'
+import { getPosicionadores, MONTAJE_POSICIONADOR, type PosicionadorOpcion } from '@/lib/genebre-posicionadores'
 
 interface Product {
   id: string
@@ -1261,8 +1261,9 @@ export default function QuoteDetailPage() {
     }
   }
 
-  // Agrega el posicionador elegido como adicional de la válvula de control.
-  // Va uno solo por válvula: si ya había otro de las opciones, se reemplaza.
+  // Agrega el posicionador elegido + su montaje como adicionales de la válvula
+  // de control. Va uno solo por válvula: si ya había otro, se reemplaza (y el
+  // montaje no se duplica).
   const handleAddPosicionador = async (opcion: PosicionadorOpcion, opciones: PosicionadorOpcion[]) => {
     if (itemFormData.additionals.some((a) => a.productSku === opcion.sku)) return
     setPosicionadorLoading(opcion.sku)
@@ -1278,12 +1279,14 @@ export default function QuoteDetailPage() {
       }
 
       const skusOpciones = opciones.map((o) => o.sku)
-      const restantes = itemFormData.additionals.filter(
-        (a) => !a.productSku || !skusOpciones.includes(a.productSku)
+      const restantes = itemFormData.additionals.filter((a) =>
+        a.isManual
+          ? a.manualDescription !== MONTAJE_POSICIONADOR.descripcion
+          : !a.productSku || !skusOpciones.includes(a.productSku)
       )
 
-      if (restantes.length + 1 > 5) {
-        toast.error('Ya hay 5 adicionales — eliminá uno para agregar el posicionador.')
+      if (restantes.length + 2 > 5) {
+        toast.error('El posicionador + montaje necesitan 2 adicionales libres — eliminá alguno para agregarlo.')
         return
       }
 
@@ -1297,9 +1300,17 @@ export default function QuoteDetailPage() {
             productName: product.name,
             productSku: product.sku,
           },
+          {
+            productId: null,
+            listPrice: MONTAJE_POSICIONADOR.precioUSD,
+            isManual: true,
+            manualDescription: MONTAJE_POSICIONADOR.descripcion,
+          },
         ],
       })
-      toast.success(`Posicionador ${opcion.label} agregado (${product.sku})`)
+      toast.success(
+        `Posicionador ${opcion.label} agregado (${product.sku}) + montaje USD ${MONTAJE_POSICIONADOR.precioUSD}`
+      )
     } catch {
       toast.error('Error al buscar el posicionador')
     } finally {
@@ -2325,7 +2336,7 @@ export default function QuoteDetailPage() {
                           return (
                             <div className="rounded-md border border-teal-200 bg-teal-50/60 p-2 space-y-1.5">
                               <p className="text-xs font-semibold text-teal-800">
-                                🎛 Posicionador (opcional)
+                                🎛 Posicionador (opcional, + montaje USD {MONTAJE_POSICIONADOR.precioUSD})
                               </p>
                               <div className="flex flex-wrap gap-1.5">
                                 {opciones.map((opcion) => {

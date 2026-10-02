@@ -2,8 +2,14 @@
 // Fuente: "Lista Nº 16 - INDUSTRIAL" (vigencia 01/04/2025), pág. 26: debajo de
 // la válvula neumática modulante 5065A figuran los posicionadores lineales
 // electroneumáticos para su actuador a diafragma (Art. 5952 y 5952 04).
-// Con un click se agrega el posicionador elegido como adicional del item; va
+// Con un click se agrega el posicionador elegido como adicional del item, junto
+// con el montaje (adicional libre, USD 80 definido por Santiago 2026-10-02); va
 // uno solo por válvula, así que elegir otro reemplaza al anterior.
+
+export const MONTAJE_POSICIONADOR = {
+  descripcion: 'Montaje de posicionador',
+  precioUSD: 80,
+}
 
 export interface PosicionadorOpcion {
   sku: string

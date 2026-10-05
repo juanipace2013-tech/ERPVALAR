@@ -14,6 +14,12 @@ import { prisma } from '@/lib/prisma';
 import { isArcaConfigured, getArcaConfig } from '@/lib/arca/config';
 import { consultarPersona } from '@/lib/arca/padron';
 import type { ItemCobroColppy } from '@/lib/facturacion/imputacion-nc';
+import { letraFacturaColppy } from '@/lib/facturacion/letra-factura';
+import { totalesFacturaA, totalesFacturaB } from '@/lib/facturacion/totales-factura';
+
+// La regla de la letra vive en un módulo puro (la usan también los diálogos del
+// cliente); se re-exporta para los que ya la importan desde acá.
+export { letraFacturaColppy };
 
 // ============================================================================
 // CONFIGURACIÓN
@@ -479,7 +485,16 @@ export async function colppyFindCustomerByCUIT(
   };
 
   try {
-    const response = await callColppyAPI<any>(payload);
+    let response = await callColppyAPI<any>(payload);
+
+    // Clientes viejos cargados con el CUIT sin guiones: si no aparece con
+    // guiones se busca también así (si no, se daría de alta un duplicado y la
+    // cuenta corriente quedaría partida en dos).
+    const digitos = cuit.replace(/\D/g, '');
+    if ((!response.response?.data || response.response.data.length === 0) && digitos.length === 11) {
+      payload.parameters.filter[0].value = digitos;
+      response = await callColppyAPI(payload);
+    }
 
     if (!response.response?.data || response.response.data.length === 0) {
       return null;
@@ -575,7 +590,7 @@ export async function colppyCreateCustomer(
   const cuitFormatted = formatCuit(customer.cuit);
 
   const datos = { ...customer };
-  if (isArcaConfigured() && customer.cuit.replace(/D/g, '').length === 11) {
+  if (isArcaConfigured() && customer.cuit.replace(/\D/g, '').length === 11) {
     try {
       const p = await consultarPersona(customer.cuit);
       datos.razonSocial = datos.razonSocial || p.razonSocial;
@@ -674,6 +689,30 @@ export async function colppyCreateCustomer(
   }
 }
 
+// Colppy NO valida CUIT repetido: dos facturas simultáneas a un comprador nuevo
+// (p. ej. dos ventas de ML del mismo CUIL) podían buscarlo a la vez, no
+// encontrarlo ninguna y darlo de alta dos veces (cuenta corriente partida).
+// Mutex en proceso (pm2 corre un solo proceso) por los dígitos del CUIT: la
+// búsqueda + alta de un mismo CUIT van de a una, y la segunda vuelve a buscar
+// (encuentra el cliente que dio de alta la primera).
+const altasClienteColppy = new Map<string, Promise<unknown>>();
+
+export async function conMutexClienteColppy<T>(cuit: string, fn: () => Promise<T>): Promise<T> {
+  const clave = (cuit ?? '').replace(/\D/g, '') || String(cuit ?? '');
+  const previo = altasClienteColppy.get(clave) ?? Promise.resolve();
+  let liberar!: () => void;
+  const actual = new Promise<void>((r) => (liberar = r));
+  const cola = previo.then(() => actual);
+  altasClienteColppy.set(clave, cola);
+  try {
+    await previo;
+    return await fn();
+  } finally {
+    liberar();
+    if (altasClienteColppy.get(clave) === cola) altasClienteColppy.delete(clave);
+  }
+}
+
 /**
  * Da de alta en Colppy un cliente del ERP si no existe (busca por CUIT antes:
  * Colppy no valida duplicados). Devuelve el idCliente de Colppy.
@@ -702,23 +741,25 @@ export async function colppyEnsureCustomer(c: {
       return fn(session);
     }
   };
-  const existente = await run((s) => colppyFindCustomerByCUIT(s, c.cuit));
-  if (existente) return { idCliente: String(existente.idEntidad), creado: false };
-  const nuevo = await run((s) =>
-    colppyCreateCustomer(s, {
-      razonSocial: c.businessName || c.name,
-      cuit: c.cuit,
-      condicionIva: c.taxCondition,
-      direccion: c.address || undefined,
-      ciudad: c.city || undefined,
-      codigoPostal: c.postalCode || undefined,
-      provincia: c.province || undefined,
-      telefono: c.phone || undefined,
-      email: c.email || undefined,
-      plazoPagoDias: c.paymentTerms,
-    })
-  );
-  return { idCliente: String(nuevo.idEntidad), creado: true };
+  return conMutexClienteColppy(c.cuit, async () => {
+    const existente = await run((s) => colppyFindCustomerByCUIT(s, c.cuit));
+    if (existente) return { idCliente: String(existente.idEntidad), creado: false };
+    const nuevo = await run((s) =>
+      colppyCreateCustomer(s, {
+        razonSocial: c.businessName || c.name,
+        cuit: c.cuit,
+        condicionIva: c.taxCondition,
+        direccion: c.address || undefined,
+        ciudad: c.city || undefined,
+        codigoPostal: c.postalCode || undefined,
+        provincia: c.province || undefined,
+        telefono: c.phone || undefined,
+        email: c.email || undefined,
+        plazoPagoDias: c.paymentTerms,
+      })
+    );
+    return { idCliente: String(nuevo.idEntidad), creado: true };
+  });
 }
 
 // ============================================================================
@@ -1619,6 +1660,8 @@ export function splitItemLineTotal(item: SplitItemAmounts, qty?: number): number
   return Math.round(splitItemUnitTotal(item) * cantidad * 100) / 100
 }
 
+// letraFacturaColppy: ver src/lib/facturacion/letra-factura.ts (re-exportada arriba)
+
 // ============================================================================
 // FUNCIÓN WRAPPER DE ALTO NIVEL
 // ============================================================================
@@ -1645,6 +1688,10 @@ export async function sendQuoteToColppy(
       cuit: string;
       taxCondition: string;
       address?: string;
+      /** Solo para el alta en Colppy si el cliente no existe (p. ej. CUIL sin padrón) */
+      city?: string;
+      postalCode?: string;
+      province?: string;
       phone?: string;
       email?: string;
     };
@@ -1696,19 +1743,24 @@ export async function sendQuoteToColppy(
     // 1. Sesión cacheada (antes: login + logout contra Colppy en cada envío)
     session = await getCachedColppySession();
 
-    // 2. Buscar o crear cliente (con retry automático ante sesión expirada)
-    let customer = await withRetry((s) => colppyFindCustomerByCUIT(s, quote.customer.cuit));
-
-    if (!customer) {
-      customer = await withRetry((s) => colppyCreateCustomer(s, {
+    // 2. Buscar o crear cliente (con retry automático ante sesión expirada).
+    //    Serializado por CUIT: si otro envío está dando de alta al mismo
+    //    cliente, se espera y se lo vuelve a buscar (nunca dos altas).
+    const customer = await conMutexClienteColppy(quote.customer.cuit, async () => {
+      const existente = await withRetry((s) => colppyFindCustomerByCUIT(s, quote.customer.cuit));
+      if (existente) return existente;
+      return withRetry((s) => colppyCreateCustomer(s, {
         razonSocial: quote.customer.name,
         cuit: quote.customer.cuit,
         condicionIva: quote.customer.taxCondition,
         direccion: quote.customer.address,
+        ciudad: quote.customer.city,
+        codigoPostal: quote.customer.postalCode,
+        provincia: quote.customer.province,
         telefono: quote.customer.phone,
         email: quote.customer.email,
       }));
-    }
+    });
 
     // 3. Preparar items (los precios van en USD tal cual)
     const exchangeRate = quote.currency === 'USD' ? quote.exchangeRate || 1 : 1;
@@ -1751,19 +1803,19 @@ export async function sendQuoteToColppy(
       precio: p.precioUnitario,
     })), null, 2));
 
-    // 4. Determinar tipo de factura según condición IVA
-    const tipoFactura: 'A' | 'B' =
-      quote.customer.taxCondition === 'RESPONSABLE_INSCRIPTO' ? 'A' : 'B';
+    // 4. Determinar tipo de factura según condición IVA (igual que ARCA:
+    //    RI y Monotributo → A, el resto → B)
+    const tipoFactura = letraFacturaColppy(quote.customer.taxCondition);
 
     // 5. Preparar items con IVA según tipo de factura.
     //
-    //    Factura A (Responsable Inscripto):
+    //    Factura A (Responsable Inscripto / Monotributo):
     //      - ImporteUnitario es el NETO (sin IVA). Se discrimina el IVA 21%
     //        aparte en importeIva/totalIVA.
     //      - Si la cotización tiene pricesIncludeTax=true, los unitPrice guardados
     //        ya traen IVA → hay que dividir por 1.21 para obtener el neto.
     //
-    //    Factura B (Consumidor Final / Monotributo / Exento):
+    //    Factura B (Consumidor Final / Exento / no categorizados):
     //      - ImporteUnitario es el precio FINAL (con IVA incluido). Colppy se
     //        encarga internamente de la discriminación del IVA para ARCA.
     //      - Por lo tanto, NUNCA dividimos por 1.21 para Factura B: el precio se
@@ -1773,10 +1825,14 @@ export async function sendQuoteToColppy(
     //
     //    Nota: el antiguo bug de sub-facturación venía de dividir por 1.21 en
     //    Factura B, lo que bajaba el total final.
+    //
+    //    Default legacy (sin pricesIncludeTax): precios con IVA para todo el que
+    //    no es RI, como antes de pasar el Monotributo a la A. Para un
+    //    monotributista la A divide por 1.21: mismo neto/IVA/total que la B.
     const pricesIncludeTax =
       typeof quote.pricesIncludeTax === 'boolean'
         ? quote.pricesIncludeTax
-        : tipoFactura === 'B';
+        : quote.customer.taxCondition !== 'RESPONSABLE_INSCRIPTO';
 
     const itemsConIVA = preparedItems.map((item) => {
       let precioUnitario = item.precioUnitario;
@@ -1907,25 +1963,18 @@ export async function sendQuoteToColppy(
 
       // Calcular totales para Colppy
       // Cada preparedItem tiene su propio SKU, IVA% y comentario (tanto principales como adicionales)
-      let netoGravado = 0;
       const itemsFactura = itemsConIVA.map((item, index) => {
         const prepItem = preparedItems[index]; // Índices alineados: preparedItems → itemsConIVA
 
         // Convertir a números (pueden venir como strings de los inputs).
-        // Factura A: importeUnitario es NETO, se suma tal cual al netoGravado.
-        // Factura B: importeUnitario es GROSS (con IVA); el neto que va al
-        // netoGravado root es importeUnitario / 1.21.
+        // Factura A: importeUnitario es NETO. Factura B: importeUnitario es
+        // GROSS (con IVA). Los totales de cabecera salen de totalesFacturaA /
+        // totalesFacturaB (más abajo), no de estas líneas.
         const cantidad = Number(item.cantidad);
         const importeUnitario = Number(item.precioUnitario);
         const ivaPorUnidad = Number(item.iva);
         const importeTotal = importeUnitario * cantidad;
         const importeIva = ivaPorUnidad * cantidad;
-
-        const netoLinea =
-          tipoFactura === 'A'
-            ? importeTotal
-            : (importeUnitario / 1.21) * cantidad;
-        netoGravado += netoLinea;
 
         // Estructura según ejemplo oficial del soporte de Colppy:
         // - Todos los numéricos como NUMBER (no string).
@@ -1964,9 +2013,37 @@ export async function sendQuoteToColppy(
       // En ambos tipos el netoGravado (raíz) representa el neto real; el IVA
       // 21% se discrimina aparte. Así Colppy recibe todos los totales
       // consistentes y no necesita "apretar TAB" para recalcular.
-      netoGravado = Math.round(netoGravado * bonifFactor * 100) / 100;
-      const totalIVA = Math.round(netoGravado * 0.21 * 100) / 100;
-      const totalFactura = Math.round((netoGravado + totalIVA) * 100) / 100;
+      let netoGravado: number;
+      let totalIVA: number;
+      let totalFactura: number;
+      if (tipoFactura === 'B') {
+        // Factura B: TOTAL PRIMERO (totalesFacturaB, la misma regla que el
+        // borrador de ML). El total es la suma de los precios finales y el IVA
+        // contenido sale por diferencia: $100 → 82,64 + 17,36 = 100,00 (antes,
+        // con el neto primero y IVA = neto × 21%, daba 99,99). Estos mismos
+        // importes van a ARCA (ImpNeto/ImpIVA/ImpTotal) y a la Invoice del ERP.
+        const b = totalesFacturaB(
+          itemsConIVA.map((item) => ({ cantidad: Number(item.cantidad), precioFinal: Number(item.precioUnitario) })),
+          Number(quote.bonification ?? 0)
+        );
+        netoGravado = b.neto;
+        totalIVA = b.iva;
+        totalFactura = b.total;
+      } else {
+        // Factura A: NETO PRIMERO (totalesFacturaA, el mismo cálculo que
+        // muestra el borrador de ML): Σ unitario neto × cantidad (con precios
+        // finales, precio / 1,21 sin redondear) × bonificación → neto
+        // redondeado; IVA = neto × 21%. Con precios finales $100 → 82,64 +
+        // 17,35 = 99,99. Mismos números que el cálculo histórico en línea.
+        const a = totalesFacturaA(
+          preparedItems.map((item) => ({ cantidad: Number(item.cantidad), precioUnitario: Number(item.precioUnitario) })),
+          quote.bonification,
+          pricesIncludeTax
+        );
+        netoGravado = a.neto;
+        totalIVA = a.iva;
+        totalFactura = a.total;
+      }
 
       // Guard defensivo: nunca mandar NaN/null o totales no positivos a Colppy
       // (Colppy devolvería un mensaje críptico tipo "El totalFactura no puede ser

@@ -31,6 +31,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { Send, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
+import { letraFacturaColppy } from '@/lib/facturacion/letra-factura';
 
 // ============================================================================
 // TIPOS (exportados para reutilización)
@@ -150,7 +151,10 @@ export function SendToColppyDialog({
   // Estado del AlertDialog de inconsistencia crítica (factura emitida en Colppy
   // pero persistencia en ERP falló). Bloqueante: el usuario tiene que confirmar
   // que leyó el número de factura antes de poder seguir.
+  // También para ARCA_INCIERTO (tipo 'arca'): se pidió el CAE y ARCA no lo
+  // confirmó; al cerrar el aviso se cierra el diálogo para que nadie reintente.
   const [orphanInfo, setOrphanInfo] = useState<{
+    tipo?: 'colppy' | 'arca';
     message: string;
     colppyFacturaId: string | null;
     colppyFacturaNumber: string | null;
@@ -293,8 +297,9 @@ export function SendToColppyDialog({
   }, [open, quote]);
 
 
-  // Determinar tipo de factura según condición IVA
-  const invoiceType = quote.customer.taxCondition === 'RESPONSABLE_INSCRIPTO' ? 'A' : 'B';
+  // Tipo de factura según condición IVA: la misma regla con la que se emite
+  // (RI y Monotributo → A, RG 5003/2021; el resto → B)
+  const invoiceType = letraFacturaColppy(quote.customer.taxCondition);
   // Cliente del exterior: se factura con Factura E (exportación, FacturaExportacionDialog), nunca A/B
   const clienteExterior = quote.customer.taxCondition === 'CLIENTE_EXTERIOR';
 
@@ -406,6 +411,11 @@ export function SendToColppyDialog({
             err.colppyRemitoNumber = data.colppyRemitoNumber;
             throw err;
           }
+          if (data.codigo === 'ARCA_INCIERTO') {
+            const err: any = new Error(data.error);
+            err.errorCode = 'ARCA_INCIERTO';
+            throw err;
+          }
           throw new Error(data.error || 'Error al enviar a Colppy');
         }
 
@@ -439,7 +449,15 @@ export function SendToColppyDialog({
     } catch (error: any) {
       console.error('Error al enviar a Colppy:', error);
       // Caso crítico: mostrar AlertDialog bloqueante en lugar del toast genérico.
-      if (error?.errorCode === 'COLPPY_ORPHAN') {
+      if (error?.errorCode === 'ARCA_INCIERTO') {
+        setOrphanInfo({
+          tipo: 'arca',
+          message: error.message || 'ARCA no confirmó la factura: NO reintentes; revisala en ARCA antes de volver a emitir',
+          colppyFacturaId: null,
+          colppyFacturaNumber: null,
+          colppyRemitoNumber: null,
+        });
+      } else if (error?.errorCode === 'COLPPY_ORPHAN') {
         setOrphanInfo({
           message: error.message || 'Inconsistencia crítica',
           colppyFacturaId: error.colppyFacturaId || null,
@@ -890,7 +908,9 @@ export function SendToColppyDialog({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-700">
               <AlertTriangle className="h-6 w-6" />
-              ⚠️ Inconsistencia crítica — Factura emitida pero no registrada
+              {orphanInfo?.tipo === 'arca'
+                ? '⚠️ ARCA no confirmó la factura — NO reintentes'
+                : '⚠️ Inconsistencia crítica — Factura emitida pero no registrada'}
             </DialogTitle>
             <DialogDescription className="text-gray-900 pt-2">
               {orphanInfo?.message}
@@ -941,7 +961,15 @@ export function SendToColppyDialog({
           <DialogFooter>
             <Button
               type="button"
-              onClick={() => setOrphanInfo(null)}
+              onClick={() => {
+                const eraArca = orphanInfo?.tipo === 'arca';
+                setOrphanInfo(null);
+                if (eraArca) {
+                  // Cerrar el diálogo de envío: la factura puede existir en ARCA
+                  onOpenChange(false);
+                  onSent();
+                }
+              }}
               className="bg-red-600 hover:bg-red-700 text-white w-full"
             >
               Entendido

@@ -17,13 +17,13 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
-import { sendQuoteToColppy, type SendToColppyOptions, buildSplitItem, calcComponentPrice, splitItemUnitTotal, splitItemLineTotal } from '@/lib/colppy'
+import { sendQuoteToColppy, type SendToColppyOptions, buildSplitItem, calcComponentPrice, splitItemUnitTotal, splitItemLineTotal, letraFacturaColppy } from '@/lib/colppy'
 import { calcDueDate } from '@/lib/quote-workflow'
 import { logAudit } from '@/lib/audit'
 import { logger } from '@/lib/logger'
 import { syncStockForSkusFireAndForget } from '@/lib/colppy-inventory'
 import { sincronizarComisionesDeQuote } from '@/lib/comisiones/liquidacion'
-import { crearHookEmisionArca, getEmisorFacturacion } from '@/lib/facturacion/emision-arca'
+import { avisoEmisionIncierta, crearHookEmisionArca, getEmisorFacturacion } from '@/lib/facturacion/emision-arca'
 import { facturaEnPesos, itemsEnPesos, type MonedaFactura } from '@/lib/facturacion/moneda'
 import { esClienteExterior } from '@/lib/cliente-exterior'
 import { archivarFacturaEnSharePointBg } from '@/lib/sharepoint/facturas-emitidas'
@@ -305,6 +305,12 @@ export async function POST(request: NextRequest) {
     const emisionArca = hookArca?.getEmision() ?? null
 
     if (!colppyResult.success && !emisionArca) {
+      // Se pidió el CAE y ARCA no lo confirmó: pudo haberlo autorizado. Nada
+      // de "reintentá": bloquear hasta revisarlo en ARCA (log [ARCA_INCIERTO]).
+      const incierta = avisoEmisionIncierta(hookArca, { quoteId: quote.id, quoteNumber: quote.quoteNumber, error: colppyResult.error })
+      if (incierta) {
+        return NextResponse.json({ error: incierta, errorStage: 'arca', codigo: 'ARCA_INCIERTO' }, { status: 502 })
+      }
       // Nada quedó emitido: rechazo de ARCA o error de Colppy/red antes de emitir.
       const prefix = colppyResult.errorStage === 'arca' ? 'ARCA rechazó la factura' : 'Error al enviar a Colppy'
       return NextResponse.json(
@@ -351,7 +357,7 @@ export async function POST(request: NextRequest) {
     // breadcrumb del caso COLPPY_ORPHAN (factura emitida + persistencia fallida).
     const invoiceType = emisionArca
       ? ([1, 201].includes(emisionArca.cbteTipo) ? 'A' : emisionArca.cbteTipo === 11 ? 'C' : 'B')
-      : quote.customer.taxCondition === 'RESPONSABLE_INSCRIPTO' ? 'A' : 'B'
+      : letraFacturaColppy(quote.customer.taxCondition)
     // Numero interno unico: la letra va adelante porque A, B y NC comparten
     // numeracion por PV (A-0007-00000001, B-0007-00000001, NCA-0007-00000001).
     // FCE (201/206) tiene numeracion propia por cbteTipo → prefijo FCEA/FCEB.

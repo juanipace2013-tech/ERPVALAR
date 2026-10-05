@@ -15,7 +15,10 @@
  *    FECompConsultar del número que íbamos a usar; si existe y coincide en
  *    importe/fecha/receptor, se toma ese CAE en vez de emitir de nuevo.
  *  - Resultado 'R': se devuelve un EmisionRechazada con las observaciones
- *    (código + mensaje de ARCA) para mostrarlas al usuario; no lanza.
+ *    (código + mensaje de ARCA) para mostrarlas al usuario; no lanza. Solo
+ *    es rechazo lo que ARCA contestó con códigos de error: un Fault SOAP, un
+ *    HTTP inesperado o una respuesta sin CAE ni códigos que FECompConsultar no
+ *    puede confirmar lanza EmisionInciertaError (pudo haber quedado autorizado).
  */
 import {
   CBTE_TIPO,
@@ -133,6 +136,41 @@ export interface EmisionRechazada {
 }
 
 export type EmisionResult = EmisionAutorizada | EmisionRechazada
+
+/**
+ * emitirComprobante falló ANTES de pedir el CAE (ticket de WSAA,
+ * FECompUltimoAutorizado o armado del detalle): ARCA no recibió ningún pedido
+ * de autorización, no hay comprobante emitido y se puede reintentar.
+ * El mensaje es el del error original (`causa`).
+ */
+export class EmisionNoSolicitadaError extends Error {
+  constructor(
+    readonly causa: unknown,
+    readonly cbteTipo: number,
+    readonly puntoVenta: number
+  ) {
+    super(causa instanceof Error ? causa.message : String(causa))
+    this.name = 'EmisionNoSolicitadaError'
+  }
+}
+
+/**
+ * Se pidió el CAE (FECAESolicitar) y no hubo respuesta utilizable ni se pudo
+ * confirmar con FECompConsultar: ARCA PUDO haber autorizado `numero`. No hay
+ * que reintentar a ciegas (saldría un segundo comprobante): revisar ese número
+ * en ARCA. El mensaje es el del error original (`causa`).
+ */
+export class EmisionInciertaError extends Error {
+  constructor(
+    readonly causa: unknown,
+    readonly cbteTipo: number,
+    readonly puntoVenta: number,
+    readonly numero: number
+  ) {
+    super(causa instanceof Error ? causa.message : String(causa))
+    this.name = 'EmisionInciertaError'
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Mapeo clase+letra → CbteTipo
@@ -299,7 +337,9 @@ export function buildDetalle(input: ComprobanteInput, numero: number): FECAEDetR
 
 /**
  * Emite un comprobante y devuelve CAE + número, o el rechazo de ARCA.
- * Lanza solo ante errores de configuración/transporte no recuperables.
+ * Lanza solo ante errores de configuración/transporte no recuperables:
+ *  - EmisionNoSolicitadaError: falló antes de pedir el CAE (no se emitió nada).
+ *  - EmisionInciertaError: se pidió el CAE y no se sabe si ARCA lo autorizó.
  */
 export async function emitirComprobante(input: ComprobanteInput): Promise<EmisionResult> {
   const cfg = getArcaConfig()
@@ -307,12 +347,33 @@ export async function emitirComprobante(input: ComprobanteInput): Promise<Emisio
   const cbteTipo = cbteTipoFor(input.letra, input.clase, !!input.fce)
 
   return withLock(`${pv}:${cbteTipo}`, async () => {
-    const ultimo = await feCompUltimoAutorizado(cbteTipo, pv)
-    const numero = ultimo + 1
-    const detalle = buildDetalle(input, numero)
+    let numero: number
+    let detalle: FECAEDetRequest
+    try {
+      const ultimo = await feCompUltimoAutorizado(cbteTipo, pv)
+      numero = ultimo + 1
+      detalle = buildDetalle(input, numero)
+    } catch (e) {
+      // Todavía no se pidió nada a ARCA: el comprobante no existe
+      throw new EmisionNoSolicitadaError(e, cbteTipo, pv)
+    }
 
     logger.info(`[ARCA] Emitiendo ${describeCbteTipo(cbteTipo)} ${formatNroComprobante(pv, numero)} total=${detalle.ImpTotal} ${detalle.MonId}`)
 
+    const rechazo = (errores: Array<{ Code: number; Msg: string }>, mensaje: string): EmisionRechazada => ({
+      ok: false,
+      cbteTipo,
+      puntoVenta: pv,
+      numero,
+      errores,
+      mensaje,
+    })
+
+    // Desde acá ARCA pudo haber recibido el pedido. Solo es rechazo (ok: false)
+    // lo que ARCA contestó con códigos de error; cualquier otra cosa (Fault,
+    // HTTP inesperado, respuesta sin CAE ni códigos, corte de red) es INCIERTA
+    // salvo que FECompConsultar encuentre el comprobante.
+    let causa: unknown
     try {
       const r = await feCAESolicitar({ PtoVta: pv, CbteTipo: cbteTipo, detalle })
 
@@ -331,34 +392,40 @@ export async function emitirComprobante(input: ComprobanteInput): Promise<Emisio
       }
 
       const errores = [...r.Errors, ...r.Observaciones]
-      return {
-        ok: false,
-        cbteTipo,
-        puntoVenta: pv,
-        numero,
-        errores,
-        mensaje: errores.map((e) => `[${e.Code}] ${e.Msg}`).join(' · ') || `ARCA devolvió Resultado=${r.Resultado} sin detalle`,
-      }
+      // Rechazo explícito de ARCA (Resultado R con sus códigos): definitivo
+      if (r.Resultado === 'R' && errores.length) return rechazo(errores, errores.map((e) => `[${e.Code}] ${e.Msg}`).join(' · '))
+      // Aprobado sin CAE, o R/P sin ningún código: no se sabe qué quedó en ARCA
+      // (sin errors en la causa: nunca se toma como rechazo más abajo)
+      const detalleCodigos = errores.length ? `: ${errores.map((e) => `[${e.Code}] ${e.Msg}`).join(' · ')}` : ''
+      causa = new ArcaError(`FECAESolicitar: Resultado=${r.Resultado} sin CAE${detalleCodigos}`, [], [], r.raw)
     } catch (err) {
-      // Posible "autorizado pero no nos llegó la respuesta": consultar el número
-      const recovered = await tryRecover(cbteTipo, numero, pv, detalle)
-      if (recovered) {
-        logger.warn(`[ARCA] CAE recuperado tras error de red para ${formatNroComprobante(pv, numero)}`)
-        return { ...recovered, fecha: input.fecha, recuperado: true }
-      }
-      if (err instanceof ArcaError) {
-        return {
-          ok: false,
-          cbteTipo,
-          puntoVenta: pv,
-          numero,
-          errores: err.errors,
-          mensaje: err.message,
-        }
-      }
-      throw err
+      causa = err
     }
+
+    // Posible "autorizado pero no nos llegó la respuesta": consultar el número
+    const recovered = await tryRecover(cbteTipo, numero, pv, detalle)
+    if (recovered) {
+      logger.warn(`[ARCA] CAE recuperado tras error de red para ${formatNroComprobante(pv, numero)}`)
+      return { ...recovered, fecha: input.fecha, recuperado: true }
+    }
+    // ARCA contestó con códigos de error (p. ej. FECAESolicitar sin detalle
+    // pero con Errors a nivel raíz): rechazo definitivo, no hay comprobante
+    if (causa instanceof ArcaError && causa.errors.length > 0) return rechazo(causa.errors, causa.message)
+    // Fault SOAP, HTTP inesperado (502/503/504, HTML), sobre sin resultado o
+    // corte de red después de pedir el CAE, sin poder confirmarlo: resultado
+    // desconocido. Quien llama NO debe reintentar a ciegas.
+    throw new EmisionInciertaError(causa, cbteTipo, pv, numero)
   })
+}
+
+/**
+ * Mensaje para el usuario cuando ARCA no confirmó un comprobante pedido
+ * (EmisionInciertaError, o un intento de emisión que quedó incierto/en curso):
+ * no hay que reintentar sin revisarlo en ARCA (saldría un segundo comprobante).
+ */
+export function mensajeEmisionIncierta(p: { cbteTipo: number; puntoVenta: number; numero: number | null }): string {
+  const numero = p.numero ? formatNroComprobante(p.puntoVenta, p.numero) : `PV ${String(p.puntoVenta).padStart(4, '0')}, número desconocido`
+  return `ARCA no confirmó el comprobante (${describeCbteTipo(p.cbteTipo)} N° ${numero}): NO reintentes; revisalo en ARCA antes de volver a emitir`
 }
 
 async function tryRecover(

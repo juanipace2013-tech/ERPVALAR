@@ -28,7 +28,7 @@ const CONDICION_IVA_LABEL: Record<string, string> = {
   CLIENTE_EXTERIOR: 'Cliente del Exterior',
 }
 
-const DOC_LABEL: Record<number, string> = { 80: 'CUIT', 86: 'CUIL', 96: 'DNI', 99: '' }
+const DOC_LABEL: Record<number, string> = { 80: 'CUIT', 86: 'CUIL', 87: 'CDI', 96: 'DNI', 99: '' }
 
 function claseDe(cbteTipo: number): FacturaPDFData['clase'] {
   if ([3, 8, 13, 203, 208, FEX_CBTE.NOTA_CREDITO_E].includes(cbteTipo)) return 'NOTA DE CRÉDITO'
@@ -157,6 +157,8 @@ export async function buildFacturaPdfData(invoiceId: string): Promise<FacturaPDF
 
   const r = inv.customer
   const domicilio = [r.address, r.city, r.province].filter(Boolean).join(', ') || null
+  // Sin condición conocida el receptor va como consumidor final (= receptorDesdeCondicion)
+  const condicionIva = CONDICION_IVA_LABEL[r.taxCondition ?? ''] ?? 'Consumidor Final'
 
   return {
     letra,
@@ -177,8 +179,10 @@ export async function buildFacturaPdfData(invoiceId: string): Promise<FacturaPDF
       nombre: r.businessName || r.name,
       docTipoLabel: DOC_LABEL[inv.docTipo ?? 80] ?? 'CUIT',
       docNro: inv.docNro || r.cuit || '',
-      condicionIva: CONDICION_IVA_LABEL[r.taxCondition ?? ''] ?? 'Consumidor Final',
+      condicionIva,
       domicilio,
+      // Leyenda "A CONSUMIDOR FINAL" (RG 5824/2026) en los datos del receptor
+      consumidorFinal: !esA && condicionIva === CONDICION_IVA_LABEL.CONSUMIDOR_FINAL,
     },
     items,
     totales: {
@@ -187,6 +191,8 @@ export async function buildFacturaPdfData(invoiceId: string): Promise<FacturaPDF
       exento: 0,
       iva: [{ alicuota: 21, importe: taxAmount }],
       otrosTributos: 0,
+      // El ERP no factura impuestos internos ni otros nacionales indirectos
+      otrosImpNacionalesIndirectos: 0,
       total,
     },
     asociados: asociadosDe(inv),

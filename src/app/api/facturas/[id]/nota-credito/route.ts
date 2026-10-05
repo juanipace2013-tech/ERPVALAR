@@ -106,7 +106,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     })
   } catch (e) {
     if (e instanceof NotaCreditoError) {
-      return NextResponse.json({ error: e.message }, { status: e.status })
+      return NextResponse.json({ error: e.message, ...(e.codigo ? { codigo: e.codigo } : {}) }, { status: e.status })
     }
     logger.error('[NC] Error emitiendo nota de crédito:', e)
     return NextResponse.json({ error: (e as Error).message || 'Error al emitir la nota de crédito' }, { status: 500 })

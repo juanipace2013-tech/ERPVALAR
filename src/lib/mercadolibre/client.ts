@@ -622,17 +622,47 @@ interface MlOrdersSearch {
   paging?: { total: number; offset: number; limit: number }
 }
 
-/** Órdenes pagadas del seller desde una fecha (más nuevas primero, tope `max`). */
-export async function searchPaidOrdersSince(desde: Date, max = 200): Promise<MlSaleOrder[]> {
+/**
+ * Órdenes pagadas del seller desde una fecha (más nuevas primero, tope `max`).
+ * Si se pasa `info`, se completa con el total que informa ML (para avisar si
+ * el tope dejó ventas afuera).
+ *
+ * Cada página que falla (429, 5xx, red) se reintenta UNA vez después de ~1 s.
+ * Si la primera página sigue fallando, lanza (no hay nada para mostrar); si
+ * falla una página posterior, devuelve las órdenes ya traídas y deja el error
+ * en `info.error` (el listado avisa que no están todas).
+ */
+export async function searchPaidOrdersSince(
+  desde: Date,
+  max = 200,
+  info?: { total?: number; error?: string },
+  opts: { esperaReintentoMs?: number } = {}
+): Promise<MlSaleOrder[]> {
   const sellerId = await getMlUserId()
   const out: MlSaleOrder[] = []
   const limit = 50
   const from = encodeURIComponent(desde.toISOString().replace('Z', '-00:00'))
+  const espera = opts.esperaReintentoMs ?? 1000
   for (let offset = 0; offset < max; offset += limit) {
-    const page = await mlFetch<MlOrdersSearch>(
-      `/orders/search?seller=${sellerId}&order.status=paid&order.date_created.from=${from}&sort=date_desc&limit=${limit}&offset=${offset}`
-    )
+    const path = `/orders/search?seller=${sellerId}&order.status=paid&order.date_created.from=${from}&sort=date_desc&limit=${limit}&offset=${offset}`
+    let page: MlOrdersSearch
+    try {
+      page = await mlFetch<MlOrdersSearch>(path)
+    } catch (e) {
+      logger.warn(`[ML] /orders/search offset ${offset} falló (${(e as Error).message}): se reintenta en ${espera} ms`)
+      await new Promise((r) => setTimeout(r, espera))
+      try {
+        page = await mlFetch<MlOrdersSearch>(path)
+      } catch (e2) {
+        if (offset === 0) throw e2
+        const msg = (e2 as Error).message
+        logger.warn(`[ML] /orders/search offset ${offset} volvió a fallar (${msg}): se devuelven las ${out.length} órdenes ya traídas`)
+        if (info) info.error = msg
+        break
+      }
+    }
     out.push(...(page.results ?? []))
+    if (info && typeof page.paging?.total === 'number') info.total = page.paging.total
     if ((page.results ?? []).length < limit) break
   }
   return out
@@ -652,12 +682,31 @@ export function getPack(packId: string | number): Promise<MlPack> {
   return mlFetch<MlPack>(`/packs/${packId}`)
 }
 
+/** Domicilio de facturación del comprador (si ML lo informa). */
+export interface MlBillingAddress {
+  calle: string | null
+  numero: string | null
+  ciudad: string | null
+  /** Nombre de la provincia tal como lo da ML (ej "Capital Federal") */
+  provincia: string | null
+  cp: string | null
+}
+
 /** Datos fiscales normalizados del comprador (de billing-info v1 o v2). */
 export interface MlBuyerFiscal {
-  docType: string | null // "CUIT" | "DNI" | ...
+  docType: string | null // "CUIT" | "CUIL" | "DNI" | ...
   docNumber: string | null
   name: string | null
   taxpayerType: string | null // ej "IVA Responsable Inscripto"
+  /** v2: taxes.taxpayer_type.id */
+  taxpayerTypeId?: string | null
+  address?: MlBillingAddress | null
+}
+
+const texto = (v: unknown): string | null => (v === undefined || v === null || String(v).trim() === '' ? null : String(v).trim())
+
+function direccionML(a: MlBillingAddress): MlBillingAddress | null {
+  return Object.values(a).some(Boolean) ? a : null
 }
 
 function pickAdditional(info: Array<{ type?: string; value?: string }> | undefined, ...types: string[]) {
@@ -678,11 +727,20 @@ export async function getBuyerFiscal(order: MlSaleOrder): Promise<MlBuyerFiscal>
       const b = r?.buyer?.billing_info ?? r?.billing_info ?? r
       const ident = b?.identification ?? {}
       const name = [b?.name, b?.last_name].filter(Boolean).join(' ') || b?.business_name || null
+      const dir = b?.address ?? {}
       return {
         docType: ident.type ?? null,
         docNumber: ident.number ? String(ident.number) : null,
         name,
         taxpayerType: b?.taxes?.taxpayer_type?.description ?? b?.taxpayer_type?.description ?? null,
+        taxpayerTypeId: texto(b?.taxes?.taxpayer_type?.id ?? b?.taxpayer_type?.id),
+        address: direccionML({
+          calle: texto(dir.street_name),
+          numero: texto(dir.street_number),
+          ciudad: texto(dir.city_name),
+          provincia: texto(dir.state?.name ?? dir.state_name),
+          cp: texto(dir.zip_code),
+        }),
       }
     } catch (e) {
       if (!(e instanceof MlApiError) || e.status !== 404) throw e
@@ -697,6 +755,13 @@ export async function getBuyerFiscal(order: MlSaleOrder): Promise<MlBuyerFiscal>
     docNumber: b.doc_number ? String(b.doc_number) : null,
     name: pickAdditional(extra, 'BUSINESS_NAME') ?? ([pickAdditional(extra, 'FIRST_NAME'), pickAdditional(extra, 'LAST_NAME')].filter(Boolean).join(' ') || null),
     taxpayerType: pickAdditional(extra, 'TAXPAYER_TYPE_ID', 'TAXPAYER_TYPE'),
+    address: direccionML({
+      calle: texto(pickAdditional(extra, 'STREET_NAME')),
+      numero: texto(pickAdditional(extra, 'STREET_NUMBER')),
+      ciudad: texto(pickAdditional(extra, 'CITY_NAME')),
+      provincia: texto(pickAdditional(extra, 'STATE_NAME')),
+      cp: texto(pickAdditional(extra, 'ZIP_CODE')),
+    }),
   }
 }
 

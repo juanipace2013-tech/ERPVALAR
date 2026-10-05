@@ -34,6 +34,10 @@ export interface PersonaPadron {
   razonSocial: string
   tipoPersona: 'FISICA' | 'JURIDICA'
   activo: boolean
+  /** Tipo de clave según ARCA ('CUIT' | 'CUIL' | 'CDI'); no siempre viene */
+  tipoClave?: string | null
+  /** Apellido (personas humanas; razonSocial = "APELLIDO NOMBRE"). null si ARCA no lo da */
+  apellido?: string | null
   condicionIva: CondicionIva
   domicilio: { direccion: string; localidad: string; provincia: string; codigoPostal: string }
   actividadPrincipal: string | null
@@ -42,10 +46,21 @@ export interface PersonaPadron {
 }
 
 export class PadronError extends Error {
-  constructor(message: string, readonly status: number) {
+  /**
+   * true SOLO cuando ARCA contesta que la clave no existe ("No existe persona
+   * con ese Id"). Los demás 404 (clave inválida, errorConstancia sin datos
+   * generales) NO dicen que la persona no exista: no hay que tratarlos como
+   * "no registrada". `status` sigue igual para los demás usos (/api/afip/cuit).
+   */
+  readonly noExiste: boolean
+  constructor(message: string, readonly status: number, opts: { noExiste?: boolean } = {}) {
     super(message)
+    this.noExiste = opts.noExiste === true
   }
 }
+
+/** Texto exacto de ARCA (A5) para una clave que no existe: "No existe persona con ese Id". */
+const NO_EXISTE_PERSONA = /no existe persona/i
 
 const parser = new XMLParser({ removeNSPrefix: true, parseTagValue: false, trimValues: true })
 
@@ -54,7 +69,8 @@ const list = <T>(v: T | T[] | undefined): T[] => (v === undefined ? [] : Array.i
 const normalize = (s: string) =>
   s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim()
 
-function provincia(descripcion: string): string {
+/** Provincia del ERP a partir de la descripción de ARCA / Mercado Libre ('' si no se reconoce). */
+export function provincia(descripcion: string): string {
   const d = normalize(descripcion)
   if (!d) return ''
   if (d.includes('CIUDAD') || d.includes('CAPITAL FEDERAL')) return 'CABA'
@@ -94,7 +110,9 @@ export async function consultarPersona(cuitInput: string): Promise<PersonaPadron
     const msg = String(fault.faultstring ?? 'Error de ARCA')
     logger.info(`[Padrón] ${cuit}: ${msg}`)
     // "No existe persona con ese Id" y similares son del dato consultado, no del servicio.
-    throw new PadronError(msg, /no existe|inexistente|inv[aá]lid/i.test(msg) ? 404 : 502)
+    throw new PadronError(msg, /no existe|inexistente|inv[aá]lid/i.test(msg) ? 404 : 502, {
+      noExiste: NO_EXISTE_PERSONA.test(msg),
+    })
   }
 
   const ret = (soapBody.getPersona_v2Response as { personaReturn?: Record<string, unknown> } | undefined)
@@ -120,6 +138,8 @@ export async function consultarPersona(cuitInput: string): Promise<PersonaPadron
     razonSocial: String(dg.razonSocial || nombre || ''),
     tipoPersona: dg.tipoPersona === 'FISICA' ? 'FISICA' : 'JURIDICA',
     activo: dg.estadoClave === 'ACTIVO',
+    tipoClave: dg.tipoClave ? String(dg.tipoClave) : null,
+    apellido: dg.apellido ? String(dg.apellido) : null,
     condicionIva: condicionIva(ret),
     domicilio: {
       direccion: dom.direccion ?? '',

@@ -54,10 +54,12 @@ export interface FacturaPDFData {
   observaciones?: string | null
   receptor: {
     nombre: string
-    docTipoLabel: string // 'CUIT' | 'DNI' | ''
+    docTipoLabel: string // 'CUIT' | 'CUIL' | 'CDI' | 'DNI' | ''
     docNro: string
     condicionIva: string
     domicilio?: string | null
+    /** Receptor consumidor final: lleva la leyenda "A CONSUMIDOR FINAL" (RG 5824/2026) */
+    consumidorFinal?: boolean
   }
   items: Array<{
     codigo?: string | null
@@ -76,6 +78,8 @@ export interface FacturaPDFData {
     exento: number
     iva: Array<{ alicuota: number; importe: number }>
     otrosTributos: number
+    /** Régimen de Transparencia Fiscal (RG 5614): otros impuestos nacionales indirectos (0 si no hay) */
+    otrosImpNacionalesIndirectos?: number
     total: number
   }
   asociados?: Array<{ descripcion: string }>
@@ -143,6 +147,31 @@ function fmtCuit(doc: string): string {
   const d = doc.replace(/\D/g, '')
   if (d.length === 11) return `${d.slice(0, 2)}-${d.slice(2, 10)}-${d.slice(10)}`
   return doc
+}
+
+/**
+ * Documento del receptor tal como se imprime: CUIT, CUIL y CDI con guiones
+ * (NN-NNNNNNNN-N), DNI y los demás tal cual. "CUIL: 20-12345678-6", "DNI: 12345678".
+ */
+export function documentoReceptorPdf(r: Pick<FacturaPDFData['receptor'], 'docTipoLabel' | 'docNro'>): string {
+  const etiqueta = r.docTipoLabel ? `${r.docTipoLabel}:` : 'Doc:'
+  const valor = ['CUIT', 'CUIL', 'CDI'].includes(r.docTipoLabel) ? fmtCuit(r.docNro) : r.docNro || '-'
+  return `${etiqueta} ${valor}`
+}
+
+/** Leyenda del receptor consumidor final (RG 5824/2026, Anexo II, A, Título II, inc. d) */
+export const LEYENDA_CONSUMIDOR_FINAL = 'A CONSUMIDOR FINAL'
+
+/**
+ * Descripción del ítem sin el código adelante: muchos nombres de producto ya
+ * empiezan con el SKU ("2025 04 - Válvula...") y el código va en su columna.
+ * Saca el código y los separadores que le siguen (espacios, guión, raya).
+ */
+export function descripcionSinCodigo(codigo: string | null | undefined, descripcion: string): string {
+  const c = (codigo ?? '').trim()
+  const d = descripcion.trim()
+  if (!c || !d.toUpperCase().startsWith(c.toUpperCase())) return d
+  return d.slice(c.length).replace(/^[\s\-–]+/, '')
 }
 
 function nroFormateado(pv: number, nro: number): string {
@@ -382,11 +411,11 @@ function drawFactura(doc: jsPDF, data: FacturaPDFData, logoBase64: string, qrBas
       doc.text(r.condicionIva, ML + USABLE_W - 3, ry + 25, { align: 'right' })
     } else {
       label('IVA:', r.condicionIva.toUpperCase(), ML + 3, ry + 21, ML + 110, 8.5)
-      const docLabel = r.docTipoLabel ? `${r.docTipoLabel}:` : 'Doc:'
-      const docVal = r.docTipoLabel === 'CUIT' ? fmtCuit(r.docNro) : r.docNro || '-'
       doc.setFont('helvetica', 'bold')
       doc.setFontSize(9)
-      doc.text(`${docLabel} ${docVal}`, ML + USABLE_W - 3, ry + 21, { align: 'right' })
+      doc.text(documentoReceptorPdf(r), ML + USABLE_W - 3, ry + 21, { align: 'right' })
+      // Consumidor final: leyenda obligatoria en los datos del receptor
+      if (r.consumidorFinal) doc.text(LEYENDA_CONSUMIDOR_FINAL, ML + USABLE_W - 3, ry + 14, { align: 'right' })
     }
 
     // Filas OC / condiciones
@@ -423,10 +452,7 @@ function drawFactura(doc: jsPDF, data: FacturaPDFData, logoBase64: string, qrBas
     // Muchos nombres de producto ya empiezan con el SKU ("2025 04 Válvula..."):
     // el código va en su columna, así que se lo saca de la descripción
     const codigo = (it.codigo ?? '').trim()
-    let descripcion = it.descripcion.trim()
-    if (codigo && descripcion.toUpperCase().startsWith(codigo.toUpperCase())) {
-      descripcion = descripcion.slice(codigo.length).replace(/^[s-–]+/, '')
-    }
+    const descripcion = descripcionSinCodigo(codigo, it.descripcion)
     const desc = `${descripcion}${it.detalle ? `
 ${it.detalle}` : ''}`
     return [
@@ -516,13 +542,17 @@ ${it.detalle}` : ''}`
       doc.text(lines.slice(0, 3), ML + 6, bandY + 13.5)
     }
   } else {
+    // RG 5614: IVA contenido y otros impuestos nacionales indirectos (0,00 si no hay)
     doc.text('Régimen de Transparencia Fiscal al Consumidor (Ley 27.743)', ML + 4 + 56, bandY + 4, { align: 'center' })
     const ivaContenido = t.iva.reduce((s, i) => s + i.importe, 0)
     doc.rect(ML + 4, bandY + 6, 112, 5.5)
+    doc.rect(ML + 4, bandY + 11.5, 112, 5.5)
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(7.5)
     doc.text('IVA Contenido', ML + 78, bandY + 10, { align: 'right' })
     doc.text(fmtNum(ivaContenido), ML + 114, bandY + 10, { align: 'right' })
+    doc.text('Otros Impuestos Nacionales Indirectos', ML + 78, bandY + 15.5, { align: 'right' })
+    doc.text(fmtNum(t.otrosImpNacionalesIndirectos ?? 0), ML + 114, bandY + 15.5, { align: 'right' })
   }
 
   // Derecha: totales

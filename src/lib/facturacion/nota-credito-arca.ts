@@ -28,7 +28,14 @@ import {
   type ColppyInvoicePayload,
 } from '@/lib/colppy'
 import { getArcaConfig } from '@/lib/arca/config'
-import { emitirComprobante, receptorDesdeCondicion, type LetraComprobante } from '@/lib/arca/emitir'
+import {
+  EmisionInciertaError,
+  emitirComprobante,
+  mensajeEmisionIncierta,
+  receptorDesdeCondicion,
+  type EmisionResult,
+  type LetraComprobante,
+} from '@/lib/arca/emitir'
 import { buildQrUrl, toCbteFch } from '@/lib/arca/wsfe'
 import { esCbteExportacion } from '@/lib/arca/fex-params'
 import { MARCA_NC_SIN_PENDIENTE, sincronizarComisionesDeQuote } from '@/lib/comisiones/liquidacion'
@@ -104,7 +111,8 @@ export interface NotaCreditoResult {
 }
 
 export class NotaCreditoError extends Error {
-  constructor(message: string, public readonly status = 400) {
+  /** codigo: 'ARCA_INCIERTO' = se pidió el CAE y ARCA no lo confirmó (no reintentar) */
+  constructor(message: string, public readonly status = 400, public readonly codigo?: string) {
     super(message)
     this.name = 'NotaCreditoError'
   }
@@ -416,32 +424,52 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
   const cfg = getArcaConfig()
 
   // 1. Emitir en ARCA
-  const em = await emitirComprobante({
-    clase: 'NOTA_CREDITO',
-    letra,
-    fce: esFce ? { anulacion: 'N' } : undefined,
-    fecha: new Date(),
-    receptor,
-    moneda: esUsd ? 'USD' : 'ARS',
-    cotizacion: esUsd ? cotizacion : undefined,
-    cancelaEnMonedaExtranjera: false,
-    importes: {
-      netoGravado: neto,
-      netoNoGravado: 0,
-      exento: 0,
-      iva: [{ alicuota: '21', baseImponible: neto, importe: iva }],
-      total,
-    },
-    asociados: [
-      {
-        Tipo: inv.cbteTipo,
-        PtoVta: inv.pointOfSale,
-        Nro: inv.cbteNumero,
-        Cuit: cfg.cuit,
-        CbteFch: toCbteFch(inv.issueDate),
+  let em: EmisionResult
+  try {
+    em = await emitirComprobante({
+      clase: 'NOTA_CREDITO',
+      letra,
+      fce: esFce ? { anulacion: 'N' } : undefined,
+      fecha: new Date(),
+      receptor,
+      moneda: esUsd ? 'USD' : 'ARS',
+      cotizacion: esUsd ? cotizacion : undefined,
+      cancelaEnMonedaExtranjera: false,
+      importes: {
+        netoGravado: neto,
+        netoNoGravado: 0,
+        exento: 0,
+        iva: [{ alicuota: '21', baseImponible: neto, importe: iva }],
+        total,
       },
-    ],
-  })
+      asociados: [
+        {
+          Tipo: inv.cbteTipo,
+          PtoVta: inv.pointOfSale,
+          Nro: inv.cbteNumero,
+          Cuit: cfg.cuit,
+          CbteFch: toCbteFch(inv.issueDate),
+        },
+      ],
+    })
+  } catch (e) {
+    // Se pidió el CAE y ARCA no lo confirmó: la NC pudo haber quedado
+    // autorizada. Nunca "reintentá": bloquear hasta revisarla en ARCA.
+    if (e instanceof EmisionInciertaError) {
+      const mensaje = mensajeEmisionIncierta(e)
+      logger.error(`[ARCA_INCIERTO] ${mensaje}`, {
+        invoiceId,
+        factura: inv.invoiceNumber,
+        cbteTipo: e.cbteTipo,
+        puntoVenta: e.puntoVenta,
+        numero: e.numero,
+        total,
+        error: e.message,
+      })
+      throw new NotaCreditoError(mensaje, 502, 'ARCA_INCIERTO')
+    }
+    throw e
+  }
   if (!em.ok) {
     throw new NotaCreditoError(`ARCA rechazó la nota de crédito: ${em.mensaje}`, 422)
   }

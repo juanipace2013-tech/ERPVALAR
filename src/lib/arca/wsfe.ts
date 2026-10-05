@@ -46,6 +46,8 @@ export type CbteTipo = (typeof CBTE_TIPO)[keyof typeof CBTE_TIPO]
 export const DOC_TIPO = {
   CUIT: 80,
   CUIL: 86,
+  /** Clave de Identificación (CDI): personas sin CUIT/CUIL (p. ej. extranjeros) */
+  CDI: 87,
   DNI: 96,
   CONSUMIDOR_FINAL: 99,
 } as const

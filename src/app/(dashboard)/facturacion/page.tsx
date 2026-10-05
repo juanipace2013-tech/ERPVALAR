@@ -573,6 +573,12 @@ export default function FacturacionPage() {
           err.colppyRemitoNumber = data.colppyRemitoNumber
           throw err
         }
+        // ARCA no confirmó la factura: aviso bloqueante, NO reintentar
+        if (data.codigo === 'ARCA_INCIERTO') {
+          const err: any = new Error(data.error)
+          err.errorCode = 'ARCA_INCIERTO'
+          throw err
+        }
         throw new Error(data.error || 'Error al enviar a Colppy')
       }
 

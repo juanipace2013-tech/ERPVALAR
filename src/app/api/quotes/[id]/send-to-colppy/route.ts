@@ -6,14 +6,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
-import { sendQuoteToColppy, type SendToColppyOptions, buildSplitItem, calcComponentPrice, splitItemUnitTotal } from '@/lib/colppy';
+import { sendQuoteToColppy, type SendToColppyOptions, buildSplitItem, calcComponentPrice, splitItemUnitTotal, letraFacturaColppy } from '@/lib/colppy';
 import { Prisma, QuoteStatus } from '@prisma/client';
 import { calcDueDate } from '@/lib/quote-workflow';
 import { logAudit } from '@/lib/audit';
 import { logger } from '@/lib/logger'
 import { syncStockForSkusFireAndForget } from '@/lib/colppy-inventory';
 import { sincronizarComisionesDeQuote } from '@/lib/comisiones/liquidacion';
-import { crearHookEmisionArca, getEmisorFacturacion } from '@/lib/facturacion/emision-arca';
+import { avisoEmisionIncierta, crearHookEmisionArca, getEmisorFacturacion } from '@/lib/facturacion/emision-arca';
 import { facturaEnPesos, itemsEnPesos, type MonedaFactura } from '@/lib/facturacion/moneda';
 import { esClienteExterior } from '@/lib/cliente-exterior';
 import { archivarFacturaEnSharePointBg } from '@/lib/sharepoint/facturas-emitidas';
@@ -333,6 +333,12 @@ export async function POST(
 
     // 10. Verificar resultado
     if (!result.success && !emisionArca) {
+      // Se pidió el CAE y ARCA no lo confirmó: pudo haberlo autorizado. Nada
+      // de "reintentá": bloquear hasta revisarlo en ARCA (log [ARCA_INCIERTO]).
+      const incierta = avisoEmisionIncierta(hookArca, { quoteId: quote.id, quoteNumber: quote.quoteNumber, error: result.error });
+      if (incierta) {
+        return NextResponse.json({ error: incierta, errorStage: 'arca', codigo: 'ARCA_INCIERTO' }, { status: 502 });
+      }
       const prefix = result.errorStage === 'arca' ? 'ARCA rechazó la factura' : 'Error al enviar a Colppy';
       return NextResponse.json(
         { error: `${prefix}: ${result.error}`, errorStage: result.errorStage ?? 'colppy' },
@@ -370,7 +376,7 @@ export async function POST(
     // Cualquier cambio en uno debe replicarse en el otro hasta que se haga el
     // refactor a src/lib/colppy-billing.ts.
     const now = new Date();
-    const invoiceType = letraArca ?? (quote.customer.taxCondition === 'RESPONSABLE_INSCRIPTO' ? 'A' : 'B');
+    const invoiceType = letraArca ?? letraFacturaColppy(quote.customer.taxCondition);
 
     // Mapa de cantidades realmente enviadas por quoteItemId
     const sentQtyByItemId = new Map<string, number>();

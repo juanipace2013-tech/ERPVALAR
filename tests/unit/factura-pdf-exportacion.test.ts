@@ -338,6 +338,8 @@ describe('PDF de la Factura E: generación', () => {
     // Sin la banda de transparencia fiscal ni el IVA contenido de la B
     expect(t).not.toContain('Transparencia Fiscal')
     expect(t).not.toContain('IVA Contenido')
+    expect(t).not.toContain('Otros Impuestos Nacionales Indirectos')
+    expect(t).not.toContain('A CONSUMIDOR FINAL')
   })
 
   it('una Factura B conserva la banda de transparencia fiscal', async () => {
@@ -356,6 +358,9 @@ describe('PDF de la Factura E: generación', () => {
     )
     const t = textoPdf(await generateFacturaPDF((await buildFacturaPdfData('inv-b'))!))
     expect(t).toContain('Transparencia Fiscal')
+    // RG 5614: IVA contenido y otros impuestos nacionales indirectos
+    expect(t).toContain('IVA Contenido')
+    expect(t).toContain('Otros Impuestos Nacionales Indirectos')
     expect(t).not.toContain('Exportaci')
   })
 })

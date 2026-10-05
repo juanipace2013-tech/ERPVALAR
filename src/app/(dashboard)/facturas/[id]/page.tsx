@@ -181,6 +181,8 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const [loading, setLoading] = useState(true)
   const [retrying, setRetrying] = useState(false)
   const [ncOpen, setNcOpen] = useState(false)
+  // ARCA no confirmó una NC (ARCA_INCIERTO): no se puede volver a emitir desde esta pantalla hasta revisarla
+  const [ncBloqueada, setNcBloqueada] = useState<string | null>(null)
   const [ncMotivo, setNcMotivo] = useState('')
   const [ncParcial, setNcParcial] = useState('')
   // Devolución por unidades: líneas de la factura con lo disponible
@@ -311,6 +313,14 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
         body: JSON.stringify(body),
       })
       const data = await r.json()
+      if (!r.ok && data.codigo === 'ARCA_INCIERTO') {
+        // La NC pudo quedar autorizada en ARCA: cerrar y bloquear, nunca reintentar
+        setNcOpen(false)
+        setNcBloqueada(data.error)
+        toast.error('ARCA no confirmó la nota de crédito: NO reintentes', { description: data.error, duration: Infinity })
+        fetchInvoice()
+        return
+      }
       if (!r.ok) throw new Error(data.error || 'Error al emitir la nota de crédito')
       toast.success(data.colppyPendiente ? 'NC emitida (pendiente en Colppy)' : data.colppyBorradorFce ? 'NC MiPyME emitida: borrador en Colppy' : 'Nota de crédito emitida', {
         description: `${data.numero} · ${formatCurrency(data.total, invoice?.currency)} · CAE ${data.cae}${data.esTotal ? ' · factura anulada' : ''}${data.colppyBorradorFce ? ' — en Colppy tildá FCE y aprobala' : ''}`,
@@ -514,9 +524,14 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
           </Button>
         )}
         {puedeNC && (
-          <Button variant="destructive" onClick={() => setNcOpen(true)}>
+          <Button
+            variant="destructive"
+            onClick={() => setNcOpen(true)}
+            disabled={!!ncBloqueada}
+            title={ncBloqueada ?? undefined}
+          >
             <FileMinus className="h-4 w-4 mr-2" />
-            Emitir nota de crédito
+            {ncBloqueada ? 'NC sin confirmar en ARCA: revisar' : 'Emitir nota de crédito'}
           </Button>
         )}
         {esFactura && invoice.quote && (

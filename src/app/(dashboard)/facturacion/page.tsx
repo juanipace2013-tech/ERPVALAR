@@ -58,6 +58,7 @@ import { BillingScheduleDialog } from '@/components/facturacion/BillingScheduleD
 import { esClienteExterior, etiquetaIdFiscal, idFiscalParaMostrar } from '@/lib/cliente-exterior'
 import { refreshInventoryCache } from '@/hooks/useColppyStock'
 import { puedeFacturaDirecta } from '@/lib/facturacion/factura-directa-ui'
+import { withClientReference } from '@/lib/quotes/client-reference'
 
 // ─── Helpers ─────────────────────────────────────────
 
@@ -120,6 +121,7 @@ interface BoardItem {
   unitPrice: number
   totalPrice: number
   deliveryTime: string | null
+  clientReference: string | null
   isInStock: boolean
   isAlternative: boolean
   sentToColppy: boolean
@@ -524,7 +526,7 @@ export default function FacturacionPage() {
       items: itemsToSend.map((item) => ({
         id: item.id,
         productSku: item.productSku || '',
-        description: item.description,
+        description: withClientReference(item.description, item.clientReference),
         quantity: item.remainingQuantity,
         unitPrice: item.unitPrice,
         iva: 21,

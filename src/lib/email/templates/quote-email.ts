@@ -11,7 +11,12 @@ interface QuoteEmailItem {
   unitPrice: string
   totalPrice: string
   deliveryTime: string
+  clientReference?: string | null
 }
+
+// La referencia la tipea el vendedor: escaparla antes de meterla en el HTML
+const escapeHtml = (s: string) =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
 interface QuoteEmailData {
   quoteNumber: string
@@ -127,7 +132,7 @@ export function generateQuoteEmailHTML(data: QuoteEmailData): string {
                 </tr>
                 ${data.items.map((item, i) => `
                 <tr style="background-color: ${i % 2 === 0 ? '#ffffff' : '#f9fafb'};">
-                  <td style="padding: 8px 12px; color: #1f2937; border-top: 1px solid #e5e7eb;">${item.description}</td>
+                  <td style="padding: 8px 12px; color: #1f2937; border-top: 1px solid #e5e7eb;">${item.description}${item.clientReference ? `<br><span style="color: #6b7280; font-size: 11px;">Ref. cliente: ${escapeHtml(item.clientReference)}</span>` : ''}</td>
                   <td style="padding: 8px 8px; color: #4b5563; text-align: center; border-top: 1px solid #e5e7eb;">${item.quantity}</td>
                   <td style="padding: 8px 8px; color: #4b5563; text-align: right; border-top: 1px solid #e5e7eb;">${item.unitPrice}</td>
                   <td style="padding: 8px 8px; color: #1f2937; font-weight: 600; text-align: right; border-top: 1px solid #e5e7eb;">${item.totalPrice}</td>

@@ -18,6 +18,7 @@ import { facturaEnPesos, itemsEnPesos, type MonedaFactura } from '@/lib/facturac
 import { esClienteExterior } from '@/lib/cliente-exterior';
 import { archivarFacturaEnSharePointBg } from '@/lib/sharepoint/facturas-emitidas';
 import { signoCantidad } from '@/lib/facturacion/cantidades';
+import { withClientReference } from '@/lib/quotes/client-reference';
 
 // ============================================================================
 // TIPOS
@@ -470,7 +471,10 @@ export async function POST(
                   comment: comentario,
                   productId: item.productId || null,
                   quoteItemId: item.id,
-                  description: item.description || (item as any).product?.name || 'Item',
+                  description: withClientReference(
+                    item.description || (item as any).product?.name || 'Item',
+                    item.clientReference,
+                  ),
                   quantity: qty,
                   unitPrice: unit,
                   discount: 0,

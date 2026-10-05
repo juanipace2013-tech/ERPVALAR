@@ -64,6 +64,7 @@ import { SendToColppyDialog } from '@/components/quotes/SendToColppyDialog'
 import { FacturaExportacionDialog } from '@/components/quotes/FacturaExportacionDialog'
 import { DuplicateQuoteDialog } from '@/components/quotes/DuplicateQuoteDialog'
 import { esClienteExterior, etiquetaIdFiscal, idFiscalParaMostrar } from '@/lib/cliente-exterior'
+import { withClientReference } from '@/lib/quotes/client-reference'
 
 interface Quote {
   id: string
@@ -1436,6 +1437,11 @@ export default function QuoteViewPage() {
                                 <p className="text-sm text-gray-500 truncate" title={codigoLabel}>
                                   {codigoLabel}
                                 </p>
+                                {item.clientReference && (
+                                  <p className="text-sm text-indigo-700 truncate" title={item.clientReference}>
+                                    Ref. cliente: {item.clientReference}
+                                  </p>
+                                )}
                               </div>
                             </TableCell>
                             <TableCell className="text-right">
@@ -2148,7 +2154,7 @@ export default function QuoteViewPage() {
               items: facturableItems.map(({ item, yaFacturado, pendiente }) => ({
                 id: item.id,
                 productSku: item.product?.sku || '',
-                description: item.product?.name || item.description || '',
+                description: withClientReference(item.product?.name || item.description || '', item.clientReference),
                 quantity: pendiente,
                 unitPrice: item.unitPrice || 0,
                 iva: 21,

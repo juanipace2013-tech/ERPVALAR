@@ -90,6 +90,7 @@ export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
       unitPrice: fmtPrice(Number(item.unitPrice)),
       totalPrice: fmtPrice(Number(item.totalPrice)),
       deliveryTime: item.deliveryTime || 'Consultar',
+      clientReference: item.clientReference,
     }))
 
   const emailData = {
@@ -174,6 +175,7 @@ export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
           unitPrice: Number(item.unitPrice),
           totalPrice: Number(item.totalPrice),
           deliveryTime: item.deliveryTime || 'Inmediato',
+          clientReference: item.clientReference,
           isAlternative: item.isAlternative,
         }
       }),

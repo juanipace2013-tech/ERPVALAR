@@ -17,6 +17,7 @@ import type { ItemCobroColppy } from '@/lib/facturacion/imputacion-nc';
 import { letraFacturaColppy } from '@/lib/facturacion/letra-factura';
 import { totalesFacturaA, totalesFacturaB } from '@/lib/facturacion/totales-factura';
 import { diasCondicionPago } from '@/lib/facturacion/condicion-pago';
+import { withClientReference } from '@/lib/quotes/client-reference';
 
 // La regla de la letra vive en un módulo puro (la usan también los diálogos del
 // cliente); se re-exporta para los que ya la importan desde acá.
@@ -1571,6 +1572,7 @@ export function buildSplitItem(
     customerMultiplier: any;
     unitPrice: any;
     deliveryTime?: string | null;
+    clientReference?: string | null;
     additionals: Array<{
       product?: { name: string; sku: string } | null;
       description?: string | null;
@@ -1600,7 +1602,12 @@ export function buildSplitItem(
   const editedTotal = overrides?.precioUnitario ?? Number(originalItem.unitPrice);
   const scaleFactor = originalTotal > 0 ? editedTotal / originalTotal : 1;
 
-  const productName = overrides?.descripcion || originalItem.product?.name || originalItem.description || 'Item manual';
+  // Si el usuario editó la descripción en el dialog se respeta tal cual (el
+  // dialog ya la precarga con la referencia del cliente); si no, se agrega acá.
+  const productName = overrides?.descripcion || withClientReference(
+    originalItem.product?.name || originalItem.description || 'Item manual',
+    originalItem.clientReference,
+  );
   const productSku = overrides?.sku || originalItem.product?.sku || originalItem.manualSku || '';
   const quantity = overrides?.cantidad ?? originalItem.quantity;
   const iva = overrides?.iva ?? 21;

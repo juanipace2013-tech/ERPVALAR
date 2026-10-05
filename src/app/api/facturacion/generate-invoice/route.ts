@@ -28,6 +28,7 @@ import { facturaEnPesos, itemsEnPesos, type MonedaFactura } from '@/lib/facturac
 import { esClienteExterior } from '@/lib/cliente-exterior'
 import { archivarFacturaEnSharePointBg } from '@/lib/sharepoint/facturas-emitidas'
 import { signoCantidad } from '@/lib/facturacion/cantidades'
+import { withClientReference } from '@/lib/quotes/client-reference'
 
 interface InvoiceItemRequest {
   quoteItemId: string
@@ -439,7 +440,10 @@ export async function POST(request: NextRequest) {
                 return {
                   productId: quoteItem.productId || null,
                   quoteItemId: quoteItem.id,
-                  description: quoteItem.description || quoteItem.product?.name || 'Item',
+                  description: withClientReference(
+                    quoteItem.description || quoteItem.product?.name || 'Item',
+                    quoteItem.clientReference,
+                  ),
                   quantity: l.split.quantity,
                   unitPrice: Math.round(splitItemUnitTotal(l.split) * fx * 100) / 100,
                   discount: 0,

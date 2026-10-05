@@ -1201,6 +1201,10 @@ model QuoteItem {
   // Plazo de entrega
   deliveryTime String? // Plazo de entrega (ej: "Inmediato", "7 días", "15 días")
 
+  // Referencia interna del cliente para esta línea (ej: "SOLPED 3000001204 · Pos. 30 · Mat. 8009384").
+  // Se muestra en la cotización y se agrega a la descripción del remito y la factura.
+  clientReference String? @db.VarChar(200)
+
   // Alternativas (Item 10A, 10B como alternativas de Item 10)
   isAlternative       Boolean @default(false)
   alternativeToItemId String?

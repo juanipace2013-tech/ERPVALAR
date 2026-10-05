@@ -142,6 +142,7 @@ export async function GET(
             unitPrice: Number(item.unitPrice),
             totalPrice: Number(item.totalPrice),
             deliveryTime: item.deliveryTime || 'Inmediato',
+            clientReference: item.clientReference,
             isAlternative: item.isAlternative,
           }
         })

@@ -141,6 +141,10 @@ export async function GET(request: NextRequest) {
               select: {
                 id: true,
                 itemNumber: true,
+                productId: true,
+                description: true,
+                manualSku: true,
+                clientReference: true,
                 quantity: true,
                 unitPrice: true,
                 totalPrice: true,

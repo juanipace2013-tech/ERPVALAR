@@ -343,6 +343,11 @@ export default function PublicQuotePage() {
                                 <p className="text-sm text-gray-500">
                                   SKU: {item.product?.sku || item.manualSku || '-'}
                                 </p>
+                                {item.clientReference && (
+                                  <p className="text-sm text-gray-500">
+                                    Ref. cliente: {item.clientReference}
+                                  </p>
+                                )}
                               </div>
                             </TableCell>
                             <TableCell className="text-right">

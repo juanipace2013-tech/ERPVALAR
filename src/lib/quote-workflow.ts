@@ -3,6 +3,7 @@ import { QuoteStatus, DeliveryNoteStatus, Prisma } from '@prisma/client';
 import { logger } from '@/lib/logger';
 import { sincronizarComisionesDeQuote } from '@/lib/comisiones/liquidacion';
 import { signoCantidad } from '@/lib/facturacion/cantidades';
+import { withClientReference } from '@/lib/quotes/client-reference';
 
 /**
  * Ejecuta `fn` dentro de una transacción Serializable, con reintentos
@@ -542,11 +543,11 @@ export async function generateDeliveryNoteFromQuote(
         itemQuantity = item.quantity;
       }
 
-      // Item principal
+      // Item principal (con la referencia interna del cliente, ej. SOLPED/posición)
       deliveryItems.push({
         productId: item.productId || null,
         sku: item.product?.sku || item.manualSku || null,
-        description: item.description || item.product?.name || 'Item',
+        description: withClientReference(item.description || item.product?.name || 'Item', item.clientReference),
         quantity: itemQuantity,
         unit: item.product?.unit || 'UN',
       });
@@ -898,7 +899,7 @@ export async function generateInvoiceFromQuote(
               return {
                 productId: item.productId,
                 quoteItemId: item.id,
-                description: item.description || item.product?.name,
+                description: withClientReference(item.description || item.product?.name || 'Item', item.clientReference),
                 quantity: item.quantity,
                 unitPrice: netUnit,
                 discount: 0,

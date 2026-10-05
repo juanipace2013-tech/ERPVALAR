@@ -30,6 +30,7 @@ interface QuotePDFData {
     unitPrice: number
     totalPrice: number
     deliveryTime: string
+    clientReference?: string | null
     isAlternative?: boolean
   }>
   subtotal: number
@@ -236,7 +237,8 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
   const tableData = data.items.map(item => [
     item.itemNumber,
     item.code,
-    `${item.description}\nMarca: ${item.brand}`,
+    `${item.description}\nMarca: ${item.brand}` +
+      (item.clientReference ? `\nRef. cliente: ${item.clientReference}` : ''),
     item.quantity.toString(),
     fmtUSD(item.unitPrice),
     fmtUSD(item.totalPrice),

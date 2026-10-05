@@ -48,6 +48,7 @@ import {
 } from '@/components/ColppyCustomerSearch'
 import DeliveryAddressSelector from '@/components/remitos/DeliveryAddressSelector'
 import { parametroBusquedaCliente } from '@/lib/cliente-exterior'
+import { withClientReference } from '@/lib/quotes/client-reference'
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
 
@@ -62,6 +63,7 @@ interface QuoteItemAdditional {
 interface QuoteItem {
   id: string
   description: string | null
+  clientReference?: string | null
   quantity: number
   isAlternative: boolean
   product: { name: string; sku: string; unit: string } | null
@@ -165,6 +167,7 @@ interface QuoteForImport {
     id: string
     productId: string | null
     description: string | null
+    clientReference?: string | null
     quantity: number
     unitPrice: number | string
     isAlternative: boolean
@@ -414,7 +417,8 @@ export default function NuevoRemitoPage() {
           return {
             quoteItemId: item.id,
             sku: item.product?.sku || item.manualSku || '',
-            description: item.description || item.product?.name || 'Item',
+            // Igual que el remito que se guarda (generateDeliveryNoteFromQuote)
+            description: withClientReference(item.description || item.product?.name || 'Item', item.clientReference),
             unit: item.product?.unit || 'UN',
             additionals: (item.additionals || []).map((add) => ({
               id: add.id,
@@ -671,7 +675,7 @@ export default function NuevoRemitoPage() {
         tempId: crypto.randomUUID(),
         productId: item.productId || null,
         sku: item.product?.sku || item.manualSku || '',
-        description: item.description || item.product?.name || 'Item',
+        description: withClientReference(item.description || item.product?.name || 'Item', item.clientReference),
         quantity: item.quantity,
         unit: item.product?.unit || 'UN',
         unitPrice: Number(item.unitPrice),

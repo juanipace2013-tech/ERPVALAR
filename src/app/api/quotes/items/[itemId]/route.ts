@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/prisma'
 import { requireRole, ROLES } from '@/lib/authz'
+import { normalizeClientReference } from '@/lib/quotes/client-reference'
 
 /**
  * PATCH /api/quotes/items/[itemId]
@@ -40,6 +41,24 @@ export async function PATCH(
 
     if (!existingItem) {
       return NextResponse.json({ error: 'Item no encontrado' }, { status: 404 })
+    }
+
+    const clientReference = body.clientReference !== undefined
+      ? normalizeClientReference(body.clientReference)
+      : existingItem.clientReference
+
+    // Solo cambia la referencia del cliente: no recalcular precios (el resto
+    // del PATCH re-lee la lista del producto y podría mover el precio).
+    if (Object.keys(body).every((k) => k === 'clientReference')) {
+      const updated = await prisma.quoteItem.update({
+        where: { id: itemId },
+        data: { clientReference },
+        include: {
+          product: true,
+          additionals: { include: { product: true } },
+        },
+      })
+      return NextResponse.json(updated)
     }
 
     const quoteId = existingItem.quoteId
@@ -79,6 +98,7 @@ export async function PATCH(
           unitPrice,
           totalPrice: unitPrice * quantity,
           deliveryTime: body.deliveryTime !== undefined ? body.deliveryTime : existingItem.deliveryTime,
+          clientReference,
         },
         include: {
           product: true,
@@ -161,6 +181,7 @@ export async function PATCH(
           unitPrice,
           totalPrice,
           deliveryTime: body.deliveryTime !== undefined ? body.deliveryTime : existingItem.deliveryTime,
+          clientReference,
           ...(body.additionals && {
             additionals: {
               deleteMany: {},

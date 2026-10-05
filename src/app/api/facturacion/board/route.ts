@@ -143,6 +143,7 @@ export async function GET(request: NextRequest) {
               unitPrice: true,
               totalPrice: true,
               deliveryTime: true,
+              clientReference: true,
               isAlternative: true,
               product: { select: { sku: true, name: true, stockQuantity: true, trackInventory: true } },
               additionals: {
@@ -198,6 +199,7 @@ export async function GET(request: NextRequest) {
       unitPrice: number
       totalPrice: number
       deliveryTime: string | null
+      clientReference: string | null
       isInStock: boolean
       isAlternative: boolean
       sentToColppy: boolean
@@ -311,6 +313,7 @@ export async function GET(request: NextRequest) {
           unitPrice: Number(item.unitPrice),
           totalPrice: Number(item.totalPrice),
           deliveryTime: item.deliveryTime,
+          clientReference: item.clientReference,
           isInStock: ready,
           isAlternative: item.isAlternative,
           sentToColppy,

@@ -342,6 +342,9 @@ describe('helpers puros', () => {
         quoteItem({ additionals: [{ description: null, product: { name: 'Actuador 5952' } }, { description: 'Montaje', product: null }] })
       )
     ).toBe('Válvula GENEBRE art. 2228 12 (incluye: Actuador 5952, Montaje)')
+    expect(descripcionQuoteItem(quoteItem({ clientReference: 'SOLPED 3000001204 · Pos. 30' }))).toBe(
+      'Válvula GENEBRE art. 2228 12 - Ref. cliente: SOLPED 3000001204 · Pos. 30'
+    )
     expect(codigoQuoteItem(quoteItem())).toBe('2228 12')
     expect(codigoQuoteItem(quoteItem({ product: null, manualSku: 'MAN-1' }))).toBe('MAN-1')
     expect(codigoQuoteItem(quoteItem({ product: null, manualSku: null }))).toBeNull()

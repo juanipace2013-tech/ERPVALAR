@@ -91,6 +91,7 @@ interface QuoteItem {
   unitPrice: number
   totalPrice: number
   deliveryTime: string | null
+  clientReference: string | null
   isAlternative: boolean
   alternativeToItemId: string | null
   additionals: Additional[]
@@ -134,6 +135,8 @@ interface ItemFormData {
   quantity: number
   description: string
   deliveryTime: string
+  // Referencia interna del cliente (SOLPED, posición, cód. material...)
+  clientReference: string
   isAlternative: boolean
   alternativeToItemId: string | null
   additionals: Array<{
@@ -194,6 +197,7 @@ export default function QuoteDetailPage() {
     quantity: 1,
     description: '',
     deliveryTime: 'Inmediato',
+    clientReference: '',
     isAlternative: false,
     alternativeToItemId: null,
     additionals: [],
@@ -845,6 +849,7 @@ export default function QuoteDetailPage() {
             manualUnitPrice: parseFloat(itemFormData.manualUnitPrice),
             quantity: itemFormData.quantity,
             deliveryTime: itemFormData.deliveryTime || 'A confirmar',
+            clientReference: itemFormData.clientReference,
             isAlternative: itemFormData.isAlternative,
             alternativeToItemId: itemFormData.alternativeToItemId,
             multiplierOverride,
@@ -854,6 +859,7 @@ export default function QuoteDetailPage() {
             quantity: itemFormData.quantity,
             description: itemFormData.description || selectedProduct?.name,
             deliveryTime: itemFormData.deliveryTime,
+            clientReference: itemFormData.clientReference,
             isAlternative: itemFormData.isAlternative,
             alternativeToItemId: itemFormData.alternativeToItemId,
             brandDiscount: itemFormData.brandDiscountOverride
@@ -923,6 +929,7 @@ export default function QuoteDetailPage() {
       quantity: item.quantity,
       description: item.description || '',
       deliveryTime: item.deliveryTime || (isManual ? 'A confirmar' : 'Inmediato'),
+      clientReference: item.clientReference || '',
       isAlternative: item.isAlternative,
       alternativeToItemId: item.alternativeToItemId,
       additionals: item.additionals.map(add => ({
@@ -987,6 +994,7 @@ export default function QuoteDetailPage() {
             manualUnitPrice: parseFloat(itemFormData.manualUnitPrice),
             quantity: itemFormData.quantity,
             deliveryTime: itemFormData.deliveryTime,
+            clientReference: itemFormData.clientReference,
             multiplierOverride: editMultiplierOverride,
           }
         : {
@@ -994,6 +1002,7 @@ export default function QuoteDetailPage() {
             quantity: itemFormData.quantity,
             description: itemFormData.description || selectedProduct?.name,
             deliveryTime: itemFormData.deliveryTime,
+            clientReference: itemFormData.clientReference,
             brandDiscount: itemFormData.brandDiscountOverride
               ? parseFloat(itemFormData.brandDiscountOverride) / 100
               : undefined,
@@ -1343,6 +1352,7 @@ export default function QuoteDetailPage() {
       quantity: 1,
       description: '',
       deliveryTime: 'Inmediato',
+      clientReference: '',
       isAlternative: false,
       alternativeToItemId: null,
       additionals: [],
@@ -1378,6 +1388,7 @@ export default function QuoteDetailPage() {
       quantity: 1,
       description: '',
       deliveryTime: 'Inmediato',
+      clientReference: '',
       isAlternative: true,
       alternativeToItemId: parentItemId,
       additionals: [],
@@ -1977,6 +1988,15 @@ export default function QuoteDetailPage() {
                             className={`font-mono ${itemFormData.multiplierOverride ? 'border-amber-400 bg-amber-50' : ''}`}
                           />
                         </div>
+                        <div className="space-y-1">
+                          <Label>Ref. cliente (opcional)</Label>
+                          <Input
+                            value={itemFormData.clientReference}
+                            onChange={(e) => setItemFormData({ ...itemFormData, clientReference: e.target.value })}
+                            placeholder="Ej: SOLPED 3000001204 · Pos. 30"
+                            maxLength={200}
+                          />
+                        </div>
                       </div>
                       {itemFormData.manualUnitPrice && parseFloat(itemFormData.manualUnitPrice) > 0 && (() => {
                         const listP = parseFloat(itemFormData.manualUnitPrice)
@@ -2218,6 +2238,22 @@ export default function QuoteDetailPage() {
                             })
                           }
                           placeholder="Ej: Inmediato, 15 días, 30 días..."
+                        />
+                      </div>
+
+                      {/* Referencia interna del cliente (va al PDF, remito y factura) */}
+                      <div className="space-y-2">
+                        <Label>Ref. cliente (opcional)</Label>
+                        <Input
+                          value={itemFormData.clientReference}
+                          onChange={(e) =>
+                            setItemFormData({
+                              ...itemFormData,
+                              clientReference: e.target.value,
+                            })
+                          }
+                          placeholder="Ej: SOLPED 3000001204 · Pos. 30 · Mat. 8009384"
+                          maxLength={200}
                         />
                       </div>
                     </div>
@@ -2794,6 +2830,16 @@ export default function QuoteDetailPage() {
                                   {mainItem.deliveryTime || 'Inmediato'}
                                 </span>
                               </div>
+                              {mainItem.clientReference && (
+                                <div className="col-span-2">
+                                  <span className="text-muted-foreground">
+                                    Ref. cliente:
+                                  </span>
+                                  <span className="ml-2 font-medium text-indigo-700">
+                                    {mainItem.clientReference}
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           </div>
 

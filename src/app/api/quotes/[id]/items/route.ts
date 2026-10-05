@@ -3,6 +3,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/prisma'
+import { normalizeClientReference } from '@/lib/quotes/client-reference'
 
 /**
  * POST /api/quotes/[id]/items
@@ -126,6 +127,7 @@ export async function POST(
         unitPrice: manualUnitPrice,
         totalPrice: manualTotalPrice,
         deliveryTime: body.deliveryTime || 'A confirmar',
+        clientReference: normalizeClientReference(body.clientReference),
         isAlternative: body.isAlternative || false,
       }
       if (body.alternativeToItemId) {
@@ -234,6 +236,7 @@ export async function POST(
           unitPrice,
           totalPrice,
           deliveryTime: body.deliveryTime || 'Inmediato',
+          clientReference: normalizeClientReference(body.clientReference),
           isAlternative,
           ...(body.alternativeToItemId ? { alternativeToItemId: body.alternativeToItemId } : {}),
           additionals: body.additionals

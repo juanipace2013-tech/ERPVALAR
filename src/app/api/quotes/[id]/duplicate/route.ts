@@ -177,6 +177,7 @@ export async function POST(
         unitPrice: item.unitPrice,
         totalPrice: item.totalPrice,
         deliveryTime: item.deliveryTime,
+        clientReference: item.clientReference,
         isAlternative: item.isAlternative,
       }));
 

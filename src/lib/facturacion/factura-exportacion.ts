@@ -64,6 +64,7 @@ import { MARCA_COLPPY_MANUAL } from '@/lib/facturacion/colppy-manual'
 import { calcDueDate } from '@/lib/quote-workflow'
 import { sincronizarComisionesDeQuote } from '@/lib/comisiones/liquidacion'
 import { archivarFacturaEnSharePointBg } from '@/lib/sharepoint/facturas-emitidas'
+import { withClientReference } from '@/lib/quotes/client-reference'
 
 // ---------------------------------------------------------------------------
 // Constantes y errores
@@ -158,6 +159,8 @@ export interface QuoteItemExportable {
   productId: string | null
   description: string | null
   manualSku: string | null
+  /** Referencia interna del cliente (SOLPED, posición...): va al final de la Pro_ds */
+  clientReference?: string | null
   product: { sku: string; name: string } | null
   additionals: Array<{ description: string | null; product: { name: string } | null }>
   quantity: number
@@ -218,10 +221,13 @@ export function formaPagoPorDefecto(terms: string | null | undefined): string {
 }
 
 /** Pro_ds de un ítem de la cotización (con los adicionales, que van en el mismo precio). */
-export function descripcionQuoteItem(qi: Pick<QuoteItemExportable, 'description' | 'product' | 'additionals'>): string {
+export function descripcionQuoteItem(
+  qi: Pick<QuoteItemExportable, 'description' | 'product' | 'additionals' | 'clientReference'>,
+): string {
   const base = limpiar(qi.description) || limpiar(qi.product?.name) || 'Ítem'
   const adicionales = qi.additionals.map((a) => limpiar(a.product?.name) || limpiar(a.description)).filter(Boolean)
-  return adicionales.length ? `${base} (incluye: ${adicionales.join(', ')})` : base
+  const conAdicionales = adicionales.length ? `${base} (incluye: ${adicionales.join(', ')})` : base
+  return withClientReference(conAdicionales, qi.clientReference)
 }
 
 /** Pro_codigo: SKU del producto o el código del ítem manual. */
@@ -696,6 +702,7 @@ function quoteItemsExportables(quote: QuoteConItems): QuoteItemExportable[] {
     productId: qi.productId,
     description: qi.description,
     manualSku: qi.manualSku,
+    clientReference: qi.clientReference,
     product: qi.product,
     additionals: qi.additionals,
     quantity: qi.quantity,

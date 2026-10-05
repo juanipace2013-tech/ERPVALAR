@@ -275,6 +275,22 @@ export function crearHookEmisionArca(cliente: ClienteFiscal): HookEmisionArca {
   }
 }
 
+/** Texto que deja la emisión en las notas de la Invoice hasta que se registra en Colppy */
+export const NOTA_PENDIENTE_COLPPY = 'PENDIENTE de registrar en Colppy.'
+
+/**
+ * Notas de la Invoice después de registrarla en Colppy: reemplaza "PENDIENTE
+ * de registrar en Colppy." por el resultado (registrada o borrador FCE).
+ */
+export function notaRegistroColppy(notes: string | null | undefined, res: { idFactura: string; borradorFce?: boolean }): string {
+  return (notes ?? '').replace(
+    NOTA_PENDIENTE_COLPPY,
+    res.borradorFce
+      ? `Borrador FCE en Colppy (${res.idFactura}): tildar FCE MiPyME y aprobar.`
+      : `Registrada en Colppy (${res.idFactura}).`
+  )
+}
+
 /**
  * Reintenta el alta en Colppy de una factura ya emitida por el ERP cuyo
  * registro falló. Idempotente: si ya tiene colppyId no hace nada.
@@ -290,6 +306,17 @@ export async function reintentarAltaColppy(invoiceId: string): Promise<{ ok: boo
   // Factura E (exportación): se carga a mano en Colppy y se vincula pegando el id
   if (inv.colppySyncStatus === 'MANUAL') {
     return { ok: false, error: 'Esta factura se carga a mano en Colppy: cargala allá y pegá el id de Colppy en la factura' }
+  }
+  // Factura directa (ARCA primero): SIEMPRE por su propio registro, con o sin
+  // payload guardado. Toma la factura (REGISTRANDO) antes de ir a Colppy, así
+  // dos "Reintentar" a la vez no la dan de alta dos veces; sin payload arma
+  // el alta desde la factura emitida y con payload lo reenvía tal cual.
+  // Import dinámico: factura-directa.ts importa este módulo.
+  const directa = await prisma.facturaDirecta.findUnique({ where: { invoiceId: inv.id }, select: { id: true } })
+  if (directa) {
+    const { registrarFacturaDirectaEnColppy } = await import('./factura-directa')
+    const r = await registrarFacturaDirectaEnColppy(inv.id)
+    return r.ok ? { ok: true, colppyId: r.colppyId, borradorFce: r.estado === 'BORRADOR_FCE' } : { ok: false, error: r.error }
   }
   if (!inv.colppyPayload) return { ok: false, error: 'La factura no tiene payload de Colppy guardado' }
 
@@ -317,12 +344,7 @@ export async function reintentarAltaColppy(invoiceId: string): Promise<{ ok: boo
         colppySyncStatus: res.borradorFce ? 'BORRADOR_FCE' : 'OK',
         colppySyncError: null,
         // La nota de la emisión decía "PENDIENTE de registrar en Colppy."
-        notes: (inv.notes ?? '').replace(
-          'PENDIENTE de registrar en Colppy.',
-          res.borradorFce
-            ? `Borrador FCE en Colppy (${res.idFactura}): tildar FCE MiPyME y aprobar.`
-            : `Registrada en Colppy (${res.idFactura}).`
-        ),
+        notes: notaRegistroColppy(inv.notes, res),
       },
     })
     await prisma.cotizacionFactura.updateMany({

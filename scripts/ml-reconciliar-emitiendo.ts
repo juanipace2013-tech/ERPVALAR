@@ -20,6 +20,12 @@
  *       Imprime lo que borró.
  *   --pack <packId>   limita el diagnóstico a esa venta.
  *
+ * Nunca libera (ni recorre ARCA para) un candado que tomó una factura directa
+ * ("Nueva factura") sin resolver: ese se resuelve con
+ * scripts/factura-directa-reconciliar.ts --id <facturaDirectaId>. Tampoco
+ * libera un candado sin CUIT/CUIL de 11 dígitos (un DNI o '0' de una B a
+ * consumidor final no se puede comparar con ARCA).
+ *
  * No emite nada en ARCA. Requiere ARCA_* y DATABASE_URL del ambiente donde se
  * emitió (en prod: el VPS).
  */
@@ -28,7 +34,7 @@ import { prisma } from '@/lib/prisma'
 import { getArcaConfig } from '@/lib/arca/config'
 import { feCompConsultar, feCompUltimoAutorizado, formatNroComprobante } from '@/lib/arca/wsfe'
 import { describeCbteTipo } from '@/lib/arca/emitir'
-import { escanearArcaParaCandado, TIPOS_FACTURA_ML, VENTANA_NUMEROS } from '@/lib/mercadolibre/reconciliar-emitiendo'
+import { candadoComparable, escanearArcaParaCandado, TIPOS_FACTURA_ML, VENTANA_NUMEROS } from '@/lib/mercadolibre/reconciliar-emitiendo'
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`)
@@ -62,6 +68,26 @@ async function main() {
     console.log(
       `\nVenta ML #${f.packId} · candado del ${f.createdAt.toISOString()} · ${f.cuit ?? 'sin CUIT'} · total ${total ?? '?'} · órdenes ${f.orderIds.join(', ')}`
     )
+
+    // Candado de una factura directa ("Nueva factura") sin resolver (emitiendo,
+    // incierta o con CAE y sin Invoice): lo resuelve su propia reconciliación
+    // (sabe el número pedido y el documento exacto)
+    const directa = await prisma.facturaDirecta.findFirst({
+      where: {
+        mlPackId: f.packId,
+        OR: [{ estado: { in: ['EMITIENDO', 'INCIERTA'] } }, { estado: 'AUTORIZADA', invoiceId: null }],
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, estado: true, invoiceId: true },
+    })
+    if (directa) {
+      console.log(
+        `  Es de la factura directa ${directa.id} (${directa.estado}${directa.invoiceId ? `, factura ${directa.invoiceId}` : ''}): ` +
+          `resolver con scripts/factura-directa-reconciliar.ts --id ${directa.id}. No se libera desde acá`
+      )
+      if (liberarPack === f.packId) console.log('  No se libera: el candado es de una factura directa')
+      continue
+    }
 
     const r = await escanearArcaParaCandado(
       { packId: f.packId, cuit: f.cuit, total, createdAt: f.createdAt },
@@ -110,8 +136,8 @@ async function main() {
       console.log('  No se pudo revisar todo en ARCA: no se concluye nada (volver a correr más tarde). No se libera')
       continue
     }
-    if (!f.cuit || total === null) {
-      console.log('  El candado no tiene CUIT o total: no se puede comparar con ARCA. Revisar a mano, no se libera')
+    if (!candadoComparable({ cuit: f.cuit, total })) {
+      console.log(`  El candado no tiene CUIT/CUIL de 11 dígitos (${f.cuit ?? 'sin CUIT'}) o total: no se puede comparar con ARCA. Revisar a mano, no se libera`)
       continue
     }
     console.log(`  ARCA no tiene ningún comprobante a ${f.cuit} (ni a su DNI) desde el candado (${r.revisados} comprobantes revisados)`)

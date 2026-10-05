@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
+import { useSession } from 'next-auth/react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -36,6 +37,7 @@ import {
   MessageSquare,
   Pencil,
   Globe,
+  Plus,
 } from 'lucide-react'
 import {
   Table,
@@ -55,6 +57,7 @@ import { FacturaExportacionDialog } from '@/components/quotes/FacturaExportacion
 import { BillingScheduleDialog } from '@/components/facturacion/BillingScheduleDialog'
 import { esClienteExterior, etiquetaIdFiscal, idFiscalParaMostrar } from '@/lib/cliente-exterior'
 import { refreshInventoryCache } from '@/hooks/useColppyStock'
+import { puedeFacturaDirecta } from '@/lib/facturacion/factura-directa-ui'
 
 // ─── Helpers ─────────────────────────────────────────
 
@@ -240,6 +243,9 @@ export default function FacturacionPage() {
 
   // Stock refresh
   const [refreshingStock, setRefreshingStock] = useState(false)
+  // "Nueva factura" (factura directa, sin cotización): administración, gerencia y contaduría
+  const { data: session } = useSession()
+  const puedeFacturaSinCotizacion = puedeFacturaDirecta(session?.user?.role)
 
   // Colppy dialog state
   const [showColppyDialog, setShowColppyDialog] = useState(false)
@@ -692,14 +698,24 @@ export default function FacturacionPage() {
             Tablero de cotizaciones aceptadas — envío de borradores a Colppy
           </p>
         </div>
-        <Button variant="outline" onClick={handleRefreshStock} disabled={refreshingStock}>
-          {refreshingStock ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <RefreshCw className="mr-2 h-4 w-4" />
+        <div className="flex gap-2">
+          {puedeFacturaSinCotizacion && (
+            <Button asChild>
+              <Link href="/facturas/nueva" title="Factura A/B emitida por el ERP sin cotización">
+                <Plus className="mr-2 h-4 w-4" />
+                Nueva factura
+              </Link>
+            </Button>
           )}
-          {refreshingStock ? 'Sincronizando...' : 'Actualizar Stock'}
-        </Button>
+          <Button variant="outline" onClick={handleRefreshStock} disabled={refreshingStock}>
+            {refreshingStock ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 h-4 w-4" />
+            )}
+            {refreshingStock ? 'Sincronizando...' : 'Actualizar Stock'}
+          </Button>
+        </div>
       </div>
 
       {/* Summary Stats */}
@@ -885,6 +901,10 @@ export default function FacturacionPage() {
                 </span>
               )}
             </h2>
+            {/* El historial sale de las cotizaciones: las facturas directas y de ML están en /facturas */}
+            <Link href="/facturas" className="text-sm text-blue-600 hover:underline">
+              Ver todas las facturas
+            </Link>
           </div>
 
           {/* Filtros historial */}

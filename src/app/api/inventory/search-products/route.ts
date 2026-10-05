@@ -31,6 +31,14 @@ export async function GET(request: NextRequest) {
         name: true,
         brand: true,
         supplier: { select: { name: true } },
+        // Factura directa: IVA del producto (solo 21%) y precio de venta sugerido (solo SALE: sin costos)
+        taxRate: true,
+        prices: {
+          where: { priceType: 'SALE' },
+          select: { priceType: true, currency: true, amount: true, validFrom: true, validUntil: true },
+          orderBy: { validFrom: 'desc' },
+          take: 10,
+        },
       },
       take: 10,
       orderBy: { name: 'asc' },

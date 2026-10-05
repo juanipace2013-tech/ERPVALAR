@@ -27,6 +27,22 @@ import { consultarPersona, PadronError, provincia as provinciaErp, type PersonaP
 import { DOC_TIPO } from '@/lib/arca/wsfe'
 import { describeCbteTipo } from '@/lib/arca/emitir'
 import { crearHookEmisionArca, emisionDescartada, getEmisorFacturacion, type HookEmisionArca } from '@/lib/facturacion/emision-arca'
+import {
+  HORA_MS,
+  VentaMlError,
+  facturaAdjuntaEnMl,
+  fechaVentaMl,
+  guardarCache,
+  leerCache,
+  liberarCandadoVentaMl,
+  limpiarCacheFacturaEnMl,
+  marcarFacturaAdjuntaEnMl,
+  ordenesDelPack,
+  tomarCandadoVentaMl,
+  totalVentaMl,
+  vincularFacturaAVentaMl,
+  type EntradaCache,
+} from './venta-ml-vinculo'
 import { buildFacturaPdfData } from '@/lib/facturacion/factura-pdf-data'
 import { totalesFacturaB } from '@/lib/facturacion/totales-factura'
 import { generateFacturaPDF, facturaPdfFilename } from '@/lib/pdf/factura-generator'
@@ -35,9 +51,6 @@ import { PESTANA_FACTURA_ML } from './facturacion-form'
 import {
   MlApiError,
   getBuyerFiscal,
-  getPack,
-  getPackFiscalDocuments,
-  getSaleOrder,
   searchPaidOrdersSince,
   uploadPackFiscalDocument,
   type MlBillingAddress,
@@ -108,15 +121,10 @@ export class FacturacionMlError extends Error {
 }
 
 /**
- * Fecha de la venta para los cortes: la más vieja de las órdenes del pack
- * (date_created, o date_closed si falta). Inválida si ML no dio fechas.
+ * Fecha de la venta para los cortes (la orden más vieja del pack). Vive en
+ * venta-ml-vinculo.ts (la comparte la factura directa); se re-exporta.
  */
-export function fechaVentaMl(orders: Array<Pick<MlSaleOrder, 'date_created' | 'date_closed'>>): Date {
-  const tiempos = orders
-    .map((o) => new Date(o.date_created ?? o.date_closed ?? '').getTime())
-    .filter((t) => Number.isFinite(t))
-  return new Date(tiempos.length ? Math.min(...tiempos) : NaN)
-}
+export { fechaVentaMl }
 
 const diaAr = (d: Date) => d.toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })
 
@@ -136,9 +144,7 @@ export function verificarCorteMl(clase: ClaseFacturaMl, fechaVenta: Date): void 
 
 const packKeyDe = (o: MlSaleOrder) => String(o.pack_id ?? o.id)
 
-const redondear = (n: number) => Math.round(n * 100) / 100
-
-const totalDe = (orders: MlSaleOrder[]) => redondear(orders.reduce((s, o) => s + Number(o.total_amount ?? 0), 0))
+const totalDe = totalVentaMl
 
 /** Mapea concurrencia acotada (las llamadas a ML son de a una por venta). */
 async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): Promise<R[]> {
@@ -249,41 +255,20 @@ function domicilioDesdeBorrador(d: Partial<DomicilioComprador> | null | undefine
 // Caché de las llamadas a ML del listado (pm2 corre un solo proceso)
 // ---------------------------------------------------------------------------
 
-const HORA_MS = 3600 * 1000
+// El caché de "factura adjunta en ML" (y facturaAdjuntaEnMl) vive en
+// venta-ml-vinculo.ts: lo comparte la factura directa.
 const TTL_FISCAL = 24 * HORA_MS // los datos fiscales de una compra no cambian
-const TTL_FACTURA_EN_ML_SI = 24 * HORA_MS
-const TTL_FACTURA_EN_ML_NO = 3 * 60 * 1000
 
-type EntradaCache<T> = { valor: T; vence: number }
 const cacheFiscal = new Map<string, EntradaCache<MlBuyerFiscal>>()
-const cacheFacturaEnMl = new Map<string, EntradaCache<boolean>>()
-
-function leerCache<T>(m: Map<string, EntradaCache<T>>, clave: string): T | undefined {
-  const e = m.get(clave)
-  if (!e) return undefined
-  if (e.vence < Date.now()) {
-    m.delete(clave)
-    return undefined
-  }
-  return e.valor
-}
-
-function guardarCache<T>(m: Map<string, EntradaCache<T>>, clave: string, valor: T, ttl: number) {
-  if (m.size > 5000) {
-    const ahora = Date.now()
-    for (const [k, e] of m) if (e.vence < ahora) m.delete(k)
-  }
-  m.set(clave, { valor, vence: Date.now() + ttl })
-}
 
 /** Vacía los cachés de ML (tests). */
 export function limpiarCachesFacturacionMl() {
   cacheFiscal.clear()
-  cacheFacturaEnMl.clear()
+  limpiarCacheFacturaEnMl()
 }
 
-/** getBuyerFiscal con caché (24 h). Lanza MlApiError como getBuyerFiscal. */
-async function fiscalDelComprador(order: MlSaleOrder): Promise<MlBuyerFiscal> {
+/** getBuyerFiscal con caché (24 h). Lanza MlApiError como getBuyerFiscal. Lo usa también la factura directa. */
+export async function fiscalDelComprador(order: MlSaleOrder): Promise<MlBuyerFiscal> {
   const billingId = order.buyer?.billing_info?.id
   const clave = billingId ? `b:${billingId}` : `o:${order.id}`
   const enCache = leerCache(cacheFiscal, clave)
@@ -293,29 +278,7 @@ async function fiscalDelComprador(order: MlSaleOrder): Promise<MlBuyerFiscal> {
   return f
 }
 
-/**
- * ¿La venta ya tiene una factura adjunta en ML (p. ej. emitida por Colppy)?
- * null = no se pudo verificar. `fresco` saltea el caché (al emitir).
- */
-async function facturaAdjuntaEnMl(packId: string, opts: { fresco?: boolean } = {}): Promise<boolean | null> {
-  if (!opts.fresco) {
-    const enCache = leerCache(cacheFacturaEnMl, packId)
-    if (enCache !== undefined) return enCache
-  }
-  try {
-    const hay = (await getPackFiscalDocuments(packId)).length > 0
-    guardarCache(cacheFacturaEnMl, packId, hay, hay ? TTL_FACTURA_EN_ML_SI : TTL_FACTURA_EN_ML_NO)
-    return hay
-  } catch (e) {
-    // ML responde 404 cuando el pack no tiene documentos
-    if (e instanceof MlApiError && e.status === 404) {
-      guardarCache(cacheFacturaEnMl, packId, false, TTL_FACTURA_EN_ML_NO)
-      return false
-    }
-    logger.warn(`[ML Facturación] No se pudo consultar las facturas del pack ${packId} en ML: ${(e as Error).message}`)
-    return null
-  }
-}
+// facturaAdjuntaEnMl(packId, { fresco }): ver venta-ml-vinculo.ts
 
 // ---------------------------------------------------------------------------
 // Posible duplicado: ¿ya hay una factura del ERP a ese CUIT por el mismo total?
@@ -1096,16 +1059,7 @@ export interface ResultadoFacturaMl {
   mlUpload: { ok: boolean; error?: string }
 }
 
-async function ordenesDelPack(packId: string): Promise<MlSaleOrder[]> {
-  try {
-    const pack = await getPack(packId)
-    return Promise.all(pack.orders.map((o) => getSaleOrder(o.id)))
-  } catch (e) {
-    // Venta sin pack: la clave es el id de la orden
-    if (e instanceof MlApiError && (e.status === 404 || e.status === 400)) return [await getSaleOrder(packId)]
-    throw e
-  }
-}
+// ordenesDelPack(packId): ver venta-ml-vinculo.ts
 
 /** Línea del borrador revisado por el usuario (precio FINAL con IVA, como en ML). */
 export interface LineaFacturaMl {
@@ -1256,24 +1210,21 @@ export async function facturarVentaMl(params: {
   // Candado contra doble facturación (packId unique)
   const total = totalDe(orders)
   try {
-    await prisma.mlOrderInvoice.create({
-      data: {
-        packId,
-        orderIds: orders.map((o) => String(o.id)),
-        buyerNickname: orders[0].buyer?.nickname ?? null,
-        cuit,
-        total,
-        createdById: user.id,
-      },
+    await tomarCandadoVentaMl({
+      packId,
+      orderIds: orders.map((o) => String(o.id)),
+      buyerNickname: orders[0].buyer?.nickname ?? null,
+      cuitReceptor: cuit,
+      totalFactura: total,
+      userId: user.id,
     })
   } catch (e) {
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-      throw new FacturacionMlError('Esta venta ya fue facturada (o se está facturando en este momento)', 409, { codigo: 'YA_FACTURADA' })
+    if (e instanceof VentaMlError && e.codigo === 'YA_FACTURADA') {
+      throw new FacturacionMlError(e.message, 409, { codigo: 'YA_FACTURADA' })
     }
     throw e
   }
 
-  const liberarCandado = () => prisma.mlOrderInvoice.delete({ where: { packId } }).catch(() => undefined)
   let hookArca: HookEmisionArca | null = null
 
   try {
@@ -1475,10 +1426,7 @@ export async function facturarVentaMl(params: {
             },
           },
         })
-        await tx.mlOrderInvoice.update({
-          where: { packId },
-          data: { invoiceId: inv.id, status: 'EMITIDA' },
-        })
+        await vincularFacturaAVentaMl(tx, packId, inv.id)
         return inv.id
       })
     } catch (txError) {
@@ -1525,7 +1473,7 @@ export async function facturarVentaMl(params: {
     // el CAE (falló antes, p. ej. el alta en Colppy) o ARCA lo rechazó en forma
     // definitiva. Si emitió (p. ej. falló la persistencia) o el resultado es
     // incierto (corte después de pedir el CAE), queda puesto: nunca re-emitir.
-    if (!hookArca || (!hookArca.getEmision() && emisionDescartada(hookArca.getIntentoEmision()))) await liberarCandado()
+    await liberarCandadoVentaMl(packId, hookArca)
     throw e
   }
 }
@@ -1592,7 +1540,7 @@ export async function subirFacturaAMl(packId: string): Promise<{ ok: boolean; er
       where: { packId },
       data: { mlUploadStatus: 'OK', mlUploadError: null, mlFiscalDocumentId: id },
     })
-    guardarCache(cacheFacturaEnMl, packId, true, TTL_FACTURA_EN_ML_SI)
+    marcarFacturaAdjuntaEnMl(packId)
     return { ok: true }
   } catch (e) {
     const msg = e instanceof MlApiError ? `${e.message} ${JSON.stringify(e.body).slice(0, 500)}` : (e as Error).message

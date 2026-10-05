@@ -2,7 +2,9 @@
  * GET /api/facturas/[id] — detalle de un comprobante de venta (Invoice) con
  * cliente, ítems, datos de emisión ARCA, estado en Colppy y NC/ND asociadas.
  * Factura E (exportación): además `exportacion` (DES, FOB, Incoterm, TC ARCA...;
- * fexId como texto porque es BigInt).
+ * fexId como texto porque es BigInt). Venta de Mercado Libre facturada:
+ * `mlOrderInvoice` (pack y subida del PDF). Factura directa (sin cotización,
+ * /facturas/nueva): `facturaDirecta` (id y condición de pago del pedido).
  */
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
@@ -72,6 +74,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
           orderBy: { issueDate: 'asc' },
         },
         user: { select: { id: true, name: true } },
+        mlOrderInvoice: { select: { packId: true, status: true, mlUploadStatus: true, mlUploadError: true, updatedAt: true } },
       },
     })
     if (!inv) return NextResponse.json({ error: 'Factura no encontrada' }, { status: 404 })
@@ -83,11 +86,32 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         ? await prisma.facturaExportacion.findUnique({ where: { invoiceId: inv.id }, select: SELECT_EXPORTACION })
         : null
 
+    // Factura directa (sin cotización): también se lee aparte, solo para las
+    // facturas de venta del ERP sin cotización; si falla, la ficha se muestra igual
+    const directa =
+      inv.emitidaPor === 'ARCA' && inv.transactionType === 'SALE' && !inv.quoteId
+        ? await prisma.facturaDirecta
+            .findUnique({ where: { invoiceId: inv.id }, select: { id: true, mlPackId: true, createdAt: true, pedido: true } })
+            .catch((e) => {
+              logger.warn(`[Facturas] No se pudo leer la factura directa de ${inv.id}: ${(e as Error).message}`)
+              return null
+            })
+        : null
+    const pedidoDirecta = (directa?.pedido ?? null) as { condicionPago?: unknown } | null
+
     // No exponer el payload completo de Colppy (ruido); sí si está pendiente para diagnóstico
     const { colppyPayload, ...rest } = inv
     return NextResponse.json({
       ...rest,
       exportacion: exportacion ? { ...exportacion, fexId: exportacion.fexId.toString() } : null,
+      facturaDirecta: directa
+        ? {
+            id: directa.id,
+            mlPackId: directa.mlPackId,
+            createdAt: directa.createdAt,
+            condicionPago: typeof pedidoDirecta?.condicionPago === 'string' ? pedidoDirecta.condicionPago : null,
+          }
+        : null,
       tieneColppyPayload: !!colppyPayload,
       pdfUrl: inv.emitidaPor === 'ARCA' && inv.cae && soportaPdfFactura(inv.cbteTipo) ? `/api/facturas/${inv.id}/pdf` : null,
     })

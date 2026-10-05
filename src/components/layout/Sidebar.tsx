@@ -147,6 +147,13 @@ const navItems: NavItem[] = [
     roles: ['ADMIN', 'GERENTE', 'VENDEDOR', 'CONTADOR'],
     subItems: [
       {
+        // Todas las facturas del ERP (de cotizaciones, de ML y las directas de "Nueva factura")
+        title: 'Facturas',
+        href: '/facturas',
+        icon: FileText,
+        roles: ['ADMIN', 'GERENTE', 'VENDEDOR', 'CONTADOR'],
+      },
+      {
         title: 'Análisis',
         href: '/facturacion/analisis',
         icon: TrendingUp,

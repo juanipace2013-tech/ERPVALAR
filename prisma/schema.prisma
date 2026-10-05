@@ -255,6 +255,7 @@ model Customer {
   googleAdsLeads    GoogleAdsLead[]
   conversations     Conversation[]
   facturasExportacion FacturaExportacion[]
+  facturasDirectas  FacturaDirecta[]
 
   @@index([cuit])
   @@index([name])
@@ -1558,6 +1559,8 @@ model Invoice {
   // Registro en Colppy de una factura emitida por el ERP (CC/stock/asiento):
   // 'OK' | 'PENDIENTE' | 'ERROR' | 'BORRADOR_FCE' (FCE MiPyME cargada como
   // borrador: falta tildar FCE y aprobar en Colppy). null = emitida por Colppy.
+  // Factura directa: 'REGISTRANDO' (alta en Colppy en curso) y 'NO_APLICA'
+  // (FACTURACION_REGISTRAR_COLPPY=false: no se registra en Colppy).
   colppySyncStatus  String?
   colppySyncError   String?   @db.Text
   colppyPayload     Json? // Payload de alta_facturaventa para reintentar
@@ -1582,6 +1585,9 @@ model Invoice {
 
   // Factura E (exportación, WSFEX): datos de exportación y diario de emisión
   exportacion FacturaExportacion?
+
+  // Factura directa ("Nueva factura", sin cotización): diario de emisión
+  facturaDirecta FacturaDirecta?
 
   // NC/ND <-> factura original (emision propia)
   relatedInvoice  Invoice?  @relation("InvoiceRelated", fields: [relatedInvoiceId], references: [id])
@@ -1729,6 +1735,54 @@ model FacturaExportacion {
   @@index([quoteId])
   @@index([customerId])
   @@map("facturas_exportacion")
+}
+
+// ========================================
+// FACTURA DIRECTA ("Nueva factura", sin cotización)
+// ========================================
+
+// Diario de idempotencia de la factura directa A/B/FCE A (ARCA WSFE, PV 7),
+// mismo patrón que FacturaExportacion: la fila se crea EMITIENDO con la clave
+// del navegador ANTES de pedir el CAE y pasa a AUTORIZADA con el CAE (fuera de
+// la transacción de la Invoice, para no perderlo nunca). Una fila AUTORIZADA
+// sin invoiceId es una "huérfana": se registra con
+// scripts/factura-directa-reconciliar.ts sin volver a emitir.
+// Ver src/lib/facturacion/factura-directa.ts.
+model FacturaDirecta {
+  id                String    @id @default(cuid())
+  idempotencyKey    String    @unique // UUID generado en el navegador
+  estado            String // EMITIENDO | AUTORIZADA | RECHAZADA | NO_SOLICITADA | INCIERTA | DESCARTADA
+  customerId        String
+  customer          Customer  @relation(fields: [customerId], references: [id])
+  createdById       String
+  letra             String // 'A' | 'B'
+  puntoVenta        Int?
+  cbteTipo          Int?
+  cbteNumero        Int?
+  cae               String?
+  caeVencimiento    DateTime?
+  docTipo           Int?
+  docNro            String?
+  qrUrl             String?   @db.Text
+  fceVtoPago        DateTime?
+  observacionesArca String?   @db.Text
+  currency          String
+  exchangeRate      Decimal?  @db.Decimal(12, 4)
+  total             Decimal   @db.Decimal(15, 2)
+  mlPackId          String?
+  // Pedido normalizado + totales + fechaFactura/fechaVto + condicionPago + preciosConIva
+  pedido            Json
+  // IntentoEmisionArca si quedó INCIERTA (o el último rechazo)
+  intento           Json?
+  error             String?   @db.Text
+  invoiceId         String?   @unique
+  invoice           Invoice?  @relation(fields: [invoiceId], references: [id])
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([customerId, estado])
+  @@index([estado])
+  @@map("facturas_directas")
 }
 
 // ========================================

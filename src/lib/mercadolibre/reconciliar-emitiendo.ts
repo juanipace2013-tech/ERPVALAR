@@ -67,6 +67,17 @@ export function coincideConCandado(
 }
 
 /**
+ * ¿Se puede comparar el candado con ARCA (y liberarlo si no aparece nada)?
+ * Hace falta un CUIT/CUIL de 11 dígitos y el total. Un DNI o '0' (candado de
+ * una factura directa B a consumidor final) no se puede comparar: nunca se
+ * libera por "no aparece nada". Los candados del flujo de ML siempre tienen
+ * CUIT/CUIL.
+ */
+export function candadoComparable(candado: Pick<CandadoEmitiendo, 'cuit' | 'total'>): boolean {
+  return digitos(candado.cuit).length === 11 && candado.total !== null && Number.isFinite(Number(candado.total))
+}
+
+/**
  * ¿El receptor del comprobante es el comprador del candado (CUIT/CUIL o el DNI
  * de adentro)? Sin mirar el total: un borrador editado (otro precio, otra
  * línea) emite por un importe distinto al que cobró ML.
@@ -91,6 +102,14 @@ export interface ResultadoEscaneoArca {
 }
 
 /**
+ * Cómo se compara cada comprobante de ARCA con lo que se buscaba: 'coincide'
+ * (es ese), 'posible' (revisar a mano, no liberar) o null (otro comprobante).
+ * Default: coincideConCandado / mismoReceptor (ventas de ML). La factura
+ * directa pasa la suya (receptor y total exactos que se mandaron a ARCA).
+ */
+export type CompararComprobante = (c: ComprobanteArca) => 'coincide' | 'posible' | null
+
+/**
  * Recorre, para cada tipo (A, B, FCE A), del último número autorizado hacia
  * atrás (hasta VENTANA_NUMEROS) y junta los que coinciden con la venta. Corta
  * cada tipo al llegar a comprobantes de antes del día del candado (no pueden
@@ -102,7 +121,7 @@ export async function escanearArcaParaCandado(
     ultimoAutorizado: (cbteTipo: number) => Promise<number>
     consultar: (cbteTipo: number, numero: number) => Promise<ComprobanteArca | null>
   },
-  opts: { tipos?: number[]; ventana?: number } = {}
+  opts: { tipos?: number[]; ventana?: number; comparar?: CompararComprobante } = {}
 ): Promise<ResultadoEscaneoArca> {
   const tipos = opts.tipos ?? TIPOS_FACTURA_ML
   const ventana = opts.ventana ?? VENTANA_NUMEROS
@@ -132,8 +151,15 @@ export async function escanearArcaParaCandado(
         llegoAlDia = true
         break
       }
-      if (coincideConCandado(c, candado)) out.coincidencias.push(c)
-      else if (mismoReceptor(c, candado)) out.posibles.push(c)
+      const r = opts.comparar
+        ? opts.comparar(c)
+        : coincideConCandado(c, candado)
+          ? 'coincide'
+          : mismoReceptor(c, candado)
+            ? 'posible'
+            : null
+      if (r === 'coincide') out.coincidencias.push(c)
+      else if (r === 'posible') out.posibles.push(c)
     }
     // Se revisó todo si se llegó a un comprobante anterior al candado o al N° 1
     if (!llegoAlDia && ultimo > 0 && ultimo - ventana > 0) {

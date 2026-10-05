@@ -9,6 +9,10 @@ export interface ProductLite {
   sku: string
   name: string
   stockQuantity: number
+  /** IVA del producto (Decimal: llega como texto) */
+  taxRate?: number | string | null
+  /** Precios del ERP (la factura directa sugiere el SALE) */
+  prices?: Array<{ priceType: string; currency: string; amount: number | string; validFrom?: string | null; validUntil?: string | null }>
 }
 
 /** Buscador de productos del ERP por SKU o nombre (autocompletado). */

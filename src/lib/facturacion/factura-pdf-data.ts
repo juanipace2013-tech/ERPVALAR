@@ -77,6 +77,9 @@ function cargarInvoicePdf(invoiceId: string) {
       items: { include: { product: { select: { sku: true } } } },
       quote: { select: { quoteNumber: true, bonification: true, purchaseOrderNumber: true } },
       relatedInvoice: { select: { invoiceType: true, pointOfSale: true, cbteNumero: true, cbteTipo: true, issueDate: true, invoiceNumber: true } },
+      // Factura directa: la condición de pago está en el pedido (el payload de
+      // Colppy recién existe cuando se registra en Colppy, después del PDF)
+      facturaDirecta: { select: { pedido: true } },
     },
   })
 }
@@ -125,6 +128,7 @@ export async function buildFacturaPdfData(invoiceId: string): Promise<FacturaPDF
   const taxAmount = Number(inv.taxAmount)
   const total = Number(inv.total)
   const payload = (inv.colppyPayload ?? null) as null | { idCondicionPago?: string; items?: Array<{ porcDesc?: number }> }
+  const pedidoDirecta = (inv.facturaDirecta?.pedido ?? null) as null | { condicionPago?: string }
   const bonifPct = Number(inv.quote?.bonification ?? 0) || 0
   const referencia = referenciaDe(inv)
 
@@ -173,7 +177,7 @@ export async function buildFacturaPdfData(invoiceId: string): Promise<FacturaPDF
     qrUrl: inv.qrUrl ?? '',
     moneda: inv.currency === 'USD' ? 'USD' : 'ARS',
     cotizacion: inv.currency === 'USD' ? Number(inv.exchangeRate ?? 1) : 1,
-    condicionVenta: condicionVentaLabel(payload?.idCondicionPago),
+    condicionVenta: condicionVentaLabel(payload?.idCondicionPago ?? pedidoDirecta?.condicionPago),
     referencia,
     receptor: {
       nombre: r.businessName || r.name,

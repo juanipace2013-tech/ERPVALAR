@@ -25,12 +25,13 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { ArrowLeft, Loader2, FileText, Download, RefreshCw, FileMinus, ExternalLink, AlertTriangle, CheckCircle2, Copy, Globe, Link2 } from 'lucide-react'
+import { ArrowLeft, Loader2, FileText, Download, RefreshCw, FileMinus, ExternalLink, AlertTriangle, CheckCircle2, Copy, Globe, Link2, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatCurrency as formatCurrencyAR } from '@/lib/utils'
 import { calcularImportesNc, calcularNcImporte, parseNumeroAr, type ContextoNc, type LineaAcreditable } from '@/lib/facturacion/nc-unidades'
 import { esCbteExportacion } from '@/lib/arca/fex-params'
 import { esClienteExterior, etiquetaIdFiscal, idFiscalParaMostrar } from '@/lib/cliente-exterior'
+import { estadoSubidaMl, etiquetaColppyAsociado, ncRequiereRegistroColppy, puedeReintentarColppy } from '@/lib/facturacion/factura-directa-ui'
 
 interface InvoiceItem {
   id: string
@@ -132,6 +133,11 @@ interface Invoice {
   colppySyncError: string | null
   tieneColppyPayload: boolean
   pdfUrl: string | null
+  updatedAt?: string | null
+  /** Venta de Mercado Libre facturada con este comprobante (candado + subida del PDF) */
+  mlOrderInvoice?: { packId: string; status: string; mlUploadStatus: string | null; mlUploadError: string | null; updatedAt?: string | null } | null
+  /** Factura directa (/facturas/nueva, sin cotización) */
+  facturaDirecta?: { id: string; mlPackId: string | null; createdAt: string; condicionPago: string | null } | null
   relatedInvoice?: { id: string; invoiceNumber: string; invoiceType: string; total: number | string; cae: string | null } | null
   relatedInvoices: RelatedInvoice[]
   /** Solo Factura E (exportación) */
@@ -198,6 +204,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const [colppyIdManual, setColppyIdManual] = useState('')
   const [colppyClienteIdManual, setColppyClienteIdManual] = useState('')
   const [vinculandoColppy, setVinculandoColppy] = useState(false)
+  const [subiendoMl, setSubiendoMl] = useState(false)
 
   const fetchInvoice = useCallback(async () => {
     try {
@@ -270,6 +277,22 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
       toast.error('No se pudo vincular con Colppy', { description: (e as Error).message })
     } finally {
       setVinculandoColppy(false)
+    }
+  }
+
+  // Venta de ML: reintentar la subida del PDF de la factura a la venta
+  const reintentarSubidaMl = async (packId: string) => {
+    try {
+      setSubiendoMl(true)
+      const r = await fetch(`/api/mercadolibre/facturacion/${encodeURIComponent(packId)}/subir`, { method: 'POST' })
+      const data = await r.json().catch(() => ({}))
+      if (!r.ok || !data.ok) throw new Error(data.error || 'No se pudo subir la factura a Mercado Libre')
+      toast.success('Factura subida a Mercado Libre')
+      fetchInvoice()
+    } catch (e) {
+      toast.error('No se pudo subir a Mercado Libre', { description: (e as Error).message })
+    } finally {
+      setSubiendoMl(false)
     }
   }
 
@@ -437,6 +460,10 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   })()
   // La NC de una Factura E va por WSFEX (NC E, fase 2): este diálogo emite NC A/B y no aplica
   const puedeNC = esArca && esFactura && !esExportacion && invoice.status !== 'CANCELLED' && acreditado < Number(invoice.total) - 0.01
+  // Factura del ERP todavía sin registrar en Colppy (sin payload): la NC se rechaza hasta registrarla
+  const ncEsperaColppy = ncRequiereRegistroColppy(invoice)
+  // Subida del PDF a la venta de ML: sin resultado y reciente puede estar en curso (no se ofrece reintentar)
+  const subidaMl = invoice.mlOrderInvoice ? estadoSubidaMl(invoice.mlOrderInvoice) : null
   const nroFiscal =
     invoice.pointOfSale && invoice.cbteNumero
       ? `${String(invoice.pointOfSale).padStart(4, '0')}-${String(invoice.cbteNumero).padStart(8, '0')}`
@@ -494,6 +521,12 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {invoice.facturaDirecta && (
+            <Badge className="bg-indigo-100 text-indigo-800 hover:bg-indigo-100" title="Emitida desde Nueva factura, sin cotización">
+              Factura directa
+            </Badge>
+          )}
+          {invoice.mlOrderInvoice && <Badge className="bg-yellow-100 text-yellow-900 hover:bg-yellow-100">Mercado Libre</Badge>}
           {esArca && <Badge variant="outline">Emitida por el ERP</Badge>}
           <Badge className={statusColors[invoice.status]}>{statusLabels[invoice.status]}</Badge>
         </div>
@@ -517,7 +550,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
             </Button>
           </>
         )}
-        {esArca && invoice.colppySyncStatus && invoice.colppySyncStatus !== 'OK' && invoice.colppySyncStatus !== 'BORRADOR_FCE' && invoice.colppySyncStatus !== 'MANUAL' && !invoice.colppyId && (
+        {puedeReintentarColppy(invoice) && (
           <Button variant="outline" onClick={reintentarColppy} disabled={retrying}>
             {retrying ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
             Reintentar registro en Colppy
@@ -527,8 +560,8 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
           <Button
             variant="destructive"
             onClick={() => setNcOpen(true)}
-            disabled={!!ncBloqueada}
-            title={ncBloqueada ?? undefined}
+            disabled={!!ncBloqueada || ncEsperaColppy}
+            title={ncBloqueada ?? (ncEsperaColppy ? 'Registrá primero la factura en Colppy ("Reintentar registro en Colppy") y después emití la nota de crédito' : undefined)}
           >
             <FileMinus className="h-4 w-4 mr-2" />
             {ncBloqueada ? 'NC sin confirmar en ARCA: revisar' : 'Emitir nota de crédito'}
@@ -862,10 +895,8 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                         {r.invoiceNumber}
                       </Link>{' '}
                       <span className="text-gray-500">· {formatDate(r.issueDate)}{r.cae ? ` · CAE ${r.cae}` : ''}</span>
-                      {r.colppySyncStatus && r.colppySyncStatus !== 'OK' && (
-                        <Badge className="ml-2 bg-amber-100 text-amber-800">
-                          {r.colppySyncStatus === 'BORRADOR_FCE' ? 'Borrador FCE en Colppy' : 'Pendiente Colppy'}
-                        </Badge>
+                      {etiquetaColppyAsociado(r.colppySyncStatus) && (
+                        <Badge className="ml-2 bg-amber-100 text-amber-800">{etiquetaColppyAsociado(r.colppySyncStatus)}</Badge>
                       )}
                     </span>
                     <span className={r.transactionType === 'CREDIT_NOTE' ? 'text-red-700' : ''}>
@@ -948,15 +979,74 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                     <p className="font-semibold text-green-700 flex items-center">
                       <CheckCircle2 className="h-4 w-4 mr-1" /> Registrada (ID {invoice.colppyId})
                     </p>
+                  ) : invoice.colppySyncStatus === 'NO_APLICA' && !invoice.colppyId ? (
+                    <div>
+                      <p className="font-semibold text-gray-700">No se registra en Colppy</p>
+                      <p className="text-xs text-gray-600 mt-1">Se emitió con el registro en Colppy apagado (FACTURACION_REGISTRAR_COLPPY=false).</p>
+                    </div>
+                  ) : invoice.colppySyncStatus === 'REGISTRANDO' && !invoice.colppyId ? (
+                    <div>
+                      <p className="font-semibold text-blue-700 flex items-center">
+                        <Loader2 className="h-4 w-4 mr-1 animate-spin" /> Registrando en Colppy…
+                      </p>
+                      <p className="text-xs text-gray-600 mt-1">
+                        Actualizá la página en unos minutos. Si queda así más de 15 minutos, aparece «Reintentar registro en Colppy».
+                      </p>
+                    </div>
                   ) : (
                     <div>
                       <p className="font-semibold text-amber-700 flex items-center">
                         <AlertTriangle className="h-4 w-4 mr-1" /> {invoice.colppySyncStatus === 'ERROR' && invoice.colppyId ? `Revisar en Colppy (ID ${invoice.colppyId})` : invoice.colppySyncStatus === 'ERROR' ? 'Error al registrar' : 'Pendiente de registrar'}
                       </p>
                       {invoice.colppySyncError && <p className="text-xs text-gray-600 mt-1 break-words">{invoice.colppySyncError}</p>}
+                      {ncEsperaColppy && puedeNC && (
+                        <p className="text-xs text-gray-600 mt-1">Para emitir una nota de crédito, primero registrala en Colppy.</p>
+                      )}
                     </div>
                   )}
                 </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {invoice.mlOrderInvoice && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Mercado Libre</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div>
+                  <p className="text-gray-600">Venta</p>
+                  <p className="font-mono font-semibold">#{invoice.mlOrderInvoice.packId}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600">PDF en la venta</p>
+                  {subidaMl?.estado === 'ok' ? (
+                    <p className="font-semibold text-green-700 flex items-center">
+                      <CheckCircle2 className="h-4 w-4 mr-1" /> Subido a Mercado Libre
+                    </p>
+                  ) : subidaMl?.estado === 'en-curso' ? (
+                    <div>
+                      <p className="font-semibold text-blue-700 flex items-center">
+                        <Loader2 className="h-4 w-4 mr-1 animate-spin" /> Subiendo a Mercado Libre…
+                      </p>
+                      <p className="text-xs text-gray-600 mt-1">Actualizá la página en unos minutos. Si sigue sin subirse, aparece «Reintentar subida a ML».</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="font-semibold text-amber-700 flex items-center">
+                        <AlertTriangle className="h-4 w-4 mr-1" /> {invoice.mlOrderInvoice.mlUploadStatus === 'ERROR' ? 'No se pudo subir' : 'Sin subir'}
+                      </p>
+                      {invoice.mlOrderInvoice.mlUploadError && <p className="text-xs text-gray-600 mt-1 break-words">{invoice.mlOrderInvoice.mlUploadError}</p>}
+                    </div>
+                  )}
+                </div>
+                {subidaMl?.puedeReintentar && invoice.pdfUrl && (
+                  <Button variant="outline" size="sm" className="w-full" onClick={() => reintentarSubidaMl(invoice.mlOrderInvoice!.packId)} disabled={subiendoMl}>
+                    {subiendoMl ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
+                    Reintentar subida a ML
+                  </Button>
+                )}
               </CardContent>
             </Card>
           )}

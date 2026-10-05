@@ -16,6 +16,7 @@ import { consultarPersona } from '@/lib/arca/padron';
 import type { ItemCobroColppy } from '@/lib/facturacion/imputacion-nc';
 import { letraFacturaColppy } from '@/lib/facturacion/letra-factura';
 import { totalesFacturaA, totalesFacturaB } from '@/lib/facturacion/totales-factura';
+import { diasCondicionPago } from '@/lib/facturacion/condicion-pago';
 
 // La regla de la letra vive en un módulo puro (la usan también los diálogos del
 // cliente); se re-exporta para los que ya la importan desde acá.
@@ -106,6 +107,12 @@ export interface SendToColppyOptions {
    * Si el hook lanza, no se crea nada en Colppy.
    */
   emisionExterna?: (datos: EmisionExternaDatos) => Promise<EmisionExternaResultado>;
+  /**
+   * Fecha de la factura (y base del vencimiento y del remito). Default: ahora.
+   * La factura directa la registra en Colppy DESPUÉS de emitirla en ARCA: un
+   * reintento hecho otro día tiene que llevar la fecha del CAE.
+   */
+  fechaFactura?: Date;
 }
 
 export interface SendToColppyResult {
@@ -1860,8 +1867,9 @@ export async function sendQuoteToColppy(
       };
     });
 
-    // 6. Fecha actual en formato DD-MM-YYYY
-    const fecha = formatDateColppy(new Date());
+    // 6. Fecha de la factura (default: hoy) en formato DD-MM-YYYY
+    const fechaBase = options.fechaFactura ?? new Date();
+    const fecha = formatDateColppy(fechaBase);
 
     // 7. Ejecutar acciones según opción seleccionada
     const result: SendToColppyResult = {
@@ -1895,42 +1903,23 @@ export async function sendQuoteToColppy(
         );
       }
 
-      // Fecha actual en formato DD-MM-YYYY
-      const fechaFactura = formatDateColppy(new Date());
+      // Fecha de la factura (default: hoy) en formato DD-MM-YYYY
+      const fechaFactura = formatDateColppy(fechaBase);
 
       // Obtener condición de pago (de options si está, si no del cliente)
       const idCondicionPago = options.condicionPago || mapCondicionPago(customer.idCondicionPago || '0');
 
-      // Calcular días de vencimiento desde la condición de pago
-      // Soporta tanto texto ("a 30 Dias") como numérico ("30")
-      const condicionPagoMap: Record<string, number> = {
-        'Contado': 7,       // +7 días para que no aparezca vencida al emitir
-        'a 7 Dias': 7,
-        'a 15 Dias': 15,
-        'a 30 Dias': 30,
-        'a 45 Dias': 45,
-        'a 60 Dias': 60,
-        'a 90 Dias': 90,
-        'a 120 Dias': 120,
-        // Fallback con claves numéricas por si llega el ID en vez del texto
-        '0': 7,
-        '7': 7,
-        '15': 15,
-        '30': 30,
-        '45': 45,
-        '60': 60,
-        '90': 90,
-        '120': 120,
-      };
-
+      // Calcular días de vencimiento desde la condición de pago. Soporta tanto
+      // texto ("a 30 Dias") como numérico ("30"): el mapa vive en
+      // src/lib/facturacion/condicion-pago.ts (lo comparte la factura directa).
       // ?? para que 0 (Contado) no se trate como falsy y caiga al fallback.
       const parsedCustomerDays = parseInt(customer.idCondicionPago || '')
       const diasVto =
-        condicionPagoMap[idCondicionPago] ??
+        diasCondicionPago(idCondicionPago) ??
         (Number.isFinite(parsedCustomerDays) ? parsedCustomerDays : 0)
 
       // Calcular fecha de vencimiento
-      const fechaVtoDate = new Date();
+      const fechaVtoDate = new Date(fechaBase.getTime());
       fechaVtoDate.setDate(fechaVtoDate.getDate() + diasVto);
       const fechaVto = formatDateColppy(fechaVtoDate);
 
@@ -2091,7 +2080,7 @@ export async function sendQuoteToColppy(
           totalFactura: facturaPayload.totalFactura,
           currency: quote.currency,
           exchangeRate: quote.currency === 'USD' ? exchangeRate : null,
-          fechaFactura: new Date(),
+          fechaFactura: options.fechaFactura ?? new Date(),
           fechaVto: fechaVtoDate,
           idCondicionPago,
           descripcion: facturaPayload.descripcion,

@@ -1,788 +1,610 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { Badge } from '@/components/ui/badge'
-import { Textarea } from '@/components/ui/textarea'
-import {
-  Receipt,
-  Plus,
-  Trash2,
-  AlertTriangle,
-  CheckCircle2,
-  Eye,
-  ArrowLeft,
-  Package,
-  DollarSign
-} from 'lucide-react'
+/**
+ * Nueva factura (factura directa, sin cotización): Factura A, B o FCE A que
+ * emite el ERP en ARCA (PV 7) y después registra en Colppy. Pedido de Santiago
+ * (5/10/2026) para dejar de depender de Colppy para facturar.
+ *
+ * Estados: edición → vista previa (sin efectos; cualquier edición la
+ * invalida) → confirmaciones → emitiendo → éxito (navega a la factura y abre el
+ * PDF) o error. La clave de idempotencia se genera cuando la vista previa sale
+ * bien; un error de red o "ARCA no solicitado" se reintenta con LA MISMA clave
+ * (si ya se emitió, el servidor devuelve esa factura); un 422 obliga a otra
+ * vista previa (otra clave). ARCA_INCIERTO y ERP_HUERFANA abren un diálogo
+ * bloqueante: NO se reintenta.
+ *
+ * Deep links: ?cliente=<id> y ?mlVenta=<pack u orden>.
+ * Servidor: src/lib/facturacion/factura-directa.ts. Lógica del cliente:
+ * src/lib/facturacion/factura-directa-ui.ts.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
-import { getLocalDateString } from '@/lib/utils'
-
-interface Customer {
-  id: string
-  name: string
-  businessName: string
-  cuit: string
-  taxCondition: string
-}
-
-interface Product {
-  id: string
-  sku: string
-  name: string
-  stockQuantity: number
-  isTaxable: boolean
-  taxRate: number
-  prices: Array<{
-    amount: number
-    priceType: string
-    currency: string
-  }>
-}
-
-interface InvoiceItem {
-  productId: string
-  productName: string
-  sku: string
-  quantity: number
-  unitPrice: number
-  discount: number
-  taxRate: number
-  subtotal: number
-  currentStock: number
-}
-
-interface InventoryPreview {
-  valid: boolean
-  stockErrors: Array<{
-    productId: string
-    productName: string
-    available: number
-    required: number
-    message: string
-  }>
-  totalCMV: number
-  currency: string
-  products: Array<{
-    productId: string
-    productName: string
-    currentStock: number
-    requestedQuantity: number
-    remainingStock: number
-    unitCost: number
-    totalCost: number
-  }>
-}
+import { AlertTriangle, ArrowLeft, Loader2, ShieldAlert } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { formatCurrency } from '@/lib/utils'
+import { letraFacturaColppy } from '@/lib/facturacion/letra-factura'
+import { MAX_OBSERVACIONES_FACTURA_DIRECTA } from '@/lib/facturacion/factura-directa-form'
+import type { PendienteFacturaDirecta, PreviewFacturaDirecta } from '@/lib/facturacion/factura-directa'
+import type { InspeccionVentaMl } from '@/lib/mercadolibre/venta-ml-vinculo'
+import {
+  ESTADO_EMISION_INICIAL,
+  armarPedidoFacturaDirecta,
+  avisosResultadoEmision,
+  cambiaSignificadoPrecios,
+  clasificarRespuestaEmision,
+  cuerpoEmisionFacturaDirecta,
+  estadoTrasEmision,
+  etiquetaComprobante,
+  firmaPedidoFacturaDirecta,
+  formInicial,
+  formParaCliente,
+  invalidarVistaPrevia,
+  lineaEnBlanco,
+  lineasDesdeVentaMl,
+  notaRedondeoPreciosConIva,
+  nuevaClaveIdempotencia,
+  numeroATexto,
+  problemasDeError,
+  puedeEmitirFacturaDirecta,
+  puedeFacturaDirecta,
+  reintentoConConfirmacionesVigentes,
+  tipoCambioDesdeApi,
+  validarFormularioFacturaDirecta,
+  type ClienteFacturaDirecta,
+  type CuerpoEmisionFacturaDirecta,
+  type EstadoEmisionUi,
+  type FormFacturaDirecta,
+  type ResultadoEmisionDirecta,
+} from '@/lib/facturacion/factura-directa-ui'
+import { ClienteFacturaPicker } from '@/components/facturacion/nueva/ClienteFacturaPicker'
+import { CondicionesFactura } from '@/components/facturacion/nueva/CondicionesFactura'
+import { LineasFacturaEditor } from '@/components/facturacion/nueva/LineasFacturaEditor'
+import { VentaMlVinculo } from '@/components/facturacion/nueva/VentaMlVinculo'
+import { ResumenEmision } from '@/components/facturacion/nueva/ResumenEmision'
+import { EmisionBloqueadaDialog } from '@/components/facturacion/nueva/EmisionBloqueadaDialog'
+import { cargarClienteFactura } from '@/components/facturacion/nueva/cliente-api'
 
 export default function NuevaFacturaPage() {
   const router = useRouter()
-  const [loading, setLoading] = useState(false)
-  const [customers, setCustomers] = useState<Customer[]>([])
-  const [products, setProducts] = useState<Product[]>([])
-  const [showPreview, setShowPreview] = useState(false)
-  const [preview, setPreview] = useState<InventoryPreview | null>(null)
+  const searchParams = useSearchParams()
+  const { data: session, status: sessionStatus } = useSession()
+  const permitido = puedeFacturaDirecta(session?.user?.role)
 
-  // Form data
-  const [customerId, setCustomerId] = useState('')
-  const [invoiceType, setInvoiceType] = useState<'A' | 'B' | 'C' | 'E'>('B')
-  const [currency, setCurrency] = useState<'ARS' | 'USD' | 'EUR'>('ARS')
-  const [exchangeRate, setExchangeRate] = useState(1)
-  const [issueDate, setIssueDate] = useState(getLocalDateString())
-  const [dueDate, setDueDate] = useState(
-    getLocalDateString(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000))
+  const uidRef = useRef(0)
+  const nuevoUid = useCallback(() => `l${++uidRef.current}`, [])
+
+  const [cliente, setCliente] = useState<ClienteFacturaDirecta | null>(null)
+  const [form, setForm] = useState<FormFacturaDirecta>(() => formInicial('l0'))
+  const [estado, setEstado] = useState<EstadoEmisionUi>(ESTADO_EMISION_INICIAL)
+  const [cargandoVista, setCargandoVista] = useState(false)
+  // Después de pedir la vista previa también se marcan las filas vacías
+  const [intentoVista, setIntentoVista] = useState(false)
+  const [emitiendo, setEmitiendo] = useState(false)
+  const [pendientes, setPendientes] = useState<PendienteFacturaDirecta[]>([])
+  const [tcReferencia, setTcReferencia] = useState<{ rate: number; fecha: string | null } | null>(null)
+  const [cargandoTc, setCargandoTc] = useState(false)
+  const [mlInicial] = useState(() => (searchParams.get('mlVenta') ?? '').replace(/\D/g, ''))
+
+  // Mientras se emite, se reintenta o quedó frenada, el formulario no se toca
+  const bloqueado = emitiendo || !!estado.reintento || estado.frenada
+
+  // --------------------------------------------------------------------------
+  // Derivados
+  // --------------------------------------------------------------------------
+
+  const letra = cliente ? letraFacturaColppy(cliente.taxCondition) : null
+  const preciosFinales = letra === 'B' || form.preciosConIva
+  const validacion = useMemo(() => validarFormularioFacturaDirecta(cliente, form), [cliente, form])
+  const pedido = useMemo(() => (cliente ? armarPedidoFacturaDirecta(cliente, form) : null), [cliente, form])
+  const firma = useMemo(() => (pedido ? firmaPedidoFacturaDirecta(pedido) : ''), [pedido])
+  const vigente = !!estado.vista && estado.vista.firma === firma
+  const emision = puedeEmitirFacturaDirecta(estado.vista, firma, estado.tildadas)
+  const calculo = validacion.calculo
+  const clienteBloqueado = validacion.errores.some((e) => e.codigo === 'CLIENTE_EXTERIOR' || e.codigo === 'CONDICION_NO_SOPORTADA')
+  const vistaHabilitada = !cliente
+    ? { puede: false, motivo: 'Elegí el cliente' }
+    : clienteBloqueado
+      ? { puede: false, motivo: 'Este cliente no se factura desde acá' }
+      : { puede: true, motivo: null }
+  const erroresGenerales = validacion.errores.filter((e) => !e.linea && e.codigo !== 'SIN_CLIENTE' && e.codigo !== 'CLIENTE_EXTERIOR' && e.codigo !== 'CONDICION_NO_SOPORTADA')
+  const notaRedondeo = calculo && pedido ? notaRedondeoPreciosConIva(letra, pedido.preciosConIva, pedido.lineas, calculo.totales.total) : null
+
+  // --------------------------------------------------------------------------
+  // Edición (cualquier cambio invalida la vista previa y su clave)
+  // --------------------------------------------------------------------------
+
+  const actualizar = useCallback((fn: (f: FormFacturaDirecta) => FormFacturaDirecta) => {
+    setForm(fn)
+    setEstado((e) => ({ ...e, vista: invalidarVistaPrevia(e.vista), tildadas: [], error: null }))
+  }, [])
+  const setCampo = useCallback(
+    <K extends keyof FormFacturaDirecta>(k: K, v: FormFacturaDirecta[K]) => actualizar((f) => ({ ...f, [k]: v })),
+    [actualizar]
   )
-  const [notes, setNotes] = useState('')
-  const [items, setItems] = useState<InvoiceItem[]>([])
+  const setMlVenta = useCallback((v: string) => setCampo('mlVenta', v), [setCampo])
 
-  // New item
-  const [selectedProductId, setSelectedProductId] = useState('')
-  const [quantity, setQuantity] = useState(1)
+  const elegirCliente = (c: ClienteFacturaDirecta | null) => {
+    const antes = { letra, preciosConIva: form.preciosConIva }
+    setCliente(c)
+    if (!c) {
+      actualizar((f) => f)
+      return
+    }
+    const nuevo = formParaCliente(form, c)
+    const despues = { letra: letraFacturaColppy(c.taxCondition), preciosConIva: nuevo.preciosConIva }
+    if (form.lineas.some((l) => !lineaEnBlanco(l)) && cambiaSignificadoPrecios(antes, despues)) {
+      toast.warning(`Ahora es ${etiquetaComprobante(despues.letra)}: revisá los precios`, {
+        description: despues.letra === 'B' || despues.preciosConIva ? 'Los precios cargados se toman como finales (con IVA).' : 'Los precios cargados se toman como netos (sin IVA).',
+        duration: 10000,
+      })
+    }
+    actualizar(() => nuevo)
+  }
 
-  useEffect(() => {
-    fetchCustomers()
-    fetchProducts()
+  const precargarVentaMl = (v: InspeccionVentaMl) => {
+    if (form.lineas.some((l) => !lineaEnBlanco(l)) && !window.confirm('¿Reemplazar las líneas cargadas por las de la venta de Mercado Libre?')) return
+    if (letra === 'A' && !form.preciosConIva) toast.info('Se activó "Precios con IVA incluido": los precios de Mercado Libre son finales')
+    actualizar((f) => ({ ...f, lineas: lineasDesdeVentaMl(v, nuevoUid), preciosConIva: true }))
+  }
+
+  // --------------------------------------------------------------------------
+  // Carga inicial: pendientes, deep links y tipo de cambio
+  // --------------------------------------------------------------------------
+
+  const cargarPendientes = useCallback(async () => {
+    try {
+      const r = await fetch('/api/facturas/directa/pendientes')
+      if (!r.ok) return
+      const d = await r.json()
+      setPendientes(Array.isArray(d.pendientes) ? d.pendientes : [])
+    } catch {
+      // El banner es informativo: el servidor igual bloquea la emisión
+    }
   }, [])
 
   useEffect(() => {
-    if (currency === 'USD' || currency === 'EUR') {
-      fetchExchangeRate(currency)
-    } else {
-      setExchangeRate(1)
-    }
-  }, [currency])
+    if (permitido) cargarPendientes()
+  }, [permitido, cargarPendientes])
 
-  const fetchCustomers = async () => {
-    try {
-      const response = await fetch('/api/clientes?limit=1000')
-      if (response.ok) {
-        const data = await response.json()
-        setCustomers(data.customers || [])
-      }
-    } catch (error) {
-      console.error('Error fetching customers:', error)
-    }
-  }
+  const clienteInicial = useRef(searchParams.get('cliente'))
+  useEffect(() => {
+    const id = clienteInicial.current
+    if (!permitido || !id) return
+    clienteInicial.current = null
+    cargarClienteFactura(id)
+      .then((c) => {
+        setCliente(c)
+        setForm((f) => formParaCliente(f, c))
+      })
+      .catch((e) => toast.error('No se pudo cargar el cliente del link', { description: (e as Error).message }))
+  }, [permitido])
 
-  const fetchProducts = async () => {
-    try {
-      const response = await fetch('/api/productos?limit=1000')
-      if (response.ok) {
-        const data = await response.json()
-        setProducts(data.products || [])
-      }
-    } catch (error) {
-      console.error('Error fetching products:', error)
-    }
-  }
+  useEffect(() => {
+    if (mlInicial) setForm((f) => ({ ...f, mlVenta: mlInicial }))
+  }, [mlInicial])
 
-  const fetchExchangeRate = async (curr: string) => {
-    try {
-      const response = await fetch(`/api/tipo-cambio?currency=${curr}`)
-      if (response.ok) {
-        const data = await response.json()
-        if (data.length > 0) {
-          setExchangeRate(Number(data[0].sellRate))
+  const cargarTipoCambio = useCallback(
+    async (forzar: boolean) => {
+      setCargandoTc(true)
+      try {
+        const r = await fetch('/api/tipo-cambio?from=USD&to=ARS')
+        const ref = tipoCambioDesdeApi(await r.json().catch(() => null))
+        setTcReferencia(ref)
+        if (!ref) {
+          if (forzar) toast.warning('No hay un dólar BNA cargado: ingresá el tipo de cambio a mano')
+          return
         }
+        if (forzar) setCampo('tipoCambio', numeroATexto(ref.rate))
+        else setForm((f) => (f.tipoCambio.trim() ? f : { ...f, tipoCambio: numeroATexto(ref.rate) }))
+      } catch (e) {
+        toast.error('No se pudo leer el tipo de cambio', { description: (e as Error).message })
+      } finally {
+        setCargandoTc(false)
       }
-    } catch (error) {
-      console.error('Error fetching exchange rate:', error)
-    }
-  }
+    },
+    [setCampo]
+  )
 
-  const addItem = () => {
-    if (!selectedProductId) {
-      toast.error('Selecciona un producto')
+  const tcPedido = useRef(false)
+  useEffect(() => {
+    if (form.moneda === 'USD' && !tcPedido.current) {
+      tcPedido.current = true
+      cargarTipoCambio(false)
+    }
+  }, [form.moneda, cargarTipoCambio])
+
+  // No cerrar la pestaña mientras se emite
+  useEffect(() => {
+    if (!emitiendo) return
+    const h = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+    }
+    window.addEventListener('beforeunload', h)
+    return () => window.removeEventListener('beforeunload', h)
+  }, [emitiendo])
+
+  // --------------------------------------------------------------------------
+  // Vista previa y emisión
+  // --------------------------------------------------------------------------
+
+  const pedirVistaPrevia = async () => {
+    setIntentoVista(true)
+    if (!cliente || !pedido) return
+    if (validacion.errores.length) {
+      toast.error('Corregí lo marcado en rojo antes de la vista previa')
       return
     }
-
-    if (quantity <= 0) {
-      toast.error('La cantidad debe ser mayor a 0')
-      return
-    }
-
-    const product = products.find(p => p.id === selectedProductId)
-    if (!product) return
-
-    // Check if product already in items
-    if (items.some(item => item.productId === selectedProductId)) {
-      toast.error('El producto ya está en la lista')
-      return
-    }
-
-    const salePrice = product.prices.find(p => p.priceType === 'SALE')
-    if (!salePrice) {
-      toast.error('El producto no tiene precio de venta definido')
-      return
-    }
-
-    const unitPrice = Number(salePrice.amount)
-    const subtotal = quantity * unitPrice
-
-    const newItem: InvoiceItem = {
-      productId: product.id,
-      productName: product.name,
-      sku: product.sku,
-      quantity,
-      unitPrice,
-      discount: 0,
-      taxRate: Number(product.taxRate),
-      subtotal,
-      currentStock: product.stockQuantity,
-    }
-
-    setItems([...items, newItem])
-    setSelectedProductId('')
-    setQuantity(1)
-    setShowPreview(false)
-    setPreview(null)
-  }
-
-  const removeItem = (productId: string) => {
-    setItems(items.filter(item => item.productId !== productId))
-    setShowPreview(false)
-    setPreview(null)
-  }
-
-  const updateItemQuantity = (productId: string, newQuantity: number) => {
-    setItems(items.map(item => {
-      if (item.productId === productId) {
-        const subtotal = newQuantity * item.unitPrice * (1 - item.discount / 100)
-        return { ...item, quantity: newQuantity, subtotal }
-      }
-      return item
-    }))
-    setShowPreview(false)
-    setPreview(null)
-  }
-
-  const updateItemDiscount = (productId: string, newDiscount: number) => {
-    setItems(items.map(item => {
-      if (item.productId === productId) {
-        const subtotal = item.quantity * item.unitPrice * (1 - newDiscount / 100)
-        return { ...item, discount: newDiscount, subtotal }
-      }
-      return item
-    }))
-    setShowPreview(false)
-    setPreview(null)
-  }
-
-  const calculateTotals = () => {
-    const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0)
-    const taxAmount = items.reduce((sum, item) => {
-      return sum + (item.subtotal * item.taxRate / 100)
-    }, 0)
-    const total = subtotal + taxAmount
-
-    return { subtotal, taxAmount, total, discount: 0 }
-  }
-
-  const generateInvoiceNumber = () => {
-    const random = Math.floor(Math.random() * 99999).toString().padStart(5, '0')
-    return `0001-${random}`
-  }
-
-  const handlePreview = async () => {
-    if (items.length === 0) {
-      toast.error('Agrega al menos un producto')
-      return
-    }
-
+    const firmaPedida = firma
+    setCargandoVista(true)
+    setEstado((e) => ({ ...e, error: null }))
     try {
-      setLoading(true)
-      const response = await fetch('/api/facturas/preview', {
+      const r = await fetch('/api/facturas/directa/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          items: items.map(item => ({
-            productId: item.productId,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            discount: item.discount,
-            taxRate: item.taxRate,
-            subtotal: item.subtotal,
-          })),
-        }),
+        body: JSON.stringify(pedido),
       })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Error al generar preview')
+      const d = await r.json().catch(() => null)
+      if (!r.ok || !d) {
+        setEstado((e) => ({ ...e, vista: null, tildadas: [], error: { titulo: 'No se pudo armar la vista previa', problemas: problemasDeError(d, r.status) } }))
+        return
       }
-
-      const data = await response.json()
-      setPreview(data.preview)
-      setShowPreview(true)
-    } catch (error) {
-      console.error('Error:', error)
-      toast.error(error instanceof Error ? error.message : 'Error al generar preview')
+      const data = d as PreviewFacturaDirecta
+      // La clave se genera cuando la vista previa sale bien
+      setEstado((e) => ({ ...e, vista: { data, firma: firmaPedida, clave: data.ok ? nuevaClaveIdempotencia() : null }, tildadas: [], error: null }))
+      if (data.errores.some((x) => x.codigo === 'EMISION_PENDIENTE')) cargarPendientes()
+      // El cliente cambió en otra pantalla (condición, FCE, CUIT): se toma el del servidor
+      if (data.cliente && (data.cliente.taxCondition !== cliente.taxCondition || data.cliente.fceObligado !== cliente.fceObligado || data.cliente.cuit !== cliente.cuit)) {
+        toast.warning('El cliente cambió desde que lo elegiste: revisá la vista previa', { duration: 10000 })
+        setCliente({ ...cliente, taxCondition: data.cliente.taxCondition, fceObligado: data.cliente.fceObligado, cuit: data.cliente.cuit })
+      }
+    } catch (e) {
+      toast.error('No se pudo armar la vista previa', { description: (e as Error).message })
     } finally {
-      setLoading(false)
+      setCargandoVista(false)
     }
   }
 
-  const handleSubmit = async () => {
-    if (!customerId) {
-      toast.error('Selecciona un cliente')
-      return
-    }
-
-    if (items.length === 0) {
-      toast.error('Agrega al menos un producto')
-      return
-    }
-
-    if (preview && !preview.valid) {
-      toast.error('Hay errores de stock. Revisa el preview.')
-      return
-    }
-
-    try {
-      setLoading(true)
-      const totals = calculateTotals()
-
-      const invoiceData = {
-        invoiceNumber: generateInvoiceNumber(),
-        invoiceType,
-        customerId,
-        currency,
-        exchangeRate,
-        subtotal: totals.subtotal,
-        taxAmount: totals.taxAmount,
-        discount: totals.discount,
-        total: totals.total,
-        issueDate: new Date(issueDate).toISOString(),
-        dueDate: new Date(dueDate).toISOString(),
-        notes,
-        items: items.map(item => ({
-          productId: item.productId,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          discount: item.discount,
-          taxRate: item.taxRate,
-          subtotal: item.subtotal,
-          description: item.productName,
-        })),
+  const despuesDeEmitir = (res: ResultadoEmisionDirecta, cuerpo: CuerpoEmisionFacturaDirecta) => {
+    setEstado((e) => estadoTrasEmision(e, res, cuerpo))
+    if (res.tipo === 'emitida') {
+      const f = res.factura
+      for (const a of avisosResultadoEmision(f)) {
+        const opts = {
+          description: a.descripcion,
+          duration: a.nivel === 'success' ? 15000 : 20000,
+          ...(a.nivel === 'success' && f.pdfUrl ? { action: { label: 'Ver PDF', onClick: () => window.open(f.pdfUrl, '_blank') } } : {}),
+        }
+        if (a.nivel === 'success') toast.success(a.titulo, opts)
+        else if (a.nivel === 'warning') toast.warning(a.titulo, opts)
+        else toast.info(a.titulo, opts)
       }
+      // Sin abrir el PDF solo: después de esperar a ARCA/Colppy/ML el navegador
+      // ya no lo toma como parte del click y bloquea la ventana. Queda el
+      // botón "Ver PDF" del aviso y los de la factura.
+      router.push(`/facturas/${f.invoiceId}`)
+      return
+    }
+    if (res.tipo === 'bloqueada') {
+      toast.error(res.bloqueo.tipo === 'HUERFANA' ? 'Factura emitida pero no registrada: NO reintentes' : 'ARCA no confirmó la factura: NO reintentes', { duration: Infinity })
+      cargarPendientes()
+      return
+    }
+    // Una emisión en curso que no termina queda TRABADA en el banner de pendientes
+    if ((res.tipo === 'error' && res.refrescarPendientes) || (res.tipo === 'reintentar' && res.codigo === 'EN_CURSO')) cargarPendientes()
+    if (res.tipo === 'confirmar') toast.warning('Hay que confirmar algo más antes de emitir', { description: res.mensaje, duration: 15000 })
+  }
 
-      const response = await fetch('/api/facturas', {
+  // Un solo POST de emisión a la vez (un doble click no manda dos)
+  const enVuelo = useRef(false)
+
+  const enviar = async (cuerpo: CuerpoEmisionFacturaDirecta) => {
+    if (enVuelo.current) return
+    enVuelo.current = true
+    setEmitiendo(true)
+    setEstado((e) => ({ ...e, error: null }))
+    let res: ResultadoEmisionDirecta
+    try {
+      const r = await fetch('/api/facturas/directa', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(invoiceData),
+        body: JSON.stringify(cuerpo),
       })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Error al crear factura')
-      }
-
-      const data = await response.json()
-      toast.success('Factura creada exitosamente')
-      router.push(`/facturas/${data.invoice.id}`)
-    } catch (error) {
-      console.error('Error:', error)
-      toast.error(error instanceof Error ? error.message : 'Error al crear factura')
+      res = clasificarRespuestaEmision({ status: r.status, body: await r.json().catch(() => null) })
+    } catch (e) {
+      res = clasificarRespuestaEmision({ errorRed: (e as Error).message })
     } finally {
-      setLoading(false)
+      enVuelo.current = false
+      setEmitiendo(false)
     }
+    despuesDeEmitir(res, cuerpo)
   }
 
-  const formatCurrency = (amount: number) => {
-    const symbol = (currency || 'ARS') === 'USD' ? 'USD' : 'ARS'
-    return `${symbol} ${amount.toLocaleString('es-AR', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`
+  const emitir = () => {
+    const v = estado.vista
+    if (!pedido || !v?.clave || !emision.puede || bloqueado) return
+    enviar(cuerpoEmisionFacturaDirecta(pedido, v.clave, v.data.confirmacionesRequeridas, estado.tildadas))
   }
 
-  const totals = calculateTotals()
-  const selectedCustomer = customers.find(c => c.id === customerId)
+  const reintentar = () => {
+    if (!estado.reintento || emitiendo) return
+    // El reintento manda el mismo cuerpo: si se destildó una confirmación, no se manda
+    if (!reintentoConConfirmacionesVigentes(estado.reintento.cuerpo, estado.tildadas)) {
+      toast.error('Cambiaron las confirmaciones: usá «Volver a editar» y pedí la vista previa de nuevo')
+      return
+    }
+    enviar(estado.reintento.cuerpo)
+  }
+
+  const descartarReintento = () => setEstado((e) => ({ ...e, reintento: null, vista: invalidarVistaPrevia(e.vista), tildadas: [] }))
+
+  // `firma` = ConfirmacionRequerida.firma; con un reintento pendiente no se cambian (el reintento manda las ya enviadas)
+  const tildar = (firma: string, si: boolean) =>
+    setEstado((e) => (e.reintento ? e : { ...e, tildadas: si ? Array.from(new Set([...e.tildadas, firma])) : e.tildadas.filter((c) => c !== firma) }))
+
+  // --------------------------------------------------------------------------
+  // Render
+  // --------------------------------------------------------------------------
+
+  if (sessionStatus === 'loading') {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+      </div>
+    )
+  }
+
+  if (!permitido) {
+    return (
+      <Card className="mx-auto mt-8 max-w-lg">
+        <CardContent className="space-y-4 py-10 text-center">
+          <ShieldAlert className="mx-auto h-10 w-10 text-gray-400" />
+          <p className="text-gray-700">Las facturas directas las emiten administración, gerencia o contaduría.</p>
+          <Button asChild variant="outline">
+            <Link href="/facturas">Volver a Facturas</Link>
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const moneda = form.moneda
+  const totales = calculo?.totales ?? null
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-40">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => router.push('/facturas')}
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Nueva Factura</h1>
-            <p className="text-muted-foreground">
-              Con descuento automático de inventario
-            </p>
-          </div>
+      <div className="flex items-center gap-4">
+        <Button variant="ghost" size="icon" asChild>
+          <Link href="/facturas" aria-label="Volver a Facturas">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+        </Button>
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Nueva factura</h1>
+          <p className="text-muted-foreground">Factura A, B o FCE A emitida por el ERP en ARCA, sin cotización. Después se registra en Colppy.</p>
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Left Column - Form */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Customer & Type */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Datos de la Factura</CardTitle>
-              <CardDescription>Información del cliente y tipo de factura</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Cliente *</Label>
-                  <Select value={customerId} onValueChange={setCustomerId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecciona un cliente" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {customers.map(customer => (
-                        <SelectItem key={customer.id} value={customer.id}>
-                          {customer.name} - {customer.cuit}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {selectedCustomer && (
-                    <p className="text-xs text-muted-foreground">
-                      {selectedCustomer.businessName} - {selectedCustomer.taxCondition}
-                    </p>
-                  )}
-                </div>
+      {/* Facturas directas sin resolver */}
+      {pendientes.length > 0 && (
+        <div className="space-y-2 rounded-lg border-2 border-red-400 bg-red-50 p-4 text-sm text-red-900">
+          <p className="flex items-center gap-2 font-semibold">
+            <AlertTriangle className="h-5 w-5" />
+            {pendientes.length === 1 ? 'Hay una factura directa sin resolver' : `Hay ${pendientes.length} facturas directas sin resolver`}
+          </p>
+          <ul className="list-disc space-y-1 pl-6">
+            {pendientes.map((p) => (
+              <li key={p.id}>
+                {p.mensaje}{' '}
+                <span className="text-xs text-red-700">
+                  ({new Date(p.createdAt).toLocaleString('es-AR')} · {p.currency} {Number(p.total).toLocaleString('es-AR', { minimumFractionDigits: 2 })} · id {p.id})
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs">A esos clientes no se les puede emitir otra factura directa hasta resolverlas. Avisá a soporte.</p>
+        </div>
+      )}
 
-                <div className="space-y-2">
-                  <Label>Tipo de Factura *</Label>
-                  <Select value={invoiceType} onValueChange={(v) => setInvoiceType(v as 'A' | 'B' | 'C' | 'E')}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="A">Factura A</SelectItem>
-                      <SelectItem value="B">Factura B</SelectItem>
-                      <SelectItem value="C">Factura C</SelectItem>
-                      <SelectItem value="E">Factura E (Exportación)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+      <fieldset disabled={bloqueado} className="min-w-0 space-y-6">
+        {/* Cliente */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Cliente</CardTitle>
+            <CardDescription>La letra sale de la condición frente al IVA del cliente: no se elige a mano.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ClienteFacturaPicker cliente={cliente} onChange={elegirCliente} disabled={bloqueado} />
+          </CardContent>
+        </Card>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Moneda</Label>
-                  <Select value={currency} onValueChange={(v) => setCurrency(v as 'ARS' | 'USD' | 'EUR')}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ARS">Pesos (ARS)</SelectItem>
-                      <SelectItem value="USD">Dólares (USD)</SelectItem>
-                      <SelectItem value="EUR">Euros (EUR)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="exchangeRate">Tipo de Cambio</Label>
-                  <Input
-                    id="exchangeRate"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={exchangeRate}
-                    onChange={(e) => setExchangeRate(Number(e.target.value))}
-                    disabled={currency === 'ARS'}
-                    placeholder={currency === 'ARS' ? '1.00' : 'Tipo de cambio'}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Fecha Emisión</Label>
-                  <Input
-                    type="date"
-                    value={issueDate}
-                    onChange={(e) => setIssueDate(e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Fecha Vencimiento</Label>
-                  <Input
-                    type="date"
-                    value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Notas</Label>
-                <Textarea
-                  placeholder="Notas adicionales (opcional)"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={3}
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Add Products */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Agregar Productos</CardTitle>
-              <CardDescription>Selecciona productos y cantidades</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-12">
-                <div className="md:col-span-7 space-y-2">
-                  <Label>Producto</Label>
-                  <Select value={selectedProductId} onValueChange={setSelectedProductId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecciona un producto" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {products
-                        .filter(p => p.stockQuantity > 0)
-                        .map(product => (
-                          <SelectItem key={product.id} value={product.id}>
-                            {product.name} - Stock: {product.stockQuantity}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="md:col-span-3 space-y-2">
-                  <Label>Cantidad</Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={quantity}
-                    onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
-                  />
-                </div>
-
-                <div className="md:col-span-2 flex items-end">
-                  <Button onClick={addItem} className="w-full">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Agregar
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Items List */}
-          {items.length > 0 && (
+        {cliente && !clienteBloqueado && (
+          <>
+            {/* Condiciones */}
             <Card>
               <CardHeader>
-                <CardTitle>Productos en la Factura</CardTitle>
-                <CardDescription>{items.length} producto(s) agregado(s)</CardDescription>
+                <CardTitle>Condiciones</CardTitle>
+                <CardDescription>Fecha de hoy. Concepto: productos.</CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Producto</TableHead>
-                        <TableHead className="text-center">Stock Actual</TableHead>
-                        <TableHead className="text-right">Cantidad</TableHead>
-                        <TableHead className="text-right">Precio Unit.</TableHead>
-                        <TableHead className="text-right">Desc. %</TableHead>
-                        <TableHead className="text-right">IVA %</TableHead>
-                        <TableHead className="text-right">Subtotal</TableHead>
-                        <TableHead></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {items.map((item) => (
-                        <TableRow key={item.productId}>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium">{item.productName}</div>
-                              <div className="text-xs text-muted-foreground">{item.sku}</div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <Badge
-                              variant={item.currentStock >= item.quantity ? 'default' : 'destructive'}
-                            >
-                              {item.currentStock}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Input
-                              type="number"
-                              min="1"
-                              max={item.currentStock}
-                              value={item.quantity}
-                              onChange={(e) => updateItemQuantity(item.productId, parseInt(e.target.value) || 1)}
-                              className="w-20 text-right"
-                            />
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {formatCurrency(item.unitPrice)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Input
-                              type="number"
-                              min="0"
-                              max="100"
-                              value={item.discount}
-                              onChange={(e) => updateItemDiscount(item.productId, parseFloat(e.target.value) || 0)}
-                              className="w-16 text-right"
-                            />
-                          </TableCell>
-                          <TableCell className="text-right">{item.taxRate}%</TableCell>
-                          <TableCell className="text-right font-semibold">
-                            {formatCurrency(item.subtotal)}
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removeItem(item.productId)}
-                            >
-                              <Trash2 className="h-4 w-4 text-red-600" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+              <CardContent className="space-y-6">
+                <CondicionesFactura
+                  form={form}
+                  onCampo={setCampo}
+                  cliente={cliente}
+                  letra={letra}
+                  tcReferencia={tcReferencia}
+                  cargandoTc={cargandoTc}
+                  onRecargarTc={() => cargarTipoCambio(true)}
+                  disabled={bloqueado}
+                />
+                <div className="space-y-1 border-t pt-4">
+                  <Label>Venta de Mercado Libre (opcional)</Label>
+                  <VentaMlVinculo
+                    mlVenta={form.mlVenta}
+                    onMlVenta={setMlVenta}
+                    moneda={moneda}
+                    onPrecargar={precargarVentaMl}
+                    buscarAlInicio={!!mlInicial}
+                    disabled={bloqueado}
+                  />
                 </div>
               </CardContent>
             </Card>
-          )}
 
-          {/* Preview Button */}
-          {items.length > 0 && (
-            <div className="flex gap-2">
-              <Button
-                onClick={handlePreview}
-                variant="outline"
-                disabled={loading}
-                className="flex-1"
-              >
-                <Eye className="mr-2 h-4 w-4" />
-                {loading ? 'Generando...' : 'Preview de Inventario'}
-              </Button>
-              <Button
-                onClick={handleSubmit}
-                disabled={loading || !customerId || items.length === 0}
-                className="flex-1"
-              >
-                <Receipt className="mr-2 h-4 w-4" />
-                {loading ? 'Creando...' : 'Crear Factura'}
-              </Button>
-            </div>
-          )}
-        </div>
-
-        {/* Right Column - Summary & Preview */}
-        <div className="space-y-6">
-          {/* Totals */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <DollarSign className="h-5 w-5" />
-                Resumen
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Subtotal:</span>
-                  <span className="font-medium">{formatCurrency(totals.subtotal)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">IVA:</span>
-                  <span className="font-medium">{formatCurrency(totals.taxAmount)}</span>
-                </div>
-                {totals.discount > 0 && (
-                  <div className="flex justify-between text-sm text-green-600">
-                    <span>Descuento:</span>
-                    <span className="font-medium">-{formatCurrency(totals.discount)}</span>
-                  </div>
-                )}
-                <div className="border-t pt-2">
-                  <div className="flex justify-between">
-                    <span className="font-semibold">Total:</span>
-                    <span className="text-2xl font-bold">{formatCurrency(totals.total)}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-4 border-t space-y-2">
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>Productos:</span>
-                  <span>{items.length}</span>
-                </div>
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>Unidades:</span>
-                  <span>{items.reduce((sum, item) => sum + item.quantity, 0)}</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Inventory Preview */}
-          {showPreview && preview && (
-            <Card className={preview.valid ? 'border-green-500' : 'border-red-500'}>
+            {/* Líneas */}
+            <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Package className="h-5 w-5" />
-                  Preview de Inventario
-                </CardTitle>
+                <CardTitle>Líneas</CardTitle>
                 <CardDescription>
-                  {preview.valid ? (
-                    <span className="text-green-600 flex items-center gap-2">
-                      <CheckCircle2 className="h-4 w-4" />
-                      Stock disponible para todos los productos
-                    </span>
-                  ) : (
-                    <span className="text-red-600 flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4" />
-                      Hay productos sin stock suficiente
-                    </span>
-                  )}
+                  {preciosFinales
+                    ? 'Precios finales, con IVA incluido. Cargá precios ya bonificados.'
+                    : 'Precios netos, sin IVA (se suma el 21%). Cargá precios ya bonificados.'}
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {/* CMV Summary */}
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <div className="text-sm font-medium text-blue-900 mb-1">
-                    Costo de Mercadería Vendida (CMV)
-                  </div>
-                  <div className="text-2xl font-bold text-blue-600">
-                    {formatCurrency(preview.totalCMV)}
-                  </div>
-                  <div className="text-xs text-blue-700 mt-1">
-                    Asiento contable generado automáticamente
-                  </div>
-                </div>
-
-                {/* Stock Errors */}
-                {!preview.valid && preview.stockErrors.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="text-sm font-medium text-red-600">
-                      Errores de Stock:
-                    </div>
-                    {preview.stockErrors.map((error, index) => (
-                      <div key={index} className="bg-red-50 border border-red-200 rounded p-2">
-                        <div className="text-sm font-medium text-red-900">
-                          {error.productName}
-                        </div>
-                        <div className="text-xs text-red-700">
-                          {error.message}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Products Detail */}
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Impacto por Producto:</div>
-                  {preview.products.map((product, index) => (
-                    <div key={index} className="bg-gray-50 rounded p-2 space-y-1">
-                      <div className="text-sm font-medium">{product.productName}</div>
-                      <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                        <div>Stock actual: {product.currentStock}</div>
-                        <div>Venta: {product.requestedQuantity}</div>
-                        <div className={product.remainingStock >= 0 ? 'text-green-600' : 'text-red-600'}>
-                          Quedarán: {product.remainingStock}
-                        </div>
-                        <div>CMV: {formatCurrency(product.totalCost)}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+              <CardContent>
+                <LineasFacturaEditor
+                  lineas={form.lineas}
+                  onChange={(lineas) => setCampo('lineas', lineas)}
+                  preciosFinales={preciosFinales}
+                  moneda={moneda}
+                  errores={validacion.errores}
+                  mostrarErroresEnBlanco={intentoVista}
+                  nuevoUid={nuevoUid}
+                  disabled={bloqueado}
+                />
               </CardContent>
             </Card>
-          )}
+
+            {/* Observaciones */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Observaciones</CardTitle>
+                <CardDescription>Quedan en la factura del ERP (no van a ARCA).</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Textarea
+                  value={form.observaciones}
+                  onChange={(e) => setCampo('observaciones', e.target.value)}
+                  maxLength={MAX_OBSERVACIONES_FACTURA_DIRECTA}
+                  rows={3}
+                  placeholder="Ej.: OC 4500012345"
+                  disabled={bloqueado}
+                />
+                <p className="mt-1 text-right text-[11px] text-muted-foreground">
+                  {form.observaciones.length}/{MAX_OBSERVACIONES_FACTURA_DIRECTA}
+                </p>
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </fieldset>
+
+      {cliente && !clienteBloqueado && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Vista previa y emisión</CardTitle>
+            <CardDescription>La vista previa controla todo (padrón de ARCA, productos, duplicados, Mercado Libre) sin emitir nada.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {erroresGenerales.length > 0 && (
+              <ul className="space-y-1 text-sm text-red-700">
+                {erroresGenerales.map((e, i) => (
+                  <li key={i}>{e.mensaje}</li>
+                ))}
+              </ul>
+            )}
+            {validacion.avisos.length > 0 && (
+              <ul className="space-y-1 text-sm text-amber-800">
+                {validacion.avisos.map((a, i) => (
+                  <li key={i}>{a.mensaje}</li>
+                ))}
+              </ul>
+            )}
+            <ResumenEmision
+              vista={estado.vista}
+              vigente={vigente}
+              cargandoVista={cargandoVista}
+              vistaHabilitada={vistaHabilitada}
+              onVistaPrevia={pedirVistaPrevia}
+              tildadas={estado.tildadas}
+              onTildar={tildar}
+              emision={emision}
+              onEmitir={emitir}
+              emitiendo={emitiendo}
+              error={estado.error}
+              reintento={estado.reintento}
+              onReintentar={reintentar}
+              onDescartarReintento={descartarReintento}
+              frenada={estado.frenada}
+              moneda={moneda}
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Totales (pie fijo) */}
+      {cliente && !clienteBloqueado && (
+        <div className="sticky bottom-0 z-10 -mx-6 border-t bg-white/95 px-6 py-3 shadow-[0_-2px_8px_rgba(0,0,0,0.06)] backdrop-blur dark:bg-gray-900/95">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="text-sm">
+              <span className="font-semibold">{etiquetaComprobante(letra, !!(vigente && estado.vista?.data.esFce))}</span>
+              <span className="text-muted-foreground"> · {moneda}</span>
+              <p className="text-xs text-amber-700">No genera comisión: si corresponde, cargala como venta manual en Comisiones.</p>
+              {notaRedondeo && <p className="text-xs text-muted-foreground">{notaRedondeo}</p>}
+            </div>
+            {totales && (
+              <div className="flex flex-wrap items-end gap-6 text-right">
+                {letra === 'A' ? (
+                  <>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Neto gravado</p>
+                      <p className="font-mono">{formatCurrency(totales.neto, moneda)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">IVA 21%</p>
+                      <p className="font-mono">{formatCurrency(totales.iva, moneda)}</p>
+                    </div>
+                  </>
+                ) : (
+                  <div>
+                    <p className="text-xs text-muted-foreground">IVA contenido (Ley 27.743)</p>
+                    <p className="font-mono">{formatCurrency(totales.iva, moneda)}</p>
+                  </div>
+                )}
+                <div>
+                  <p className="text-xs text-muted-foreground">Total</p>
+                  <p className="font-mono text-xl font-bold">{formatCurrency(totales.total, moneda)}</p>
+                </div>
+                {moneda === 'USD' && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Equivalente en pesos</p>
+                    <p className="font-mono">{Number.isFinite(totales.totalArs) ? formatCurrency(totales.totalArs, 'ARS') : '—'}</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Emitiendo: no cerrar */}
+      {emitiendo && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-white/70 backdrop-blur-sm dark:bg-gray-950/70" role="status" aria-live="assertive">
+          <div className="flex flex-col items-center gap-3 rounded-lg border bg-white p-6 shadow-lg dark:bg-gray-900">
+            <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
+            <p className="text-lg font-semibold">Emitiendo en ARCA…</p>
+            <p className="text-sm text-muted-foreground">No cierres esta ventana ni recargues la página.</p>
+          </div>
+        </div>
+      )}
+
+      <EmisionBloqueadaDialog bloqueo={estado.bloqueo} onEntendido={() => setEstado((e) => ({ ...e, bloqueo: null }))} />
     </div>
   )
 }

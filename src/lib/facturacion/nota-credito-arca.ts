@@ -303,6 +303,9 @@ export async function obtenerLineasNcUnidades(invoiceId: string): Promise<{
 
 const ncEnCurso = new Set<string>()
 
+/** colppySyncStatus de una factura emitida por el ERP que todavía no está en Colppy */
+const COLPPY_SIN_REGISTRAR = ['PENDIENTE', 'ERROR', 'REGISTRANDO']
+
 export async function emitirNotaCredito(invoiceId: string, opts: EmitirNotaCreditoOpts): Promise<NotaCreditoResult> {
   if (ncEnCurso.has(invoiceId)) {
     throw new NotaCreditoError('Ya se está emitiendo una nota de crédito sobre esta factura; esperá unos segundos', 409)
@@ -336,6 +339,14 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
   }
   if (inv.transactionType !== 'SALE') throw new NotaCreditoError('El comprobante no es una factura de venta')
   if (inv.status === 'CANCELLED') throw new NotaCreditoError('La factura ya está anulada')
+  // Factura directa (ARCA primero) que todavía no se registró en Colppy: sin
+  // payload la NC no se registraría en Colppy y la cuenta corriente quedaría mal
+  if (!inv.colppyPayload && COLPPY_SIN_REGISTRAR.includes(inv.colppySyncStatus ?? '')) {
+    throw new NotaCreditoError(
+      'Registrá primero la factura en Colppy ("Reintentar registro en Colppy" en la factura) y después emití la nota de crédito',
+      409
+    )
+  }
 
   const netoFactura = Number(inv.subtotal)
   const ivaFactura = Number(inv.taxAmount)

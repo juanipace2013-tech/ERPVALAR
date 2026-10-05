@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { useSession } from 'next-auth/react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -17,6 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { Receipt, Plus, Search, FileText, CheckCircle2, Clock } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatCurrency as formatCurrencyAR } from '@/lib/utils'
+import { puedeFacturaDirecta } from '@/lib/facturacion/factura-directa-ui'
 
 interface Invoice {
   id: string
@@ -68,6 +70,9 @@ export default function FacturasPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  // "Nueva factura" (factura directa): administración, gerencia y contaduría
+  const { data: session } = useSession()
+  const puedeFacturar = puedeFacturaDirecta(session?.user?.role)
 
   useEffect(() => {
     fetchInvoices()
@@ -132,14 +137,16 @@ export default function FacturasPage() {
             Gestión de facturación con descuento automático de stock
           </p>
         </div>
-        <div className="flex gap-2">
-          <Link href="/facturas/nueva">
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Nueva Factura
-            </Button>
-          </Link>
-        </div>
+        {puedeFacturar && (
+          <div className="flex gap-2">
+            <Link href="/facturas/nueva">
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                Nueva Factura
+              </Button>
+            </Link>
+          </div>
+        )}
       </div>
 
       {/* Stats Cards */}
@@ -236,7 +243,7 @@ export default function FacturasPage() {
               <p className="text-muted-foreground">
                 {search ? 'No se encontraron facturas' : 'No hay facturas registradas'}
               </p>
-              {!search && (
+              {!search && puedeFacturar && (
                 <Link href="/facturas/nueva">
                   <Button className="mt-4" variant="outline">
                     <Plus className="mr-2 h-4 w-4" />

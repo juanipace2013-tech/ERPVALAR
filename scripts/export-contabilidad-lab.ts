@@ -199,7 +199,8 @@ async function exportVentas(outDir: string, desde: Date, hasta: Date, label: str
     orderBy: { issueDate: 'asc' },
     include: {
       customer: { select: { name: true, businessName: true, cuit: true } },
-      items: true,
+      // Las facturas de cotización guardan el producto pero no siempre el SKU en el renglón.
+      items: { include: { product: { select: { sku: true } } } },
       relatedInvoice: { select: { invoiceNumber: true } },
     },
   })
@@ -228,7 +229,7 @@ async function exportVentas(outDir: string, desde: Date, hasta: Date, label: str
     for (const it of f.items)
       items.push([
         esc(f.invoiceNumber),
-        esc(it.sku),
+        esc(it.sku || it.product?.sku),
         esc(it.description),
         num(it.quantity),
         num(it.unitPrice),

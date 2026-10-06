@@ -7,7 +7,8 @@
  * exportan los renglones tal como fueron a Colppy (colppyPayload.items) cuando:
  *   - el payload tiene más renglones que la factura (hubo adicionales separados),
  *   - la factura tiene una sola alícuota (el payload no la trae por renglón) y
- *   - el neto de los renglones del payload es el mismo que el de la factura.
+ *   - el neto de los renglones del payload es el mismo que el de la factura (o, si la factura guarda
+ *     el precio con IVA, el del payload más el IVA de su alícuota).
  * Si no, salen los renglones de la factura como siempre.
  */
 
@@ -73,8 +74,11 @@ export function renglonesVentaLab(
         : Math.round(cantidad * precioUnitario * (1 - dtoPct / 100) * 100) / 100
     return { sku: skuPorItemColppy.get(n(l.idItem)) || '', descripcion: String(l.Descripcion ?? ''), cantidad, precioUnitario, dtoPct, alicuota, subtotal }
   })
-  // Hasta un centavo de redondeo por renglón: si no cierra, el payload no es el de esta factura.
-  if (Math.abs(centavos(separados) - centavos(base)) > separados.length) return base
+  // Hasta un centavo de redondeo por renglón: si no cierra, el payload no es el de esta factura. Con la
+  // cotización en precios con IVA, el InvoiceItem tiene el precio final y el payload el neto.
+  const neto = centavos(separados), totalFactura = centavos(base), tolerancia = separados.length
+  const conIva = Math.round(neto * (1 + alicuota / 100))
+  if (Math.abs(neto - totalFactura) > tolerancia && Math.abs(conIva - totalFactura) > tolerancia) return base
   return separados
 }
 

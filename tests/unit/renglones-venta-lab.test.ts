@@ -37,6 +37,17 @@ describe('renglones de venta para el laboratorio', () => {
     expect(renglonesVentaLab(factura(otro), skus)).toHaveLength(1)
   })
 
+  it('separa también cuando la factura guarda el precio con IVA y el payload el neto (A-0007-00000028)', () => {
+    const f = { items: [{ sku: null, description: '4020 03 Válvula', quantity: '14', unitPrice: '104.1', discount: '0', taxRate: '21', subtotal: '1457.4' }],
+      colppyPayload: { items: [
+        { idItem: 11427181, Descripcion: '4020 03 Válvula', ImporteUnitario: 67.95, Cantidad: 14, porcDesc: 0, subtotal: 951.31 },
+        { idItem: 952033, Descripcion: '4808 22 Bobina', ImporteUnitario: 14.89, Cantidad: 14, porcDesc: 0, subtotal: 208.5 },
+        { idItem: 931591, Descripcion: '4801 08 Conector', ImporteUnitario: 3.19, Cantidad: 14, porcDesc: 0, subtotal: 44.66 },
+      ] } }
+    const r = renglonesVentaLab(f, new Map())
+    expect(r.map((x) => [x.descripcion, x.precioUnitario, x.subtotal])).toEqual([['4020 03 Válvula', 67.95, 951.31], ['4808 22 Bobina', 14.89, 208.5], ['4801 08 Conector', 3.19, 44.66]])
+  })
+
   it('con varias alícuotas no separa (el payload no dice cuál lleva cada adicional)', () => {
     const f = factura(payload)
     f.items.push({ sku: 'FLETE', description: 'Flete', quantity: '1', unitPrice: '0', discount: '0', taxRate: '10.5', subtotal: '0' })

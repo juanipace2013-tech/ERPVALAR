@@ -29,6 +29,7 @@
 import { PrismaClient, Prisma } from '@prisma/client'
 import { mkdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
+import { renglonesVentaLab, itemsColppyAResolver } from '../src/lib/contabilidad/renglones-venta-lab'
 
 const prisma = new PrismaClient()
 
@@ -212,6 +213,15 @@ async function exportVentas(outDir: string, desde: Date, hasta: Date, label: str
     },
   })
 
+  // Adicionales (bobina, conector…) separados como fueron a Colppy: SKU de cada ítem de Colppy.
+  const idsColppy = itemsColppyAResolver(invoices)
+  const skuPorItemColppy = new Map(
+    idsColppy.length
+      ? (await prisma.product.findMany({ where: { colppyItemId: { in: idsColppy } }, select: { sku: true, colppyItemId: true } }))
+          .filter((p) => p.colppyItemId !== null)
+          .map((p) => [p.colppyItemId as number, p.sku] as [number, string])
+      : []
+  )
   const cab: string[][] = []
   const items: string[][] = []
   for (const f of invoices) {
@@ -233,16 +243,16 @@ async function exportVentas(outDir: string, desde: Date, hasta: Date, label: str
       esc(f.relatedInvoice?.invoiceNumber), // NC/ND: comprobante original
       esc(f.emitidaPor ?? 'COLPPY'),
     ])
-    for (const it of f.items)
+    for (const r of renglonesVentaLab(f, skuPorItemColppy))
       items.push([
         esc(f.invoiceNumber),
-        esc(it.sku || it.product?.sku),
-        esc(it.description),
-        num(it.quantity),
-        num(it.unitPrice),
-        num(it.discount),
-        num(it.taxRate),
-        num(it.subtotal),
+        esc(r.sku),
+        esc(r.descripcion),
+        num(r.cantidad),
+        num(r.precioUnitario),
+        num(r.dtoPct),
+        num(r.alicuota),
+        num(r.subtotal),
       ])
   }
 

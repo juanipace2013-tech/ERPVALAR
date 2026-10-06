@@ -67,6 +67,12 @@ function resolveRange(): { desde: Date; hasta: Date; label: string } {
 // ---------------------------------------------------------------------------
 
 const fecha = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : '')
+// Ventas: issueDate es el instante de emisión (o las 12:00 de Argentina en lo sincronizado de
+// Colppy) y el CAE sale con la fecha de Argentina. Una factura de las 22:30 del 31 es del 31, no
+// del 1 (en UTC ya es el día siguiente): la fecha y el corte de mes se toman en hora de Argentina.
+const fmtAR = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' })
+const fechaAR = (d: Date | null | undefined) => (d ? fmtAR.format(d) : '')
+const inicioDiaAR = (utcMidnight: Date) => new Date(utcMidnight.getTime() + 3 * 3600 * 1000) // AR es UTC-3 sin horario de verano
 
 const num = (v: Prisma.Decimal | number | null | undefined) =>
   v == null ? '' : String(v).replace('.', ',')
@@ -195,7 +201,7 @@ async function exportVentas(outDir: string, desde: Date, hasta: Date, label: str
       // Con CAE aprobado el comprobante existe fiscalmente aunque después una NC total lo haya
       // anulado (status CANCELLED): la contabilidad necesita la factura y su NC.
       afipStatus: 'APPROVED',
-      issueDate: { gte: desde, lt: hasta },
+      issueDate: { gte: inicioDiaAR(desde), lt: inicioDiaAR(hasta) },
     },
     orderBy: { issueDate: 'asc' },
     include: {
@@ -215,8 +221,8 @@ async function exportVentas(outDir: string, desde: Date, hasta: Date, label: str
       f.transactionType, // SALE / CREDIT_NOTE / DEBIT_NOTE
       esc(f.customer.businessName || f.customer.name),
       esc(f.customer.cuit),
-      fecha(f.issueDate),
-      fecha(f.dueDate),
+      fechaAR(f.issueDate),
+      fechaAR(f.dueDate),
       f.currency,
       num(f.exchangeRate),
       num(f.subtotal),

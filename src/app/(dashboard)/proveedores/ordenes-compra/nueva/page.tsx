@@ -24,6 +24,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
+import { SupplierCombobox } from '@/components/productos/SupplierCombobox'
 import { Loader2, ArrowLeft, Plus, Trash2, Save, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { getLocalDateString } from '@/lib/utils'
@@ -272,7 +273,8 @@ export default function NewPurchaseOrderPage() {
 
   const fetchSuppliers = async () => {
     try {
-      const response = await fetch('/api/proveedores?limit=1000')
+      // La API capea en MAX_PAGE_LIMIT: el resto se busca desde el combobox
+      const response = await fetch('/api/proveedores?status=ACTIVE&limit=200&sortBy=name&sortOrder=asc')
       if (response.ok) {
         const data = await response.json()
         setSuppliers(data.suppliers || [])
@@ -457,18 +459,11 @@ export default function NewPurchaseOrderPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="supplier">Proveedor *</Label>
-                  <Select value={supplierId} onValueChange={setSupplierId}>
-                    <SelectTrigger id="supplier">
-                      <SelectValue placeholder="Seleccionar proveedor" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {suppliers.map((supplier) => (
-                        <SelectItem key={supplier.id} value={supplier.id}>
-                          {supplier.name} {supplier.taxId && `(${supplier.taxId})`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SupplierCombobox
+                    suppliers={suppliers}
+                    value={supplierId}
+                    onChange={setSupplierId}
+                  />
                 </div>
 
                 <div className="space-y-2">

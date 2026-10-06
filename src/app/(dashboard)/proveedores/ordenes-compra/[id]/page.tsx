@@ -34,6 +34,7 @@ import {
   Truck,
   FileText,
   CheckCircle,
+  Download,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber, getLocalDateString } from '@/lib/utils'
@@ -252,6 +253,12 @@ export default function PurchaseOrderDetailPage() {
           <Badge className={statusColors[order.status]}>
             {statusLabels[order.status]}
           </Badge>
+          <Button variant="outline" asChild>
+            <a href={`/api/purchase-orders/${order.id}/pdf`}>
+              <Download className="h-4 w-4 mr-2" />
+              Descargar PDF
+            </a>
+          </Button>
           {(order.status === 'APPROVED' || order.status === 'PENDING') && (
             <Dialog open={showConvertDialog} onOpenChange={setShowConvertDialog}>
               <DialogTrigger asChild>

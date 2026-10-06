@@ -104,33 +104,41 @@ export async function POST(request: NextRequest) {
     }
 
     // Calculate totals
+    // IVA 0% es válido (exento/importación): solo se usa 21 si no vino la alícuota
+    const itemTaxRate = (item: any) =>
+      item.taxRate === undefined || item.taxRate === null || item.taxRate === '' ? 21 : Number(item.taxRate);
+
     let subtotal = 0;
+    let discount = 0;
     let taxAmount = 0;
 
     items.forEach((item: any) => {
       const itemSubtotal = Number(item.quantity) * Number(item.unitCost);
-      const itemDiscount = itemSubtotal * (Number(item.discount) / 100);
+      const itemDiscount = itemSubtotal * (Number(item.discount || 0) / 100);
       const itemNet = itemSubtotal - itemDiscount;
-      const itemTax = itemNet * (Number(item.taxRate) / 100);
+      const itemTax = itemNet * (itemTaxRate(item) / 100);
 
       subtotal += itemSubtotal;
+      discount += itemDiscount;
       taxAmount += itemTax;
     });
 
-    const total = subtotal + taxAmount;
+    const total = subtotal - discount + taxAmount;
 
     // Generate order number + create in a transaction to prevent race conditions
     const purchaseOrder = await prisma.$transaction(async (tx) => {
-      const lastOrder = await tx.purchaseOrder.findFirst({
-        orderBy: { orderNumber: 'desc' },
+      // Solo cuenta el formato OC-NNNNNN: un "OC-2026-0001" (seed / ruta vieja
+      // /api/ordenes-compra) ordena primero como string y daba números repetidos
+      const existing = await tx.purchaseOrder.findMany({
+        where: { orderNumber: { startsWith: 'OC-' } },
         select: { orderNumber: true },
       });
 
       let nextNumber = 1;
-      if (lastOrder?.orderNumber) {
-        const match = lastOrder.orderNumber.match(/OC-(\d+)/);
+      for (const { orderNumber } of existing) {
+        const match = orderNumber.match(/^OC-(\d+)$/);
         if (match) {
-          nextNumber = parseInt(match[1]) + 1;
+          nextNumber = Math.max(nextNumber, parseInt(match[1]) + 1);
         }
       }
 
@@ -145,7 +153,7 @@ export async function POST(request: NextRequest) {
           currency: currency || 'ARS',
           subtotal,
           taxAmount,
-          discount: 0,
+          discount,
           total,
           orderDate: orderDate ? new Date(orderDate) : new Date(),
           expectedDate: expectedDate ? new Date(expectedDate) : null,
@@ -156,7 +164,7 @@ export async function POST(request: NextRequest) {
               quantity: parseInt(item.quantity),
               unitCost: Number(item.unitCost),
               discount: Number(item.discount || 0),
-              taxRate: Number(item.taxRate || 21),
+              taxRate: itemTaxRate(item),
               subtotal: Number(item.quantity) * Number(item.unitCost),
               description: item.description,
             })),

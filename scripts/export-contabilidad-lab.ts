@@ -192,8 +192,9 @@ async function exportVentas(outDir: string, desde: Date, hasta: Date, label: str
   const invoices = await prisma.invoice.findMany({
     where: {
       transactionType: { in: ['SALE', 'CREDIT_NOTE', 'DEBIT_NOTE'] },
+      // Con CAE aprobado el comprobante existe fiscalmente aunque después una NC total lo haya
+      // anulado (status CANCELLED): la contabilidad necesita la factura y su NC.
       afipStatus: 'APPROVED',
-      status: { not: 'CANCELLED' },
       issueDate: { gte: desde, lt: hasta },
     },
     orderBy: { issueDate: 'asc' },

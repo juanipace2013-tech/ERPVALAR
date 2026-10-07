@@ -146,6 +146,82 @@ describe('PDF Factura B a consumidor final', () => {
   })
 })
 
+describe('PDF con adicionales (electroválvula + bobina + conector)', () => {
+  /** Como A 0007-00000059 (VAL-2026-3599): un InvoiceItem con el precio combinado, 3 renglones en ARCA/Colppy */
+  function invoiceConAdicionales(over: Record<string, unknown> = {}) {
+    const a = invoiceB().customer
+    return invoiceB({
+      invoiceType: 'A',
+      cbteTipo: 1,
+      invoiceNumber: 'A-0007-00000059',
+      docTipo: 80,
+      docNro: '30711111111',
+      currency: 'USD',
+      exchangeRate: 1540,
+      subtotal: 142.93,
+      taxAmount: 30.02,
+      total: 172.95,
+      customer: { ...a, taxCondition: 'RESPONSABLE_INSCRIPTO', cuit: '30-71111111-1', name: 'EMPRESA SA', businessName: 'EMPRESA SA' },
+      colppyPayload: {
+        idCondicionPago: 'Contado',
+        items: [
+          { idItem: 0, Descripcion: '4020 06 Válvula Solenoide ODE', Cantidad: 1, ImporteUnitario: 124.85, porcDesc: 0 },
+          { idItem: 11, Descripcion: '4808 C12 Bobina 12V 8 Watt', Cantidad: 1, ImporteUnitario: 14.89, porcDesc: 0 },
+          { idItem: 12, Descripcion: '4801 08 Conector Tripolar', Cantidad: 1, ImporteUnitario: 3.19, porcDesc: 0 },
+        ],
+      },
+      items: [
+        {
+          id: 'ii1',
+          quoteItemId: 'qi1',
+          sku: null,
+          description: 'Válvula Solenoide ODE',
+          comment: 'Pos. 10',
+          quantity: 1,
+          unitPrice: 142.93,
+          discount: 0,
+          subtotal: 142.93,
+          taxRate: 21,
+          product: { sku: '4020 06', name: '4020 06 Válvula Solenoide ODE' },
+          quoteItem: {
+            manualSku: null,
+            description: 'Válvula Solenoide ODE',
+            product: { sku: '4020 06', name: '4020 06 Válvula Solenoide ODE' },
+            additionals: [
+              { description: null, product: { sku: '4808 C12', name: '4808 C12 Bobina 12V 8 Watt' } },
+              { description: null, product: { sku: '4801 08', name: '4801 08 Conector Tripolar' } },
+            ],
+          },
+        },
+      ],
+      ...over,
+    })
+  }
+
+  it('sale un renglón por artículo, como fue a ARCA/Colppy, y suman el neto', async () => {
+    const { data } = await pdfDe(invoiceConAdicionales())
+    expect(data.items.map((i) => [i.codigo, i.subtotal])).toEqual([
+      ['4020 06', 124.85],
+      ['4808 C12', 14.89],
+      ['4801 08', 3.19],
+    ])
+    expect(data.items[0]).toMatchObject({ descripcion: 'Válvula Solenoide ODE', detalle: 'Pos. 10' })
+    expect(data.items[1]).toMatchObject({ descripcion: '4808 C12 Bobina 12V 8 Watt', detalle: null })
+    expect(data.items.reduce((s, i) => s + i.subtotal, 0)).toBeCloseTo(142.93, 2)
+  })
+
+  it('si el payload no se puede vincular, queda el renglón combinado', async () => {
+    const inv = invoiceConAdicionales()
+    const payload = inv.colppyPayload as { items: unknown[] }
+    const { data } = await pdfDe({
+      ...inv,
+      colppyPayload: { ...payload, items: [...payload.items, { idItem: 0, Descripcion: 'Flete', Cantidad: 1, ImporteUnitario: 10 }] },
+    })
+    expect(data.items).toHaveLength(1)
+    expect(data.items[0].subtotal).toBe(142.93)
+  })
+})
+
 describe('helpers del PDF', () => {
   it('documento del receptor', () => {
     expect(documentoReceptorPdf({ docTipoLabel: 'CUIL', docNro: '20123456786' })).toBe('CUIL: 20-12345678-6')

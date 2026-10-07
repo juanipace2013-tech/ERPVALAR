@@ -17,6 +17,7 @@ import {
 } from '@/lib/arca/fex-params'
 import { etiquetaIdFiscal, paisCliente } from '@/lib/cliente-exterior'
 import type { FacturaPDFData } from '@/lib/pdf/factura-generator'
+import { vincularLineasFactura } from '@/lib/facturacion/nc-unidades'
 
 const CONDICION_IVA_LABEL: Record<string, string> = {
   RESPONSABLE_INSCRIPTO: 'IVA Responsable Inscripto',
@@ -74,7 +75,21 @@ function cargarInvoicePdf(invoiceId: string) {
           taxIdExterior: true,
         },
       },
-      items: { include: { product: { select: { sku: true } } } },
+      // En orden de creación: el mismo de las líneas del payload (ver lineasDelPdf)
+      items: {
+        orderBy: { id: 'asc' },
+        include: {
+          product: { select: { sku: true, name: true } },
+          quoteItem: {
+            select: {
+              manualSku: true,
+              description: true,
+              product: { select: { sku: true, name: true } },
+              additionals: { select: { description: true, product: { select: { sku: true, name: true } } } },
+            },
+          },
+        },
+      },
       quote: { select: { quoteNumber: true, bonification: true, purchaseOrderNumber: true } },
       relatedInvoice: { select: { invoiceType: true, pointOfSale: true, cbteNumero: true, cbteTipo: true, issueDate: true, invoiceNumber: true } },
       // Factura directa: la condición de pago está en el pedido (el payload de
@@ -135,27 +150,28 @@ export async function buildFacturaPdfData(invoiceId: string): Promise<FacturaPDF
   // Escala: las líneas se muestran de modo que sumen exactamente el neto (A) o
   // el total (B) de la cabecera, sea cual sea cómo se guardaron los precios
   // (con/sin IVA, con/sin bonificación).
-  const sumLineas = inv.items.reduce((s, it) => s + Number(it.subtotal), 0)
+  const lineas = lineasDelPdf(inv)
+  const sumLineas = lineas.reduce((s, l) => s + l.importe, 0)
   const objetivo = esA ? subtotalNeto : total
   const factor = sumLineas > 0 ? objetivo / sumLineas : 1
   const bonifFactor = 1 - bonifPct / 100
 
-  const items: FacturaPDFData['items'] = inv.items.map((it) => {
-    const subtotalLinea = Number(it.subtotal) * factor
-    const cantidad = Number(it.quantity) || 1
+  const items: FacturaPDFData['items'] = lineas.map((l) => {
+    const subtotalLinea = l.importe * factor
+    const cantidad = l.cantidad
     // Precio unitario PRE-bonificación (la bonif se muestra en su columna)
     const unitPost = subtotalLinea / cantidad
     const unitPre = bonifFactor > 0 ? unitPost / bonifFactor : unitPost
     return {
-      codigo: it.sku || it.product?.sku || null,
-      descripcion: it.description || '',
-      detalle: it.comment || null,
+      codigo: l.codigo,
+      descripcion: l.descripcion,
+      detalle: l.detalle,
       cantidad,
       unidad: 'Un',
       precioUnitario: Math.round(unitPre * 100) / 100,
       bonifPct: bonifPct || undefined,
       subtotal: Math.round(subtotalLinea * 100) / 100,
-      alicuotaIva: Number(it.taxRate) || 21,
+      alicuotaIva: l.alicuota,
     }
   })
 
@@ -218,6 +234,69 @@ export async function buildFacturaPdfData(invoiceId: string): Promise<FacturaPDF
     // El nro de remito queda en las notas al emitir ("Remito: XXXX-XXXXXXXX")
     remito: remitoDe(inv),
   }
+}
+
+type LineaPdf = { codigo: string | null; descripcion: string; detalle: string | null; cantidad: number; importe: number; alicuota: number }
+
+/**
+ * Renglones del PDF. El InvoiceItem guarda la electroválvula con sus adicionales
+ * (bobina, conector…) en un solo renglón con el precio combinado, pero a
+ * ARCA/Colppy fue un renglón por artículo (buildSplitItem). Si el payload tiene
+ * más renglones que la factura y todos se vinculan a un ítem, el PDF sale con
+ * esos renglones (como el remito y Colppy); si no, con los de la factura.
+ * `importe` es pre-bonificación y en la base del payload (neto en la A, final en
+ * la B): el llamador lo escala a la cabecera.
+ */
+function lineasDelPdf(inv: InvoicePdf): LineaPdf[] {
+  const base: LineaPdf[] = inv.items.map((it) => ({
+    codigo: it.sku || it.product?.sku || null,
+    descripcion: it.description || '',
+    detalle: it.comment || null,
+    cantidad: Number(it.quantity) || 1,
+    importe: Number(it.subtotal),
+    alicuota: Number(it.taxRate) || 21,
+  }))
+  const payload = (inv.colppyPayload ?? null) as null | { items?: Array<{ Descripcion?: string | null; Cantidad?: unknown; ImporteUnitario?: unknown }> }
+  const lineasPayload = Array.isArray(payload?.items) ? payload!.items! : null
+  if (!lineasPayload || lineasPayload.length <= inv.items.length) return base
+  if (new Set(base.map((l) => l.alicuota)).size !== 1) return base
+
+  const vinculos = vincularLineasFactura(
+    lineasPayload,
+    inv.items.map((it) => ({
+      id: it.id,
+      quoteItemId: it.quoteItemId,
+      quantity: Number(it.quantity),
+      codigos: [it.sku, it.product?.sku, it.quoteItem?.product?.sku, it.quoteItem?.manualSku],
+      nombres: [it.description, it.product?.name, it.quoteItem?.description, it.quoteItem?.product?.name],
+      adicionales: (it.quoteItem?.additionals ?? []).map((a) => ({ codigos: [a.product?.sku], nombres: [a.product?.name, a.description] })),
+    }))
+  )
+  if (vinculos.some((v) => !v)) return base
+
+  const porId = new Map(inv.items.map((it, i) => [it.id, { it, linea: base[i] }]))
+  const adicionalesUsados = new Map<string, number>()
+  return lineasPayload.map((l, i) => {
+    const v = vinculos[i]!
+    const { it, linea } = porId.get(v.invoiceItemId)!
+    const cantidad = Number(l.Cantidad) || 1
+    const importe = Math.round(cantidad * (Number(l.ImporteUnitario) || 0) * 100) / 100
+    if (!v.adicional) return { ...linea, cantidad, importe }
+    // Adicional: el de igual nombre o, si no, el siguiente en orden
+    const adds = it.quoteItem?.additionals ?? []
+    const desc = (l.Descripcion ?? '').trim().toUpperCase()
+    const k = adicionalesUsados.get(it.id) ?? 0
+    adicionalesUsados.set(it.id, k + 1)
+    const add = adds.find((a) => !!desc && [a.product?.name, a.description].some((n) => (n ?? '').trim().toUpperCase() === desc)) ?? adds[k]
+    return {
+      codigo: add?.product?.sku || null,
+      descripcion: l.Descripcion || add?.product?.name || add?.description || '',
+      detalle: null,
+      cantidad,
+      importe,
+      alicuota: linea.alicuota,
+    }
+  })
 }
 
 /** "Cotización VAL-..." o, en ventas de Mercado Libre facturadas desde el ERP (sin cotización), la venta */

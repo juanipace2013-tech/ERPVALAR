@@ -832,9 +832,7 @@ export async function getColppyItemId(
       if (!item?.idItem) return '0'; // No existe en Colppy: item manual
       const idItem = String(item.idItem);
       // Queda guardado: la próxima factura lo toma de la DB sin ir a Colppy
-      prisma.product
-        .updateMany({ where: { sku, colppyItemId: null }, data: { colppyItemId: Number(idItem) } })
-        .catch((e) => logger.warn(`[Colppy] No se pudo guardar colppyItemId de ${sku}: ${e.message}`));
+      guardarColppyItemId(sku, idItem);
       return idItem;
     } catch (error: any) {
       if (error instanceof ColppySessionExpiredError || error instanceof ColppyRateLimitError) throw error;
@@ -845,6 +843,13 @@ export async function getColppyItemId(
   throw new Error(
     `Colppy no respondió la búsqueda del artículo ${sku} en el inventario (${ultimoError}). No se emitió la factura: probá de nuevo en unos minutos.`
   );
+}
+
+/** Best-effort: un error al guardar nunca afecta la búsqueda */
+function guardarColppyItemId(sku: string, idItem: string): void {
+  Promise.resolve()
+    .then(() => prisma.product.updateMany({ where: { sku, colppyItemId: null }, data: { colppyItemId: Number(idItem) } }))
+    .catch((e) => logger.warn(`[Colppy] No se pudo guardar colppyItemId de ${sku}: ${e?.message}`));
 }
 
 const ITEM_LOOKUP_REINTENTOS = 3;

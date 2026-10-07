@@ -813,19 +813,42 @@ export async function getColppyItemId(
     },
   };
 
-  try {
-    const response = await callColppyAPI<any>(payload);
-
-    if (response.response?.data && response.response.data.length > 0) {
-      return String(response.response.data[0].idItem || '0');
+  // Colppy a veces no procesa el listado (estado 0 pero response.success=false,
+  // "No se pudo procesar la acción"). Antes eso se tomaba como "no existe" y la
+  // línea iba a la factura como ítem manual, sin artículo ni descarga de stock
+  // (A 0007-00000059, 4020 06). Ahora se reintenta y, si sigue fallando, se
+  // corta: la búsqueda va antes de pedir el CAE, así que no queda nada emitido.
+  let ultimoError = '';
+  for (let intento = 0; intento < ITEM_LOOKUP_REINTENTOS; intento++) {
+    if (intento > 0) await colppySleep(ITEM_LOOKUP_ESPERA_MS * intento);
+    try {
+      const response = await callColppyAPI<any>(payload);
+      if (response.response?.success === false) {
+        ultimoError = response.response?.message || 'Colppy no procesó la búsqueda';
+        logger.warn(`[Colppy] Búsqueda del item ${sku} no procesada (intento ${intento + 1}/${ITEM_LOOKUP_REINTENTOS}): ${ultimoError}`);
+        continue;
+      }
+      const item = response.response?.data?.[0];
+      if (!item?.idItem) return '0'; // No existe en Colppy: item manual
+      const idItem = String(item.idItem);
+      // Queda guardado: la próxima factura lo toma de la DB sin ir a Colppy
+      prisma.product
+        .updateMany({ where: { sku, colppyItemId: null }, data: { colppyItemId: Number(idItem) } })
+        .catch((e) => logger.warn(`[Colppy] No se pudo guardar colppyItemId de ${sku}: ${e.message}`));
+      return idItem;
+    } catch (error: any) {
+      if (error instanceof ColppySessionExpiredError || error instanceof ColppyRateLimitError) throw error;
+      ultimoError = error.message;
+      logger.warn(`[Colppy] Error buscando item ${sku} (intento ${intento + 1}/${ITEM_LOOKUP_REINTENTOS}): ${ultimoError}`);
     }
-
-    return '0'; // Si no existe en Colppy, item manual
-  } catch (error: any) {
-    logger.warn(`No se pudo buscar item ${sku} en Colppy:`, error.message);
-    return '0'; // En caso de error, retornar "0" para item manual
   }
+  throw new Error(
+    `Colppy no respondió la búsqueda del artículo ${sku} en el inventario (${ultimoError}). No se emitió la factura: probá de nuevo en unos minutos.`
+  );
 }
+
+const ITEM_LOOKUP_REINTENTOS = 3;
+const ITEM_LOOKUP_ESPERA_MS = 1500;
 
 // ============================================================================
 // REMITOS

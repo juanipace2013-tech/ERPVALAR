@@ -92,7 +92,11 @@ async function main() {
       if (m.idTablaAplicado === '8') comprasRef.add(m.idElementoAplicado)
     }
     const refs: any = { ventas: {}, compras: {} }
-    for (const id of ventas) refs.ventas[id] = (await call('FacturaVenta', 'leer_facturaventa', { idFactura: id }))?.infofactura ?? null
+    // Con los renglones: una venta que no sale del ERP (Factura E de RCEL) se importa desde Colppy.
+    for (const id of ventas) {
+      const r = await call('FacturaVenta', 'leer_facturaventa', { idFactura: id })
+      refs.ventas[id] = r?.infofactura ? { ...r.infofactura, itemsFactura: r.itemsFactura ?? [] } : null
+    }
     for (const id of comprasRef) refs.compras[id] = (await call('FacturaCompra', 'leer_facturacompra', { idFactura: id }))?.infofactura ?? null
     writeFileSync(join(out, `colppy-refs-${label}.json`), JSON.stringify(refs))
 

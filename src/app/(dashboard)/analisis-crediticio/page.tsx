@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { flushSync } from 'react-dom'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -48,6 +49,7 @@ import {
   History,
   Eye,
   RefreshCw,
+  Printer,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTipoCambioUsd } from '@/hooks/useTipoCambioUsd'
@@ -230,10 +232,10 @@ function semaforoBadgeColor(s: string): string {
 // ─── Sort icon ────────────────────────────────────────────────────────────────
 
 function SortIcon({ field, current, dir }: { field: SortField; current: SortField; dir: SortDir }) {
-  if (field !== current) return <ChevronsUpDown className="h-3 w-3 ml-1 text-gray-400 inline" />
+  if (field !== current) return <ChevronsUpDown className="h-3 w-3 ml-1 text-gray-400 inline print:hidden" />
   return dir === 'asc'
-    ? <ChevronUp className="h-3 w-3 ml-1 text-blue-600 inline" />
-    : <ChevronDown className="h-3 w-3 ml-1 text-blue-600 inline" />
+    ? <ChevronUp className="h-3 w-3 ml-1 text-blue-600 inline print:hidden" />
+    : <ChevronDown className="h-3 w-3 ml-1 text-blue-600 inline print:hidden" />
 }
 
 // ─── Página principal ─────────────────────────────────────────────────────────
@@ -262,6 +264,21 @@ export default function AnalisisCrediticioPage() {
   const [filtroFechaHasta, setFiltroFechaHasta] = useState('')
   const [sortField, setSortField] = useState<SortField>('fechaRechazo')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+
+  // Al imprimir los gráficos van con ancho fijo y sin animación: el
+  // ResponsiveContainer no se re-mide a tiempo para la hoja A4.
+  const [printing, setPrinting] = useState(false)
+
+  useEffect(() => {
+    const antes = () => flushSync(() => setPrinting(true))
+    const despues = () => setPrinting(false)
+    window.addEventListener('beforeprint', antes)
+    window.addEventListener('afterprint', despues)
+    return () => {
+      window.removeEventListener('beforeprint', antes)
+      window.removeEventListener('afterprint', despues)
+    }
+  }, [])
 
   const resetFiltros = useCallback(() => {
     setFiltroEntidad('todas')
@@ -517,6 +534,30 @@ export default function AnalisisCrediticioPage() {
     return { porCausal, totalCantidad, totalMonto, totalPagados, totalMontoPagado }
   }, [allCheques])
 
+  // ─── Imprimir informe para el cliente ─────────────────────────────────────────
+
+  const imprimir = () => {
+    if (!result) return
+    // El informe lleva todos los cheques, no solo los filtrados en pantalla
+    flushSync(() => {
+      resetFiltros()
+      setPrinting(true)
+    })
+    // El título del documento es el nombre sugerido del PDF
+    const tituloOriginal = document.title
+    document.title = `Informe BCRA - ${result.denominacion || 'Sin denominación'} - ${formatCuit(result.cuit)}`
+    window.print()
+    document.title = tituloOriginal
+  }
+
+  const fechaEmision = new Date().toLocaleString('es-AR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+
   // ─── Handler de ordenamiento ──────────────────────────────────────────────────
 
   const handleSort = (field: SortField) => {
@@ -531,9 +572,25 @@ export default function AnalisisCrediticioPage() {
   // ─── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <div className="container mx-auto px-6 py-8 space-y-6">
+    <div className="container mx-auto px-6 py-8 space-y-6 print:max-w-none print:p-0 print:space-y-4 print:[print-color-adjust:exact]">
+      <style>{`@media print { @page { size: A4; margin: 12mm; } }`}</style>
+
+      {/* Encabezado del informe impreso */}
+      {result && (
+        <div className="hidden print:flex items-end justify-between border-b-2 border-blue-600 pb-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-valarg.png" alt="Val Arg" className="h-10 w-auto" />
+          <div className="text-right">
+            <p className="text-lg font-bold text-gray-900">Informe de Situación Crediticia</p>
+            <p className="text-xs text-gray-600">
+              Central de Deudores del Sistema Financiero – BCRA · Emitido el {fechaEmision}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 print:hidden">
         <ShieldCheck className="h-8 w-8 text-blue-600" />
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Análisis Crediticio BCRA</h1>
@@ -544,7 +601,7 @@ export default function AnalisisCrediticioPage() {
       </div>
 
       {/* Buscador */}
-      <Card>
+      <Card className="print:hidden">
         <CardContent className="pt-6">
           <div className="flex gap-3 max-w-lg">
             <Input
@@ -726,23 +783,31 @@ export default function AnalisisCrediticioPage() {
       {/* Resultados */}
       {result && !loading && (
         <>
-          {/* Botón volver al historial */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setResult(null)
-              setCuitInput('')
-              router.replace('/analisis-crediticio', { scroll: false })
-              fetchHistory()
-            }}
-            className="text-gray-600"
-          >
-            <History className="h-4 w-4 mr-1" /> Volver al historial
-          </Button>
+          <div className="flex items-center justify-between print:hidden">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setResult(null)
+                setCuitInput('')
+                router.replace('/analisis-crediticio', { scroll: false })
+                fetchHistory()
+              }}
+              className="text-gray-600"
+            >
+              <History className="h-4 w-4 mr-1" /> Volver al historial
+            </Button>
+            <Button
+              size="sm"
+              onClick={imprimir}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              <Printer className="h-4 w-4 mr-1" /> Imprimir / PDF
+            </Button>
+          </div>
 
           {/* Card principal - Semáforo */}
-          <Card className={`border-2 ${semaforoColor(result.resumen.semaforo)}`}>
+          <Card className={`border-2 print:shadow-none print:break-inside-avoid ${semaforoColor(result.resumen.semaforo)}`}>
             <CardContent className="pt-6">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-4">
@@ -762,7 +827,7 @@ export default function AnalisisCrediticioPage() {
                     <p className="text-xl font-semibold text-gray-900 mt-0.5">
                       {result.denominacion || '—'}
                     </p>
-                    <p className="text-sm text-gray-500 font-mono">{result.cuit}</p>
+                    <p className="text-sm text-gray-500 font-mono">{formatCuit(result.cuit)}</p>
                   </div>
                 </div>
                 <div className="text-right space-y-1">
@@ -808,7 +873,7 @@ export default function AnalisisCrediticioPage() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="text-xs text-blue-600 hover:text-blue-800 h-7 px-2"
+                  className="text-xs text-blue-600 hover:text-blue-800 h-7 px-2 print:hidden"
                   onClick={() => buscar(result.cuit, true)}
                   disabled={loading}
                 >
@@ -821,7 +886,7 @@ export default function AnalisisCrediticioPage() {
 
           {/* Tabla deudas por entidad */}
           {entidades.length > 0 ? (
-            <Card>
+            <Card className="print:shadow-none print:break-inside-avoid">
               <CardHeader>
                 <CardTitle>Deudas por Entidad</CardTitle>
               </CardHeader>
@@ -882,7 +947,7 @@ export default function AnalisisCrediticioPage() {
               </CardContent>
             </Card>
           ) : (
-            <Card>
+            <Card className="print:shadow-none print:break-inside-avoid">
               <CardContent className="py-8 text-center text-gray-500">
                 <CheckCircle2 className="h-10 w-10 text-green-400 mx-auto mb-3" />
                 Sin deudas registradas en la Central de Deudores
@@ -892,13 +957,13 @@ export default function AnalisisCrediticioPage() {
 
           {/* Gráfico historial 24 meses - situación */}
           {chartData.length > 0 && (
-            <Card>
+            <Card className="print:shadow-none print:break-inside-avoid">
               <CardHeader>
                 <CardTitle>Evolución Histórica (últimos 24 meses)</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width={printing ? 640 : '100%'} height="100%">
                     <LineChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                       <ReferenceArea y1={0.5} y2={1.5} fill="#dcfce7" fillOpacity={0.6} />
@@ -929,6 +994,7 @@ export default function AnalisisCrediticioPage() {
                         dot={{ r: 3, fill: '#2563eb' }}
                         activeDot={{ r: 5 }}
                         connectNulls
+                        isAnimationActive={!printing}
                       />
                     </LineChart>
                   </ResponsiveContainer>
@@ -950,15 +1016,15 @@ export default function AnalisisCrediticioPage() {
 
           {/* ─── Gráfico deuda por entidad (stacked bar) ──────────────────────── */}
           {debtChartData.length > 0 && debtEntityNames.length > 0 && (
-            <Card className="bg-gray-900 border-gray-700">
+            <Card className="bg-gray-900 border-gray-700 print:bg-white print:border-gray-300 print:shadow-none print:break-inside-avoid">
               <CardHeader>
-                <CardTitle className="text-white">
+                <CardTitle className="text-white print:text-gray-900">
                   Evolución de Deuda por Entidad (últimos 24 meses)
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width={printing ? 640 : '100%'} height="100%">
                     <BarChart data={debtChartData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                       <XAxis
@@ -984,7 +1050,7 @@ export default function AnalisisCrediticioPage() {
                         labelFormatter={(label) => `Período: ${label}`}
                       />
                       <Legend
-                        wrapperStyle={{ color: '#d1d5db', fontSize: '11px' }}
+                        wrapperStyle={{ color: printing ? '#374151' : '#d1d5db', fontSize: '11px' }}
                       />
                       {debtEntityNames.map((name, idx) => (
                         <Bar
@@ -992,6 +1058,7 @@ export default function AnalisisCrediticioPage() {
                           dataKey={name}
                           stackId="debt"
                           fill={ENTITY_COLORS[idx % ENTITY_COLORS.length]}
+                          isAnimationActive={!printing}
                         />
                       ))}
                     </BarChart>
@@ -1002,7 +1069,7 @@ export default function AnalisisCrediticioPage() {
           )}
 
           {/* Cheques rechazados */}
-          <Card>
+          <Card className="print:shadow-none">
             <CardHeader>
               <CardTitle>Cheques Rechazados</CardTitle>
             </CardHeader>
@@ -1010,7 +1077,7 @@ export default function AnalisisCrediticioPage() {
               {allCheques.length > 0 ? (
                 <>
                   {/* ── Resumen por causal ───────────────────────────────── */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 print:grid-cols-3 print:break-inside-avoid">
                     {/* Tarjeta por cada causal */}
                     {Object.entries(resumenCheques.porCausal).map(([causal, datos]) => (
                       <div key={causal} className="border rounded-lg p-3 bg-red-50 border-red-200">
@@ -1065,7 +1132,7 @@ export default function AnalisisCrediticioPage() {
                   </div>
 
                   {/* ── Filtros ──────────────────────────────────────────── */}
-                  <div className="flex flex-wrap gap-3 items-end border rounded-lg p-3 bg-gray-50">
+                  <div className="flex flex-wrap gap-3 items-end border rounded-lg p-3 bg-gray-50 print:hidden">
                     {/* Entidad */}
                     <div className="min-w-[160px]">
                       <label className="text-xs text-gray-500 mb-1 block">Entidad</label>
@@ -1239,6 +1306,19 @@ export default function AnalisisCrediticioPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Pie del informe impreso */}
+          <div className="hidden print:block border-t pt-3 text-[10px] leading-snug text-gray-500">
+            <p>
+              Fuente: Central de Deudores del Sistema Financiero del Banco Central de la República
+              Argentina (BCRA), información de acceso público
+              {result.deudas?.results?.periodoInformacion &&
+                `, período ${formatPeriodo(result.deudas.results.periodoInformacion)}`}
+              . Los montos de deuda que el BCRA publica en miles de pesos se expresan aquí en pesos.
+              {tcUsd ? ` Equivalente en USD de referencia al tipo de cambio $${formatMonto(tcUsd)}.` : ''}
+            </p>
+            <p className="mt-1">Val Arg S.R.L. · Informe emitido el {fechaEmision}</p>
+          </div>
         </>
       )}
     </div>

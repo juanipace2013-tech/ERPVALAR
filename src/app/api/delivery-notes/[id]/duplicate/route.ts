@@ -122,6 +122,7 @@ export async function POST(
           bultos: original.bultos,
           notes: original.notes,
           internalNotes: original.internalNotes,
+          solicitaCertificadoCalidad: recipientChanged ? false : original.solicitaCertificadoCalidad,
           // Dirección de entrega: del nuevo destinatario si cambió, o del original
           deliveryAddress,
           deliveryCity,

@@ -274,6 +274,7 @@ export default function NuevoRemitoPage() {
   const [deliveryType, setDeliveryType] = useState('Retira en sucursal')
   const [deliveryTypeCustom, setDeliveryTypeCustom] = useState('')
   const [purchaseOrder, setPurchaseOrder] = useState('')
+  const [solicitaCertificado, setSolicitaCertificado] = useState(false)
   const [customerInvoiceNumber, setCustomerInvoiceNumber] = useState('')
   const [invoiceRef, setInvoiceRef] = useState('')
   const [bultos, setBultos] = useState('')
@@ -725,6 +726,7 @@ export default function NuevoRemitoPage() {
             ? undefined
             : (deliveryType === 'Otro' ? deliveryTypeCustom || 'Retira en sucursal' : deliveryType),
           purchaseOrder: purchaseOrder || undefined,
+          solicitaCertificadoCalidad: solicitaCertificado,
           customerInvoiceNumber: customerInvoiceNumber || undefined,
           bultos: bultos || undefined,
           notes: notes || undefined,
@@ -791,6 +793,7 @@ export default function NuevoRemitoPage() {
             ? undefined
             : (deliveryType === 'Otro' ? deliveryTypeCustom || 'Retira en sucursal' : deliveryType),
           purchaseOrder: purchaseOrder || undefined,
+          solicitaCertificadoCalidad: solicitaCertificado,
           customerInvoiceNumber: customerInvoiceNumber || undefined,
           invoiceRef: invoiceRef || undefined,
           bultos: bultos || undefined,
@@ -1030,6 +1033,17 @@ export default function NuevoRemitoPage() {
               )}
 
               <div className="grid grid-cols-2 gap-4">
+              <label htmlFor="solicitaCertificado" className="flex items-center gap-2 cursor-pointer col-span-2">
+                <Checkbox
+                  id="solicitaCertificado"
+                  checked={solicitaCertificado}
+                  onCheckedChange={(v) => setSolicitaCertificado(v === true)}
+                />
+                <span className="text-sm">
+                  Solicita certificado de calidad{' '}
+                  <span className="text-gray-500">(uso interno, no se imprime; se tilda solo si el cliente lo pide siempre)</span>
+                </span>
+              </label>
               <div className="space-y-2">
                 <Label htmlFor="purchaseOrder">OC del cliente</Label>
                 <Input
@@ -1292,6 +1306,17 @@ export default function NuevoRemitoPage() {
                   )}
                 </div>
               )}
+              <label htmlFor="d-solicitaCertificado" className="flex items-center gap-2 cursor-pointer col-span-2">
+                <Checkbox
+                  id="d-solicitaCertificado"
+                  checked={solicitaCertificado}
+                  onCheckedChange={(v) => setSolicitaCertificado(v === true)}
+                />
+                <span className="text-sm">
+                  Solicita certificado de calidad{' '}
+                  <span className="text-gray-500">(uso interno, no se imprime; se tilda solo si el cliente lo pide siempre)</span>
+                </span>
+              </label>
               <div className="space-y-2">
                 <Label htmlFor="d-purchaseOrder">
                   O.C. / Pedido Nº{' '}

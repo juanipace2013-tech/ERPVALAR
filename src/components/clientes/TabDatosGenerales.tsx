@@ -108,6 +108,7 @@ interface ColppyCustomer {
   defaultTransportSchedule: string
   exchangeRateType?: string | null
   fceObligado?: boolean
+  requiereCertificadoCalidad?: boolean
   /** Cliente del exterior: país e ID fiscal (RUT, RUC...) tal como se cargó */
   country?: string
   taxIdExterior?: string | null
@@ -211,6 +212,8 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
 
   // FCE MiPyME state
   const [fceObligado, setFceObligado] = useState(false)
+  const [requiereCertificado, setRequiereCertificado] = useState(false)
+  const [savingCertificado, setSavingCertificado] = useState(false)
   const [savingFce, setSavingFce] = useState(false)
 
   // TC type state
@@ -300,6 +303,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
         const tc = customerData.customer.exchangeRateType || null
         setExchangeRateType(tc)
         setFceObligado(!!customerData.customer.fceObligado)
+        setRequiereCertificado(!!customerData.customer.requiereCertificadoCalidad)
       }
       if (usersData?.users) {
         setUsers(usersData.users)
@@ -821,6 +825,45 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
 
             {/* Condición de pago — read only (viene de Colppy) */}
             <InfoRow icon={Clock} label="Condición de Pago" value={customer.paymentTerms} />
+
+            {/* Certificado de calidad: los remitos del cliente nacen con el aviso al depósito */}
+            <div className="flex items-start gap-3 py-2">
+              <CreditCard className="h-4 w-4 text-gray-400 mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <p className="text-xs text-gray-500">Certificado de calidad</p>
+                <label className="flex items-center gap-2 mt-1 cursor-pointer">
+                  <Checkbox
+                    checked={requiereCertificado}
+                    disabled={savingCertificado || !localCustomerId}
+                    onCheckedChange={async (checked) => {
+                      if (!localCustomerId) return
+                      const value = checked === true
+                      setSavingCertificado(true)
+                      try {
+                        const res = await fetch(`/api/clientes/${localCustomerId}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ requiereCertificadoCalidad: value }),
+                        })
+                        if (!res.ok) throw new Error()
+                        setRequiereCertificado(value)
+                        toast.success(value
+                          ? 'Los remitos nuevos de este cliente saldrán con el aviso de certificado de calidad'
+                          : 'El cliente ya no pide certificado en todos los remitos')
+                      } catch {
+                        toast.error('Error al guardar')
+                      } finally {
+                        setSavingCertificado(false)
+                      }
+                    }}
+                  />
+                  <span className="text-sm">
+                    Pide siempre certificado de calidad de las válvulas
+                  </span>
+                  {savingCertificado && <Loader2 className="h-3 w-3 animate-spin text-gray-400" />}
+                </label>
+              </div>
+            </div>
 
             {/* FCE MiPyME (no aplica a clientes del exterior) */}
             {!esClienteExterior(customer) && (

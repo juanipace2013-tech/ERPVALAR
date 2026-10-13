@@ -287,6 +287,7 @@ export async function PATCH(
       'notes',
       'taxCondition',
       'fceObligado',
+      'requiereCertificadoCalidad',
     ] as const
 
     const updateData: Record<string, any> = {}

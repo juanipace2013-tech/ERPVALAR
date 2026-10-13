@@ -423,6 +423,7 @@ export async function generateDeliveryNoteFromQuote(
     customerInvoiceNumber?: string;
     bultos?: string;
     notes?: string;
+    solicitaCertificadoCalidad?: boolean;
     /** Si se provee, el remito se genera con SOLO los items y cantidades de
      *  esta CotizacionFactura (factura parcial), no con la cotización completa.
      *  El DeliveryNote queda vinculado a esa CotizacionFactura. */
@@ -586,6 +587,7 @@ export async function generateDeliveryNoteFromQuote(
         transportAddress: data?.transportAddress || quote.customer.defaultTransportAddress || null,
         deliveryType: data?.deliveryType || 'Retira en sucursal',
         purchaseOrder: data?.purchaseOrder || null,
+        solicitaCertificadoCalidad: data?.solicitaCertificadoCalidad === true || quote.customer.requiereCertificadoCalidad,
         customerInvoiceNumber: data?.customerInvoiceNumber || null,
         bultos: data?.bultos || null,
         totalAmountARS: calculatedTotalAmountARS,

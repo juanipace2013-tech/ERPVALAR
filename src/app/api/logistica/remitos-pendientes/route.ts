@@ -27,6 +27,7 @@ export async function GET() {
         carrier: true,
         transportAddress: true,
         trackingNumber: true,
+        solicitaCertificadoCalidad: true,
         customer: {
           select: {
             id: true,

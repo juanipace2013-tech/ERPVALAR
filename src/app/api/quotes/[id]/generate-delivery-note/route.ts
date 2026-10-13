@@ -30,6 +30,7 @@ export async function POST(
       cotizacionFacturaId,
       items,
     } = body;
+    const solicitaCertificadoCalidad = body.solicitaCertificadoCalidad === true;
 
     // Selección manual de items del remito (opcional): validar la forma
     const selectedItems = Array.isArray(items)
@@ -53,6 +54,7 @@ export async function POST(
       customerInvoiceNumber,
       bultos,
       notes,
+      solicitaCertificadoCalidad,
       cotizacionFacturaId,
       items: selectedItems,
     });

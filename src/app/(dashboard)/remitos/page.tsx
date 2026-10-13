@@ -59,6 +59,7 @@ interface DeliveryNote {
   date: string
   deliveryDate: string | null
   status: string
+  solicitaCertificadoCalidad?: boolean
   customer: {
     id: string
     name: string
@@ -493,6 +494,11 @@ export default function RemitosPage() {
                     >
                       <TableCell className={`font-mono font-semibold ${dn.status === 'CANCELLED' ? 'line-through text-gray-500' : ''}`}>
                         {dn.deliveryNumber}
+                        {dn.solicitaCertificadoCalidad && (
+                          <Badge className="ml-2 bg-purple-100 text-purple-800 font-sans" title="Solicita certificado de calidad: pasar los lotes">
+                            Certificado
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell>{formatDate(dn.date)}</TableCell>
                       <TableCell>

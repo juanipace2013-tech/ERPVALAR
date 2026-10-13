@@ -83,6 +83,7 @@ interface DeliveryNote {
   receivedBy: string | null
   notes: string | null
   internalNotes: string | null
+  solicitaCertificadoCalidad?: boolean
   signedDocUrl: string | null
   signedDocName: string | null
   signedAt: string | null
@@ -629,6 +630,11 @@ export default function DeliveryNoteDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {deliveryNote.solicitaCertificadoCalidad && (
+            <Badge className="bg-purple-100 text-purple-800 print:hidden" title="Uso interno, no se imprime">
+              Solicita certificado de calidad: pasar los lotes
+            </Badge>
+          )}
           <Badge className={statusColors[deliveryNote.status]}>
             {statusLabels[deliveryNote.status]}
           </Badge>

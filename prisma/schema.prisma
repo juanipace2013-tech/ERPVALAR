@@ -236,6 +236,10 @@ model Customer {
   // facturas A por encima del monto mínimo vigente salen como FCE (201)
   fceObligado Boolean @default(false)
 
+  // El cliente exige siempre certificado de calidad de las válvulas (p. ej.
+  // grupo Techint): sus remitos nacen con solicitaCertificadoCalidad tildado.
+  requiereCertificadoCalidad Boolean @default(false)
+
   // Metadatos
   notes     String?  @db.Text
   createdAt DateTime @default(now())
@@ -1407,6 +1411,10 @@ model DeliveryNote {
   // Notas
   notes         String? @db.Text
   internalNotes String? @db.Text
+
+  // Uso interno, no se imprime: el depósito tiene que pasar los lotes para
+  // armar el certificado de calidad.
+  solicitaCertificadoCalidad Boolean @default(false)
 
   // CAI asignado (autoimpresión ARCA)
   caiNumber String? // Número de CAI con que se emitió

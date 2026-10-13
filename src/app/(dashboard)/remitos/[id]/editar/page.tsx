@@ -62,6 +62,7 @@ interface DeliveryNote {
   bultos: string | null
   notes: string | null
   internalNotes: string | null
+  solicitaCertificadoCalidad?: boolean
   deliveryAddress: string | null
   deliveryCity: string | null
   deliveryProvince: string | null
@@ -129,6 +130,7 @@ export default function EditarRemitoPage() {
   const [totalAmountARS, setTotalAmountARS] = useState('')
   const [notes, setNotes] = useState('')
   const [internalNotes, setInternalNotes] = useState('')
+  const [solicitaCertificado, setSolicitaCertificado] = useState(false)
   const [deliveryAddress, setDeliveryAddress] = useState('')
   const [deliveryCity, setDeliveryCity] = useState('')
   const [deliveryProvince, setDeliveryProvince] = useState('')
@@ -182,6 +184,7 @@ export default function EditarRemitoPage() {
       )
       setNotes(data.notes || '')
       setInternalNotes(data.internalNotes || '')
+      setSolicitaCertificado(!!data.solicitaCertificadoCalidad)
       setDeliveryAddress(data.deliveryAddress || '')
       setDeliveryCity(data.deliveryCity || '')
       setDeliveryProvince(data.deliveryProvince || '')
@@ -231,6 +234,7 @@ export default function EditarRemitoPage() {
           totalAmountARS: totalAmountARS ? Number(totalAmountARS) : null,
           notes: notes || null,
           internalNotes: internalNotes || null,
+          solicitaCertificadoCalidad: solicitaCertificado,
           deliveryAddress: deliveryAddress || null,
           deliveryCity: deliveryCity || null,
           deliveryProvince: deliveryProvince || null,
@@ -706,6 +710,18 @@ export default function EditarRemitoPage() {
                 placeholder="Notas internas (no se imprimen)..."
               />
             </div>
+            <label className="flex items-center gap-2 cursor-pointer md:col-span-2">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={solicitaCertificado}
+                onChange={(e) => setSolicitaCertificado(e.target.checked)}
+              />
+              <span className="text-sm">
+                Solicita certificado de calidad{' '}
+                <span className="text-gray-500">(uso interno, no se imprime: el depósito pasa los lotes)</span>
+              </span>
+            </label>
           </div>
         </CardContent>
       </Card>

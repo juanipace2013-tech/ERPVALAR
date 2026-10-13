@@ -147,6 +147,7 @@ export async function PUT(
             : undefined,
           notes: body.notes ?? undefined,
           internalNotes: body.internalNotes ?? undefined,
+          solicitaCertificadoCalidad: typeof body.solicitaCertificadoCalidad === 'boolean' ? body.solicitaCertificadoCalidad : undefined,
           deliveryAddress: body.deliveryAddress ?? undefined,
           deliveryCity: body.deliveryCity ?? undefined,
           deliveryProvince: body.deliveryProvince ?? undefined,

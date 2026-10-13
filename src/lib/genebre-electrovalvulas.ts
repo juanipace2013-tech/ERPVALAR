@@ -11,6 +11,9 @@
 //   (definido por Santiago 2026-08-12; el listado solo trae conector 5W y 8W).
 // - Solo bobinas estándar 4808/4814: las clase H 180ºC (4808F) se cargan a mano
 //   cuando hacen falta (definido por Santiago 2026-08-12).
+// - Vapor 4427 / 4428 ("CGE_ARG_2024-08-01_ELECTROVALVULAS_L12 VAPOR.pdf", Lista 16):
+//   bobina de 16W clase H → Art. 4816, solo 220/110/24 V AC y 24 V DC (no hay
+//   12 V DC). Lleva el mismo conector 4801 08 (definido por Santiago 2026-10-13).
 // Las válvulas "COMPLETA" (4030, 4040, 4210, 4330, etc.) ya incluyen bobina y
 // no llevan kit.
 
@@ -25,7 +28,7 @@ export interface BobinaKit {
 
 const CONECTOR_SKU = '4801 08'
 
-type FamiliaBobina = '4808' | '4814'
+type FamiliaBobina = '4808' | '4814' | '4816'
 
 // Sufijo de SKU de bobina por tensión (igual para 4808 y 4814)
 const SUFIJO_TENSION: Record<TensionBobina, string> = {
@@ -34,6 +37,20 @@ const SUFIJO_TENSION: Record<TensionBobina, string> = {
   '24V AC': '24',
   '12V DC': 'C12',
   '24V DC': 'C24',
+}
+
+// La bobina 4816 (16W) escribe la tensión de alterna completa y no viene en 12 V DC.
+const SUFIJO_TENSION_4816: Partial<Record<TensionBobina, string>> = {
+  '220V AC': '220',
+  '110V AC': '110',
+  '24V AC': '24',
+  '24V DC': 'C24',
+}
+
+// SKU de la bobina, o null si esa familia no existe en esa tensión
+function skuBobina(familia: FamiliaBobina, tension: TensionBobina): string | null {
+  const sufijo = familia === '4816' ? SUFIJO_TENSION_4816[tension] : SUFIJO_TENSION[tension]
+  return sufijo ? `${familia} ${sufijo}` : null
 }
 
 const TENSIONES_AC: TensionBobina[] = ['220V AC', '110V AC', '24V AC']
@@ -78,6 +95,9 @@ const SERIES: Record<string, ReglaSerie> = {
   '4631': { medidas: ['04', '05', '06'], ac: '4808', dc: '4814' },
   '4632': { medidas: ['04', '05', '06'], ac: '4808', dc: '4808' },
   '46303': { medidas: ['02'], ac: '4808', dc: '4808' },
+  // ── Vapor (normal cerrada, acción indirecta, bobina 16W) ──
+  '4427': { medidas: ['04', '05', '06', '07', '08', '09'], ac: '4816', dc: '4816' },
+  '4428': { medidas: ['04', '05', '06', '07', '08', '09'], ac: '4816', dc: '4816' },
   // ── Normal abierta ──
   '4021': { medidas: ['03', '04', '05', '06', '07', '08', '09'], ac: '4808', dc: '4808' },
   '4021V': { medidas: ['03', '04', '05', '06', '07', '08', '09'], ac: '4808', dc: '4808' },
@@ -90,19 +110,17 @@ const KITS_POR_SKU = new Map<string, BobinaKit[]>()
 for (const [serie, regla] of Object.entries(SERIES)) {
   for (const medida of regla.medidas) {
     const efectiva = regla.overrides?.[medida] ?? regla
-    const kits: BobinaKit[] = [
-      ...TENSIONES_AC.map((tension) => ({
-        tension,
-        bobinaSku: `${efectiva.ac} ${SUFIJO_TENSION[tension]}`,
-        conectorSku: CONECTOR_SKU,
-      })),
-      ...TENSIONES_DC.map((tension) => ({
-        tension,
-        bobinaSku: `${efectiva.dc} ${SUFIJO_TENSION[tension]}`,
-        conectorSku: CONECTOR_SKU,
-        ...(efectiva.notaDC ? { nota: efectiva.notaDC } : {}),
-      })),
-    ]
+    const kits: BobinaKit[] = []
+    for (const tension of TENSIONES_AC) {
+      const bobinaSku = skuBobina(efectiva.ac, tension)
+      if (bobinaSku) kits.push({ tension, bobinaSku, conectorSku: CONECTOR_SKU })
+    }
+    for (const tension of TENSIONES_DC) {
+      const bobinaSku = skuBobina(efectiva.dc, tension)
+      if (bobinaSku) {
+        kits.push({ tension, bobinaSku, conectorSku: CONECTOR_SKU, ...(efectiva.notaDC ? { nota: efectiva.notaDC } : {}) })
+      }
+    }
     KITS_POR_SKU.set(`${serie} ${medida}`, kits)
   }
 }

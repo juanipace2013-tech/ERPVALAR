@@ -1,5 +1,5 @@
 import { prisma } from './prisma'
-import { startOfMonth, endOfMonth, subMonths, addMonths, format, addDays, endOfDay } from 'date-fns'
+import { startOfMonth, endOfMonth, subMonths, addMonths, format, addDays, endOfDay, startOfYear, endOfYear } from 'date-fns'
 import { es } from 'date-fns/locale'
 import Holidays from 'date-holidays'
 
@@ -507,7 +507,7 @@ export interface VendedorRanking {
 }
 
 /**
- * Obtener ranking de vendedores del mes actual.
+ * Obtener ranking de vendedores del mes actual (o del año en curso con 'anio').
  *
  * Refactor 2026-05-28: las 3 queries antes serializadas (600 ms a 200ms/RTT)
  * ahora corren en paralelo (~200 ms). La lookup de users se cambió de
@@ -516,10 +516,11 @@ export interface VendedorRanking {
  * (~10 usuarios con role ADMIN/GERENTE/VENDEDOR), el costo extra es nulo.
  * CONTADOR queda excluido (no participa de ventas).
  */
-export async function getRankingVendedores(): Promise<VendedorRanking[]> {
+export async function getRankingVendedores(periodo: 'mes' | 'anio' = 'mes'): Promise<VendedorRanking[]> {
   const now = new Date()
-  const inicioMes = startOfMonth(now)
-  const finMes = endOfMonth(now)
+  // 'anio': mismo criterio que el mes, sobre el año calendario en curso.
+  const inicioMes = periodo === 'anio' ? startOfYear(now) : startOfMonth(now)
+  const finMes = periodo === 'anio' ? endOfYear(now) : endOfMonth(now)
 
   const [vendedores, aceptadasPorVendedor, comercialUsers] = await Promise.all([
     // Todas las cotizaciones del mes agrupadas por vendedor (excluir anuladas)

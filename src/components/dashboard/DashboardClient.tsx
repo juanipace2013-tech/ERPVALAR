@@ -45,6 +45,7 @@ interface DashboardClientProps {
     productosMasCotizados: any[]
     tipoCambio: any
     rankingVendedores: any[]
+    rankingVendedoresAnio: any[]
     sinSeguimiento: { cantidad: number }
   }
 }
@@ -59,6 +60,7 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
     productosMasCotizados,
     tipoCambio,
     rankingVendedores,
+    rankingVendedoresAnio,
     sinSeguimiento
   } = data
 
@@ -479,9 +481,12 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
         )
       })()}
 
-      {/* RANKING POR VENTAS CERRADAS */}
-      {rankingVendedores.length > 0 && (() => {
-        const rankingCerradas = [...rankingVendedores].sort((a, b) => {
+      {/* RANKING POR VENTAS CERRADAS: del mes y, debajo, del año en curso */}
+      {[
+        { titulo: 'Ranking por Ventas Cerradas', ranking: rankingVendedores },
+        { titulo: `Ranking por Ventas Cerradas del año ${new Date().getFullYear()}`, ranking: rankingVendedoresAnio },
+      ].map(({ titulo, ranking }) => ranking.length > 0 && (() => {
+        const rankingCerradas = [...ranking].sort((a, b) => {
           return (b.montoAceptadas || 0) - (a.montoAceptadas || 0)
         })
         const maxMontoCerrado = Math.max(...rankingCerradas.map(v => v.montoAceptadas || 0), 1)
@@ -491,12 +496,12 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
         const totalCotizacionesCerradas = rankingCerradas.reduce((acc, v) => acc + (v.cotizaciones || 0), 0)
         const conversionPorMonto = totalCotizadoUSD > 0 ? (totalCerrado / totalCotizadoUSD) * 100 : 0
         return (
-          <Card>
+          <Card key={titulo}>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
                 <CardTitle className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                   <Trophy className="h-5 w-5 text-green-600" />
-                  Ranking por Ventas Cerradas
+                  {titulo}
                 </CardTitle>
                 <div className="text-right">
                   <p className="text-xs text-muted-foreground">Total cerrado</p>
@@ -589,7 +594,7 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
             </CardContent>
           </Card>
         )
-      })()}
+      })())}
 
       {/* FILA 3: COTIZACIONES RECIENTES + POR VENCER */}
       <div className="grid gap-4 lg:grid-cols-2">

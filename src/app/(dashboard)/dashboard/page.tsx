@@ -32,6 +32,7 @@ async function DashboardContent() {
     productosMasCotizados,
     tipoCambio,
     rankingVendedores,
+    rankingVendedoresAnio,
     sinSeguimiento,
     newLeads
   ] = await Promise.all([
@@ -43,6 +44,7 @@ async function DashboardContent() {
     getProductosMasCotizados(),
     getTipoCambioActual(),
     getRankingVendedores(),
+    getRankingVendedores('anio'),
     getCotizacionesSinSeguimiento(),
     getNewLeadsData()
   ])
@@ -56,6 +58,7 @@ async function DashboardContent() {
     productosMasCotizados,
     tipoCambio,
     rankingVendedores,
+    rankingVendedoresAnio,
     sinSeguimiento
   }
 

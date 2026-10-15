@@ -52,6 +52,7 @@ import { WintersStock } from '@/components/productos/WintersStock'
 import { getConjuntosGenebre, type ConjuntoOpcion, type ConjuntoTipo } from '@/lib/genebre-conjuntos'
 import { getBobinasElectrovalvula, type BobinaKit, ELECTROVALVULAS_NAMUR, type NamurKit } from '@/lib/genebre-electrovalvulas'
 import { getPosicionadores, MONTAJE_POSICIONADOR, type PosicionadorOpcion } from '@/lib/genebre-posicionadores'
+import { getRepuestosOpcionales, type RepuestoOpcion } from '@/lib/genebre-repuestos-opcionales'
 
 interface Product {
   id: string
@@ -286,6 +287,9 @@ export default function QuoteDetailPage() {
 
   // Posicionador opcional para válvulas de control GENEBRE (ej: 5065A)
   const [posicionadorLoading, setPosicionadorLoading] = useState<string | null>(null)
+
+  // Repuesto opcional GENEBRE (kit vapor 2025/2034, asiento Viton 2109)
+  const [repuestoLoading, setRepuestoLoading] = useState<string | null>(null)
 
   // Product search
   const [productSearch, setProductSearch] = useState('')
@@ -1324,6 +1328,52 @@ export default function QuoteDetailPage() {
       toast.error('Error al buscar el posicionador')
     } finally {
       setPosicionadorLoading(null)
+    }
+  }
+
+  // Agrega (o saca, si ya estaba) el repuesto opcional de la válvula como
+  // adicional: kit vapor para esféricas 2025/2034, asiento Viton para mariposa 2109.
+  const handleToggleRepuesto = async (opcion: RepuestoOpcion) => {
+    if (itemFormData.additionals.some((a) => a.productSku === opcion.sku)) {
+      setItemFormData({
+        ...itemFormData,
+        additionals: itemFormData.additionals.filter((a) => a.productSku !== opcion.sku),
+      })
+      return
+    }
+    if (itemFormData.additionals.length >= 5) {
+      toast.error(`Ya hay 5 adicionales — eliminá uno para agregar ${opcion.label}.`)
+      return
+    }
+    setRepuestoLoading(opcion.sku)
+    try {
+      const params = new URLSearchParams({ search: opcion.sku, limit: '10', status: 'ACTIVE' })
+      const response = await fetch(`/api/productos?${params.toString()}`)
+      const data = response.ok ? await response.json() : { products: [] }
+      const product = ((data.products || []) as Product[]).find((p) => p.sku === opcion.sku)
+
+      if (!product) {
+        toast.warning(`Repuesto no encontrado en el catálogo: ${opcion.sku}`)
+        return
+      }
+
+      setItemFormData({
+        ...itemFormData,
+        additionals: [
+          ...itemFormData.additionals,
+          {
+            productId: product.id,
+            listPrice: product.listPriceUSD ? Number(product.listPriceUSD) : 0,
+            productName: product.name,
+            productSku: product.sku,
+          },
+        ],
+      })
+      toast.success(`${opcion.label} agregado (${product.sku})`)
+    } catch {
+      toast.error('Error al buscar el repuesto')
+    } finally {
+      setRepuestoLoading(null)
     }
   }
 
@@ -2393,6 +2443,46 @@ export default function QuoteDetailPage() {
                                       onClick={() => handleAddPosicionador(opcion, opciones)}
                                     >
                                       {posicionadorLoading === opcion.sku && (
+                                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                      )}
+                                      {elegido ? '✓ ' : ''}
+                                      {opcion.label}
+                                    </Button>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )
+                        })()}
+
+                        {/* Repuesto opcional GENEBRE: kit vapor (2025/2034) o asiento Viton (2109) */}
+                        {!itemFormData.isManual && selectedProduct && (() => {
+                          const opciones = getRepuestosOpcionales(selectedProduct.sku)
+                          if (opciones.length === 0) return null
+                          return (
+                            <div className="rounded-md border border-orange-200 bg-orange-50/60 p-2 space-y-1.5">
+                              <p className="text-xs font-semibold text-orange-800">
+                                🔧 Opcional GENEBRE
+                              </p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {opciones.map((opcion) => {
+                                  const elegido = itemFormData.additionals.some((a) => a.productSku === opcion.sku)
+                                  return (
+                                    <Button
+                                      key={opcion.sku}
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      disabled={repuestoLoading !== null}
+                                      title={elegido ? `${opcion.sku} — click para quitar` : opcion.sku}
+                                      className={
+                                        elegido
+                                          ? 'h-7 text-xs bg-orange-600 border-orange-600 text-white hover:bg-orange-600 hover:text-white'
+                                          : 'h-7 text-xs bg-white border-orange-300 text-orange-700 hover:bg-orange-100'
+                                      }
+                                      onClick={() => handleToggleRepuesto(opcion)}
+                                    >
+                                      {repuestoLoading === opcion.sku && (
                                         <Loader2 className="h-3 w-3 animate-spin mr-1" />
                                       )}
                                       {elegido ? '✓ ' : ''}

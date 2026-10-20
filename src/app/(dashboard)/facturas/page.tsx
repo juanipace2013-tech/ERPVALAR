@@ -66,6 +66,8 @@ const typeLabels: Record<string, string> = {
   E: 'Factura E',
 }
 
+const PAGE_SIZE = 100
+
 export default function FacturasPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
@@ -74,34 +76,42 @@ export default function FacturasPage() {
   const { data: session } = useSession()
   const puedeFacturar = puedeFacturaDirecta(session?.user?.role)
 
-  useEffect(() => {
-    fetchInvoices()
-  }, [])
+  const [total, setTotal] = useState(0)
+  const [loadingMore, setLoadingMore] = useState(false)
 
-  const fetchInvoices = async () => {
+  // La búsqueda va al servidor (con debounce) para cubrir todo el historial,
+  // no solo la página cargada.
+  useEffect(() => {
+    const t = setTimeout(() => fetchInvoices(search, 0), search ? 300 : 0)
+    return () => clearTimeout(t)
+  }, [search])
+
+  const fetchInvoices = async (q: string, offset: number) => {
     try {
-      setLoading(true)
-      const response = await fetch('/api/facturas?limit=50')
+      if (offset === 0) setLoading(true)
+      else setLoadingMore(true)
+      const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) })
+      if (q.trim()) params.set('search', q.trim())
+      const response = await fetch(`/api/facturas?${params}`)
 
       if (!response.ok) {
         throw new Error('Error al cargar facturas')
       }
 
       const data = await response.json()
-      setInvoices(data.invoices || [])
+      const page: Invoice[] = data.invoices || []
+      setInvoices(prev => (offset === 0 ? page : [...prev, ...page]))
+      setTotal(data.total ?? page.length)
     } catch (error) {
       console.error('Error:', error)
       toast.error('Error al cargar facturas')
     } finally {
       setLoading(false)
+      setLoadingMore(false)
     }
   }
 
-  const filteredInvoices = invoices.filter(invoice =>
-    invoice.invoiceNumber.toLowerCase().includes(search.toLowerCase()) ||
-    invoice.customer.name.toLowerCase().includes(search.toLowerCase()) ||
-    invoice.customer.cuit.includes(search)
-  )
+  const filteredInvoices = invoices
 
   const formatDate = (date: string) => {
     return new Date(date).toLocaleDateString('es-AR', {
@@ -161,7 +171,7 @@ export default function FacturasPage() {
               {formatCurrency(totalAmount, 'ARS')}
             </div>
             <p className="text-xs text-muted-foreground">
-              {invoices.length} facturas emitidas
+              {total} facturas emitidas
             </p>
           </CardContent>
         </Card>
@@ -327,6 +337,21 @@ export default function FacturasPage() {
                   ))}
                 </TableBody>
               </Table>
+              <div className="flex items-center justify-between border-t px-4 py-3 text-sm text-muted-foreground">
+                <span>
+                  Mostrando {invoices.length} de {total} facturas
+                </span>
+                {invoices.length < total && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={loadingMore}
+                    onClick={() => fetchInvoices(search, invoices.length)}
+                  >
+                    {loadingMore ? 'Cargando...' : 'Cargar más'}
+                  </Button>
+                )}
+              </div>
             </div>
           )}
         </CardContent>

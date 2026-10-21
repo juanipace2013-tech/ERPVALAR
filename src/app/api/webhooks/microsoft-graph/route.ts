@@ -110,11 +110,10 @@ export async function POST(req: NextRequest) {
           sentAt: message.receivedDateTime ? new Date(message.receivedDateTime) : null,
         })
 
-        // Disparo del agente IA — fire-and-forget. Si falla, queda la
-        // conversación sin análisis y Santiago puede pegarle al botón
-        // "Re-analizar" desde la UI. NO bloqueamos el 202 a Graph ni
-        // hacemos retry automático.
-        if (!ingestResult.deduped) {
+        // Agente IA (clasificar + borrador) — apagado desde 21/10/2026 a pedido
+        // de Santiago. Se reactiva con INBOX_AI_AUTO=1 en el .env. Los mails se
+        // siguen guardando en la Bandeja igual.
+        if (!ingestResult.deduped && process.env.INBOX_AI_AUTO === '1') {
           analyzeConversation(ingestResult.conversationId).catch((err) =>
             logger.error(
               `[Graph Webhook] AI analyze falló conversation=${ingestResult.conversationId}`,

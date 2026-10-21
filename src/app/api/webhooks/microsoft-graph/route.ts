@@ -110,11 +110,13 @@ export async function POST(req: NextRequest) {
           sentAt: message.receivedDateTime ? new Date(message.receivedDateTime) : null,
         })
 
-        // Agente IA (clasificar + borrador) — apagado desde 21/10/2026 a pedido
-        // de Santiago. Se reactiva con INBOX_AI_AUTO=1 en el .env. Los mails se
-        // siguen guardando en la Bandeja igual.
-        if (!ingestResult.deduped && process.env.INBOX_AI_AUTO === '1') {
-          analyzeConversation(ingestResult.conversationId).catch((err) =>
+        // Reglas sin IA (cerrar mails de Exiros). La IA (clasificar + borrador)
+        // está apagada desde 21/10/2026 a pedido de Santiago; se reactiva con
+        // INBOX_AI_AUTO=1 en el .env.
+        if (!ingestResult.deduped) {
+          analyzeConversation(ingestResult.conversationId, {
+            rulesOnly: process.env.INBOX_AI_AUTO !== '1',
+          }).catch((err) =>
             logger.error(
               `[Graph Webhook] AI analyze falló conversation=${ingestResult.conversationId}`,
               err

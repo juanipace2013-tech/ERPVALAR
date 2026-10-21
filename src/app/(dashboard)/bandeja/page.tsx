@@ -21,12 +21,8 @@ import {
   Search,
   User as UserIcon,
   AlertCircle,
-  Sparkles,
-  Copy,
-  Check,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Textarea } from '@/components/ui/textarea'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -83,35 +79,6 @@ interface ConversationDetail extends ConversationListItem {
   aiCostUsd: string | number | null // Prisma Decimal vuelve como string
   aiAnalyzedAt: string | null
   aiAnalyzedMessageId: string | null
-}
-
-// ─── Categorías → estilo de badge ──────────────────────────────────────────
-
-const CATEGORY_STYLE: Record<MessageCategory, { label: string; className: string }> = {
-  COTIZACION: {
-    label: 'Cotización',
-    className: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300',
-  },
-  CONSULTA: {
-    label: 'Consulta',
-    className: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300',
-  },
-  QUEJA: {
-    label: 'Queja',
-    className: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
-  },
-  PAGO: {
-    label: 'Pago',
-    className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
-  },
-  OTRO: {
-    label: 'Otro',
-    className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
-  },
-  EXIROS_LICITACION: {
-    label: 'Exiros/Licitaciones',
-    className: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300',
-  },
 }
 
 // ─── Utils ───────────────────────────────────────────────────────────────────
@@ -334,16 +301,6 @@ export default function BandejaPage() {
                           </p>
                         )}
                         <div className="mt-1 flex flex-wrap items-center gap-2">
-                          {c.aiCategory && (
-                            <span
-                              className={cn(
-                                'rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide',
-                                CATEGORY_STYLE[c.aiCategory].className
-                              )}
-                            >
-                              {CATEGORY_STYLE[c.aiCategory].label}
-                            </span>
-                          )}
                           {c.customer && (
                             <Badge variant="secondary" className="text-xs">
                               {c.customer.name}
@@ -380,17 +337,7 @@ export default function BandejaPage() {
               Cargando…
             </div>
           ) : (
-            <ConversationView
-              detail={detail}
-              onConversationUpdated={(updated) => {
-                setDetail(updated)
-                setConversations((prev) =>
-                  prev.map((c) =>
-                    c.id === updated.id ? { ...c, aiCategory: updated.aiCategory } : c
-                  )
-                )
-              }}
-            />
+            <ConversationView detail={detail} />
           )}
         </div>
       </div>
@@ -400,13 +347,7 @@ export default function BandejaPage() {
 
 // ─── Vista de conversación ──────────────────────────────────────────────────
 
-function ConversationView({
-  detail,
-  onConversationUpdated,
-}: {
-  detail: ConversationDetail
-  onConversationUpdated: (c: ConversationDetail) => void
-}) {
+function ConversationView({ detail }: { detail: ConversationDetail }) {
   const Icon = channelIcon(detail.channelAccount.type)
   return (
     <>
@@ -454,8 +395,6 @@ function ConversationView({
         </div>
       </header>
 
-      <AiPanel detail={detail} onConversationUpdated={onConversationUpdated} />
-
       <div className="flex-1 space-y-3 overflow-y-auto bg-gray-50 p-4 dark:bg-gray-950">
         {detail.messages.length === 0 && (
           <p className="text-center text-sm text-gray-500">Sin mensajes.</p>
@@ -466,164 +405,9 @@ function ConversationView({
       </div>
 
       <footer className="border-t border-gray-200 p-3 text-center text-xs text-gray-500 dark:border-gray-800">
-        Enviar desde la bandeja se habilita en una fase posterior. Por ahora copiá el borrador y
-        respondé desde Outlook / WhatsApp como siempre.
+        Para responder, usá Outlook / WhatsApp como siempre.
       </footer>
     </>
-  )
-}
-
-// ─── Panel IA: clasificación + borrador editable ───────────────────────────
-
-function AiPanel({
-  detail,
-  onConversationUpdated,
-}: {
-  detail: ConversationDetail
-  onConversationUpdated: (c: ConversationDetail) => void
-}) {
-  const [editedDraft, setEditedDraft] = useState(detail.aiDraftReply ?? '')
-  const [analyzing, setAnalyzing] = useState(false)
-  const [copied, setCopied] = useState(false)
-
-  // Reset el textarea cuando llega una conversación distinta o un análisis nuevo
-  useEffect(() => {
-    setEditedDraft(detail.aiDraftReply ?? '')
-    setCopied(false)
-  }, [detail.id, detail.aiDraftReply])
-
-  const runAnalysis = useCallback(
-    async (force: boolean) => {
-      setAnalyzing(true)
-      try {
-        const res = await fetch(`/api/inbox/conversations/${detail.id}/analyze`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(force ? { force: true } : {}),
-        })
-        if (res.status === 409) {
-          // Re-intento automático con force=true si fue manual
-          if (force) throw new Error('Conflicto al re-analizar')
-          await runAnalysis(true)
-          return
-        }
-        if (!res.ok) {
-          const errBody = await res.json().catch(() => ({}))
-          throw new Error(errBody.error || `HTTP ${res.status}`)
-        }
-        const data = await res.json()
-        onConversationUpdated(data.conversation)
-        toast.success('Análisis actualizado')
-      } catch (e) {
-        toast.error('No se pudo analizar', {
-          description: e instanceof Error ? e.message : undefined,
-        })
-      } finally {
-        setAnalyzing(false)
-      }
-    },
-    [detail.id, onConversationUpdated]
-  )
-
-  const handleCopy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(editedDraft)
-      setCopied(true)
-      toast.success('Borrador copiado al portapapeles')
-      setTimeout(() => setCopied(false), 1500)
-    } catch {
-      toast.error('No se pudo copiar')
-    }
-  }, [editedDraft])
-
-  const hasAnalysis = !!detail.aiCategory
-  const categoryStyle = detail.aiCategory ? CATEGORY_STYLE[detail.aiCategory] : null
-  const cost =
-    detail.aiCostUsd !== null && detail.aiCostUsd !== undefined ? Number(detail.aiCostUsd) : null
-
-  return (
-    <section className="border-b border-gray-200 bg-gradient-to-r from-blue-50/40 to-purple-50/40 p-3 dark:border-gray-800 dark:from-blue-950/20 dark:to-purple-950/20">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <Sparkles className="h-4 w-4 text-blue-600" />
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Asistente IA</span>
-          {categoryStyle && detail.aiCategory && (
-            <span
-              className={cn(
-                'rounded px-2 py-0.5 text-xs font-medium uppercase tracking-wide',
-                categoryStyle.className
-              )}
-            >
-              {categoryStyle.label}
-              {typeof detail.aiCategoryConfidence === 'number' && (
-                <span className="ml-1 opacity-70">
-                  {Math.round(detail.aiCategoryConfidence * 100)}%
-                </span>
-              )}
-            </span>
-          )}
-          {detail.aiAnalyzedAt && (
-            <span className="text-xs text-gray-500">
-              · Analizado {formatRelative(detail.aiAnalyzedAt)}
-            </span>
-          )}
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => runAnalysis(false)}
-          disabled={analyzing}
-        >
-          <RefreshCw className={cn('mr-2 h-3.5 w-3.5', analyzing && 'animate-spin')} />
-          {hasAnalysis ? 'Re-analizar' : 'Analizar con IA'}
-        </Button>
-      </div>
-
-      {detail.aiSummary && (
-        <p className="mb-2 text-xs italic text-gray-600 dark:text-gray-400">
-          Resumen: {detail.aiSummary}
-        </p>
-      )}
-
-      {hasAnalysis && (
-        <>
-          <Textarea
-            value={editedDraft}
-            onChange={(e) => setEditedDraft(e.target.value)}
-            placeholder="Borrador de respuesta…"
-            rows={6}
-            className="bg-white dark:bg-gray-900"
-          />
-          <div className="mt-2 flex items-center justify-between gap-2 text-xs text-gray-500">
-            <span>
-              {detail.aiDrafterModel?.includes('sonnet') ? 'Sonnet' : detail.aiDrafterModel} ·{' '}
-              {detail.aiClassifierModel?.includes('haiku') ? 'Haiku' : detail.aiClassifierModel}
-              {cost !== null && <span> · ${cost.toFixed(4)}</span>}
-            </span>
-            <Button size="sm" variant="default" onClick={handleCopy} disabled={!editedDraft}>
-              {copied ? (
-                <>
-                  <Check className="mr-1.5 h-3.5 w-3.5" />
-                  Copiado
-                </>
-              ) : (
-                <>
-                  <Copy className="mr-1.5 h-3.5 w-3.5" />
-                  Copiar
-                </>
-              )}
-            </Button>
-          </div>
-        </>
-      )}
-
-      {!hasAnalysis && !analyzing && (
-        <p className="text-xs text-gray-500">
-          Esta conversación todavía no fue analizada. Hacé clic en &quot;Analizar con IA&quot; para
-          obtener categoría y borrador de respuesta.
-        </p>
-      )}
-    </section>
   )
 }
 

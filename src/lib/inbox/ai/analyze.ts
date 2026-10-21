@@ -30,10 +30,15 @@ export type AnalyzeOutcome =
   | { status: 'ANALYZED'; conversationId: string }
   | { status: 'ALREADY_ANALYZED'; conversationId: string; lastAnalyzedMessageId: string }
   | { status: 'NO_INBOUND'; conversationId: string }
+  | { status: 'SKIPPED_AI'; conversationId: string }
 
+/**
+ * `rulesOnly`: aplica solo las reglas sin IA (Exiros) y no llama a Claude.
+ * Es el modo del webhook desde que se apagó la IA de la Bandeja (21/10/2026).
+ */
 export async function analyzeConversation(
   conversationId: string,
-  opts: { force?: boolean } = {}
+  opts: { force?: boolean; rulesOnly?: boolean } = {}
 ): Promise<AnalyzeOutcome> {
   const conversation = await prisma.conversation.findUnique({
     where: { id: conversationId },
@@ -89,6 +94,8 @@ export async function analyzeConversation(
     logger.info(`[ai/analyze] Conversación ${conversationId} clasificada por regla: EXIROS_LICITACION`)
     return { status: 'ANALYZED', conversationId }
   }
+
+  if (opts.rulesOnly) return { status: 'SKIPPED_AI', conversationId }
 
   const channelType = conversation.channelAccount.type === ChannelType.WHATSAPP ? 'WHATSAPP' : 'EMAIL'
 

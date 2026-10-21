@@ -98,9 +98,15 @@ export function cap(s: string): string {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s
 }
 
-/** "11983-11987" o "11983, 11984; 11985" -> lista de números */
+/**
+ * "11983-11987" (rango), "11983, 11984; 11985" o "11983-11984-11985" (lista) -> lista de números.
+ * Un guion entre 2 números es rango; 3 o más números unidos por guiones son una lista.
+ */
 export function parseValvulas(input: string): string[] {
-  const parts = input.split(/[,;\s]+/).filter(Boolean)
+  const parts = input
+    .split(/[,;\s]+/)
+    .filter(Boolean)
+    .flatMap((p) => (/^\d+(-\d+){2,}$/.test(p) ? p.split('-') : [p]))
   const result: string[] = []
   for (const part of parts) {
     const range = part.match(/^(\d+)-(\d+)$/)

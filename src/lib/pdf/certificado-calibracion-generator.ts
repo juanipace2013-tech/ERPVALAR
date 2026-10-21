@@ -99,6 +99,13 @@ function kvTable(
     } else {
       doc.setTextColor(...TXT)
     }
+    // Si el valor no entra en la celda, achicar la letra (mínimo 6pt) en vez de salirse de la hoja
+    const maxW = width - labelWidth - 2
+    let size = 9.6
+    while (size > 6 && doc.getTextWidth(value) > maxW) {
+      size -= 0.2
+      doc.setFontSize(size)
+    }
     doc.text(value, x + labelWidth, y + rowH / 2 + 1.4)
     y += rowH
   })

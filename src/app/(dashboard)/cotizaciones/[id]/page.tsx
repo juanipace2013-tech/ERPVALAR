@@ -53,6 +53,7 @@ import { getConjuntosGenebre, type ConjuntoOpcion, type ConjuntoTipo } from '@/l
 import { getBobinasElectrovalvula, type BobinaKit, ELECTROVALVULAS_NAMUR, type NamurKit } from '@/lib/genebre-electrovalvulas'
 import { getPosicionadores, MONTAJE_POSICIONADOR, type PosicionadorOpcion } from '@/lib/genebre-posicionadores'
 import { getRepuestosOpcionales, type RepuestoOpcion } from '@/lib/genebre-repuestos-opcionales'
+import { candidateCodes, findExactSkuMatch } from '@/lib/quotes/manual-sku-match'
 
 interface Product {
   id: string
@@ -320,6 +321,62 @@ export default function QuoteDetailPage() {
     quoteItemSkus,
     quoteItemSkus.length > 0
   )
+
+  // Ítem manual cuyo código existe en el catálogo: se avisa porque, sin vincular
+  // el producto, el tablero de facturación no ve su stock.
+  const [manualCatalogMatch, setManualCatalogMatch] = useState<Product | null>(null)
+  useEffect(() => {
+    if (!showItemDialog || !itemFormData.isManual) {
+      setManualCatalogMatch(null)
+      return
+    }
+    const candidates = candidateCodes(itemFormData.manualSku, itemFormData.description).slice(0, 3)
+    if (candidates.length === 0) {
+      setManualCatalogMatch(null)
+      return
+    }
+    const controller = new AbortController()
+    const timer = setTimeout(async () => {
+      try {
+        const results = await Promise.all(
+          candidates.map(async (code) => {
+            const params = new URLSearchParams({ search: code, limit: '10', status: 'ACTIVE' })
+            const res = await fetch(`/api/productos?${params.toString()}`, { signal: controller.signal })
+            if (!res.ok) return [] as Product[]
+            const data = await res.json()
+            return (data.products || []) as Product[]
+          })
+        )
+        if (!controller.signal.aborted) setManualCatalogMatch(findExactSkuMatch(candidates, results.flat()))
+      } catch {
+        // abortado o error de red: no mostrar aviso
+      }
+    }, 500)
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [showItemDialog, itemFormData.isManual, itemFormData.manualSku, itemFormData.description])
+
+  const handleUseCatalogProduct = (product: Product) => {
+    let autoDiscount = ''
+    if (product.brand) {
+      const discount = brandDiscounts.find((d) => d.brand === product.brand)
+      if (discount) autoDiscount = String(Number(discount.discountPercent))
+    }
+    setSelectedProduct(product)
+    setItemFormData({
+      ...itemFormData,
+      isManual: false,
+      productId: product.id,
+      description: itemFormData.description.trim() || product.name,
+      brandDiscountOverride: autoDiscount,
+      manualSku: '',
+      manualBrand: '',
+      manualUnitPrice: '',
+    })
+    setManualCatalogMatch(null)
+  }
 
   // Price preview
   const [pricePreview, setPricePreview] = useState({
@@ -1967,6 +2024,27 @@ export default function QuoteDetailPage() {
                           </span>
                         )}
                       </p>
+                      {manualCatalogMatch && (
+                        <div className="flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                            <span>
+                              El código <strong>{manualCatalogMatch.sku}</strong> existe en el catálogo ({manualCatalogMatch.name}).
+                              Si lo cargás como manual no queda vinculado y el tablero de facturación no ve su stock.
+                              Al usar el del catálogo, el precio se calcula con la lista del catálogo.
+                            </span>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="shrink-0 border-amber-400 bg-white"
+                            onClick={() => handleUseCatalogProduct(manualCatalogMatch)}
+                          >
+                            Usar el del catálogo
+                          </Button>
+                        </div>
+                      )}
                       <div className="grid gap-4 md:grid-cols-2">
                         <div className="space-y-1">
                           <Label>Descripción <span className="text-red-500">*</span></Label>

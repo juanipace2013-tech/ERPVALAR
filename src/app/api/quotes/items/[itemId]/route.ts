@@ -63,7 +63,8 @@ export async function PATCH(
 
     const quoteId = existingItem.quoteId
 
-    const isManualItem = !existingItem.productId || body.isManual
+    // Un ítem manual al que se le elige un producto del catálogo pasa a ser de catálogo
+    const isManualItem = body.isManual || (!existingItem.productId && !body.productId)
 
     let updatedItem
 
@@ -172,6 +173,7 @@ export async function PATCH(
         where: { id: itemId },
         data: {
           ...(resolvedProductId ? { product: { connect: { id: resolvedProductId } } } : {}),
+          ...(!existingItem.productId ? { manualSku: null, manualBrand: null } : {}),
           description: body.description !== undefined ? body.description : existingItem.description,
           quantity,
           listPrice,

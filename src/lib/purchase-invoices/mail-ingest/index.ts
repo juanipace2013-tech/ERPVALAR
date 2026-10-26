@@ -26,7 +26,7 @@ import { REVIEW_REASONS, type ReviewReason } from '@/lib/review-reasons'
 import { extractPurchaseInvoice, OCR_MAX_FILE_BYTES } from '../ocr-extract'
 import { buildCreateInputFromOcr } from '../from-ocr'
 import { createPurchaseInvoice, buildInvoiceNumber, isDuplicateInvoiceError } from '../create'
-import { generateSkuVariants, normalizeSkuForMatch } from '../sku-variants'
+import { generateSkuVariants, normalizeSkuForMatch, stripTrailingSegment } from '../sku-variants'
 import { findTrustedSender, invoiceNumberFromFilename, type TrustedInvoiceSender } from './senders'
 
 const MAX_ATTEMPTS = 3
@@ -435,6 +435,32 @@ async function linkItemsBySku(
 
   for (const item of pending) {
     const ids = byNorm.get(normalizeSkuForMatch(item.supplierProductCode!))
+    if (ids?.length === 1) item.productId = ids[0]
+  }
+
+  // Último recurso: código base sin el sufijo de variante ("4427 08 99" →
+  // "4427 08"), dentro de la marca y solo si hay un único candidato.
+  const stillPending = pending.filter((i) => !i.productId)
+  const baseNormByItem = new Map(
+    stillPending.map((i) => {
+      const base = stripTrailingSegment(i.supplierProductCode!)
+      return [i, base ? normalizeSkuForMatch(base) : ''] as const
+    })
+  )
+  const baseNorms = [...new Set([...baseNormByItem.values()].filter(Boolean))]
+  if (baseNorms.length === 0) return
+
+  const baseCandidates: Array<{ id: string; norm: string }> = await prisma.$queryRaw`
+    SELECT id, regexp_replace(lower(sku), '[^a-z0-9]', '', 'g') AS norm
+    FROM products
+    WHERE status = 'ACTIVE' AND brand ILIKE ${brand}
+      AND regexp_replace(lower(sku), '[^a-z0-9]', '', 'g') IN (${Prisma.join(baseNorms)})`
+
+  const byBaseNorm = new Map<string, string[]>()
+  for (const c of baseCandidates) byBaseNorm.set(c.norm, [...(byBaseNorm.get(c.norm) ?? []), c.id])
+
+  for (const [item, norm] of baseNormByItem) {
+    const ids = norm ? byBaseNorm.get(norm) : undefined
     if (ids?.length === 1) item.productId = ids[0]
   }
 }

@@ -12,6 +12,7 @@ import { logger } from '@/lib/logger'
 import { resolveJurisdiccionIIBB, COLPPY_JURISDICCIONES } from '@/lib/jurisdicciones-iibb'
 import { REVIEW_REASONS, isReviewReason, type ReviewReason } from '@/lib/review-reasons'
 import { findLearnedLinks } from './learned-links'
+import { stripTrailingSegment } from './sku-variants'
 
 export interface CreatePurchaseInvoiceItemInput {
   productId?: string | null
@@ -270,11 +271,41 @@ export async function createPurchaseInvoice(
     // Códigos que alguien ya vinculó a mano en facturas anteriores del mismo proveedor
     const learned = await findLearnedLinks(purchaseInvoice.supplierId, allCodes)
 
+    // Último recurso: código base sin el sufijo de variante ("4427 08 99" → "4427 08"),
+    // solo para los que no matchearon y solo si el SKU base es único.
+    const baseCodeOf = (code: string) => {
+      const altCode = code.startsWith('001') && code.length > 3 ? code.substring(3).trim() : code
+      return stripTrailingSegment(altCode)
+    }
+    const baseCodes = [
+      ...new Set(
+        unlinkItems
+          .map((i) => i.supplierProductCode!.trim())
+          .filter((c) => !skuMap.has(c) && !learned.has(c))
+          .map(baseCodeOf)
+          .filter((c): c is string => !!c)
+      ),
+    ]
+    const baseMatches = baseCodes.length
+      ? await prisma.product.findMany({
+          where: { sku: { in: baseCodes }, status: 'ACTIVE' },
+          select: { id: true, sku: true },
+        })
+      : []
+    const baseCount = new Map<string, number>()
+    for (const p of baseMatches) baseCount.set(p.sku, (baseCount.get(p.sku) ?? 0) + 1)
+    const baseMap = new Map(baseMatches.filter((p) => baseCount.get(p.sku) === 1).map((p) => [p.sku, p.id]))
+
     const updates: Promise<unknown>[] = []
     for (const item of unlinkItems) {
       const code = item.supplierProductCode!.trim()
       const altCode = code.startsWith('001') && code.length > 3 ? code.substring(3).trim() : null
-      const productId = skuMap.get(code) || (altCode ? skuMap.get(altCode) : null) || learned.get(code)
+      const baseCode = baseCodeOf(code)
+      const productId =
+        skuMap.get(code) ||
+        (altCode ? skuMap.get(altCode) : null) ||
+        learned.get(code) ||
+        (baseCode ? baseMap.get(baseCode) : null)
       if (productId) {
         updates.push(prisma.purchaseInvoiceItem.update({ where: { id: item.id }, data: { productId } }))
         autoLinkedCount++

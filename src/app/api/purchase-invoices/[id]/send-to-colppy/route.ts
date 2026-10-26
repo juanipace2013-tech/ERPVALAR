@@ -257,7 +257,10 @@ export async function POST(
 
       // Buscar idItem en inventario de Colppy por código (con caché)
       const idItemCache: Record<string, string> = {}
-      const getIdItem = async (supplierCode: string): Promise<string> => {
+      // strict: el error de búsqueda corta el envío en vez de mandar la línea
+      // como ítem manual (sin artículo ni descarga de stock). Se usa para items
+      // vinculados a un producto, donde esperamos sí o sí el artículo.
+      const getIdItem = async (supplierCode: string, strict = false): Promise<string> => {
         const colppyCode = cleanSupplierCode(supplierCode)
         if (!colppyCode) return ''
         if (idItemCache[colppyCode] !== undefined) return idItemCache[colppyCode]
@@ -267,6 +270,7 @@ export async function POST(
           logger.info(`[Colppy FC] Item "${colppyCode}" → idItem=${idItemCache[colppyCode] || '(no encontrado)'}`)
           return idItemCache[colppyCode]
         } catch (err: any) {
+          if (strict) throw err
           logger.warn(`[Colppy FC] Error buscando item "${colppyCode}":`, err.message)
           idItemCache[colppyCode] = ''
           return ''
@@ -285,14 +289,25 @@ export async function POST(
         // separadores ("5803-51" vs "5803 51") y no matchear el inventario.
         const linkedSku = (item.product?.sku || '').trim()
         const supplierCode = cleanSupplierCode(item.supplierProductCode || '')
-        let colppyCode = linkedSku || supplierCode
-        let rawIdItem = await getIdItem(colppyCode)
+        // Si el producto ya tiene guardado su id de Colppy, no hace falta buscarlo.
+        const knownIdItem = item.product?.colppyItemId ? String(item.product.colppyItemId) : ''
+        let colppyCode = knownIdItem ? (item.product?.colppyCode || '').trim() || linkedSku : linkedSku || supplierCode
+        let rawIdItem = knownIdItem || (await getIdItem(colppyCode, !!linkedSku))
         if (!rawIdItem && linkedSku && supplierCode && supplierCode !== linkedSku) {
           const fallbackIdItem = await getIdItem(supplierCode)
           if (fallbackIdItem) {
             colppyCode = supplierCode
             rawIdItem = fallbackIdItem
           }
+        }
+        // Vinculado a un producto pero sin artículo en Colppy: antes iba como
+        // línea manual sin código ni stock (FC A 00031-00307619, 4427 08). Se
+        // corta acá, antes de crear nada en Colppy.
+        if (linkedSku && !rawIdItem) {
+          throw new Error(
+            `El ítem "${item.description}" está vinculado al artículo ${linkedSku}, pero ese código no existe en el inventario de Colppy. ` +
+              `Dalo de alta en Colppy (o vinculalo a otro artículo) y volvé a enviar. No se cargó nada en Colppy.`
+          )
         }
 
         // Si hay descuento y precio lista, enviar precio lista + descuento

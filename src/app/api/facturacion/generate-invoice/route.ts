@@ -377,8 +377,11 @@ export async function POST(request: NextRequest) {
       lineItems.reduce((sum, l) => sum + splitItemLineTotal(l.split), 0) * 100
     ) / 100
     const tcUsado = tcFactura ?? (quote.exchangeRate ? Number(quote.exchangeRate) : 1)
-    const montoUSD = quote.currency === 'USD' ? subtotal : Math.round((subtotal / (tcUsado || 1)) * 100) / 100
-    const montoARS = quote.currency === 'USD' ? Math.round(subtotal * tcUsado * 100) / 100 : subtotal
+    // Montos para comisiones: neto facturado, con la bonificación global de
+    // cabecera descontada (Colppy/ARCA la aplican como % por línea).
+    const subtotalNeto = Math.round(subtotal * (1 - Number(quote.bonification ?? 0) / 100) * 100) / 100
+    const montoUSD = quote.currency === 'USD' ? subtotalNeto : Math.round((subtotalNeto / (tcUsado || 1)) * 100) / 100
+    const montoARS = quote.currency === 'USD' ? Math.round(subtotalNeto * tcUsado * 100) / 100 : subtotalNeto
 
     // TODO: deduplicar este flujo con el endpoint hermano.
     // Ver src/app/api/quotes/[id]/send-to-colppy/route.ts (transacción equivalente).

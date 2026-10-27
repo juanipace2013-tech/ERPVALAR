@@ -409,8 +409,11 @@ export async function POST(
       : 0;
     // TC realmente usado en la factura (el enviado a Colppy/ARCA), no el de la cotizacion
     const tcUsado = (quote.currency === 'USD' && currentExchangeRate) ? currentExchangeRate : (quote.exchangeRate ? Number(quote.exchangeRate) : 1);
-    const montoUSDPre = quote.currency === 'USD' ? subtotalPre : Math.round((subtotalPre / (tcUsado || 1)) * 100) / 100;
-    const montoARSPre = quote.currency === 'USD' ? Math.round(subtotalPre * tcUsado * 100) / 100 : subtotalPre;
+    // Montos para comisiones: neto facturado, con la bonificación global de
+    // cabecera descontada (Colppy/ARCA la aplican como % por línea).
+    const subtotalNetoPre = Math.round(subtotalPre * (1 - Number(quote.bonification ?? 0) / 100) * 100) / 100;
+    const montoUSDPre = quote.currency === 'USD' ? subtotalNetoPre : Math.round((subtotalNetoPre / (tcUsado || 1)) * 100) / 100;
+    const montoARSPre = quote.currency === 'USD' ? Math.round(subtotalNetoPre * tcUsado * 100) / 100 : subtotalNetoPre;
 
     try {
     await prisma.$transaction(async (tx) => {

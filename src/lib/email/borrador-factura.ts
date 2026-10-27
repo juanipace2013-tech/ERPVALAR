@@ -279,13 +279,30 @@ export async function armarBorradorFactura(
   invoiceId: string,
   opts: { dryRun?: boolean; antesDe?: Date } = {}
 ): Promise<ResultadoBorrador> {
-  const buzon = buzonBorradores()
   try {
     const d = await cargarDatos(invoiceId)
     if (!d) return { ok: false, omitido: true, error: 'La factura no fue emitida por el ERP' }
     if (d.pdf.clase !== 'FACTURA') return { ok: false, omitido: true, error: 'Solo facturas (no NC/ND)' }
+    return await crearBorrador(d, opts)
+  } catch (e) {
+    const msg = (e as Error).message
+    logger.error(`[BorradorFactura] No se pudo armar el borrador de ${invoiceId}: ${msg}`)
+    return { ok: false, error: msg }
+  }
+}
 
-    const asuntoBase = asuntoFactura(d.pdf)
+/**
+ * Arma el borrador con los datos ya cargados. `pdfAdjunto` permite pasar el
+ * PDF hecho (pruebas); si no, se genera desde d.pdf. `prefijoAsunto` marca
+ * borradores de prueba.
+ */
+export async function crearBorrador(
+  d: DatosBorrador,
+  opts: { dryRun?: boolean; antesDe?: Date; pdfAdjunto?: { name: string; contentBytes: string }; prefijoAsunto?: string } = {}
+): Promise<ResultadoBorrador> {
+  const buzon = buzonBorradores()
+  {
+    const asuntoBase = (opts.prefijoAsunto ?? '') + asuntoFactura(d.pdf)
     // No duplicar si ya hay un borrador de esta factura
     const previos = await graph<{ value: Array<{ id: string; subject: string; webLink: string }> }>(
       `/users/${buzon}/mailFolders/drafts/messages?$top=50&$select=id,subject,webLink&$filter=${encodeURIComponent(
@@ -299,10 +316,10 @@ export async function armarBorradorFactura(
 
     const hilo = await buscarHilo(buzon, d, opts.antesDe)
     const { para, cc } = destinatarios(hilo, d.emailsCliente, buzon)
-    const asunto = asuntoFactura(d.pdf, hilo?.subject)
+    const asunto = (opts.prefijoAsunto ?? '') + asuntoFactura(d.pdf, hilo?.subject)
     const html = cuerpoHtml(d)
     const fijos = await adjuntosFijos(buzon)
-    const pdfNombre = facturaPdfFilename(d.pdf)
+    const pdfNombre = opts.pdfAdjunto?.name ?? facturaPdfFilename(d.pdf)
     const resumen = {
       asunto,
       para: para.map(dir),
@@ -324,11 +341,8 @@ export async function armarBorradorFactura(
           body: JSON.stringify({ ...message, body: { contentType: 'HTML', content: html } }),
         })
 
-    const pdf = await generateFacturaPDF(d.pdf)
-    const adjuntos = [
-      { name: pdfNombre, contentType: 'application/pdf', contentBytes: Buffer.from(pdf).toString('base64') },
-      ...fijos,
-    ]
+    const pdfBytes = opts.pdfAdjunto?.contentBytes ?? Buffer.from(await generateFacturaPDF(d.pdf)).toString('base64')
+    const adjuntos = [{ name: pdfNombre, contentType: 'application/pdf', contentBytes: pdfBytes }, ...fijos]
     for (const a of adjuntos) {
       await graph(`/users/${buzon}/messages/${draft.id}/attachments`, {
         method: 'POST',
@@ -337,10 +351,6 @@ export async function armarBorradorFactura(
     }
     logger.info(`[BorradorFactura] ${asunto} → ${resumen.para.join(', ')}`)
     return { ok: true, draftId: draft.id, webLink: draft.webLink, ...resumen }
-  } catch (e) {
-    const msg = (e as Error).message
-    logger.error(`[BorradorFactura] No se pudo armar el borrador de ${invoiceId}: ${msg}`)
-    return { ok: false, error: msg }
   }
 }
 

@@ -45,6 +45,7 @@ import {
 import { syncStockForSkusFireAndForget } from '@/lib/colppy-inventory'
 import { esCuitValido, normalizeCuit } from '@/lib/cuit-utils'
 import { archivarFacturaEnSharePointBg } from '@/lib/sharepoint/facturas-emitidas'
+import { armarBorradorFacturaBg } from '@/lib/email/borrador-factura'
 import { subirFacturaAMl } from '@/lib/mercadolibre/facturacion'
 import { MlApiError } from '@/lib/mercadolibre/client'
 import {
@@ -1187,6 +1188,8 @@ export async function emitirFacturaDirecta(pedido: PedidoFacturaDirecta, user: {
   }
 
   archivarFacturaEnSharePointBg(invoice.invoiceId)
+  // Borrador del mail al cliente (no para ventas de Mercado Libre)
+  if (!packId) armarBorradorFacturaBg(invoice.invoiceId)
   // Sin el candado de la venta (o con otra factura en él) no se sube nada: se subiría el PDF equivocado
   const ml = packId ? (invoice.avisoMl ? { ok: false, error: invoice.avisoMl } : await subirFacturaAMl(packId)) : null
   const colppy: ResultadoRegistroColppy = conColppy

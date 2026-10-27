@@ -27,6 +27,7 @@ import { avisoEmisionIncierta, crearHookEmisionArca, getEmisorFacturacion } from
 import { facturaEnPesos, itemsEnPesos, type MonedaFactura } from '@/lib/facturacion/moneda'
 import { esClienteExterior } from '@/lib/cliente-exterior'
 import { archivarFacturaEnSharePointBg } from '@/lib/sharepoint/facturas-emitidas'
+import { armarBorradorFacturaBg } from '@/lib/email/borrador-factura'
 import { signoCantidad } from '@/lib/facturacion/cantidades'
 import { withClientReference } from '@/lib/quotes/client-reference'
 
@@ -681,6 +682,8 @@ export async function POST(request: NextRequest) {
     }
     // PDF a SharePoint (Facturas Emitidas / VAL ARG S.R.L / "MM AAAA")
     if (emisionArca) archivarFacturaEnSharePointBg(invoiceIdCreado)
+    // Borrador del mail al cliente en el buzón de administración
+    if (emisionArca) armarBorradorFacturaBg(invoiceIdCreado)
 
     syncStockForSkusFireAndForget(skusFacturados, {
       quoteId: quote.id,

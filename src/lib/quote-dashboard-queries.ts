@@ -311,8 +311,15 @@ export async function getCotizacionesPorMes(): Promise<CotizacionesPorMes[]> {
       date: { gte: inicio, lte: rangoFin },
       status: { not: 'CANCELLED' }
     },
-    select: { date: true, status: true }
+    select: { date: true, status: true, validUntil: true }
   })
+
+  // Nada pasa solo al estado EXPIRED: una enviada sin respuesta queda en SENT
+  // para siempre. Para el gráfico, una SENT con la validez ya cumplida cuenta
+  // como vencida (mismo criterio que el aviso de vencidas sin seguimiento).
+  const esVencida = (q: { status: string; validUntil: Date | null }) =>
+    q.status === 'EXPIRED' ||
+    (q.status === 'SENT' && q.validUntil !== null && q.validUntil < ahora)
 
   for (let i = 0; i < 6; i++) {
     const mesInicio = startOfMonth(addMonths(inicio, i))
@@ -327,8 +334,8 @@ export async function getCotizacionesPorMes(): Promise<CotizacionesPorMes[]> {
       mes: format(mesInicio, 'MMM', { locale: es }),
       aceptadas: cotizacionesMes.filter(q => (ESTADOS_CERRADA_GANADA as readonly string[]).includes(q.status)).length,
       rechazadas: cotizacionesMes.filter(q => q.status === 'REJECTED').length,
-      pendientes: cotizacionesMes.filter(q => q.status === 'SENT').length,
-      vencidas: cotizacionesMes.filter(q => q.status === 'EXPIRED').length
+      pendientes: cotizacionesMes.filter(q => q.status === 'SENT' && !esVencida(q)).length,
+      vencidas: cotizacionesMes.filter(esVencida).length
     })
   }
 

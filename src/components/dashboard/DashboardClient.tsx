@@ -186,6 +186,11 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
             <p className="text-[10px] text-gray-400 mt-1">
               vs. mismo período (días hábiles) del mes anterior
             </p>
+            {metrics.cotizacionesMes.borradores > 0 && (
+              <p className="text-xs text-gray-500 mt-1">
+                +{metrics.cotizacionesMes.borradores} borrador{metrics.cotizacionesMes.borradores === 1 ? '' : 'es'} sin enviar
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -282,7 +287,7 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
               Cotizaciones por mes
             </CardTitle>
             <CardDescription className="text-xs text-muted-foreground">
-              No incluye borradores ni vencidas
+              No incluye borradores
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -337,6 +342,7 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
                 <Bar dataKey="aceptadas" name="Aceptadas" fill="#10b981" stackId="a" />
                 <Bar dataKey="pendientes" name="Pendientes" fill="#f59e0b" stackId="a" />
                 <Bar dataKey="rechazadas" name="Rechazadas" fill="#ef4444" stackId="a" />
+                <Bar dataKey="vencidas" name="Vencidas" fill="#9ca3af" stackId="a" />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>

@@ -17,6 +17,10 @@ const feriadosAR = new Holidays('AR')
 // de "ganada", no estados comerciales nuevos.
 const ESTADOS_CERRADA_GANADA = ['ACCEPTED', 'CONVERTED', 'FACTURADA_PARCIAL'] as const
 
+// Estados que NO cuentan como cotización enviada en la card "Cotizaciones del
+// mes" ni en el gráfico por mes: anuladas y borradores.
+const ESTADOS_NO_ENVIADA: ('CANCELLED' | 'DRAFT')[] = ['CANCELLED', 'DRAFT']
+
 /** Día hábil = lunes a viernes Y que NO sea feriado nacional de tipo 'public'.
  *  (Se excluyen los religiosos opcionales tipo 'optional'/'observance', que no
  *  son no-laborables generales). */
@@ -65,6 +69,8 @@ export interface QuoteDashboardMetrics {
     cambioMontoVsMesAnterior: number | null
     /** @deprecated Alias retrocompatible de cambioCantidadVsMesAnterior (0 si no hay base). */
     cambioVsMesAnterior: number
+    /** Borradores (DRAFT) del mes: no entran en cantidad/totalUSD, se muestran aparte. */
+    borradores: number
   }
   tasaConversion: {
     porcentaje: number
@@ -87,6 +93,7 @@ export interface CotizacionesPorMes {
   aceptadas: number
   rechazadas: number
   pendientes: number
+  vencidas: number
 }
 
 export interface TopCliente {
@@ -169,12 +176,15 @@ export async function getQuoteDashboardMetrics(): Promise<QuoteDashboardMetrics>
     countPorVencer,
     productosConStock,
     totalProductos,
+    countBorradores,
   ] = await Promise.all([
-    // 1. Cotizaciones del mes (count + sum total, excluyendo anuladas)
+    // 1. Cotizaciones del mes (count + sum total, excluyendo anuladas y
+    //    borradores: un borrador todavía no se mandó al cliente). Así coincide
+    //    con la barra del mes en el gráfico.
     prisma.quote.aggregate({
       where: {
         date: { gte: inicioMes, lte: finMes },
-        status: { not: 'CANCELLED' },
+        status: { notIn: ESTADOS_NO_ENVIADA },
       },
       _count: true,
       _sum: { total: true },
@@ -182,11 +192,11 @@ export async function getQuoteDashboardMetrics(): Promise<QuoteDashboardMetrics>
     // 2. Cotizaciones de los primeros N días del mes anterior (período
     //    equivalente al transcurrido del mes actual). count + sum total para las
     //    dos variaciones (cantidad y monto). Mismo filtro que el mes actual
-    //    (date + status != CANCELLED) para que la comparación sea consistente.
+    //    (date + sin anuladas ni borradores) para que la comparación sea consistente.
     prisma.quote.aggregate({
       where: {
         date: { gte: inicioMesAnterior, lte: finMesAnterior },
-        status: { not: 'CANCELLED' },
+        status: { notIn: ESTADOS_NO_ENVIADA },
       },
       _count: true,
       _sum: { total: true },
@@ -223,6 +233,10 @@ export async function getQuoteDashboardMetrics(): Promise<QuoteDashboardMetrics>
     prisma.product.count({ where: { stockQuantity: { gt: 0 } } }),
     // 8. Total de productos
     prisma.product.count(),
+    // 9. Borradores del mes (se muestran aparte en la card)
+    prisma.quote.count({
+      where: { date: { gte: inicioMes, lte: finMes }, status: 'DRAFT' },
+    }),
   ])
 
   const cantidadMes = aggMes._count
@@ -252,6 +266,7 @@ export async function getQuoteDashboardMetrics(): Promise<QuoteDashboardMetrics>
       cambioCantidadVsMesAnterior,
       cambioMontoVsMesAnterior,
       cambioVsMesAnterior: cambioCantidadVsMesAnterior ?? 0, // alias retrocompat (number)
+      borradores: countBorradores,
     },
     tasaConversion: {
       porcentaje: tasaConversion,
@@ -312,7 +327,8 @@ export async function getCotizacionesPorMes(): Promise<CotizacionesPorMes[]> {
       mes: format(mesInicio, 'MMM', { locale: es }),
       aceptadas: cotizacionesMes.filter(q => (ESTADOS_CERRADA_GANADA as readonly string[]).includes(q.status)).length,
       rechazadas: cotizacionesMes.filter(q => q.status === 'REJECTED').length,
-      pendientes: cotizacionesMes.filter(q => q.status === 'SENT').length
+      pendientes: cotizacionesMes.filter(q => q.status === 'SENT').length,
+      vencidas: cotizacionesMes.filter(q => q.status === 'EXPIRED').length
     })
   }
 

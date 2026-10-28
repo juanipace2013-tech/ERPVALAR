@@ -215,9 +215,14 @@ export async function getQuoteDashboardMetrics(): Promise<QuoteDashboardMetrics>
         status: { in: [...ESTADOS_CERRADA_GANADA] },
       },
     }),
-    // 5. Pendientes totales (count + sum)
+    // 5. Pendientes vigentes (count + sum): enviadas sin respuesta cuya
+    //    validez no se cumplió. Las vencidas quedan en SENT para siempre y
+    //    inflaban el número (mismo criterio que el gráfico por mes).
     prisma.quote.aggregate({
-      where: { status: 'SENT' },
+      where: {
+        status: 'SENT',
+        OR: [{ validUntil: null }, { validUntil: { gte: now } }],
+      },
       _count: true,
       _sum: { total: true },
     }),

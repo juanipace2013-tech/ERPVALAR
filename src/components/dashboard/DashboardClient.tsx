@@ -234,6 +234,9 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
                 </Badge>
               )}
             </div>
+            <p className="text-[10px] text-gray-400 mt-1">
+              enviadas sin respuesta y todavía vigentes
+            </p>
           </CardContent>
         </Card>
 

@@ -383,19 +383,36 @@ function drawFactura(doc: jsPDF, data: FacturaPDFData, logoBase64: string, qrBas
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(8.5)
     doc.text('Señores', ML + 3, ry + 6)
+    // El nombre no puede pisar "Cliente Nro" (arranca en ML + 138): se mide el
+    // ancho real; si no entra en 9 se baja a 8 y, si tampoco, va en 2 líneas.
+    const nombreMaxW = 138 - 24 - 3
     doc.setFont('helvetica', 'normal')
+    let nombreLines: string[] = [r.nombre]
     doc.setFontSize(9)
-    doc.text(r.nombre.slice(0, 70), ML + 24, ry + 6)
+    if (doc.getTextWidth(r.nombre) > nombreMaxW) {
+      doc.setFontSize(8)
+      if (doc.getTextWidth(r.nombre) > nombreMaxW) {
+        nombreLines = doc.splitTextToSize(r.nombre, nombreMaxW)
+        if (nombreLines.length > 2) {
+          nombreLines.length = 2
+          nombreLines[1] = nombreLines[1].replace(/.{2}$/, '…')
+        }
+      }
+    }
+    doc.text(nombreLines, ML + 24, ry + 6)
     label('Cliente Nro:', data.clienteNro || '-', ML + 138, ry + 6, ML + USABLE_W - 2, 8.5)
     {
+      // Con el nombre en 2 líneas el domicilio baja y queda en 1 línea
+      const nombreDoble = nombreLines.length > 1
       const lines: string[] = doc.splitTextToSize(r.domicilio || '-', 108)
-      if (lines.length > 2) {
-        lines.length = 2
-        lines[1] = lines[1].replace(/.{2}$/, '…')
+      const maxLines = nombreDoble ? 1 : 2
+      if (lines.length > maxLines) {
+        lines.length = maxLines
+        lines[maxLines - 1] = lines[maxLines - 1].replace(/.{2}$/, '…')
       }
       doc.setFont('helvetica', 'normal')
       doc.setFontSize(8)
-      doc.text(lines, ML + 24, ry + 11.5)
+      doc.text(lines, ML + 24, ry + (nombreDoble ? 14.5 : 11.5))
     }
     if (exp) {
       // Exportación: CUIT país + ID fiscal del exterior, destino y divisa

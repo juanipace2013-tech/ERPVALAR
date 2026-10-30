@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -101,6 +102,20 @@ const ACTION_LABELS: Record<string, string> = {
   STATUS_CHANGE: 'Cambio estado',
   UPLOAD: 'Subir archivo',
   APPROVE: 'Aprobar',
+}
+
+// Página de detalle por entidad. Solo con ids del ERP (cuid): algunos logs
+// viejos de facturas guardan el id de Colppy, que no tiene página propia.
+const ENTITY_HREFS: Record<string, (id: string) => string> = {
+  QUOTE: (id) => `/cotizaciones/${id}/ver`,
+  DELIVERY_NOTE: (id) => `/remitos/${id}`,
+  INVOICE: (id) => `/facturas/${id}`,
+  CLIENT: (id) => `/clientes/${id}`,
+}
+
+function entityHref(entity: string, entityId: string | null): string | null {
+  if (!entityId || !/^c[a-z0-9]{20,}$/.test(entityId)) return null
+  return ENTITY_HREFS[entity]?.(entityId) ?? null
 }
 
 const ALLOWED_EMAILS = ['stejedor@val-ar.com.ar', 'jpace@val-ar.com.ar']
@@ -365,11 +380,23 @@ export default function AuditoriaPage() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      {log.entityRef && (
-                        <code className="text-xs bg-gray-100 px-2 py-0.5 rounded font-mono">
-                          {log.entityRef}
-                        </code>
-                      )}
+                      {log.entityRef && (() => {
+                        const href = entityHref(log.entity, log.entityId)
+                        const ref = (
+                          <code
+                            className={`text-xs px-2 py-0.5 rounded font-mono ${href ? 'bg-blue-50 text-blue-700 hover:bg-blue-100 hover:underline' : 'bg-gray-100'}`}
+                          >
+                            {log.entityRef}
+                          </code>
+                        )
+                        return href ? (
+                          <Link href={href} title={`Abrir ${(ENTITY_LABELS[log.entity] || log.entity).toLowerCase()}`}>
+                            {ref}
+                          </Link>
+                        ) : (
+                          ref
+                        )
+                      })()}
                     </TableCell>
                     <TableCell className="text-sm text-gray-700 max-w-[400px] truncate">
                       {log.description}

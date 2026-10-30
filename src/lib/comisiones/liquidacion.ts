@@ -12,6 +12,15 @@ import {
   tcParaOperacion,
   type TipoOperacion,
 } from './calculo'
+import {
+  MARCA_ANULADA_POR_NC,
+  MARCA_NC_COLPPY,
+  buscarRefactura,
+  leerMarcaNC,
+  mismoImporte,
+  mismoNumeroComprobante,
+  netoComprobante,
+} from './nc-colppy'
 
 // Estados de CotizacionFactura que NO cuentan para comisiones.
 // (Valores: BORRADOR (Colppy), EMITIDA (ARCA), NOTA_CREDITO (devolución por
@@ -53,161 +62,264 @@ export async function facturasDelMes(vendedorId: string, anio: number, mes: numb
   })
 }
 
-// Prefijo del marcador en errorMessage cuando una factura se anula por una NC
-// de Colppy detectada automáticamente: "ANULADA_POR_NC:<invoiceId>: NC ...".
-const MARCA_ANULADA_POR_NC = 'ANULADA_POR_NC:'
+// Ventana hacia atrás para cruzar una NC de Colppy contra facturas de meses
+// anteriores (evita matchear por coincidencia de importe con ventas viejas).
+const MESES_ATRAS_NC = 12
+
+const UN_DIA_MS = 24 * 60 * 60 * 1000
 
 /**
- * Detecta NC totales hechas directo en Colppy y anula la CotizacionFactura
- * correspondiente para que deje de contar en comisiones.
+ * Filtro de facturas que una NC de Colppy puede descontar: no anulada ni con
+ * NC emitida por el ERP (esa NC ya impactó: fila negativa / ANULADA).
+ * (Filtro positivo: un NOT sobre la relación opcional excluiría en SQL las
+ * filas sin factura vinculada, que son las de Colppy.)
+ */
+const FILTRO_FACTURA_SIN_NC_ERP = {
+  OR: [
+    { invoiceId: null },
+    {
+      invoice: {
+        is: {
+          status: { not: 'CANCELLED' as const },
+          relatedInvoices: { none: { transactionType: 'CREDIT_NOTE' as const, status: { not: 'CANCELLED' as const } } },
+        },
+      },
+    },
+  ],
+}
+
+/**
+ * NC de Colppy en USD de esos clientes. Las NC emitidas por el ERP (ARCA) ya
+ * impactan en comisiones al emitirse y están vinculadas a su factura
+ * (relatedInvoiceId); si entraran acá, por coincidencia de importe podían
+ * descontar OTRA factura del mismo cliente. Solo se buscan NC de Colppy.
+ */
+function ncsColppy(customerIds: string[], issueDate: { gte?: Date; lt: Date }) {
+  return prisma.invoice.findMany({
+    where: {
+      transactionType: 'CREDIT_NOTE',
+      customerId: { in: customerIds },
+      currency: 'USD',
+      status: { not: 'CANCELLED' },
+      relatedInvoiceId: null,
+      issueDate,
+    },
+    select: { id: true, invoiceNumber: true, customerId: true, subtotal: true, total: true, issueDate: true },
+    orderBy: { issueDate: 'asc' },
+  })
+}
+
+/** Ventas (FAV) en USD de esos clientes, para detectar refacturaciones. */
+function favsColppy(customerIds: string[]) {
+  return prisma.invoice.findMany({
+    where: {
+      transactionType: 'SALE',
+      customerId: { in: customerIds },
+      currency: 'USD',
+      status: { not: 'CANCELLED' },
+    },
+    select: { id: true, invoiceNumber: true, customerId: true, subtotal: true, total: true, issueDate: true },
+  })
+}
+
+/** NC de Colppy ya consumidas y facturas ya descontadas por una NC de mes posterior. */
+async function ncsYaUsadas() {
+  const marcadas = await prisma.cotizacionFactura.findMany({
+    where: {
+      OR: [
+        { errorMessage: { startsWith: MARCA_ANULADA_POR_NC } },
+        { errorMessage: { contains: MARCA_NC_COLPPY } },
+      ],
+    },
+    select: { errorMessage: true },
+  })
+  const ncIds = new Set<string>()
+  const facturaIds = new Set<string>()
+  for (const m of marcadas) {
+    const marca = leerMarcaNC(m.errorMessage)
+    if (!marca) continue
+    ncIds.add(marca.ncId)
+    if (marca.facturaId) facturaIds.add(marca.facturaId)
+  }
+  return { ncIds, facturaIds }
+}
+
+/**
+ * NC totales hechas directo en Colppy (entran por el sync de facturación como
+ * Invoice CREDIT_NOTE). Misma regla que las NC emitidas por el ERP:
  *
- * Las NC entran al ERP por el sync de facturación (tabla Invoice con
- * transactionType CREDIT_NOTE). Una NC anula una factura del mes si es del
- * mismo cliente, en USD, por el mismo monto (tolerancia 0,5% / mín USD 1 por
- * redondeos de TC) y de fecha igual o posterior. El monto comparable es el
- * subtotal (neto gravado) de la NC: montoUSD de la factura parcial es neto
- * sin IVA, mientras que Invoice.total incluye IVA. Cada NC anula UNA sola
- * factura (queda referenciada en errorMessage).
+ * - NC del MISMO mes que la factura: anula la CotizacionFactura (deja de
+ *   contar en ese mes).
+ * - NC de un mes POSTERIOR: la factura queda en su mes (ya liquidado) y la NC
+ *   resta en el mes de la NC con una fila NOTA_CREDITO negativa.
+ *
+ * Una NC matchea una factura si es del mismo cliente, en USD, por el mismo
+ * neto (tolerancia 0,5% / mín USD 1) y de fecha igual o posterior. Se compara
+ * el subtotal (neto) de la NC porque montoUSD de la factura es neto sin IVA.
+ * Cada NC descuenta UNA sola factura (queda referenciada en errorMessage). Se
+ * saltean las refacturaciones (FAV nueva por el mismo neto el día de la NC o
+ * después).
  *
  * Best-effort: nunca lanza, para no bloquear la sincronización de la
  * liquidación.
  */
-async function anularFacturasPorNC(vendedorId: string, anio: number, mes: number) {
+async function aplicarNCsDeColppy(liquidacionId: string, vendedorId: string, anio: number, mes: number) {
   try {
-    const { desde, hasta } = rangoMes(anio, mes)
-    const facturas = await prisma.cotizacionFactura.findMany({
+    await anularFacturasDelMes(vendedorId, anio, mes)
+    await restarNCsSobreMesesAnteriores(liquidacionId, vendedorId, anio, mes)
+  } catch (e) {
+    logger.warn('[COMISIONES_NC] Error detectando NC de Colppy (no bloquea la sincronización)', e)
+  }
+}
+
+/** NC de Colppy del mismo mes que la factura: anula la factura. */
+async function anularFacturasDelMes(vendedorId: string, anio: number, mes: number) {
+  const { desde, hasta } = rangoMes(anio, mes)
+  const { ncIds: ncIdsUsados, facturaIds: yaDescontadas } = await ncsYaUsadas()
+  const facturas = (
+    await prisma.cotizacionFactura.findMany({
       where: {
         fecha: { gte: desde, lt: hasta },
-        estado: { notIn: ESTADOS_FACTURA_EXCLUIDOS },
+        estado: { notIn: [...ESTADOS_FACTURA_EXCLUIDOS, 'NOTA_CREDITO'] },
         cotizacion: { salesPersonId: vendedorId },
-        // Factura anulada o con NC emitida por el ERP: la NC ya impactó (fila
-        // negativa / ANULADA); una NC de Colppy no puede descontarla otra vez.
-        // (Filtro positivo: un NOT sobre la relación opcional excluiría en SQL
-        // las filas sin factura vinculada, que son las de Colppy.)
-        OR: [
-          { invoiceId: null },
-          {
-            invoice: {
-              is: {
-                status: { not: 'CANCELLED' },
-                relatedInvoices: { none: { transactionType: 'CREDIT_NOTE', status: { not: 'CANCELLED' } } },
-              },
-            },
-          },
-        ],
+        ...FILTRO_FACTURA_SIN_NC_ERP,
       },
       include: { cotizacion: { select: { customerId: true, quoteNumber: true } } },
     })
-    if (facturas.length === 0) return
+  ).filter((f) => !yaDescontadas.has(f.id))
+  if (facturas.length === 0) return
 
-    const customerIds = [...new Set(facturas.map((f) => f.cotizacion.customerId))]
-    const ncs = await prisma.invoice.findMany({
-      where: {
-        transactionType: 'CREDIT_NOTE',
-        customerId: { in: customerIds },
-        currency: 'USD',
-        status: { not: 'CANCELLED' },
-        // Las NC emitidas por el ERP (ARCA) ya impactan en comisiones al
-        // emitirse (NC total: factura ANULADA; por unidades: CotizacionFactura
-        // negativa) y están vinculadas a su factura (relatedInvoiceId). Si
-        // entraran acá, por coincidencia de importe podían anular la comisión
-        // de OTRA factura del mismo cliente. Solo se buscan NC de Colppy.
-        relatedInvoiceId: null,
-      },
-      select: {
-        id: true,
-        invoiceNumber: true,
-        customerId: true,
-        subtotal: true,
-        total: true,
-        issueDate: true,
-      },
-    })
-    if (ncs.length === 0) return
+  const customerIds = [...new Set(facturas.map((f) => f.cotizacion.customerId))]
+  // Solo NC hasta fin de mes: una NC de un mes posterior resta en SU mes (ver
+  // restarNCsSobreMesesAnteriores), no anula la factura retroactivamente.
+  const ncs = await ncsColppy(customerIds, { lt: hasta })
+  if (ncs.length === 0) return
+  const favs = await favsColppy(customerIds)
 
-    // Ventas (FAV) de esos clientes para detectar REFACTURACIONES: patrón
-    // "factura → NC → factura nueva por el mismo importe" (típico pedido
-    // burocrático del cliente). En ese caso la venta sigue viva y la NC NO
-    // debe anularla de comisiones. La refactura hecha directo en Colppy no
-    // genera CotizacionFactura, así que no hay doble conteo.
-    const favs = await prisma.invoice.findMany({
-      where: {
-        transactionType: 'SALE',
-        customerId: { in: customerIds },
-        currency: 'USD',
-        status: { not: 'CANCELLED' },
-      },
-      select: {
-        id: true,
-        invoiceNumber: true,
-        customerId: true,
-        subtotal: true,
-        total: true,
-        issueDate: true,
-      },
-    })
-
-    // NCs que ya anularon otra factura (marcadas en errorMessage)
-    const yaUsadas = await prisma.cotizacionFactura.findMany({
-      where: { errorMessage: { startsWith: MARCA_ANULADA_POR_NC } },
-      select: { errorMessage: true },
-    })
-    const ncIdsUsados = new Set(
-      yaUsadas.map((u) => u.errorMessage?.split(':')[1]).filter(Boolean)
+  for (const factura of facturas) {
+    const monto = Number(factura.montoUSD)
+    const nc = ncs.find(
+      (n) =>
+        !ncIdsUsados.has(n.id) &&
+        n.customerId === factura.cotizacion.customerId &&
+        n.issueDate.getTime() >= factura.fecha.getTime() - UN_DIA_MS &&
+        mismoImporte(netoComprobante(n), monto)
     )
+    if (!nc) continue
 
-    const UN_DIA_MS = 24 * 60 * 60 * 1000
-    for (const factura of facturas) {
-      const monto = Number(factura.montoUSD)
-      const tolerancia = Math.max(1, monto * 0.005)
-      const nc = ncs.find((n) => {
-        // Neto de la NC (sin IVA); si el sync no trajo subtotal, cae al total.
-        const netoNC = Number(n.subtotal) > 0 ? Number(n.subtotal) : Number(n.total)
-        return (
-          !ncIdsUsados.has(n.id) &&
-          n.customerId === factura.cotizacion.customerId &&
-          n.issueDate.getTime() >= factura.fecha.getTime() - UN_DIA_MS &&
-          Math.abs(netoNC - monto) <= tolerancia
-        )
-      })
-      if (!nc) continue
-
-      // ¿Es una refacturación? Buscar una FAV del mismo cliente, por el mismo
-      // neto que la NC, emitida el mismo día o después de la NC (excluyendo la
-      // factura original que la NC vino a reemplazar). Si existe, saltear la
-      // NC: la venta original sigue contando para comisiones.
-      const netoNC = Number(nc.subtotal) > 0 ? Number(nc.subtotal) : Number(nc.total)
-      const tolRefact = Math.max(1, netoNC * 0.005)
-      const refactura = favs.find((f) => {
-        const netoFav = Number(f.subtotal) > 0 ? Number(f.subtotal) : Number(f.total)
-        return (
-          f.id !== factura.invoiceId &&
-          f.customerId === nc.customerId &&
-          f.issueDate.getTime() >= nc.issueDate.getTime() &&
-          Math.abs(netoFav - netoNC) <= tolRefact
-        )
-      })
-      if (refactura) {
-        logger.info(
-          `[COMISIONES_NC] NC ${nc.invoiceNumber} salteada: refacturación detectada (FAV ${refactura.invoiceNumber} posterior por el mismo importe) — la factura ${factura.numeroFactura} (${factura.cotizacion.quoteNumber}) sigue contando`
-        )
-        continue
-      }
-
-      ncIdsUsados.add(nc.id)
-      await prisma.cotizacionFactura.update({
-        where: { id: factura.id },
-        data: {
-          estado: 'ANULADA',
-          errorMessage: `${MARCA_ANULADA_POR_NC}${nc.id}: NC ${nc.invoiceNumber} de Colppy anula esta factura`,
-        },
-      })
+    const refactura = buscarRefactura(nc, favs, factura.invoiceId)
+    if (refactura) {
       logger.info(
-        `[COMISIONES_NC] Factura ${factura.numeroFactura} (${factura.cotizacion.quoteNumber}) anulada por NC ${nc.invoiceNumber} de Colppy: no cuenta para comisiones`
+        `[COMISIONES_NC] NC ${nc.invoiceNumber} salteada: refacturación detectada (FAV ${refactura.invoiceNumber} posterior por el mismo importe) — la factura ${factura.numeroFactura} (${factura.cotizacion.quoteNumber}) sigue contando`
       )
+      continue
     }
-  } catch (e) {
-    logger.warn('[COMISIONES_NC] Error detectando NC de Colppy (no bloquea la sincronización)', e)
+
+    ncIdsUsados.add(nc.id)
+    await prisma.cotizacionFactura.update({
+      where: { id: factura.id },
+      data: {
+        estado: 'ANULADA',
+        errorMessage: `${MARCA_ANULADA_POR_NC}${nc.id}: NC ${nc.invoiceNumber} de Colppy anula esta factura`,
+      },
+    })
+    logger.info(
+      `[COMISIONES_NC] Factura ${factura.numeroFactura} (${factura.cotizacion.quoteNumber}) anulada por NC ${nc.invoiceNumber} de Colppy: no cuenta para comisiones`
+    )
+  }
+}
+
+/**
+ * NC de Colppy de este mes sobre una factura de un mes ANTERIOR del vendedor:
+ * crea una fila NOTA_CREDITO negativa con fecha de la NC (resta en este mes),
+ * como hace el ERP con sus propias NC. Si ya hay una NC manual equivalente en
+ * la liquidación (mismo importe y número), no la duplica.
+ */
+async function restarNCsSobreMesesAnteriores(liquidacionId: string, vendedorId: string, anio: number, mes: number) {
+  const { desde, hasta } = rangoMes(anio, mes)
+  const desdeFacturas = new Date(anio, mes - 1 - MESES_ATRAS_NC, 1)
+
+  const facturas = await prisma.cotizacionFactura.findMany({
+    where: {
+      fecha: { gte: desdeFacturas, lt: desde },
+      estado: { notIn: [...ESTADOS_FACTURA_EXCLUIDOS, 'NOTA_CREDITO'] },
+      cotizacion: { salesPersonId: vendedorId },
+      ...FILTRO_FACTURA_SIN_NC_ERP,
+    },
+    include: { cotizacion: { select: { customerId: true, quoteNumber: true } } },
+    // La más reciente primero ante dos facturas por el mismo importe.
+    orderBy: { fecha: 'desc' },
+  })
+  if (facturas.length === 0) return
+
+  const customerIds = [...new Set(facturas.map((f) => f.cotizacion.customerId))]
+  const ncs = await ncsColppy(customerIds, { gte: desde, lt: hasta })
+  if (ncs.length === 0) return
+
+  const [{ ncIds: ncIdsUsados, facturaIds: yaDescontadas }, favs, ncsManuales] = await Promise.all([
+    ncsYaUsadas(),
+    favsColppy(customerIds),
+    prisma.comisionLinea.findMany({
+      where: { liquidacionId, presupuesto: 'NC', facturaParcialId: null },
+      select: { id: true, numeroFactura: true, importeFacturadoUsd: true },
+    }),
+  ])
+  const manualesUsadas = new Set<string>()
+
+  for (const nc of ncs) {
+    if (ncIdsUsados.has(nc.id)) continue
+    const netoNC = netoComprobante(nc)
+    const factura = facturas.find(
+      (f) =>
+        !yaDescontadas.has(f.id) &&
+        f.cotizacion.customerId === nc.customerId &&
+        mismoImporte(netoNC, Number(f.montoUSD))
+    )
+    if (!factura) continue
+
+    const refactura = buscarRefactura(nc, favs, factura.invoiceId)
+    if (refactura) {
+      logger.info(
+        `[COMISIONES_NC] NC ${nc.invoiceNumber} salteada: refacturación detectada (FAV ${refactura.invoiceNumber} posterior por el mismo importe) — la factura ${factura.numeroFactura} (${factura.cotizacion.quoteNumber}) sigue contando`
+      )
+      continue
+    }
+
+    // ¿Ya la cargaron a mano en la liquidación? Entonces no se duplica.
+    const manual = ncsManuales.find(
+      (l) =>
+        !manualesUsadas.has(l.id) &&
+        mismoImporte(Number(l.importeFacturadoUsd ?? 0), Number(factura.montoUSD)) &&
+        (!l.numeroFactura || mismoNumeroComprobante(l.numeroFactura, nc.invoiceNumber))
+    )
+    if (manual) {
+      manualesUsadas.add(manual.id)
+      logger.info(
+        `[COMISIONES_NC] NC ${nc.invoiceNumber} de Colppy ya cargada a mano en la liquidación ${mes}/${anio}: no se duplica`
+      )
+      continue
+    }
+
+    ncIdsUsados.add(nc.id)
+    yaDescontadas.add(factura.id)
+    await prisma.cotizacionFactura.create({
+      data: {
+        cotizacionId: factura.cotizacionId,
+        numeroFactura: nc.invoiceNumber,
+        fecha: nc.issueDate,
+        montoUSD: -Number(factura.montoUSD),
+        montoARS: -Number(factura.montoARS),
+        tipoCambio: factura.tipoCambio,
+        estado: 'NOTA_CREDITO',
+        // SIN_PENDIENTE: la NC de Colppy no devuelve unidades a la cotización
+        // (no agranda el saldo a facturar del pipeline).
+        errorMessage: `${MARCA_NC_SIN_PENDIENTE} ${MARCA_NC_COLPPY}${nc.id}:${factura.id}: NC ${nc.invoiceNumber} de Colppy s/ ${factura.numeroFactura ?? 'factura'} (${factura.fecha.toISOString().slice(0, 10)})`,
+        createdById: factura.createdById,
+      },
+    })
+    logger.info(
+      `[COMISIONES_NC] NC ${nc.invoiceNumber} de Colppy sobre ${factura.numeroFactura} (${factura.cotizacion.quoteNumber}, mes anterior): resta USD ${Number(factura.montoUSD)} en ${mes}/${anio}`
+    )
   }
 }
 
@@ -240,8 +352,8 @@ export async function abrirYSincronizar(vendedorId: string, anio: number, mes: n
 
   if (liquidacion.estado === 'CERRADA') return liquidacion
 
-  // NC totales hechas directo en Colppy anulan la factura antes de sincronizar
-  await anularFacturasPorNC(vendedorId, anio, mes)
+  // NC hechas directo en Colppy: anulan la factura del mes o restan en este mes
+  await aplicarNCsDeColppy(liquidacion.id, vendedorId, anio, mes)
 
   const [facturas, lineas] = await Promise.all([
     facturasDelMes(vendedorId, anio, mes),

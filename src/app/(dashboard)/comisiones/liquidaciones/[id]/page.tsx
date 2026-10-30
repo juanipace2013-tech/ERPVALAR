@@ -626,7 +626,8 @@ export default function LiquidacionPage() {
               <div className="mt-4 space-y-1 border-t pt-4">
                 <p className="text-xs text-muted-foreground">
                   Nota de crédito (NC): resta del facturado del mes. Las NC totales hechas en
-                  Colppy se detectan solas al refrescar (si el sync de facturación está al día);
+                  Colppy se detectan solas al refrescar (si el sync de facturación está al día), también
+                  las de facturas de meses anteriores (restan en el mes de la NC);
                   esto es para NC parciales o que no matchean.
                 </p>
                 <div className="flex gap-2 pt-1">

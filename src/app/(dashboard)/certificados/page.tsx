@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Loader2, FileBadge, Wand2, Download } from 'lucide-react'
+import { Loader2, FileBadge, Wand2, Download, Pencil, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { getLocalDateString } from '@/lib/utils'
 import {
@@ -29,6 +29,8 @@ import {
   parseDescription,
   parseValvulas,
   buildCertificadoPayload,
+  payloadToTechFields,
+  type CertificadoGuardado,
   type TechFields,
 } from '@/lib/certificados-form'
 
@@ -67,6 +69,9 @@ export default function CertificadosPage() {
   const [loading, setLoading] = useState(false)
   const [historial, setHistorial] = useState<CertificadoEmitido[]>([])
   const [historialLoading, setHistorialLoading] = useState(true)
+  // Certificado del historial que se está editando (null = alta nueva)
+  const [editing, setEditing] = useState<{ id: string; label: string } | null>(null)
+  const [loadingEditId, setLoadingEditId] = useState<string | null>(null)
 
   const set = (patch: Partial<TechFields>) => setFields((prev) => ({ ...prev, ...patch }))
 
@@ -96,6 +101,43 @@ export default function CertificadosPage() {
     toast.success('Campos precargados desde la descripción — revisalos')
   }
 
+  const resetForm = () => {
+    setEditing(null)
+    setCliente('')
+    setOc('')
+    setReferencia('')
+    setFecha(getLocalDateString())
+    setDescripcion('')
+    setValvulasInput('')
+    setFields(TECH_DEFAULTS)
+  }
+
+  const handleEdit = async (cert: CertificadoEmitido) => {
+    try {
+      setLoadingEditId(cert.id)
+      const response = await fetch(`/api/certificados/${cert.id}`)
+      if (!response.ok) throw new Error('No se pudo cargar el certificado')
+      const data = await response.json()
+      setCliente(data.cliente || '')
+      setOc(data.oc || '')
+      setReferencia(data.referencia || '')
+      setFecha(String(data.fecha).slice(0, 10))
+      setValvulasInput((data.valvulas as string[]).join(', '))
+      setDescripcion('')
+      setFields(payloadToTechFields((data.payload || {}) as CertificadoGuardado))
+      setEditing({
+        id: cert.id,
+        label: `${cert.cliente} · ${formatValvulas(cert.valvulas)}`,
+      })
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      toast.info('Certificado cargado — revisá los datos y guardá los cambios')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Error al cargar el certificado')
+    } finally {
+      setLoadingEditId(null)
+    }
+  }
+
   const handleGenerate = async () => {
     if (!cliente.trim()) {
       toast.error('Indicá el cliente')
@@ -109,17 +151,20 @@ export default function CertificadosPage() {
 
     try {
       setLoading(true)
-      const response = await fetch('/api/certificados', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cliente: cliente.trim(),
-          oc: oc.trim() || undefined,
-          referencia: referencia.trim() || undefined,
-          fecha,
-          ...buildCertificadoPayload(fields, valvulas),
-        }),
-      })
+      const response = await fetch(
+        editing ? `/api/certificados/${editing.id}` : '/api/certificados',
+        {
+          method: editing ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cliente: cliente.trim(),
+            oc: oc.trim() || undefined,
+            referencia: referencia.trim() || undefined,
+            fecha,
+            ...buildCertificadoPayload(fields, valvulas),
+          }),
+        }
+      )
       if (!response.ok) {
         const err = await response.json().catch(() => null)
         throw new Error(err?.error || 'Error al generar certificados')
@@ -138,9 +183,14 @@ export default function CertificadosPage() {
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
 
-      toast.success(
-        `${valvulas.length} certificado${valvulas.length > 1 ? 's' : ''} generado${valvulas.length > 1 ? 's' : ''}`
-      )
+      if (editing) {
+        toast.success('Certificado actualizado')
+        resetForm()
+      } else {
+        toast.success(
+          `${valvulas.length} certificado${valvulas.length > 1 ? 's' : ''} generado${valvulas.length > 1 ? 's' : ''}`
+        )
+      }
       loadHistorial()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Error al generar certificados')
@@ -167,9 +217,23 @@ export default function CertificadosPage() {
           ) : (
             <FileBadge className="mr-2 h-4 w-4" />
           )}
-          Generar PDF
+          {editing ? 'Guardar cambios y generar PDF' : 'Generar PDF'}
         </Button>
       </div>
+
+      {editing && (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <span>
+            <Pencil className="mr-2 inline h-4 w-4" />
+            Editando el certificado <span className="font-semibold">{editing.label}</span>. Al
+            guardar se reemplaza el emitido (no se crea uno nuevo).
+          </span>
+          <Button variant="outline" size="sm" onClick={resetForm}>
+            <X className="mr-1 h-4 w-4" />
+            Cancelar edición
+          </Button>
+        </div>
+      )}
 
       <Card>
         <CardHeader>
@@ -403,7 +467,7 @@ export default function CertificadosPage() {
           ) : (
             <FileBadge className="mr-2 h-4 w-4" />
           )}
-          Generar PDF
+          {editing ? 'Guardar cambios y generar PDF' : 'Generar PDF'}
         </Button>
       </div>
 
@@ -430,20 +494,28 @@ export default function CertificadosPage() {
                   <TableHead>Válvulas</TableHead>
                   <TableHead>Detalle</TableHead>
                   <TableHead>Emitido por</TableHead>
-                  <TableHead className="text-right">PDF</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {historial.map((cert) => (
-                  <TableRow key={cert.id}>
+                  <TableRow
+                    key={cert.id}
+                    className={editing?.id === cert.id ? 'bg-amber-50' : undefined}
+                  >
                     <TableCell className="whitespace-nowrap">
-                      {new Date(cert.fecha).toLocaleDateString('es-AR', { timeZone: 'UTC' })}
+                      {new Date(cert.fecha).toLocaleDateString('es-AR', {
+                        timeZone: 'UTC',
+                      })}
                     </TableCell>
                     <TableCell>{cert.cliente}</TableCell>
                     <TableCell className="text-muted-foreground text-sm">
                       {[cert.oc, cert.referencia].filter(Boolean).join(' · ') || '—'}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap font-mono text-sm">
+                    <TableCell
+                      className="max-w-48 truncate whitespace-nowrap font-mono text-sm"
+                      title={cert.valvulas.join(', ')}
+                    >
                       {formatValvulas(cert.valvulas)}
                     </TableCell>
                     <TableCell className="text-muted-foreground max-w-64 truncate text-sm">
@@ -452,7 +524,20 @@ export default function CertificadosPage() {
                     <TableCell className="text-muted-foreground text-sm">
                       {cert.emitidoPor || '—'}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="whitespace-nowrap text-right">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Editar certificado"
+                        disabled={loadingEditId === cert.id}
+                        onClick={() => handleEdit(cert)}
+                      >
+                        {loadingEditId === cert.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Pencil className="h-4 w-4" />
+                        )}
+                      </Button>
                       <Button
                         variant="ghost"
                         size="icon"

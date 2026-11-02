@@ -179,5 +179,78 @@ export function buildCertificadoPayload(f: TechFields, valvulas: string[]) {
       ['Arandela de cobre', f.arandela],
     ],
     encargado: { nombre: f.encargado, rol: f.rol },
+    techFields: f,
+  }
+}
+
+/** Parte guardada del certificado que alcanza para reconstruir el formulario. */
+export interface CertificadoGuardado {
+  titulo?: string
+  tituloPill?: string
+  subtitulo?: string
+  materiales?: Array<[string, string]>
+  calibracion?: Array<[string, string]>
+  conexiones?: Array<[string, string]>
+  encargado?: { nombre?: string; rol?: string }
+  /** Campos del formulario tal cual se cargaron (certificados nuevos). */
+  techFields?: Partial<TechFields>
+}
+
+/** "Acero inoxidable AISI 304" -> "AISI 304", "Acero SAE 1045" -> "SAE 1045" */
+function stripMaterial(m: string | undefined): string {
+  if (!m) return ''
+  return m.replace(/^acero\s+inoxidable\s+/i, '').replace(/^acero\s+/i, '').trim()
+}
+
+function siNo(v: string | undefined): 'SI' | 'NO' {
+  return v?.trim().toUpperCase() === 'SI' ? 'SI' : 'NO'
+}
+
+function noGuion(v: string | undefined): string {
+  return v && v.trim() !== '-' ? v.trim() : ''
+}
+
+/**
+ * Reconstruye los campos técnicos de un certificado ya emitido, para editarlo.
+ * Si se guardaron los campos del formulario se usan tal cual; si no (emitidos
+ * antes de guardarlos) se deducen de las tablas del certificado.
+ */
+export function payloadToTechFields(p: CertificadoGuardado): TechFields {
+  if (p.techFields) return { ...TECH_DEFAULTS, ...p.techFields }
+
+  const map = (rows?: Array<[string, string]>) => new Map(rows ?? [])
+  const mat = map(p.materiales)
+  const cal = map(p.calibracion)
+  const con = map(p.conexiones)
+
+  const tipoMatch = p.titulo?.match(/V[ÁA]LVULA\s+DE\s+(.+)/i)
+  const tipo = tipoMatch ? cap(tipoMatch[1].trim().toLowerCase()) : TECH_DEFAULTS.tipo
+  const pruebaKey = [...cal.keys()].find((k) => /^prueba/i.test(k)) ?? ''
+  const prueba: TechFields['prueba'] =
+    /hidr/i.test(p.tituloPill ?? '') || /hidr/i.test(pruebaKey) ? 'Hidráulica' : 'Neumática'
+  const [capuchon, palanca] = (con.get('Capuchón · Palanca') ?? '').split('·')
+  const serie = p.subtitulo?.match(/SERIE\s+(\S+)/i)
+
+  return {
+    ...TECH_DEFAULTS,
+    tipo,
+    medida: noGuion(con.get('Medida entrada - salida')),
+    serie: serie ? serie[1] : '',
+    conexion: noGuion(con.get('Entrada / Salida')),
+    materialCuerpo: stripMaterial(mat.get('Cuerpo')),
+    materialInternos: stripMaterial(mat.get('Tobera') ?? mat.get('Obturador')),
+    resorte: stripMaterial(mat.get('Resorte')),
+    asiento: p.materiales ? (mat.get('Asiento') ?? '') : TECH_DEFAULTS.asiento,
+    timbre: noGuion(cal.get('Presión de timbre')),
+    temperatura: cal.has('Temperatura de ensayo')
+      ? noGuion(cal.get('Temperatura de ensayo'))
+      : TECH_DEFAULTS.temperatura,
+    prueba,
+    capuchon: siNo(capuchon),
+    palanca: siNo(palanca),
+    arandela: siNo(con.get('Arandela de cobre')),
+    contrapresion: siNo(cal.get('Contrapresión')),
+    encargado: p.encargado?.nombre || TECH_DEFAULTS.encargado,
+    rol: p.encargado?.rol || TECH_DEFAULTS.rol,
   }
 }

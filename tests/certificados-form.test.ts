@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { parseValvulas } from '@/lib/certificados-form'
+import {
+  parseValvulas,
+  payloadToTechFields,
+  buildCertificadoPayload,
+  TECH_DEFAULTS,
+  type CertificadoGuardado,
+} from '@/lib/certificados-form'
 import { generateCertificadoCalibracionPDF } from '@/lib/pdf/certificado-calibracion-generator'
 
 describe('parseValvulas', () => {
@@ -38,5 +44,41 @@ describe('generateCertificadoCalibracionPDF', () => {
       logoBase64: '',
     })
     expect(doc.getNumberOfPages()).toBe(3)
+  })
+})
+
+describe('payloadToTechFields', () => {
+  const campos = {
+    ...TECH_DEFAULTS,
+    tipo: 'Seguridad',
+    medida: '2" x 3"',
+    serie: '150',
+    conexion: 'Bridada ANSI 150 RF',
+    materialCuerpo: 'AISI 304',
+    materialInternos: 'AISI 316',
+    resorte: 'SAE 1045',
+    asiento: 'PTFE',
+    timbre: '4,0 bar',
+    temperatura: '25 °C',
+    prueba: 'Hidráulica' as const,
+    capuchon: 'SI' as const,
+    palanca: 'NO' as const,
+    arandela: 'SI' as const,
+    contrapresion: 'NO' as const,
+  }
+
+  it('usa los campos guardados si están', () => {
+    const payload = buildCertificadoPayload(campos, ['1'])
+    expect(payloadToTechFields(payload)).toEqual(campos)
+  })
+
+  it('reconstruye los campos de un certificado viejo (sin campos guardados)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { techFields: _omit, ...viejo } = buildCertificadoPayload(campos, ['1'])
+    expect(payloadToTechFields(viejo as CertificadoGuardado)).toEqual(campos)
+  })
+
+  it('payload vacío devuelve los valores por defecto', () => {
+    expect(payloadToTechFields({})).toEqual(TECH_DEFAULTS)
   })
 })

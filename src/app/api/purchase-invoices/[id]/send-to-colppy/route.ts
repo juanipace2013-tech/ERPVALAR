@@ -234,11 +234,13 @@ export async function POST(
       const fechaPago = fmtDate(fechaPagoDate)
       logger.info(`[Colppy FC] paymentTerms DB: "${rawPaymentTerms}" → normalizado: "${idCondicionPago}"`)
 
-      // Tipo de comprobante: FA=1 (Factura), NC=3 (Nota Crédito), ND=2 (Nota Débito)
+      // Tipo de comprobante en compras de Colppy: 1=FAC, 2=NCC, 3=NDC (igual
+      // que ventas 4/5/8). Estaban cruzados: la NC A00032-00020956 de GENEBRE
+      // (3/11/2026) entró como NDC y sumó deuda.
       const tipoComprobanteMap: Record<string, string> = {
         FA: '1',
-        NC: '3',
-        ND: '2',
+        NC: '2',
+        ND: '3',
       }
       const idTipoComprobante = tipoComprobanteMap[invoice.invoiceType] || '1'
 

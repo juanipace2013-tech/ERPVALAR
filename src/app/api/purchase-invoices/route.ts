@@ -51,6 +51,7 @@ export async function GET(request: NextRequest) {
           invoiceNumber: true,
           invoiceDate: true,
           voucherType: true,
+          invoiceType: true,
           total: true,
           balance: true,
           status: true,

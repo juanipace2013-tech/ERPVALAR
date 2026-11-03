@@ -48,6 +48,7 @@ import {
 import { toast } from 'sonner'
 import { reviewReasonLabel } from '@/lib/review-reasons'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { comprobanteLabel } from '@/lib/purchase-invoices/labels'
 
 interface PurchaseInvoice {
   id: string
@@ -57,6 +58,7 @@ interface PurchaseInvoice {
   status: string
   paymentStatus: string
   voucherType: string
+  invoiceType?: string
   cae: string | null
   supplier: {
     id: string
@@ -363,7 +365,7 @@ export default function PurchaseInvoicesPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline">Factura {invoice.voucherType}</Badge>
+                        <Badge variant="outline">{comprobanteLabel(invoice.invoiceType)} {invoice.voucherType}</Badge>
                       </TableCell>
                       <TableCell className="text-right font-semibold">
                         {formatCurrency(invoice.total)}

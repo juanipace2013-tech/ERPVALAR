@@ -43,6 +43,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ProductSearchCombobox } from '@/components/inventario/ProductSearchCombobox'
+import { comprobanteLabel } from '@/lib/purchase-invoices/labels'
 
 interface PurchaseInvoice {
   id: string
@@ -486,7 +487,7 @@ export default function PurchaseInvoiceDetailPage() {
           </Button>
           <div>
             <h1 className="text-3xl font-bold text-gray-900">
-              Factura {invoice.invoiceNumber}
+              {comprobanteLabel(invoice.invoiceType)} {invoice.invoiceNumber}
             </h1>
             <p className="text-gray-600 mt-1">{invoice.supplier.name}</p>
           </div>
@@ -915,7 +916,7 @@ export default function PurchaseInvoiceDetailPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <p className="text-sm text-gray-600">Tipo Comprobante</p>
-                  <p className="font-semibold">Factura {invoice.voucherType}</p>
+                  <p className="font-semibold">{comprobanteLabel(invoice.invoiceType)} {invoice.voucherType}</p>
                 </div>
                 {invoice.cae && (
                   <div>

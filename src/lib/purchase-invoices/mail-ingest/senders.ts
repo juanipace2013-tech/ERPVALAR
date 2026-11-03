@@ -47,3 +47,17 @@ export function invoiceNumberFromFilename(fileName: string): string | null {
   if (!m) return null
   return `${m[1].toUpperCase()}${m[2]}-${m[3]}`
 }
+
+/**
+ * Tipo de comprobante según el prefijo del nombre del PDF ("NCRA..." = nota de
+ * crédito). Es más confiable que el OCR, que a veces lee una NC como factura.
+ * null si el nombre no trae prefijo reconocible.
+ */
+export function invoiceTypeFromFilename(fileName: string): 'FA' | 'NC' | 'ND' | null {
+  const m = fileName.match(/^(FAC|FC|NCR|NC|NDE|ND)[ABC]\d{13}/i)
+  if (!m) return null
+  const prefix = m[1].toUpperCase()
+  if (prefix.startsWith('NC')) return 'NC'
+  if (prefix.startsWith('ND')) return 'ND'
+  return 'FA'
+}

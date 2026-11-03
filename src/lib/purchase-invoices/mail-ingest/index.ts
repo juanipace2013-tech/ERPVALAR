@@ -27,7 +27,7 @@ import { extractPurchaseInvoice, OCR_MAX_FILE_BYTES } from '../ocr-extract'
 import { buildCreateInputFromOcr } from '../from-ocr'
 import { createPurchaseInvoice, buildInvoiceNumber, isDuplicateInvoiceError } from '../create'
 import { generateSkuVariants, normalizeSkuForMatch, stripTrailingSegment } from '../sku-variants'
-import { findTrustedSender, invoiceNumberFromFilename, type TrustedInvoiceSender } from './senders'
+import { findTrustedSender, invoiceNumberFromFilename, invoiceTypeFromFilename, type TrustedInvoiceSender } from './senders'
 
 const MAX_ATTEMPTS = 3
 const DEFAULT_LOOKBACK_DAYS = 7
@@ -236,6 +236,7 @@ async function processPdf(
 ): Promise<PdfOutcome> {
   // Duplicado por nombre de archivo: nos ahorra la llamada de OCR
   const numberFromName = invoiceNumberFromFilename(pdf.name)
+  const typeFromName = invoiceTypeFromFilename(pdf.name)
   if (numberFromName && !recheck) {
     const dup = await prisma.purchaseInvoice.findUnique({ where: { invoiceNumber: numberFromName }, select: { id: true } })
     if (dup) {
@@ -265,6 +266,16 @@ async function processPdf(
   const { supplier, matchedBy } = supplierMatch
 
   const built = buildCreateInputFromOcr(data, { supplierId: supplier.id, supplierPaymentDays: supplier.paymentDays })
+  const ocrType = built.input.invoiceType || 'FA'
+  if (typeFromName && typeFromName !== ocrType) {
+    built.input.invoiceType = typeFromName
+    built.reviewNotes.push(
+      `El OCR leyó el comprobante como ${ocrType} pero el nombre del PDF (${pdf.name}) indica ${typeFromName}; se cargó como ${typeFromName}`
+    )
+  }
+  if (built.input.invoiceType === 'NC') {
+    built.reviewNotes.push('Es una NOTA DE CRÉDITO: al impactar stock la mercadería SALE del inventario (devolución al proveedor)')
+  }
   const invoiceNumber = buildInvoiceNumber(built.input.voucherType, built.input.pointOfSale, built.input.invoiceNumberSuffix)
 
   const dup = await prisma.purchaseInvoice.findUnique({

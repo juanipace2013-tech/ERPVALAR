@@ -3,7 +3,8 @@ import { buildCreateInputFromOcr, parseVoucherTipo, totalsMatch } from '@/lib/pu
 import { normalizeOcrData, type OcrData } from '@/lib/purchase-invoices/ocr-extract'
 import { normalizePaymentTerm, paymentTermDays } from '@/lib/purchase-invoices/payment-terms'
 import { generateSkuVariants, normalizeSkuForMatch } from '@/lib/purchase-invoices/sku-variants'
-import { findTrustedSender, invoiceNumberFromFilename } from '@/lib/purchase-invoices/mail-ingest/senders'
+import { findTrustedSender, invoiceNumberFromFilename, invoiceTypeFromFilename } from '@/lib/purchase-invoices/mail-ingest/senders'
+import { purchaseStockSign } from '@/lib/inventario/purchase-stock.service'
 
 function genebreOcr(overrides: Partial<OcrData> = {}): OcrData {
   return {
@@ -198,5 +199,24 @@ describe('senders', () => {
     expect(invoiceNumberFromFilename('FACA0003100304907.pdf')).toBe('A00031-00304907')
     expect(invoiceNumberFromFilename('FACA0003100304907AFIP.XML')).toBe('A00031-00304907')
     expect(invoiceNumberFromFilename('factura.pdf')).toBeNull()
+  })
+})
+
+describe('notas de crédito de compra', () => {
+  it('saca el tipo de comprobante del prefijo del PDF', () => {
+    expect(invoiceTypeFromFilename('FACA0003100304907.pdf')).toBe('FA')
+    expect(invoiceTypeFromFilename('NCRA0003100012345.pdf')).toBe('NC')
+    expect(invoiceTypeFromFilename('NCA0003100012345.pdf')).toBe('NC')
+    expect(invoiceTypeFromFilename('NDEA0003100000077.pdf')).toBe('ND')
+    expect(invoiceTypeFromFilename('A0003100304907.pdf')).toBeNull()
+    expect(invoiceTypeFromFilename('factura.pdf')).toBeNull()
+    expect(invoiceNumberFromFilename('NCRA0003100012345.pdf')).toBe('A00031-00012345')
+  })
+
+  it('una NC saca mercadería del stock; factura y ND la entran', () => {
+    expect(purchaseStockSign('NC')).toBe(-1)
+    expect(purchaseStockSign('FA')).toBe(1)
+    expect(purchaseStockSign('ND')).toBe(1)
+    expect(purchaseStockSign(null)).toBe(1)
   })
 })

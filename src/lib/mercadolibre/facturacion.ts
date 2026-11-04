@@ -34,6 +34,7 @@ import {
   fechaVentaMl,
   guardarCache,
   leerCache,
+  liberarCandadoSiFacturaAnulada,
   liberarCandadoVentaMl,
   limpiarCacheFacturaEnMl,
   marcarFacturaAdjuntaEnMl,
@@ -887,7 +888,9 @@ function motivoYaFacturada(y: NonNullable<CompradorMl['yaFacturada']>): string {
  */
 export async function resolverCompradorMl(packId: string, cuitManual?: string | null): Promise<CompradorMl> {
   // Candado del ERP (= 409 YA_FACTURADA del POST): el borrador no ofrece emitir
-  // (ni "Emitir igual") para una venta que el ERP ya facturó o está facturando
+  // (ni "Emitir igual") para una venta que el ERP ya facturó o está facturando.
+  // Si esa factura se anuló con NC, la venta se libera para refacturar.
+  await liberarCandadoSiFacturaAnulada(packId)
   const reg = await prisma.mlOrderInvoice.findUnique({
     where: { packId },
     include: { invoice: { select: { id: true, invoiceNumber: true } } },
@@ -1101,6 +1104,7 @@ export async function facturarVentaMl(params: {
   // Primero el candado del ERP: una venta ya facturada (o en emisión) desde el
   // ERP no debe llegar al aviso de "factura en ML" (que ofrecería emitir igual).
   // El create con P2002 de más abajo sigue siendo el candado a prueba de carreras.
+  await liberarCandadoSiFacturaAnulada(packId)
   if (await prisma.mlOrderInvoice.findUnique({ where: { packId } })) {
     throw new FacturacionMlError('Esta venta ya fue facturada (o se está facturando en este momento)', 409, { codigo: 'YA_FACTURADA' })
   }

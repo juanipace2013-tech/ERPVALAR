@@ -755,6 +755,12 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
       })
     }
 
+    // Venta de ML: si con esta NC la factura quedó acreditada completa, la
+    // venta se libera para volver a facturarla (candado MlOrderInvoice)
+    if (ncPrevias + total >= totalFactura - 0.01) {
+      await tx.mlOrderInvoice.deleteMany({ where: { invoiceId: inv.id, status: 'EMITIDA' } })
+    }
+
     if (modo === 'UNIDADES' && !vuelvenAPendiente && inv.quote) {
       // El cliente no quiere esas unidades: la cotización queda igual, solo
       // se deja constancia en su historial

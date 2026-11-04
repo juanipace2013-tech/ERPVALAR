@@ -12,11 +12,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 type Fila = Record<string, any>
 
 const db = vi.hoisted(() => ({
-  mlOrderInvoice: { findMany: vi.fn(), create: vi.fn(), delete: vi.fn(), update: vi.fn(), findUnique: vi.fn() },
+  mlOrderInvoice: { findMany: vi.fn(), create: vi.fn(), delete: vi.fn(), deleteMany: vi.fn(), update: vi.fn(), findUnique: vi.fn() },
   mlItemLink: { findMany: vi.fn() },
   customer: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
   product: { findMany: vi.fn() },
-  invoice: { findMany: vi.fn(), create: vi.fn() },
+  invoice: { findMany: vi.fn(), create: vi.fn(), findUnique: vi.fn() },
   $transaction: vi.fn(),
 }))
 

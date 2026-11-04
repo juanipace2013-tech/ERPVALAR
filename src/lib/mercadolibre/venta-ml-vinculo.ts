@@ -198,7 +198,39 @@ export interface CandadoVentaMl {
   status: string
 }
 
+type DbCandado = Pick<Prisma.TransactionClient, 'invoice' | 'mlOrderInvoice'>
+
+/** La factura quedó acreditada completa por NC (las NC vigentes suman su total). */
+export async function facturaAcreditadaPorNc(invoiceId: string, db: DbCandado = prisma): Promise<boolean> {
+  const inv = await db.invoice.findUnique({
+    where: { id: invoiceId },
+    select: {
+      total: true,
+      relatedInvoices: { where: { transactionType: 'CREDIT_NOTE', status: { not: 'CANCELLED' } }, select: { total: true } },
+    },
+  })
+  if (!inv || !inv.relatedInvoices.length) return false
+  const acreditado = inv.relatedInvoices.reduce((s, r) => s + Number(r.total), 0)
+  return acreditado >= Number(inv.total) - 0.01
+}
+
+/**
+ * Si la factura de la venta quedó anulada por NC, libera el candado: la venta
+ * se puede volver a facturar (p. ej. se corrigió un ítem). Solo un candado
+ * EMITIDA con factura; uno EMITIENDO (o sin factura) nunca se toca.
+ * Devuelve si lo liberó.
+ */
+export async function liberarCandadoSiFacturaAnulada(packId: string, db: DbCandado = prisma): Promise<boolean> {
+  const reg = await db.mlOrderInvoice.findUnique({ where: { packId }, select: { invoiceId: true, status: true } })
+  if (!reg || reg.status !== 'EMITIDA' || !reg.invoiceId) return false
+  if (!(await facturaAcreditadaPorNc(reg.invoiceId, db))) return false
+  const { count } = await db.mlOrderInvoice.deleteMany({ where: { packId, invoiceId: reg.invoiceId, status: 'EMITIDA' } })
+  if (count) logger.info(`[ML Facturación] Venta ${packId}: la factura ${reg.invoiceId} quedó anulada por NC, se libera el candado`)
+  return count > 0
+}
+
 async function candadoDe(packId: string): Promise<CandadoVentaMl | null> {
+  await liberarCandadoSiFacturaAnulada(packId)
   const reg = await prisma.mlOrderInvoice.findUnique({
     where: { packId },
     include: { invoice: { select: { id: true, invoiceNumber: true } } },
@@ -322,7 +354,9 @@ export async function inspeccionarVentaMl(id: string, opts: { fresco?: boolean }
  */
 export async function verificarVentaMlFacturable(id: string): Promise<InspeccionVentaMl> {
   // Primero el candado con el número tal cual (evita llamar a ML si ya está)
-  if (await prisma.mlOrderInvoice.findUnique({ where: { packId: String(id).trim() } })) {
+  const clave = String(id).trim()
+  await liberarCandadoSiFacturaAnulada(clave)
+  if (await prisma.mlOrderInvoice.findUnique({ where: { packId: clave } })) {
     throw new VentaMlError('YA_FACTURADA', 409, MENSAJE_VENTA_YA_FACTURADA)
   }
   const v = await inspeccionarVentaMl(id, { fresco: true })

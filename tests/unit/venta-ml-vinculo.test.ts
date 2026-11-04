@@ -12,8 +12,9 @@ import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } 
 type Fila = Record<string, any>
 
 const db = vi.hoisted(() => ({
-  mlOrderInvoice: { create: vi.fn(), delete: vi.fn(), update: vi.fn(), findUnique: vi.fn() },
+  mlOrderInvoice: { create: vi.fn(), delete: vi.fn(), deleteMany: vi.fn(), update: vi.fn(), findUnique: vi.fn() },
   mlItemLink: { findMany: vi.fn() },
+  invoice: { findUnique: vi.fn() },
 }))
 const ml = vi.hoisted(() => ({
   getPack: vi.fn(),
@@ -75,11 +76,21 @@ function orden(over: Partial<MlSaleOrder> = {}): MlSaleOrder {
 }
 
 const candados = new Map<string, Fila>()
+/** Facturas del ERP: total y NC vigentes (relatedInvoices) */
+const facturas = new Map<string, Fila>()
 
 beforeEach(() => {
   vi.clearAllMocks()
   limpiarCachesFacturacionMl()
   candados.clear()
+  facturas.clear()
+  db.invoice.findUnique.mockImplementation(async ({ where }: Fila) => facturas.get(where.id) ?? null)
+  db.mlOrderInvoice.deleteMany.mockImplementation(async ({ where }: Fila) => {
+    const f = candados.get(where.packId)
+    if (!f || f.invoiceId !== where.invoiceId || f.status !== where.status) return { count: 0 }
+    candados.delete(where.packId)
+    return { count: 1 }
+  })
   db.mlOrderInvoice.create.mockImplementation(async ({ data }: Fila) => {
     if (candados.has(data.packId)) throw new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: '5.22.0' })
     candados.set(data.packId, { status: 'EMITIENDO', invoiceId: null, ...data })
@@ -224,6 +235,37 @@ describe('verificarVentaMlFacturable (al emitir)', () => {
     expect(await facturaAdjuntaEnMl(PACK)).toBe(false)
     const v = await verificarVentaMlFacturable(PACK)
     expect(v.facturaEnMl).toBe(true)
+  })
+})
+
+describe('factura anulada por NC: la venta se puede volver a facturar', () => {
+  it('NC total (o NC que suman el total): libera el candado y la venta es facturable', async () => {
+    candados.set(PACK, { packId: PACK, status: 'EMITIDA', invoiceId: 'INV9' })
+    facturas.set('INV9', { total: 72100, relatedInvoices: [{ total: 72100 }] })
+    const v = await verificarVentaMlFacturable(PACK)
+    expect(v.yaFacturada).toBeNull()
+    expect(candados.has(PACK)).toBe(false)
+  })
+
+  it('NC parcial: sigue facturada', async () => {
+    candados.set(PACK, { packId: PACK, status: 'EMITIDA', invoiceId: 'INV9' })
+    facturas.set('INV9', { total: 72100, relatedInvoices: [{ total: 10000 }] })
+    const e = await verificarVentaMlFacturable(PACK).catch((x) => x)
+    expect(e).toMatchObject({ codigo: 'YA_FACTURADA', status: 409 })
+    expect(candados.has(PACK)).toBe(true)
+  })
+
+  it('candado EMITIENDO (emisión en curso o para revisar): nunca se libera', async () => {
+    candados.set(PACK, { packId: PACK, status: 'EMITIENDO', invoiceId: null })
+    const e = await verificarVentaMlFacturable(PACK).catch((x) => x)
+    expect(e).toMatchObject({ codigo: 'YA_FACTURADA', status: 409 })
+    expect(db.invoice.findUnique).not.toHaveBeenCalled()
+  })
+
+  it('la inspección (vista previa) tampoco la marca como facturada', async () => {
+    candados.set(PACK, { packId: PACK, status: 'EMITIDA', invoiceId: 'INV9' })
+    facturas.set('INV9', { total: 72100, relatedInvoices: [{ total: 50000 }, { total: 22100 }] })
+    expect((await inspeccionarVentaMl(PACK)).yaFacturada).toBeNull()
   })
 })
 

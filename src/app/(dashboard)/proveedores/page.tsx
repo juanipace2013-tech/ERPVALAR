@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent } from '@/components/ui/card'
-import { Truck, ClipboardList, Receipt } from 'lucide-react'
+import { Truck, ClipboardList, Receipt, Banknote } from 'lucide-react'
 
 // Lazy imports for better performance
 import dynamic from 'next/dynamic'
@@ -20,6 +20,11 @@ const OrdenesCompra = dynamic(() => import('./ordenes-compra/page'), {
 })
 
 const FacturasCompra = dynamic(() => import('./facturas-compra/page'), {
+  ssr: false,
+  loading: () => <div className="flex items-center justify-center p-12">Cargando...</div>
+})
+
+const PagosProveedores = dynamic(() => import('./pagos/page'), {
   ssr: false,
   loading: () => <div className="flex items-center justify-center p-12">Cargando...</div>
 })
@@ -48,7 +53,7 @@ export default function ProveedoresMainPage() {
         <CardContent className="p-0">
           <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
             <div className="border-b bg-gray-50/50 px-6 pt-6">
-              <TabsList className="grid w-full max-w-3xl grid-cols-3 bg-white">
+              <TabsList className="grid w-full max-w-4xl grid-cols-4 bg-white">
                 <TabsTrigger value="proveedores" className="flex items-center gap-2">
                   <Truck className="h-4 w-4" />
                   Proveedores
@@ -60,6 +65,10 @@ export default function ProveedoresMainPage() {
                 <TabsTrigger value="facturas" className="flex items-center gap-2">
                   <Receipt className="h-4 w-4" />
                   Facturas de Compra
+                </TabsTrigger>
+                <TabsTrigger value="pagos" className="flex items-center gap-2">
+                  <Banknote className="h-4 w-4" />
+                  Pagos
                 </TabsTrigger>
               </TabsList>
             </div>
@@ -74,6 +83,10 @@ export default function ProveedoresMainPage() {
 
             <TabsContent value="facturas" className="m-0 border-0 p-0">
               <FacturasCompra />
+            </TabsContent>
+
+            <TabsContent value="pagos" className="m-0 border-0 p-0">
+              <PagosProveedores />
             </TabsContent>
           </Tabs>
         </CardContent>

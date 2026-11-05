@@ -1,7 +1,7 @@
 /**
  * GET /api/cron/sync-balances?secret=CRON_SECRET
  *
- * Sync liviano: solo actualiza Customer.balance desde Colppy.
+ * Sync liviano: solo actualiza Customer.balance y Supplier.balance desde Colppy.
  * NO toca nombre, CUIT, dirección, etc. — solo el saldo.
  * Corre diariamente a las 8:30 AR via cron del servidor.
  *
@@ -21,7 +21,61 @@ const JOB: CronJob = 'sync-balances'
 interface SyncResult {
   updated: number
   errors: number
+  /** Proveedores (desde 5/11/2026): Supplier.balance = Saldo de Colppy (lo que les debemos) */
+  suppliersUpdated?: number
+  suppliersErrors?: number
+  /** Si falló la parte de proveedores, el motivo (la de clientes igual queda) */
+  suppliersError?: string
   duration: string
+}
+
+/**
+ * Copia el Saldo de Colppy (listar_proveedor) a Supplier.balance de los
+ * proveedores vinculados por colppyId. Solo toca el saldo.
+ */
+async function sincronizarSaldosProveedores(session: { usuario: string; claveSesion: string; idEmpresa: string }, auth: { usuario: string; password: string }) {
+  let updated = 0
+  let errors = 0
+  const colppySuppliers: any[] = await fetchAllColppyPages(async (start, limit) => {
+    const listRes = await callColppyAPI<any>(
+      {
+        auth,
+        service: { provision: 'Proveedor', operacion: 'listar_proveedor' },
+        parameters: {
+          sesion: { usuario: session.usuario, claveSesion: session.claveSesion },
+          idEmpresa: session.idEmpresa,
+          start,
+          limit,
+          filter: [],
+          order: [{ field: 'RazonSocial', dir: 'asc' }],
+        },
+      },
+      120000
+    )
+    if (!listRes.response?.success) throw new Error('Error cargando proveedores de Colppy')
+    return listRes.response.data || []
+  })
+  logger.info(`[CRON] Sync balances: ${colppySuppliers.length} proveedores de Colppy`)
+
+  const locales = await prisma.supplier.findMany({ select: { id: true, colppyId: true, balance: true }, where: { colppyId: { not: null } } })
+  const porColppyId = new Map(locales.map((s) => [s.colppyId as string, s]))
+  for (const p of colppySuppliers) {
+    const local = porColppyId.get(String(p.idProveedor || ''))
+    if (!local) continue
+    const balance = Math.round(parseFloat(p.Saldo || '0') * 100) / 100
+    if (!Number.isFinite(balance)) {
+      errors++
+      continue
+    }
+    if (Math.abs(Number(local.balance) - balance) < 0.005) continue
+    try {
+      await prisma.supplier.update({ where: { id: local.id }, data: { balance } })
+      updated++
+    } catch {
+      errors++
+    }
+  }
+  return { updated, errors }
 }
 
 // ─── Sync ───────────────────────────────────────────────────────────────────
@@ -103,9 +157,21 @@ async function sincronizarSaldos(): Promise<SyncResult> {
       await Promise.allSettled(operations)
     }
 
+    // 5. Proveedores: si falla, no tira abajo lo de clientes
+    let proveedores: Pick<SyncResult, 'suppliersUpdated' | 'suppliersErrors' | 'suppliersError'>
+    try {
+      const r = await sincronizarSaldosProveedores(session, { usuario: config.user, password: passwordMD5 })
+      proveedores = { suppliersUpdated: r.updated, suppliersErrors: r.errors }
+    } catch (e) {
+      logger.error(`[CRON] Sync balances: falló la parte de proveedores: ${(e as Error).message}`)
+      proveedores = { suppliersError: (e as Error).message }
+    }
+
     const duration = ((Date.now() - startTime) / 1000).toFixed(1)
-    logger.info(`[CRON] Sync balances completed: ${updated} clients updated, ${errors} errors in ${duration}s`)
-    return { updated, errors, duration: `${duration}s` }
+    logger.info(
+      `[CRON] Sync balances completed: ${updated} clients updated, ${errors} errors; proveedores ${proveedores.suppliersUpdated ?? 0} actualizados${proveedores.suppliersError ? ` (ERROR: ${proveedores.suppliersError})` : ''} in ${duration}s`
+    )
+    return { updated, errors, ...proveedores, duration: `${duration}s` }
   } finally {
     await colppyLogout(session).catch(() => {})
   }

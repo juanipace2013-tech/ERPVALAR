@@ -102,6 +102,45 @@ salvo el cálculo de retenciones, que va a PHP internos de la pantalla.
   base = Σ neto sin IVA de lo pagado (`totalFactura / 1,21`; 4.632.256,44) más lo ya pagado al
   proveedor en el mes; retención = (base − 224.000) × 2 % − lo ya retenido en el mes = 88.165,13.
 
+### E-cheqs de terceros endosados + e-cheq propio (captura real 5/11/2026)
+
+OP 0001-00005515 a GENEBRE (idPago 9597180), cargada a mano en Colppy con la grabación activa:
+47 facturas pagadas de 97 impagas listadas, retención 78 calculada al centavo con
+(base − 224.000) × 2 %, pagada con 7 e-cheqs de terceros endosados + 1 e-cheq propio.
+
+**Cheque de tercero (endoso de cartera)**: una fila por cheque en `recordsToInsertUpdate1`
+(valores de ejemplo, no reales):
+
+```json
+{ "idMedioPago": "Cheque de Tercero", "idPlanCuenta": "Valores a Depositar",
+  "nroCheque": "12345678", "fechaValidez": "07/11/2026", "importe": "1000000.00",
+  "idTabla": "20", "idElemento": "<id del cobro>", "idItem": "<renglón del cheque en el cobro>",
+  "CED": "S", "Conciliado": "", "Moneda": "" }
+```
+
+- `idTabla` "20" = cobros; `idElemento` e `idItem` se copian tal cual de la fila de cartera, como texto
+  (igual que el importe).
+- `idMedioPago` es "Cheque de Tercero" aunque el valor sea un e-cheq (en la cartera dice `tipo: "Echeqs"`).
+
+**E-cheq propio** (emitido desde el banco):
+
+```json
+{ "idMedioPago": "Echeqs", "idPlanCuenta": "Cta Cte Galicia", "nroCheque": "00000001",
+  "fechaValidez": "06/11/2026", "importe": 1000000.00, "idTabla": 0, "idElemento": 0,
+  "idItem": 0, "CED": "S", "Conciliado": "", "Moneda": "" }
+```
+
+Antes del alta el front valida el número con `TE_ValidacionNumCheque.php`
+(`idEmpresa, banco, idMedioPago, nroCheque` → `{success: true}`).
+
+**De dónde sale la cartera:** `resources/php/tesoreria/TE_ValoresADepositar.php` (`idEmpresa`), un PHP
+interno del front, **no** la API pública (por eso no apareció al probar operaciones el 30/10).
+Devuelve un objeto con índices "0".."n"; cada valor trae `nroCheque, Emisor, Banco, fechaValidez,
+importe, idTabla, idElemento, idItem, Documento` (ej. "REC 0001-000xxxxx"), `tipo` ("Echeqs") y `fecha`.
+
+Pendiente para la fase 2: ver si el ERP puede llamar ese PHP (usa la sesión web del front, no la de la
+API) o armar la cartera desde otra fuente conservando `idElemento`/`idItem` exactos.
+
 ### Lo que falta capturar
 
 - Una OP con **e-cheqs de terceros endosados** (cómo se referencia el cheque de cartera: seguramente

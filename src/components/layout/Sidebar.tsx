@@ -38,6 +38,7 @@ import {
   UtensilsCrossed,
   TreePalm,
   FileBadge,
+  Banknote,
 } from 'lucide-react'
 
 interface SubNavItem {
@@ -205,6 +206,12 @@ const navItems: NavItem[] = [
         href: '/proveedores/ordenes-compra',
         icon: ShoppingCart,
         roles: ['ADMIN', 'GERENTE', 'VENDEDOR', 'CONTADOR'],
+      },
+      {
+        title: 'Pagos',
+        href: '/proveedores/pagos',
+        icon: Banknote,
+        roles: ['ADMIN', 'GERENTE', 'CONTADOR'],
       },
     ],
   },

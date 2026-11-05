@@ -107,6 +107,9 @@ model User {
   // Herramientas técnicas
   calculosReguladoraVapor CalculoReguladoraVapor[]
 
+  // Órdenes de pago a proveedores (registradas en Colppy)
+  supplierPaymentOrders SupplierPaymentOrder[]
+
   @@index([email])
   @@index([role])
   @@index([status])
@@ -246,20 +249,20 @@ model Customer {
   updatedAt DateTime @updatedAt
 
   // Relaciones
-  contacts          Contact[]
-  opportunities     Opportunity[]
-  quotes            Quote[]
-  deliveryNotes     DeliveryNote[]
-  invoices          Invoice[]
-  activities        Activity[]
-  receipts          Receipt[]
-  customerReceipts  CustomerReceipt[]         @relation("CustomerReceipts")
-  deliveryAddresses CustomerDeliveryAddress[]
-  transports        CustomerTransport[]
-  googleAdsLeads    GoogleAdsLead[]
-  conversations     Conversation[]
+  contacts            Contact[]
+  opportunities       Opportunity[]
+  quotes              Quote[]
+  deliveryNotes       DeliveryNote[]
+  invoices            Invoice[]
+  activities          Activity[]
+  receipts            Receipt[]
+  customerReceipts    CustomerReceipt[]         @relation("CustomerReceipts")
+  deliveryAddresses   CustomerDeliveryAddress[]
+  transports          CustomerTransport[]
+  googleAdsLeads      GoogleAdsLead[]
+  conversations       Conversation[]
   facturasExportacion FacturaExportacion[]
-  facturasDirectas  FacturaDirecta[]
+  facturasDirectas    FacturaDirecta[]
 
   @@index([cuit])
   @@index([name])
@@ -400,13 +403,14 @@ model Supplier {
   colppyId String? // ID del proveedor en Colppy
 
   // Relaciones
-  products         Product[]         @relation("SupplierProducts")
+  products         Product[]              @relation("SupplierProducts")
   purchaseOrders   PurchaseOrder[]
   purchaseInvoices PurchaseInvoice[]
   payments         SupplierPayment[]
   treasuryPayments Payment[]
   deliveryStops    DeliveryStop[]
   deliveryNotes    DeliveryNote[]
+  paymentOrders    SupplierPaymentOrder[]
 
   // Timestamps
   createdAt DateTime @default(now())
@@ -625,6 +629,92 @@ model PurchaseInvoice {
   @@index([colppyInvoiceId])
   @@index([requiresReview])
   @@map("purchase_invoices")
+}
+
+// ============================================================================
+// ÓRDENES DE PAGO A PROVEEDORES (se arman en el ERP y se dan de alta en Colppy
+// con Pago/alta_pago). Ver docs/DISENO-PAGOS-PROVEEDORES-COLPPY.md.
+// ============================================================================
+
+enum SupplierPaymentOrderStatus {
+  REGISTRANDO // se está mandando a Colppy
+  REGISTRADA // Colppy la dio de alta (colppyPaymentId)
+  ERROR // Colppy la rechazó: no se creó nada, se puede volver a intentar
+  INCIERTO // se cortó sin respuesta: puede haberse creado. NO reintentar sin verificar
+}
+
+model SupplierPaymentOrder {
+  id             String @id @default(cuid())
+  // Clave que manda la pantalla: el mismo pedido no se registra dos veces
+  idempotencyKey String @unique
+
+  supplierId       String
+  supplier         Supplier @relation(fields: [supplierId], references: [id])
+  colppySupplierId String
+
+  paymentDate DateTime                   @db.Date
+  status      SupplierPaymentOrderStatus @default(REGISTRANDO)
+
+  invoicesTotal   Decimal @db.Decimal(15, 2) // totalFacturas
+  retentionRegime String? // "78" (null = sin retención)
+  retentionBase   Decimal @default(0) @db.Decimal(15, 2) // baseCalculo1 (acumulada del mes)
+  retentionAmount Decimal @default(0) @db.Decimal(15, 2) // retGanancias1
+  retentionCalc   Decimal @default(0) @db.Decimal(15, 2) // lo que calculó el ERP (si se corrigió a mano difiere)
+  totalPaid       Decimal @db.Decimal(15, 2) // totalpagado = Σ medios
+  description     String? @db.Text
+
+  paymentNumber   String? // 0001-00005507
+  colppyPaymentId String?   @unique // idPago
+  colppyRequest   Json? // parameters mandados (sin sesión)
+  colppyResponse  Json?
+  lastError       String?   @db.Text
+  registeredAt    DateTime?
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  applications SupplierPaymentApplication[]
+  media        SupplierPaymentMedium[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([supplierId])
+  @@index([status])
+  @@index([paymentDate])
+  @@map("supplier_payment_orders")
+}
+
+model SupplierPaymentApplication {
+  id      String               @id @default(cuid())
+  orderId String
+  order   SupplierPaymentOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  colppyInvoiceId   String
+  invoiceNumber     String
+  invoiceTotal      Decimal @db.Decimal(15, 2)
+  previousBalance   Decimal @db.Decimal(15, 2)
+  amount            Decimal @db.Decimal(15, 2) // estePago
+  netAmount         Decimal @db.Decimal(15, 2) // neto sin IVA de lo pagado (base de retención)
+  purchaseInvoiceId String? // factura de compra del ERP con ese colppyInvoiceId, si existe
+
+  @@index([orderId])
+  @@index([colppyInvoiceId])
+  @@map("supplier_payment_applications")
+}
+
+model SupplierPaymentMedium {
+  id      String               @id @default(cuid())
+  orderId String
+  order   SupplierPaymentOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  method      String // "Transferencia"
+  accountName String // nombre del banco en Colppy ("Cta Cte Galicia")
+  accountCode String? // cuenta contable (111200)
+  amount      Decimal @db.Decimal(15, 2)
+
+  @@index([orderId])
+  @@map("supplier_payment_media")
 }
 
 model PurchaseInvoiceItem {
@@ -1129,21 +1219,21 @@ model Quote {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  customer          Customer                @relation(fields: [customerId], references: [id])
-  opportunity       Opportunity?            @relation(fields: [opportunityId], references: [id])
-  salesPerson       User                    @relation("QuoteSalesPerson", fields: [salesPersonId], references: [id])
-  creador           User?                   @relation("QuoteCreador", fields: [creadoPorId], references: [id])
-  items             QuoteItem[]
-  deliveryNotes     DeliveryNote[] // Remitos generados
-  invoices          Invoice[] // Facturas generadas
-  statusHistory     QuoteStatusHistory[]
-  publicToken       QuotePublicToken? // Token para acceso público
-  emailLogs         QuoteEmailLog[] // Log de emails enviados
-  seguimientos      QuoteSeguimiento[] // Seguimientos de contacto
-  facturas          CotizacionFactura[] // Facturas parciales generadas
-  auditLogs         CotizacionAuditLog[]
-  comisionLineas    ComisionLinea[] // Líneas de comisión vinculadas
-  deliverySchedules QuoteDeliverySchedule[] // Cronograma de entregas parciales (OC del cliente)
+  customer            Customer                @relation(fields: [customerId], references: [id])
+  opportunity         Opportunity?            @relation(fields: [opportunityId], references: [id])
+  salesPerson         User                    @relation("QuoteSalesPerson", fields: [salesPersonId], references: [id])
+  creador             User?                   @relation("QuoteCreador", fields: [creadoPorId], references: [id])
+  items               QuoteItem[]
+  deliveryNotes       DeliveryNote[] // Remitos generados
+  invoices            Invoice[] // Facturas generadas
+  statusHistory       QuoteStatusHistory[]
+  publicToken         QuotePublicToken? // Token para acceso público
+  emailLogs           QuoteEmailLog[] // Log de emails enviados
+  seguimientos        QuoteSeguimiento[] // Seguimientos de contacto
+  facturas            CotizacionFactura[] // Facturas parciales generadas
+  auditLogs           CotizacionAuditLog[]
+  comisionLineas      ComisionLinea[] // Líneas de comisión vinculadas
+  deliverySchedules   QuoteDeliverySchedule[] // Cronograma de entregas parciales (OC del cliente)
   facturasExportacion FacturaExportacion[] // Facturas E (WSFEX) emitidas desde la cotización
 
   @@index([customerId])
@@ -1414,12 +1504,12 @@ model DeliveryNote {
 
   // Uso interno, no se imprime: el depósito tiene que pasar los lotes para
   // armar el certificado de calidad.
-  solicitaCertificadoCalidad Boolean @default(false)
+  solicitaCertificadoCalidad Boolean   @default(false)
   // Circuito del certificado (/remitos/certificados): cuándo y a quién se le
   // pidió al proveedor, y cuándo llegó.
-  certificadoPedidoAt   DateTime?
-  certificadoPedidoA    String?
-  certificadoRecibidoAt DateTime?
+  certificadoPedidoAt        DateTime?
+  certificadoPedidoA         String?
+  certificadoRecibidoAt      DateTime?
 
   // CAI asignado (autoimpresión ARCA)
   caiNumber String? // Número de CAI con que se emitió
@@ -1651,10 +1741,10 @@ model InvoiceItem {
   taxRate   Decimal @default(0) @db.Decimal(5, 2)
   subtotal  Decimal @db.Decimal(12, 2)
 
-  description String?
+  description  String?
   // Comentario de línea cargado al facturar (N° de ítem/SOLPED de la OC, etc.):
   // sale impreso en el PDF debajo de la descripción.
-  comment     String? @db.Text
+  comment      String? @db.Text
   // NC por unidades: índice de la línea de la factura original
   // (colppyPayload.items) que devuelve este ítem.
   lineaFactura Int?

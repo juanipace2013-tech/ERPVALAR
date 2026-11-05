@@ -326,7 +326,7 @@ function ProveedoresGestion() {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         {/* Lista de proveedores */}
         <Card className="border-blue-200 self-start">
           <CardContent className="p-4">
@@ -395,17 +395,8 @@ function ProveedoresGestion() {
                           onClick={() => handleSort('name')}
                         >
                           <div className="flex items-center font-semibold text-blue-900">
-                            Nombre
+                            Proveedor
                             {getSortIcon('name')}
-                          </div>
-                        </TableHead>
-                        <TableHead
-                          className="cursor-pointer hover:bg-blue-100 transition-colors"
-                          onClick={() => handleSort('legalName')}
-                        >
-                          <div className="flex items-center font-semibold text-blue-900">
-                            Razón social
-                            {getSortIcon('legalName')}
                           </div>
                         </TableHead>
                         <TableHead
@@ -429,18 +420,19 @@ function ProveedoresGestion() {
                             onClick={() => seleccionar(supplier)}
                             aria-selected={activo}
                           >
-                            <TableCell className={`max-w-[11rem] text-sm ${activo ? 'font-semibold text-blue-900' : 'font-medium'}`}>
+                            <TableCell className={`max-w-0 w-full text-sm ${activo ? 'font-semibold text-blue-900' : 'font-medium'}`}>
                               <div className="flex items-center gap-1">
                                 {supplier.isPreferred && (
                                   <Star className="h-3.5 w-3.5 shrink-0 text-yellow-500 fill-yellow-500" />
                                 )}
                                 <span className="truncate" title={supplier.name}>{supplier.name}</span>
                               </div>
-                            </TableCell>
-                            <TableCell className="max-w-[11rem] text-sm">
-                              <span className="block truncate" title={supplier.legalName || supplier.name}>
-                                {supplier.legalName || supplier.name}
-                              </span>
+                              {/* Razón social solo si es distinta del nombre (en Colppy pasa con los monotributistas) */}
+                              {supplier.legalName && supplier.legalName.trim() !== supplier.name.trim() && (
+                                <span className="block truncate text-xs font-normal text-muted-foreground" title={supplier.legalName}>
+                                  {supplier.legalName}
+                                </span>
+                              )}
                             </TableCell>
                             <TableCell className="whitespace-nowrap text-right font-mono text-sm">
                               {formatCurrency(saldosVivos[supplier.id] ?? supplier.balance)}

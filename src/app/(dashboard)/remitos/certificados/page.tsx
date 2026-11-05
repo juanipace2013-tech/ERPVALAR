@@ -247,7 +247,7 @@ function RemitoCard({ remito, contactos, onCambio }: { remito: Remito; contactos
               <TableHead>Descripción</TableHead>
               <TableHead className="w-20 text-right">Cant.</TableHead>
               <TableHead className="w-28">Marca</TableHead>
-              <TableHead className="w-48">N° de lote</TableHead>
+              <TableHead className="w-52 min-w-52">N° de lote</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -261,7 +261,7 @@ function RemitoCard({ remito, contactos, onCambio }: { remito: Remito; contactos
                   <Input
                     value={lotes[i.id] ?? ''}
                     placeholder="Ej. 2025 030284"
-                    className="h-8"
+                    className="h-8 w-48"
                     onChange={(e) => setLotes((l) => ({ ...l, [i.id]: e.target.value }))}
                   />
                 </TableCell>

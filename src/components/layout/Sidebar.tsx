@@ -123,7 +123,7 @@ const navItems: NavItem[] = [
         roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
       },
       {
-        title: 'Certificados',
+        title: 'Certificados de calidad',
         href: '/remitos/certificados',
         icon: FileCheck,
         roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],

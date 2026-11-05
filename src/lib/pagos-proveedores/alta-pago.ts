@@ -176,20 +176,23 @@ export function armarAltaPago(p: PedidoAltaPago): AltaPagoArmado {
     anticipo: 0,
     descuentos: 0,
     intereses: 0,
-    // Sin régimen va como lo guarda Colppy (leer_pago: régimen "0", base y retención 0)
-    idRetGanancias1: conRetencion ? p.retencion!.regimen : '0',
-    baseCalculo1: conRetencion ? r2(p.retencion!.baseAcumulada) : 0,
+    // Sin régimen va como lo manda el front de Colppy (alta real 0001-00005513): régimen y base vacíos
+    idRetGanancias1: conRetencion ? p.retencion!.regimen : '',
+    baseCalculo1: conRetencion ? r2(p.retencion!.baseAcumulada) : '',
     retGanancias1: conRetencion ? retencion : 0,
     retemitidas: [],
     retencionIIBB: 0,
     nroPago1: p.nroPago1,
     nroPago2: p.nroPago2,
-    recordsToInsertUpdate: records,
-    recordsToInsertUpdate1: p.medios.map((m) => ({
+    // Las dos grillas van como TEXTO JSON, como las manda el front de Colppy
+    // (alta real 0001-00005513, 5/11/2026); como arreglo Colppy rechaza el pago.
+    recordsToInsertUpdate: JSON.stringify(records),
+    recordsToInsertUpdate1: JSON.stringify(p.medios.map((m) => ({
       idMedioPago: m.medio,
       idPlanCuenta: m.cuenta.trim(),
       nroCheque: '',
-      fechaValidez: fechaBarra,
+      // Con tarjeta el front de Colppy deja la fecha vacía
+      fechaValidez: m.medio === 'Tarjeta de Crédito' ? '' : fechaBarra,
       importe: r2(m.importe),
       idTabla: 0,
       idElemento: 0,
@@ -197,7 +200,7 @@ export function armarAltaPago(p: PedidoAltaPago): AltaPagoArmado {
       CED: 'S',
       Conciliado: '',
       Moneda: '',
-    })),
+    }))),
     descripcion: (p.descripcion ?? '').slice(0, 200),
     diferenciaTipoCambio: 0,
     origen: 'proveedores',

@@ -139,7 +139,7 @@ describe('armarAltaPago (formato capturado del front de Colppy)', () => {
       diferenciaTipoCambio: 0,
       origen: 'proveedores',
     })
-    const recs = r.parameters.recordsToInsertUpdate as any[]
+    const recs = JSON.parse(r.parameters.recordsToInsertUpdate as string) as any[]
     expect(recs).toHaveLength(4)
     // Primer renglón: idéntico al capturado
     expect(recs[0]).toEqual({
@@ -150,16 +150,16 @@ describe('armarAltaPago (formato capturado del front de Colppy)', () => {
     })
     // La que no se paga va igual, con pagar:false
     expect(recs[3]).toMatchObject({ idFactura: '24536244', estePago: 0, Saldo: 1247207.5, pagar: false, retencionAcumulada: 0 })
-    expect(r.parameters.recordsToInsertUpdate1).toEqual([
+    expect(JSON.parse(r.parameters.recordsToInsertUpdate1 as string)).toEqual([
       { idMedioPago: 'Transferencia', idPlanCuenta: 'Cta Cte Galicia', nroCheque: '', fechaValidez: '05/11/2026', importe: 5516865.16, idTabla: 0, idElemento: 0, idItem: 0, CED: 'S', Conciliado: '', Moneda: '' },
     ])
   })
 
   it('pago parcial: Saldo = saldo − estePago', () => {
     const r = armarAltaPago({ ...pedidoBms, pagos: { '24296591': 100000 }, retencion: null, medios: [{ medio: 'Transferencia', cuenta: 'Cta Cte Galicia', importe: 100000 }] })
-    const recs = r.parameters.recordsToInsertUpdate as any[]
+    const recs = JSON.parse(r.parameters.recordsToInsertUpdate as string) as any[]
     expect(recs[0]).toMatchObject({ estePago: 100000, Saldo: 488876.75, pagar: true })
-    expect(r.parameters).toMatchObject({ idRetGanancias1: '0', baseCalculo1: 0, retGanancias1: 0, totalpagado: 100000 })
+    expect(r.parameters).toMatchObject({ idRetGanancias1: '', baseCalculo1: '', retGanancias1: 0, totalpagado: 100000 })
   })
 
   it('con régimen y retención 0 (debajo del mínimo) igual manda la base para que acumule', () => {
@@ -169,7 +169,7 @@ describe('armarAltaPago (formato capturado del front de Colppy)', () => {
 
   it('varias transferencias que suman el total', () => {
     const r = armarAltaPago({ ...pedidoBms, medios: [{ medio: 'Transferencia', cuenta: 'Cta Cte Galicia', importe: 5000000 }, { medio: 'Transferencia', cuenta: 'MERCADOPAGO', importe: 516865.16 }] })
-    expect((r.parameters.recordsToInsertUpdate1 as any[]).map((m) => m.idPlanCuenta)).toEqual(['Cta Cte Galicia', 'MERCADOPAGO'])
+    expect((JSON.parse(r.parameters.recordsToInsertUpdate1 as string) as any[]).map((m) => m.idPlanCuenta)).toEqual(['Cta Cte Galicia', 'MERCADOPAGO'])
   })
 
   it('tarjeta de crédito: medio "Tarjeta de Crédito" con la tarjeta por nombre (front de Colppy)', () => {
@@ -179,8 +179,8 @@ describe('armarAltaPago (formato capturado del front de Colppy)', () => {
       retencion: null,
       medios: [{ medio: 'Tarjeta de Crédito', cuenta: 'TARJETA GALICIA', importe: 588876.75 }],
     })
-    expect(r.parameters.recordsToInsertUpdate1).toEqual([
-      { idMedioPago: 'Tarjeta de Crédito', idPlanCuenta: 'TARJETA GALICIA', nroCheque: '', fechaValidez: '05/11/2026', importe: 588876.75, idTabla: 0, idElemento: 0, idItem: 0, CED: 'S', Conciliado: '', Moneda: '' },
+    expect(JSON.parse(r.parameters.recordsToInsertUpdate1 as string)).toEqual([
+      { idMedioPago: 'Tarjeta de Crédito', idPlanCuenta: 'TARJETA GALICIA', nroCheque: '', fechaValidez: '', importe: 588876.75, idTabla: 0, idElemento: 0, idItem: 0, CED: 'S', Conciliado: '', Moneda: '' },
     ])
   })
 

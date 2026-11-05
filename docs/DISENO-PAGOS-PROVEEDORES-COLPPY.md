@@ -88,6 +88,12 @@ salvo el cálculo de retenciones, que va a PHP internos de la pantalla.
 ```
 
 - `recordsToInsertUpdate` = facturas; `recordsToInsertUpdate1` = medios de pago.
+- **Las dos grillas viajan como TEXTO JSON** (`"recordsToInsertUpdate": "[{...}]"`), no como arreglo:
+  arriba están desplegadas para leerlas. Mandadas como arreglo, Colppy contesta
+  "Error al registrar pago … Intente nuevamente" (primer alta desde el ERP, 0001-00005513, 5/11/2026).
+- **Sin régimen de Ganancias**: `idRetGanancias1: ""`, `baseCalculo1: ""`, `retGanancias1: 0`.
+- **Tarjeta de crédito** (captura real 0001-00005513, idPago 9596726): `idMedioPago: "Tarjeta de Crédito"`,
+  `idPlanCuenta: "TARJETA GALICIA"`, `fechaValidez: ""`; el resto igual que la transferencia.
 - Medio y cuenta van **por nombre** (`"Transferencia"`, `"Cta Cte Galicia"`), no por código.
 - Ojo con los formatos de fecha: `fechaPago` con guiones (DD-MM-YYYY), `fechaValidez` con barras.
 - Cuentas que cierran: `totalFacturas` = Σ `estePago` (5.605.030,29);

@@ -631,9 +631,11 @@ export default function DeliveryNoteDetailPage() {
         </div>
         <div className="flex items-center gap-2">
           {deliveryNote.solicitaCertificadoCalidad && (
-            <Badge className="bg-purple-100 text-purple-800 print:hidden" title="Uso interno, no se imprime">
-              Solicita certificado de calidad: pasar los lotes
-            </Badge>
+            <Link href="/remitos/certificados" className="print:hidden">
+              <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-200" title="Uso interno, no se imprime. Cargar lotes y pedir el certificado">
+                Solicita certificado de calidad: pasar los lotes
+              </Badge>
+            </Link>
           )}
           <Badge className={statusColors[deliveryNote.status]}>
             {statusLabels[deliveryNote.status]}

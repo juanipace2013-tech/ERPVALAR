@@ -316,6 +316,12 @@ export default function RemitosPage() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <Button asChild variant="outline">
+            <Link href="/remitos/certificados">
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              Certificados
+            </Link>
+          </Button>
           <Button asChild className="bg-blue-600 hover:bg-blue-700">
             <Link href="/remitos/nuevo">
               <Plus className="h-4 w-4 mr-2" />

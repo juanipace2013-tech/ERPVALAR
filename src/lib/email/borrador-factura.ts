@@ -100,7 +100,7 @@ function saludo(ahora: Date): string {
   return hora < 13 ? 'Muy buenos días' : 'Muy buenas tardes'
 }
 
-const FIRMA = `
+export const FIRMA = `
 <p style="margin:0;color:#1F4E79"><b>Carolina Rutolo</b><br><b>VALAR</b><br>
 14 de Julio 175.<br>Paternal | Capital Federal<br>
 <b>Office:</b> + 54 (11) 4551-3343 | 4552-2874 | <b>WhatsApp:</b> (11) 6055 1683<br>

@@ -1415,6 +1415,11 @@ model DeliveryNote {
   // Uso interno, no se imprime: el depósito tiene que pasar los lotes para
   // armar el certificado de calidad.
   solicitaCertificadoCalidad Boolean @default(false)
+  // Circuito del certificado (/remitos/certificados): cuándo y a quién se le
+  // pidió al proveedor, y cuándo llegó.
+  certificadoPedidoAt   DateTime?
+  certificadoPedidoA    String?
+  certificadoRecibidoAt DateTime?
 
   // CAI asignado (autoimpresión ARCA)
   caiNumber String? // Número de CAI con que se emitió

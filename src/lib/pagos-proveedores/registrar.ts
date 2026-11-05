@@ -18,7 +18,7 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
-import { armarAltaPago, AltaPagoError, esPagableFase1, saldoImpaga, type ImpagaColppy, type MedioPago } from './alta-pago'
+import { armarAltaPago, AltaPagoError, esPagableFase1, normalizarNroCheque, saldoImpaga, type ImpagaColppy, type MedioPago } from './alta-pago'
 import { calcularRetencion78, netoDeFactura, REGIMEN_78, type CalculoRetencion, type PagoPrevioMes } from './retencion'
 import {
   colppyAltaPago,
@@ -171,7 +171,8 @@ export interface PedidoOrdenPago {
   retencionManual: number | null
   /** El usuario decidió no retener aunque el proveedor tenga régimen */
   sinRetencion: boolean
-  medios: Array<{ cuenta: string; importe: number }>
+  /** `cheque` = e-cheq propio desde ese banco (número y fecha de pago YYYY-MM-DD) */
+  medios: Array<{ cuenta: string; importe: number; cheque?: { numero: string; fecha: string } }>
   descripcion: string
 }
 
@@ -315,7 +316,12 @@ export function validarPedidoOrdenPago(body: unknown, opts: { requiereClave: boo
         const importe = Number(m?.importe)
         const cuenta = String(m?.cuenta ?? '').trim()
         if (!cuenta || !Number.isFinite(importe) || importe <= 0) errores.push('Medio de pago incompleto')
-        else medios.push({ cuenta, importe })
+        else if (m?.cheque !== undefined && m?.cheque !== null) {
+          const numero = String(m.cheque?.numero ?? '').trim()
+          const fechaCheque = String(m.cheque?.fecha ?? '').trim()
+          if (!numero || !fechaCheque) errores.push(`E-cheq de ${cuenta}: faltan el número o la fecha de pago`)
+          else medios.push({ cuenta, importe, cheque: { numero, fecha: fechaCheque } })
+        } else medios.push({ cuenta, importe })
       }
   }
   let retencionManual: number | null = null
@@ -337,6 +343,30 @@ export function validarPedidoOrdenPago(body: unknown, opts: { requiereClave: boo
 }
 
 // ── Registro ────────────────────────────────────────────────────────────────
+
+/**
+ * Un e-cheq propio no se puede usar dos veces: frena si el mismo número del
+ * mismo banco ya está en otra orden del ERP que no terminó en error. (Colppy
+ * valida el número con un PHP interno del front que la API no expone.)
+ */
+async function chequesNoUsados(medios: Array<MedioPago>, ordenId: string): Promise<void> {
+  for (const m of medios) {
+    if (m.medio !== 'Echeqs' || !m.cheque) continue
+    const numero = normalizarNroCheque(m.cheque.numero)
+    if (!numero) continue // lo rechaza armarAltaPago con el mensaje de número inválido
+    const usado = await prisma.supplierPaymentMedium.findFirst({
+      where: { accountName: m.cuenta, chequeNumber: numero, orderId: { not: ordenId }, order: { status: { not: 'ERROR' } } },
+      select: { order: { select: { paymentNumber: true } } },
+    })
+    if (usado) {
+      throw new OrdenPagoError(
+        `El e-cheq ${numero} de ${m.cuenta} ya se usó${usado.order.paymentNumber ? ` en la orden ${usado.order.paymentNumber}` : ''}`,
+        'VALIDACION',
+        422
+      )
+    }
+  }
+}
 
 /** Un alta a la vez: el número de OP se pide justo antes y no se puede compartir */
 let cola: Promise<unknown> = Promise.resolve()
@@ -526,8 +556,14 @@ export async function registrarOrdenDePago(p: PedidoOrdenPago, user: { id: strin
         if (bancos.filter((x) => x.nombre === m.cuenta).length > 1) {
           throw new OrdenPagoError(`En Colppy hay más de una cuenta (bancos o tarjetas) llamada "${m.cuenta}": cargá este pago en Colppy`, 'VALIDACION', 422)
         }
+        if (m.cheque) {
+          // E-cheq propio: sale de un banco (no de una tarjeta)
+          if (b.medio !== 'Transferencia') throw new OrdenPagoError(`El e-cheq tiene que salir de un banco, no de "${m.cuenta}"`, 'VALIDACION', 422)
+          return { medio: 'Echeqs' as const, cuenta: b.nombre, importe: r2(m.importe), codigo: b.cuentaContable, cheque: m.cheque }
+        }
         return { medio: b.medio, cuenta: b.nombre, importe: r2(m.importe), codigo: b.cuentaContable }
       })
+      await chequesNoUsados(medios, id)
       // Número justo antes del alta (además deja la sesión recién usada)
       const n = await colppyProximoNumeroOp()
       const armado = armarAltaPago({
@@ -538,7 +574,7 @@ export async function registrarOrdenDePago(p: PedidoOrdenPago, user: { id: strin
         impagas,
         pagos: Object.fromEntries(calc.aplicaciones.map((a) => [a.idFactura, a.importe])),
         retencion: calc.retencion ? { regimen: calc.retencion.regimen, baseAcumulada: calc.retencion.baseAcumulada, importe: calc.retencion.importe } : null,
-        medios: medios.map((m) => ({ medio: m.medio, cuenta: m.cuenta, importe: m.importe })),
+        medios: medios.map((m) => ({ medio: m.medio, cuenta: m.cuenta, importe: m.importe, ...(m.cheque ? { cheque: m.cheque } : {}) })),
         descripcion: p.descripcion,
       })
       parameters = armado.parameters
@@ -571,7 +607,15 @@ export async function registrarOrdenDePago(p: PedidoOrdenPago, user: { id: strin
           })),
         }),
         prisma.supplierPaymentMedium.createMany({
-          data: medios.map((m) => ({ orderId: id, method: m.medio, accountName: m.cuenta, accountCode: m.codigo || null, amount: m.importe })),
+          data: medios.map((m) => ({
+            orderId: id,
+            method: m.medio,
+            accountName: m.cuenta,
+            accountCode: m.codigo || null,
+            amount: m.importe,
+            chequeNumber: m.cheque ? normalizarNroCheque(m.cheque.numero) : null,
+            chequeDate: m.cheque ? new Date(`${m.cheque.fecha}T00:00:00Z`) : null,
+          })),
         }),
       ])
     } catch (e) {

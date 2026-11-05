@@ -10,7 +10,7 @@
  * - `recordsToInsertUpdate1`: medios de pago, con medio y cuenta POR NOMBRE
  *   (idMedioPago "Transferencia", idPlanCuenta "Cta Cte Galicia").
  * - totalFacturas = Σ estePago; totalpagado = totalFacturas − retención = Σ medios.
- * Fase 1: solo facturas (FAC) en pesos y transferencias desde bancos en pesos.
+ * Fase 1: solo facturas (FAC) en pesos; transferencias, tarjetas y e-cheqs propios en pesos.
  * Función pura (testeable): no agrega sesión ni idEmpresa.
  */
 
@@ -37,12 +37,27 @@ export interface ImpagaColppy {
 }
 
 export interface MedioPago {
-  /** "Transferencia" (bancos) o "Tarjeta de Crédito" (tarjetas), como los nombra la grilla de pagos de Colppy */
-  medio: 'Transferencia' | 'Tarjeta de Crédito'
-  /** Nombre del banco en Colppy (Tesoreria/leer_origen_fondos2 → Nombre) */
+  /**
+   * Como los nombra la grilla de pagos de Colppy: "Transferencia" (banco),
+   * "Tarjeta de Crédito" (tarjeta) o "Echeqs" (e-cheq propio emitido desde un banco)
+   */
+  medio: 'Transferencia' | 'Tarjeta de Crédito' | 'Echeqs'
+  /** Nombre del banco/tarjeta en Colppy (Tesoreria/leer_origen_fondos2 → Nombre) */
   cuenta: string
   importe: number
+  /** Solo e-cheq propio: número (8 dígitos, como lo guarda Colppy) y fecha de pago YYYY-MM-DD */
+  cheque?: { numero: string; fecha: string }
 }
+
+/** Número de e-cheq como lo guarda Colppy: 8 dígitos con ceros adelante ("713" → "00000713") */
+export function normalizarNroCheque(n: string): string | null {
+  const t = String(n ?? '').trim()
+  if (!/^\d{1,8}$/.test(t) || /^0+$/.test(t)) return null
+  return t.padStart(8, '0')
+}
+
+/** Plazo máximo de un e-cheq desde la fecha de la OP (los diferidos van hasta 360 días) */
+export const ECHEQ_MAX_DIAS = 360
 
 export interface PedidoAltaPago {
   idProveedor: string
@@ -85,6 +100,20 @@ export function esPagableFase1(f: ImpagaColppy): { ok: true } | { ok: false; mot
   }
   if (!(saldoImpaga(f) > 0)) return { ok: false, motivo: 'Sin saldo' }
   return { ok: true }
+}
+
+/** Días de `desde` a `hasta` (YYYY-MM-DD); NaN si alguna fecha es inválida */
+function diasEntre(desde: string, hasta: string): number {
+  const a = fechaUtc(desde)
+  const b = fechaUtc(hasta)
+  return a === null || b === null ? NaN : Math.round((b - a) / 86400000)
+}
+
+function fechaUtc(s: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s ?? ''))
+  if (!m) return null
+  const t = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  return new Date(t).toISOString().slice(0, 10) === s ? t : null
 }
 
 function ddmmyyyy(fechaIso: string, sep: '-' | '/'): string {
@@ -150,8 +179,19 @@ export function armarAltaPago(p: PedidoAltaPago): AltaPagoArmado {
   const totalPagado = r2(totalFacturas - retencion)
 
   if (!p.medios.length) errores.push('Falta el medio de pago')
+  const cheques = new Set<string>()
   for (const m of p.medios) {
-    if (m.medio !== 'Transferencia' && m.medio !== 'Tarjeta de Crédito') errores.push(`Medio de pago no soportado todavía: ${m.medio}`)
+    if (m.medio !== 'Transferencia' && m.medio !== 'Tarjeta de Crédito' && m.medio !== 'Echeqs') errores.push(`Medio de pago no soportado todavía: ${m.medio}`)
+    if (m.medio === 'Echeqs') {
+      const nro = m.cheque ? normalizarNroCheque(m.cheque.numero) : null
+      if (!nro) errores.push(`E-cheq de ${m.cuenta || 'un banco'}: número inválido (hasta 8 dígitos)`)
+      else if (cheques.has(`${m.cuenta}|${nro}`)) errores.push(`E-cheq ${nro} repetido en la misma orden`)
+      else cheques.add(`${m.cuenta}|${nro}`)
+      const dias = m.cheque ? diasEntre(p.fecha, m.cheque.fecha) : NaN
+      if (!Number.isFinite(dias)) errores.push(`E-cheq ${nro ?? ''}: fecha de pago inválida`.replace('  ', ' '))
+      else if (dias < 0) errores.push(`E-cheq ${nro}: la fecha de pago no puede ser anterior a la de la orden`)
+      else if (dias > ECHEQ_MAX_DIAS) errores.push(`E-cheq ${nro}: la fecha de pago supera los ${ECHEQ_MAX_DIAS} días`)
+    } else if (m.cheque) errores.push(`${m.medio} no lleva datos de cheque`)
     if (!m.cuenta?.trim()) errores.push('Falta la cuenta del medio de pago')
     if (!(r2(m.importe) > 0)) errores.push(`Importe inválido en ${m.cuenta || 'un medio de pago'}`)
   }
@@ -190,9 +230,10 @@ export function armarAltaPago(p: PedidoAltaPago): AltaPagoArmado {
     recordsToInsertUpdate1: JSON.stringify(p.medios.map((m) => ({
       idMedioPago: m.medio,
       idPlanCuenta: m.cuenta.trim(),
-      nroCheque: '',
+      // E-cheq propio (alta real 0001-00005515): número de 8 dígitos y su fecha de pago
+      nroCheque: m.medio === 'Echeqs' ? normalizarNroCheque(m.cheque!.numero) : '',
       // Con tarjeta el front de Colppy deja la fecha vacía
-      fechaValidez: m.medio === 'Tarjeta de Crédito' ? '' : fechaBarra,
+      fechaValidez: m.medio === 'Echeqs' ? ddmmyyyy(m.cheque!.fecha, '/') : m.medio === 'Tarjeta de Crédito' ? '' : fechaBarra,
       importe: r2(m.importe),
       idTabla: 0,
       idElemento: 0,

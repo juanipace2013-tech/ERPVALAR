@@ -184,10 +184,39 @@ describe('armarAltaPago (formato capturado del front de Colppy)', () => {
     ])
   })
 
-  it('rechaza medios que Colppy usa pero el ERP todavía no (cheques, efectivo)', () => {
+  it('rechaza medios que Colppy usa pero el ERP todavía no (cheques de terceros, efectivo)', () => {
     expect(() =>
-      armarAltaPago({ ...pedidoBms, medios: [{ medio: 'Echeqs' as never, cuenta: 'Cta Cte Galicia', importe: 5516865.16 }] })
-    ).toThrow(/Medio de pago no soportado todavía: Echeqs/)
+      armarAltaPago({ ...pedidoBms, medios: [{ medio: 'Cheque de Tercero' as never, cuenta: 'Valores a Depositar', importe: 5516865.16 }] })
+    ).toThrow(/Medio de pago no soportado todavía: Cheque de Tercero/)
+  })
+
+  it('e-cheq propio: "Echeqs" desde el banco con número de 8 dígitos y su fecha de pago (alta real 0001-00005515)', () => {
+    const r = armarAltaPago({
+      ...pedidoBms,
+      medios: [
+        { medio: 'Echeqs', cuenta: 'Cta Cte Galicia', importe: 5000000, cheque: { numero: '713', fecha: '2026-11-06' } },
+        { medio: 'Transferencia', cuenta: 'Cta Cte Galicia', importe: 516865.16 },
+      ],
+    })
+    expect(JSON.parse(r.parameters.recordsToInsertUpdate1 as string)).toEqual([
+      { idMedioPago: 'Echeqs', idPlanCuenta: 'Cta Cte Galicia', nroCheque: '00000713', fechaValidez: '06/11/2026', importe: 5000000, idTabla: 0, idElemento: 0, idItem: 0, CED: 'S', Conciliado: '', Moneda: '' },
+      { idMedioPago: 'Transferencia', idPlanCuenta: 'Cta Cte Galicia', nroCheque: '', fechaValidez: '05/11/2026', importe: 516865.16, idTabla: 0, idElemento: 0, idItem: 0, CED: 'S', Conciliado: '', Moneda: '' },
+    ])
+  })
+
+  it('e-cheq propio: rechaza número o fecha inválidos y el mismo cheque dos veces', () => {
+    const ech = (numero: string, fecha: string) => ({ medio: 'Echeqs' as const, cuenta: 'Cta Cte Galicia', importe: 5516865.16, cheque: { numero, fecha } })
+    expect(() => armarAltaPago({ ...pedidoBms, medios: [ech('123456789', '2026-11-06')] })).toThrow(/número inválido/)
+    expect(() => armarAltaPago({ ...pedidoBms, medios: [ech('0000', '2026-11-06')] })).toThrow(/número inválido/)
+    expect(() => armarAltaPago({ ...pedidoBms, medios: [ech('713', '2026-11-04')] })).toThrow(/anterior a la de la orden/)
+    expect(() => armarAltaPago({ ...pedidoBms, medios: [ech('713', '2027-11-06')] })).toThrow(/supera los 360 días/)
+    expect(() => armarAltaPago({ ...pedidoBms, medios: [ech('713', '2026-02-30')] })).toThrow(/fecha de pago inválida/)
+    expect(() =>
+      armarAltaPago({ ...pedidoBms, medios: [{ ...ech('713', '2026-11-06'), importe: 5000000 }, { ...ech('00000713', '2026-11-07'), importe: 516865.16 }] })
+    ).toThrow(/E-cheq 00000713 repetido/)
+    expect(() =>
+      armarAltaPago({ ...pedidoBms, medios: [{ medio: 'Transferencia', cuenta: 'Cta Cte Galicia', importe: 5516865.16, cheque: { numero: '1', fecha: '2026-11-06' } }] })
+    ).toThrow(/no lleva datos de cheque/)
   })
 
   it('rechaza medios que no cierran con el total a pagar', () => {

@@ -708,12 +708,16 @@ model SupplierPaymentMedium {
   orderId String
   order   SupplierPaymentOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
-  method      String // "Transferencia"
+  method      String // "Transferencia", "Tarjeta de Crédito" o "Echeqs"
   accountName String // nombre del banco en Colppy ("Cta Cte Galicia")
   accountCode String? // cuenta contable (111200)
   amount      Decimal @db.Decimal(15, 2)
+  // E-cheq propio ("Echeqs"): número de 8 dígitos como en Colppy y fecha de pago
+  chequeNumber String?
+  chequeDate   DateTime? @db.Date
 
   @@index([orderId])
+  @@index([accountName, chequeNumber])
   @@map("supplier_payment_media")
 }
 

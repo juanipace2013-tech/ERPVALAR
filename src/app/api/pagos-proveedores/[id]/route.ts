@@ -53,6 +53,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       neto: Number(a.netAmount),
       purchaseInvoiceId: a.purchaseInvoiceId,
     })),
-    medios: o.media.map((m) => ({ medio: m.method, cuenta: m.accountName, cuentaContable: m.accountCode, importe: Number(m.amount) })),
+    medios: o.media.map((m) => ({
+      medio: m.method,
+      cuenta: m.accountName,
+      cuentaContable: m.accountCode,
+      importe: Number(m.amount),
+      cheque: m.chequeNumber ? { numero: m.chequeNumber, fecha: m.chequeDate?.toISOString().slice(0, 10) ?? null } : null,
+    })),
   })
 }

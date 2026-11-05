@@ -40,7 +40,7 @@ interface OrdenDetalle {
     neto: number
     purchaseInvoiceId: string | null
   }>
-  medios: Array<{ medio: string; cuenta: string; cuentaContable: string | null; importe: number }>
+  medios: Array<{ medio: string; cuenta: string; cuentaContable: string | null; importe: number; cheque?: { numero: string; fecha: string | null } | null }>
 }
 
 const ESTADOS: Record<string, { label: string; className: string }> = {
@@ -325,7 +325,15 @@ export default function OrdenPagoDetallePage() {
                   <TableBody>
                     {orden.medios.map((m, i) => (
                       <TableRow key={i}>
-                        <TableCell>{m.medio}</TableCell>
+                        <TableCell>
+                          {m.medio === 'Echeqs' ? 'E-cheq' : m.medio}
+                          {m.cheque && (
+                            <span className="block text-xs text-muted-foreground">
+                              Nº {m.cheque.numero}
+                              {m.cheque.fecha ? ` · paga el ${m.cheque.fecha.split('-').reverse().join('/')}` : ''}
+                            </span>
+                          )}
+                        </TableCell>
                         <TableCell>
                           {m.cuenta}
                           {m.cuentaContable && <span className="block text-xs text-muted-foreground">{m.cuentaContable}</span>}

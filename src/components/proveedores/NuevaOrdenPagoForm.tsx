@@ -128,7 +128,16 @@ interface Medio {
   importe: string
   /** El importe sigue al total a pagar mientras el usuario no lo toque */
   auto: boolean
+  /** E-cheq propio desde el banco (en vez de transferencia) */
+  echeq: boolean
+  nroCheque: string
+  /** Fecha de pago del e-cheq, YYYY-MM-DD */
+  fechaCheque: string
 }
+
+/** Plazo máximo de un e-cheq (mismo límite que el servidor) */
+const ECHEQ_MAX_DIAS = 360
+const NRO_CHEQUE_RE = /^\d{1,8}$/
 
 type Vista = { firma: string; ok: true; data: CalculoOrdenPago } | { firma: string; ok: false; mensajes: string[] }
 
@@ -306,7 +315,7 @@ export default function NuevaOrdenPagoForm({
         const validos = m.filter((x) => nombres.has(x.cuenta))
         if (validos.length) return validos
         const galicia = p.bancos.find((b) => b.nombre.trim().toLowerCase() === 'cta cte galicia') ?? p.bancos[0]
-        return galicia ? [{ uid: nuevoUid(), cuenta: galicia.nombre, importe: '', auto: true }] : []
+        return galicia ? [{ uid: nuevoUid(), cuenta: galicia.nombre, importe: '', auto: true, echeq: false, nroCheque: '', fechaCheque: '' }] : []
       })
       tocar()
     } catch (e) {
@@ -435,14 +444,22 @@ export default function NuevaOrdenPagoForm({
   )
   const sumaMedios = r2(medios.reduce((a, m) => a + (Number.isFinite(importeMedio(m)) ? importeMedio(m) : 0), 0))
   const diferencia = totalAPagar !== null ? r2(totalAPagar - sumaMedios) : null
-  const mediosCompletos = medios.length > 0 && medios.every((m) => !!m.cuenta && Number.isFinite(importeMedio(m)) && importeMedio(m) > 0)
+  const chequeCompleto = (m: Medio) =>
+    !m.echeq ||
+    (NRO_CHEQUE_RE.test(m.nroCheque.trim()) && !/^0+$/.test(m.nroCheque.trim()) && !!m.fechaCheque && m.fechaCheque >= fecha && m.fechaCheque <= sumarDias(fecha, ECHEQ_MAX_DIAS))
+  const mediosCompletos =
+    medios.length > 0 && medios.every((m) => !!m.cuenta && Number.isFinite(importeMedio(m)) && importeMedio(m) > 0 && chequeCompleto(m))
   const mediosCuadran = mediosCompletos && diferencia !== null && Math.abs(diferencia) < 0.005
 
   const cuerpoRegistro = useMemo(() => {
     if (!pedidoPreview) return null
     return {
       ...pedidoPreview,
-      medios: medios.map((m) => ({ cuenta: m.cuenta, importe: importeMedio(m) })),
+      medios: medios.map((m) => ({
+        cuenta: m.cuenta,
+        importe: importeMedio(m),
+        ...(m.echeq ? { cheque: { numero: m.nroCheque.trim(), fecha: m.fechaCheque } } : {}),
+      })),
       descripcion: descripcion.trim(),
     }
   }, [pedidoPreview, medios, importeMedio, descripcion])
@@ -463,7 +480,9 @@ export default function NuevaOrdenPagoForm({
             : !calc
               ? 'La vista previa tiene errores'
               : !mediosCompletos
-                ? 'Completá los medios de pago'
+                ? medios.some((m) => !chequeCompleto(m))
+                  ? 'Completá el número y la fecha de pago del e-cheq'
+                  : 'Completá los medios de pago'
                 : !mediosCuadran
                   ? 'Los medios no suman el total a pagar'
                   : null
@@ -471,6 +490,9 @@ export default function NuevaOrdenPagoForm({
 
   /** Medio de Colppy de la cuenta elegida: "Transferencia" (banco) o "Tarjeta de Crédito" */
   const medioDeCuenta = (cuenta: string) => prep?.bancos.find((b) => b.nombre === cuenta)?.medio ?? 'Transferencia'
+  const esBanco = (cuenta: string) => medioDeCuenta(cuenta) === 'Transferencia'
+  /** Cómo se muestra el medio: e-cheq, transferencia o tarjeta */
+  const nombreMedio = (m: Medio) => (m.echeq && esBanco(m.cuenta) ? 'E-cheq' : medioDeCuenta(m.cuenta))
 
   const fechaMin = sumarDias(hoy, -45)
   const fechaDistinta = !!prepFecha && prepFecha !== fecha
@@ -508,7 +530,7 @@ export default function NuevaOrdenPagoForm({
       const suma = r2(fijos.reduce((a, m) => a + (Number.isFinite(aNumero(m.importe)) ? aNumero(m.importe) : 0), 0))
       const resto = totalAPagar !== null ? r2(totalAPagar - suma) : 0
       const banco = prep.bancos[0]?.nombre ?? ''
-      return [...fijos, { uid: nuevoUid(), cuenta: banco, importe: resto > 0 ? resto.toFixed(2) : '', auto: false }]
+      return [...fijos, { uid: nuevoUid(), cuenta: banco, importe: resto > 0 ? resto.toFixed(2) : '', auto: false, echeq: false, nroCheque: '', fechaCheque: '' }]
     })
     tocar()
   }
@@ -957,7 +979,7 @@ export default function NuevaOrdenPagoForm({
             <Card>
               <CardHeader>
                 <CardTitle>Medios de pago</CardTitle>
-                <CardDescription>Transferencia desde un banco o pago con tarjeta de crédito, en pesos (cuentas de Colppy). Tienen que sumar el total a pagar al centavo.</CardDescription>
+                <CardDescription>Transferencia o e-cheq propio desde un banco, o tarjeta de crédito, en pesos (cuentas de Colppy). Tienen que sumar el total a pagar al centavo.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 {prep.bancos.length === 0 ? (
@@ -966,8 +988,28 @@ export default function NuevaOrdenPagoForm({
                   <>
                     {medios.map((m) => (
                       <div key={m.uid} className="flex flex-wrap items-center gap-2">
-                        <span className="w-36 text-sm text-muted-foreground">{medioDeCuenta(m.cuenta)}</span>
-                        <Select value={m.cuenta} onValueChange={(v) => setMedio(m.uid, { cuenta: v })} disabled={enviando}>
+                        {esBanco(m.cuenta) ? (
+                          <Select
+                            value={m.echeq ? 'echeq' : 'transferencia'}
+                            onValueChange={(v) => setMedio(m.uid, { echeq: v === 'echeq' })}
+                            disabled={enviando}
+                          >
+                            <SelectTrigger className="w-36" aria-label="Tipo de pago desde el banco">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="transferencia">Transferencia</SelectItem>
+                              <SelectItem value="echeq">E-cheq</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="w-36 text-sm text-muted-foreground">{medioDeCuenta(m.cuenta)}</span>
+                        )}
+                        <Select
+                          value={m.cuenta}
+                          onValueChange={(v) => setMedio(m.uid, esBanco(v) ? { cuenta: v } : { cuenta: v, echeq: false })}
+                          disabled={enviando}
+                        >
                           <SelectTrigger className="w-64">
                             <SelectValue placeholder="Cuenta" />
                           </SelectTrigger>
@@ -992,6 +1034,33 @@ export default function NuevaOrdenPagoForm({
                           aria-label="Importe del medio de pago"
                         />
                         {m.auto && <span className="text-xs text-muted-foreground">sigue al total</span>}
+                        {m.echeq && esBanco(m.cuenta) && (
+                          <>
+                            <Input
+                              inputMode="numeric"
+                              maxLength={8}
+                              value={m.nroCheque}
+                              placeholder="Nº e-cheq"
+                              onChange={(e) => setMedio(m.uid, { nroCheque: e.target.value.replace(/\D/g, '') })}
+                              className="w-28 font-mono"
+                              aria-label="Número de e-cheq"
+                              disabled={enviando}
+                            />
+                            <Label className="text-xs text-muted-foreground" htmlFor={`fecha-cheque-${m.uid}`}>
+                              Paga el
+                            </Label>
+                            <Input
+                              id={`fecha-cheque-${m.uid}`}
+                              type="date"
+                              min={fecha}
+                              max={sumarDias(fecha, ECHEQ_MAX_DIAS)}
+                              value={m.fechaCheque}
+                              onChange={(e) => setMedio(m.uid, { fechaCheque: e.target.value })}
+                              className="w-40"
+                              disabled={enviando}
+                            />
+                          </>
+                        )}
                         {medios.length > 1 && (
                           <Button variant="ghost" size="icon" onClick={() => quitarMedio(m.uid)} aria-label="Quitar medio">
                             <Trash2 className="h-4 w-4" />
@@ -1143,7 +1212,10 @@ export default function NuevaOrdenPagoForm({
                 <p className="mb-1 text-muted-foreground">Medios</p>
                 {medios.map((m) => (
                   <div key={m.uid} className="flex justify-between gap-4">
-                    <span>{medioDeCuenta(m.cuenta)} · {m.cuenta}</span>
+                    <span>
+                      {nombreMedio(m)} · {m.cuenta}
+                      {m.echeq && esBanco(m.cuenta) && ` · Nº ${m.nroCheque.trim().padStart(8, '0')} · paga el ${m.fechaCheque.split('-').reverse().join('/')}`}
+                    </span>
                     <span className="font-mono">{formatCurrency(importeMedio(m))}</span>
                   </div>
                 ))}

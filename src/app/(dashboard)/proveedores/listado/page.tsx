@@ -1,19 +1,21 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+/**
+ * Proveedores → Gestión de proveedores, como en Colppy: a la izquierda la
+ * lista (por saldo de mayor a menor) y a la derecha el proveedor elegido con
+ * sus facturas adeudadas, pagos e información, y los botones "Agregar factura"
+ * y "Agregar pago" (abren los formularios en un panel lateral).
+ *
+ * El proveedor elegido queda en la URL (?proveedor=<id>) para que al recargar
+ * siga seleccionado.
+ */
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
   Search,
   UserPlus,
@@ -29,25 +31,13 @@ import {
   Star,
   Loader2,
   CloudDownload,
+  MousePointerClick,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatCurrency } from '@/lib/utils'
+import ProveedorPanel, { type ProveedorDelListado } from '@/components/proveedores/ProveedorPanel'
 
-interface Supplier {
-  id: string
-  name: string
-  legalName: string | null
-  taxId: string | null
-  balance: number
-  discount: number
-  status: string
-  isPreferred: boolean
-  brands: string[]
-  buyerUser: {
-    id: string
-    name: string
-    email: string
-  } | null
-}
+type Supplier = ProveedorDelListado
 
 interface Pagination {
   page: number
@@ -56,8 +46,11 @@ interface Pagination {
   totalPages: number
 }
 
-export default function ProveedoresPage() {
+function ProveedoresGestion() {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const seleccionadoId = searchParams.get('proveedor') || ''
 
   const [loading, setLoading] = useState(true)
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
@@ -68,12 +61,19 @@ export default function ProveedoresPage() {
     totalPages: 0,
   })
 
-  // Filters
+  // Filters (por defecto, como Colppy: por saldo de mayor a menor)
   const [statusFilter, setStatusFilter] = useState<string>('ACTIVE')
   const [searchQuery, setSearchQuery] = useState('')
-  const [sortBy, setSortBy] = useState('name')
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+  const [sortBy, setSortBy] = useState('balance')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [syncing, setSyncing] = useState(false)
+
+  // Proveedor elegido (puede no estar en la página actual de la lista)
+  const [seleccionado, setSeleccionado] = useState<Supplier | null>(null)
+  /** Saldos leídos en vivo de Colppy por el panel (pisan al del sync diario) */
+  const [saldosVivos, setSaldosVivos] = useState<Record<string, number>>({})
+  const anotarSaldoVivo = useCallback((id: string, saldo: number) => setSaldosVivos((m) => (m[id] === saldo ? m : { ...m, [id]: saldo })), [])
+  const panelRef = useRef<HTMLDivElement>(null)
 
   const handleSyncColppy = async () => {
     try {
@@ -119,9 +119,9 @@ export default function ProveedoresPage() {
         // 'running' → seguir esperando
       }
       throw new Error('La sincronización sigue corriendo en el servidor; recargá en unos minutos')
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error sync Colppy:', error)
-      toast.error(error.message || 'Error al sincronizar proveedores')
+      toast.error((error instanceof Error && error.message) || 'Error al sincronizar proveedores')
     } finally {
       setSyncing(false)
     }
@@ -133,7 +133,13 @@ export default function ProveedoresPage() {
   }, [statusFilter, pagination.page, sortBy, sortOrder])
 
   // Debounce search
+  const primeraBusqueda = useRef(true)
   useEffect(() => {
+    // La primera carga ya la hace el efecto de arriba
+    if (primeraBusqueda.current) {
+      primeraBusqueda.current = false
+      return
+    }
     const timer = setTimeout(() => {
       if (pagination.page === 1) {
         fetchSuppliers()
@@ -183,8 +189,11 @@ export default function ProveedoresPage() {
       }
 
       const data = await response.json()
-      setSuppliers(data.suppliers || [])
+      const lista: Supplier[] = data.suppliers || []
+      setSuppliers(lista)
       setPagination(data.pagination || pagination)
+      // El elegido se actualiza con lo último de la lista (saldo del sync, etc.)
+      setSeleccionado((s) => (s ? (lista.find((x) => x.id === s.id) ?? s) : s))
     } catch (error) {
       console.error('Error fetching suppliers:', error)
       toast.error(error instanceof Error ? error.message : 'Error al cargar proveedores')
@@ -193,12 +202,62 @@ export default function ProveedoresPage() {
     }
   }
 
+  // Proveedor de la URL: de la lista si está, si no se lee aparte
+  useEffect(() => {
+    if (!seleccionadoId) {
+      setSeleccionado(null)
+      return
+    }
+    if (seleccionado?.id === seleccionadoId) return
+    const enLista = suppliers.find((s) => s.id === seleccionadoId)
+    if (enLista) {
+      setSeleccionado(enLista)
+      return
+    }
+    let vigente = true
+    fetch(`/api/proveedores/${encodeURIComponent(seleccionadoId)}`)
+      .then(async (r) => (r.ok ? r.json() : null))
+      .catch(() => null)
+      .then((d) => {
+        if (!vigente) return
+        if (d && typeof d.id === 'string') {
+          setSeleccionado(d as Supplier)
+          return
+        }
+        // Id inválido en la URL: se saca, así no queda cargando para siempre
+        setSeleccionado(null)
+        const params = new URLSearchParams(searchParams.toString())
+        params.delete('proveedor')
+        router.replace(params.size ? `${pathname}?${params.toString()}` : pathname, { scroll: false })
+        toast.error('No se encontró el proveedor elegido')
+      })
+    return () => {
+      vigente = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seleccionadoId, suppliers])
+
+  const seleccionar = useCallback(
+    (s: Supplier) => {
+      setSeleccionado(s)
+      const params = new URLSearchParams(searchParams.toString())
+      params.set('proveedor', s.id)
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+      // En mobile el panel queda abajo de la lista: llevarlo a la vista
+      if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+        setTimeout(() => panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+      }
+    },
+    [pathname, router, searchParams]
+  )
+
   const handleSort = (column: string) => {
     if (sortBy === column) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
     } else {
       setSortBy(column)
-      setSortOrder('asc')
+      // El saldo arranca de mayor a menor; los textos, de la A a la Z
+      setSortOrder(column === 'balance' ? 'desc' : 'asc')
     }
   }
 
@@ -213,38 +272,26 @@ export default function ProveedoresPage() {
     )
   }
 
-  const handleSupplierClick = (supplierId: string) => {
-    router.push(`/proveedores/${supplierId}`)
-  }
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('es-AR', {
-      style: 'decimal',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount)
-  }
-
   const goToPage = (page: number) => {
     setPagination({ ...pagination, page })
   }
 
-  const startIndex = (pagination.page - 1) * pagination.limit + 1
+  const startIndex = pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.limit + 1
   const endIndex = Math.min(pagination.page * pagination.limit, pagination.total)
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-blue-900">
-            Proveedores
+            Gestión de proveedores
           </h1>
           <p className="text-muted-foreground">
-            Gestión y administración de proveedores
+            Elegí un proveedor para ver lo que le debemos, cargarle facturas y pagarle
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
             onClick={handleSyncColppy}
@@ -262,42 +309,38 @@ export default function ProveedoresPage() {
             <RefreshCw className="h-4 w-4 mr-2" />
             Actualizar
           </Button>
+          <Button
+            className="bg-blue-600 hover:bg-blue-700"
+            onClick={() => router.push('/proveedores/nuevo')}
+          >
+            <UserPlus className="h-4 w-4 mr-2" />
+            Nuevo proveedor
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => router.push('/proveedores/importar')}
+          >
+            <Upload className="h-4 w-4 mr-2" />
+            Importar
+          </Button>
         </div>
       </div>
 
-      {/* Navigation Tabs */}
-      <Card className="border-blue-200">
-        <CardContent className="p-4">
-          <div className="flex gap-2 flex-wrap">
-            <Button
-              variant="default"
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              Gestión de proveedores
-            </Button>
-            <Button variant="outline" disabled>
-              Resumen proveedores
-            </Button>
-            <Button variant="outline" disabled>
-              Órdenes de compra
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Main Content */}
-      <Card className="border-blue-200">
-        <CardContent className="p-6">
-          {/* Title and Tabs */}
-          <div className="mb-6">
-            <h2 className="text-xl font-semibold text-blue-900 mb-4">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+        {/* Lista de proveedores */}
+        <Card className="border-blue-200 self-start">
+          <CardContent className="p-4">
+            <h2 className="text-lg font-semibold text-blue-900 mb-3">
               Lista de proveedores
             </h2>
 
             <Tabs
               value={statusFilter}
-              onValueChange={setStatusFilter}
-              className="mb-6"
+              onValueChange={(v) => {
+                setStatusFilter(v)
+                if (pagination.page !== 1) setPagination({ ...pagination, page: 1 })
+              }}
+              className="mb-3"
             >
               <TabsList className="bg-blue-50">
                 <TabsTrigger
@@ -322,20 +365,18 @@ export default function ProveedoresPage() {
             </Tabs>
 
             {/* Search */}
-            <div className="flex items-center gap-2 mb-6">
-              <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Buscar proveedor..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
+            <div className="relative mb-3">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Buscar por nombre, razón social o CUIT..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
             </div>
 
             {/* Table */}
-            {loading ? (
+            {loading && suppliers.length === 0 ? (
               <div className="flex items-center justify-center py-12">
                 <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
               </div>
@@ -345,11 +386,10 @@ export default function ProveedoresPage() {
               </div>
             ) : (
               <>
-                <div className="border rounded-lg overflow-hidden">
+                <div className={`border rounded-lg overflow-x-auto ${loading ? 'opacity-60' : ''}`}>
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-blue-50">
-                        <TableHead className="w-8"></TableHead>
                         <TableHead
                           className="cursor-pointer hover:bg-blue-100 transition-colors"
                           onClick={() => handleSort('name')}
@@ -368,18 +408,6 @@ export default function ProveedoresPage() {
                             {getSortIcon('legalName')}
                           </div>
                         </TableHead>
-                        <TableHead className="font-semibold text-blue-900">
-                          Marcas
-                        </TableHead>
-                        <TableHead
-                          className="text-right cursor-pointer hover:bg-blue-100 transition-colors"
-                          onClick={() => handleSort('discount')}
-                        >
-                          <div className="flex items-center justify-end font-semibold text-blue-900">
-                            Descuento
-                            {getSortIcon('discount')}
-                          </div>
-                        </TableHead>
                         <TableHead
                           className="text-right cursor-pointer hover:bg-blue-100 transition-colors"
                           onClick={() => handleSort('balance')}
@@ -392,60 +420,47 @@ export default function ProveedoresPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {suppliers.map((supplier) => (
-                        <TableRow
-                          key={supplier.id}
-                          className="cursor-pointer hover:bg-blue-50 transition-colors"
-                          onClick={() => handleSupplierClick(supplier.id)}
-                        >
-                          <TableCell>
-                            {supplier.isPreferred && (
-                              <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
-                            )}
-                          </TableCell>
-                          <TableCell className="font-medium">
-                            {supplier.name}
-                          </TableCell>
-                          <TableCell>
-                            {supplier.legalName || supplier.name}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap gap-1">
-                              {supplier.brands.slice(0, 2).map((brand, idx) => (
-                                <span
-                                  key={idx}
-                                  className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800"
-                                >
-                                  {brand}
-                                </span>
-                              ))}
-                              {supplier.brands.length > 2 && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
-                                  +{supplier.brands.length - 2}
-                                </span>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {supplier.discount}%
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(Number(supplier.balance))}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {suppliers.map((supplier) => {
+                        const activo = supplier.id === seleccionadoId
+                        return (
+                          <TableRow
+                            key={supplier.id}
+                            className={`cursor-pointer transition-colors ${activo ? 'bg-blue-100 hover:bg-blue-100' : 'hover:bg-blue-50'}`}
+                            onClick={() => seleccionar(supplier)}
+                            aria-selected={activo}
+                          >
+                            <TableCell className={`max-w-[11rem] text-sm ${activo ? 'font-semibold text-blue-900' : 'font-medium'}`}>
+                              <div className="flex items-center gap-1">
+                                {supplier.isPreferred && (
+                                  <Star className="h-3.5 w-3.5 shrink-0 text-yellow-500 fill-yellow-500" />
+                                )}
+                                <span className="truncate" title={supplier.name}>{supplier.name}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="max-w-[11rem] text-sm">
+                              <span className="block truncate" title={supplier.legalName || supplier.name}>
+                                {supplier.legalName || supplier.name}
+                              </span>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-right font-mono text-sm">
+                              {formatCurrency(saldosVivos[supplier.id] ?? supplier.balance)}
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
                     </TableBody>
                   </Table>
                 </div>
 
                 {/* Pagination */}
-                <div className="flex items-center justify-between mt-6">
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 mt-3">
+                  <div className="flex items-center gap-1">
                     <Button
                       variant="outline"
                       size="icon"
                       onClick={() => goToPage(1)}
                       disabled={pagination.page === 1}
+                      aria-label="Primera página"
                     >
                       <ChevronsLeft className="h-4 w-4" />
                     </Button>
@@ -454,20 +469,22 @@ export default function ProveedoresPage() {
                       size="icon"
                       onClick={() => goToPage(pagination.page - 1)}
                       disabled={pagination.page === 1}
+                      aria-label="Página anterior"
                     >
                       <ChevronLeft className="h-4 w-4" />
                     </Button>
 
-                    <span className="text-sm text-muted-foreground px-4">
-                      Página <span className="font-semibold">{pagination.page}</span> de{' '}
-                      <span className="font-semibold">{pagination.totalPages}</span>
+                    <span className="text-sm text-muted-foreground px-2">
+                      <span className="font-semibold">{pagination.page}</span> de{' '}
+                      <span className="font-semibold">{Math.max(1, pagination.totalPages)}</span>
                     </span>
 
                     <Button
                       variant="outline"
                       size="icon"
                       onClick={() => goToPage(pagination.page + 1)}
-                      disabled={pagination.page === pagination.totalPages}
+                      disabled={pagination.page >= pagination.totalPages}
+                      aria-label="Página siguiente"
                     >
                       <ChevronRight className="h-4 w-4" />
                     </Button>
@@ -475,53 +492,57 @@ export default function ProveedoresPage() {
                       variant="outline"
                       size="icon"
                       onClick={() => goToPage(pagination.totalPages)}
-                      disabled={pagination.page === pagination.totalPages}
+                      disabled={pagination.page >= pagination.totalPages}
+                      aria-label="Última página"
                     >
                       <ChevronsRight className="h-4 w-4" />
                     </Button>
                   </div>
 
-                  <div className="flex items-center gap-4">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={fetchSuppliers}
-                    >
-                      <RefreshCw className="h-4 w-4 mr-2" />
-                      Actualizar
-                    </Button>
-                    <span className="text-sm text-muted-foreground">
-                      Mostrando{' '}
-                      <span className="font-semibold">
-                        {startIndex} - {endIndex}
-                      </span>{' '}
-                      de <span className="font-semibold">{pagination.total}</span>
-                    </span>
-                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {startIndex} - {endIndex} de <span className="font-semibold">{pagination.total}</span>
+                  </span>
                 </div>
               </>
             )}
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
 
-      {/* Action Buttons */}
-      <div className="flex gap-3">
-        <Button
-          className="bg-blue-600 hover:bg-blue-700"
-          onClick={() => router.push('/proveedores/nuevo')}
-        >
-          <UserPlus className="h-4 w-4 mr-2" />
-          Nuevo proveedor
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() => router.push('/proveedores/importar')}
-        >
-          <Upload className="h-4 w-4 mr-2" />
-          Importar
-        </Button>
+        {/* Proveedor elegido */}
+        <div ref={panelRef} className="min-w-0 scroll-mt-4">
+          {seleccionado ? (
+            <ProveedorPanel key={seleccionado.id} proveedor={seleccionado} onCambioSaldo={fetchSuppliers} onSaldoColppy={anotarSaldoVivo} />
+          ) : seleccionadoId ? (
+            <Card className="border-blue-200">
+              <CardContent className="flex items-center justify-center py-24">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="border-dashed border-blue-200">
+              <CardContent className="flex flex-col items-center justify-center gap-2 py-24 text-center text-muted-foreground">
+                <MousePointerClick className="h-8 w-8 text-blue-300" />
+                <p className="font-medium">Elegí un proveedor de la lista</p>
+                <p className="text-sm">Vas a ver sus facturas adeudadas y podés cargarle facturas o pagarle.</p>
+              </CardContent>
+            </Card>
+          )}
+        </div>
       </div>
     </div>
+  )
+}
+
+export default function ProveedoresPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center p-12">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        </div>
+      }
+    >
+      <ProveedoresGestion />
+    </Suspense>
   )
 }

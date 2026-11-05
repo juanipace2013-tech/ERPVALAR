@@ -130,6 +130,16 @@ function paraPantalla(f: ImpagaColppy): ImpagaParaPantalla {
   }
 }
 
+/**
+ * Facturas adeudadas al proveedor, en vivo de Colppy (como la pestaña
+ * "Facturas adeudadas" de Colppy). Liviana: una sola lectura paginada.
+ */
+export async function facturasAdeudadas(supplierId: string): Promise<{ colppyId: string; impagas: ImpagaParaPantalla[]; saldo: number }> {
+  const s = await proveedorErp(supplierId)
+  const impagas = (await colppyImpagasProveedor(s.colppyId)).map(paraPantalla)
+  return { colppyId: s.colppyId, impagas, saldo: r2(impagas.reduce((a, f) => a + f.saldo, 0)) }
+}
+
 export async function prepararOrdenDePago(supplierId: string, fecha: string): Promise<PreparacionPago> {
   const s = await proveedorErp(supplierId)
   const fechaOk = validarFecha(fecha)

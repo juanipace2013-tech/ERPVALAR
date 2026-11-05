@@ -243,7 +243,7 @@ function RemitoCard({ remito, contactos, onCambio }: { remito: Remito; contactos
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-36">Código</TableHead>
+              <TableHead className="w-36 whitespace-nowrap">Código</TableHead>
               <TableHead>Descripción</TableHead>
               <TableHead className="w-20 text-right">Cant.</TableHead>
               <TableHead className="w-28">Marca</TableHead>
@@ -253,8 +253,8 @@ function RemitoCard({ remito, contactos, onCambio }: { remito: Remito; contactos
           <TableBody>
             {remito.items.map((i) => (
               <TableRow key={i.id}>
-                <TableCell className="font-mono text-sm">{i.product?.sku || i.sku || '—'}</TableCell>
-                <TableCell className="text-sm">{i.description}</TableCell>
+                <TableCell className="font-mono text-sm whitespace-nowrap">{i.product?.sku || i.sku || '—'}</TableCell>
+                <TableCell className="text-sm max-w-0 w-full truncate" title={i.description}>{i.description}</TableCell>
                 <TableCell className="text-right">{Number(i.quantity)}</TableCell>
                 <TableCell className="text-sm text-gray-600">{marcaDe(i)}</TableCell>
                 <TableCell>

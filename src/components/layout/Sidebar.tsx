@@ -6,6 +6,8 @@ import { usePathname } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { cn } from '@/lib/utils'
 import {
+  List,
+  FileCheck,
   LayoutDashboard,
   Users,
   Package,
@@ -111,9 +113,22 @@ const navItems: NavItem[] = [
   },
   {
     title: 'Remitos',
-    href: '/remitos',
     icon: Truck,
     roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
+    subItems: [
+      {
+        title: 'Listado',
+        href: '/remitos',
+        icon: List,
+        roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
+      },
+      {
+        title: 'Certificados',
+        href: '/remitos/certificados',
+        icon: FileCheck,
+        roles: ['ADMIN', 'GERENTE', 'VENDEDOR'],
+      },
+    ],
   },
   {
     title: 'Logística',

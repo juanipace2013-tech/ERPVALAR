@@ -116,14 +116,32 @@ export interface BancoColppy {
   cuentaContable: string
   moneda: string
   idBanco: string
+  /** Medio de pago de Colppy que usa esta cuenta (idMedioPago) */
+  medio: MedioColppy
 }
 
-export async function colppyBancosArs(): Promise<BancoColppy[]> {
-  const r = await leer('Tesoreria', 'leer_origen_fondos2', { idTipo: 'banco', monedas: ['ARS'] })
+/**
+ * Medios de la grilla de pagos de Colppy (valor = descripción, como lo manda el
+ * front). Cada uno toma sus cuentas de Tesoreria/leer_origen_fondos2 con su
+ * idTipo: banco → "Transferencia", tc → "Tarjeta de Crédito" (front de Colppy,
+ * ElegirValores.getCuentas: {2:"banco",3:"caja",4:"tc"}).
+ */
+export type MedioColppy = 'Transferencia' | 'Tarjeta de Crédito'
+const ORIGEN_POR_MEDIO: Record<MedioColppy, string> = { Transferencia: 'banco', 'Tarjeta de Crédito': 'tc' }
+
+async function cuentasArs(medio: MedioColppy): Promise<BancoColppy[]> {
+  const r = await leer('Tesoreria', 'leer_origen_fondos2', { idTipo: ORIGEN_POR_MEDIO[medio], monedas: ['ARS'] })
   const filas: any[] = r?.data?.data ?? []
   return filas
     .filter((b) => String(b.Moneda ?? 'ARS') === 'ARS' && b.Nombre)
-    .map((b) => ({ nombre: String(b.Nombre), cuentaContable: String(b.idPlanCuenta ?? ''), moneda: 'ARS', idBanco: String(b.idBanco ?? '') }))
+    .map((b) => ({ nombre: String(b.Nombre), cuentaContable: String(b.idPlanCuenta ?? ''), moneda: 'ARS', idBanco: String(b.idBanco ?? ''), medio }))
+}
+
+/** Cuentas en pesos para pagar: bancos (transferencia) y tarjetas de crédito */
+export async function colppyBancosArs(): Promise<BancoColppy[]> {
+  const bancos = await cuentasArs('Transferencia')
+  const tarjetas = await cuentasArs('Tarjeta de Crédito')
+  return [...bancos, ...tarjetas]
 }
 
 export const PREFIJO_OP = '0001'

@@ -512,8 +512,11 @@ export async function registrarOrdenDePago(p: PedidoOrdenPago, user: { id: strin
       const porNombre = new Map(bancos.map((b) => [b.nombre, b]))
       medios = p.medios.map((m) => {
         const b = porNombre.get(m.cuenta)
-        if (!b) throw new OrdenPagoError(`La cuenta "${m.cuenta}" no es un banco en pesos de Colppy`, 'VALIDACION', 422)
-        return { medio: 'Transferencia' as const, cuenta: b.nombre, importe: r2(m.importe), codigo: b.cuentaContable }
+        if (!b) throw new OrdenPagoError(`La cuenta "${m.cuenta}" no es un banco ni una tarjeta en pesos de Colppy`, 'VALIDACION', 422)
+        if (bancos.filter((x) => x.nombre === m.cuenta).length > 1) {
+          throw new OrdenPagoError(`En Colppy hay más de una cuenta (bancos o tarjetas) llamada "${m.cuenta}": cargá este pago en Colppy`, 'VALIDACION', 422)
+        }
+        return { medio: b.medio, cuenta: b.nombre, importe: r2(m.importe), codigo: b.cuentaContable }
       })
       // Número justo antes del alta (además deja la sesión recién usada)
       const n = await colppyProximoNumeroOp()

@@ -172,6 +172,24 @@ describe('armarAltaPago (formato capturado del front de Colppy)', () => {
     expect((r.parameters.recordsToInsertUpdate1 as any[]).map((m) => m.idPlanCuenta)).toEqual(['Cta Cte Galicia', 'MERCADOPAGO'])
   })
 
+  it('tarjeta de crédito: medio "Tarjeta de Crédito" con la tarjeta por nombre (front de Colppy)', () => {
+    const r = armarAltaPago({
+      ...pedidoBms,
+      pagos: { '24296591': 588876.75 },
+      retencion: null,
+      medios: [{ medio: 'Tarjeta de Crédito', cuenta: 'TARJETA GALICIA', importe: 588876.75 }],
+    })
+    expect(r.parameters.recordsToInsertUpdate1).toEqual([
+      { idMedioPago: 'Tarjeta de Crédito', idPlanCuenta: 'TARJETA GALICIA', nroCheque: '', fechaValidez: '05/11/2026', importe: 588876.75, idTabla: 0, idElemento: 0, idItem: 0, CED: 'S', Conciliado: '', Moneda: '' },
+    ])
+  })
+
+  it('rechaza medios que Colppy usa pero el ERP todavía no (cheques, efectivo)', () => {
+    expect(() =>
+      armarAltaPago({ ...pedidoBms, medios: [{ medio: 'Echeqs' as never, cuenta: 'Cta Cte Galicia', importe: 5516865.16 }] })
+    ).toThrow(/Medio de pago no soportado todavía: Echeqs/)
+  })
+
   it('rechaza medios que no cierran con el total a pagar', () => {
     expect(() => armarAltaPago({ ...pedidoBms, medios: [{ medio: 'Transferencia', cuenta: 'Cta Cte Galicia', importe: 5605030.29 }] })).toThrow(/suman 5605030.29 y el total a pagar es 5516865.16/)
   })

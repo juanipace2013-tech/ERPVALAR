@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Nueva orden de pago a proveedor (fase 1): facturas en pesos, transferencias
+ * Nueva orden de pago a proveedor (fase 1): facturas en pesos, transferencias y tarjeta de crédito
  * desde bancos en pesos y retención de Ganancias régimen 78. Se da de alta en
  * Colppy con Pago/alta_pago. Ver docs/DISENO-PAGOS-PROVEEDORES-COLPPY.md.
  *
@@ -407,6 +407,9 @@ export default function NuevaOrdenPagoPage() {
                   : null
   const puedeRegistrar = motivoNoRegistrar === null && !enviando
 
+  /** Medio de Colppy de la cuenta elegida: "Transferencia" (banco) o "Tarjeta de Crédito" */
+  const medioDeCuenta = (cuenta: string) => prep?.bancos.find((b) => b.nombre === cuenta)?.medio ?? 'Transferencia'
+
   const fechaMin = sumarDias(hoy, -45)
   const fechaDistinta = !!prepFecha && prepFecha !== fecha
 
@@ -561,7 +564,7 @@ export default function NuevaOrdenPagoPage() {
         </Button>
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Nueva orden de pago</h1>
-          <p className="text-muted-foreground">Se arma acá y se da de alta en Colppy. Fase 1: facturas en pesos y transferencias.</p>
+          <p className="text-muted-foreground">Se arma acá y se da de alta en Colppy. Fase 1: facturas en pesos, transferencias y tarjeta de crédito.</p>
         </div>
       </div>
 
@@ -883,24 +886,25 @@ export default function NuevaOrdenPagoPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Medios de pago</CardTitle>
-                <CardDescription>Transferencias desde bancos en pesos de Colppy. Tienen que sumar el total a pagar al centavo.</CardDescription>
+                <CardDescription>Transferencia desde un banco o pago con tarjeta de crédito, en pesos (cuentas de Colppy). Tienen que sumar el total a pagar al centavo.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 {prep.bancos.length === 0 ? (
-                  <p className="text-sm text-red-700">Colppy no devolvió bancos en pesos.</p>
+                  <p className="text-sm text-red-700">Colppy no devolvió bancos ni tarjetas en pesos.</p>
                 ) : (
                   <>
                     {medios.map((m) => (
                       <div key={m.uid} className="flex flex-wrap items-center gap-2">
-                        <span className="w-28 text-sm text-muted-foreground">Transferencia</span>
+                        <span className="w-36 text-sm text-muted-foreground">{medioDeCuenta(m.cuenta)}</span>
                         <Select value={m.cuenta} onValueChange={(v) => setMedio(m.uid, { cuenta: v })} disabled={enviando}>
                           <SelectTrigger className="w-64">
                             <SelectValue placeholder="Cuenta" />
                           </SelectTrigger>
                           <SelectContent>
                             {prep.bancos.map((b) => (
-                              <SelectItem key={b.nombre} value={b.nombre}>
+                              <SelectItem key={`${b.medio}-${b.nombre}`} value={b.nombre}>
                                 {b.nombre}
+                                {b.medio === 'Tarjeta de Crédito' ? ' (tarjeta)' : ''}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -1055,7 +1059,7 @@ export default function NuevaOrdenPagoPage() {
                 <p className="mb-1 text-muted-foreground">Medios</p>
                 {medios.map((m) => (
                   <div key={m.uid} className="flex justify-between gap-4">
-                    <span>Transferencia · {m.cuenta}</span>
+                    <span>{medioDeCuenta(m.cuenta)} · {m.cuenta}</span>
                     <span className="font-mono">{formatCurrency(importeMedio(m))}</span>
                   </div>
                 ))}

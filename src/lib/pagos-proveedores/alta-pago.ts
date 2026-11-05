@@ -37,8 +37,8 @@ export interface ImpagaColppy {
 }
 
 export interface MedioPago {
-  /** Fase 1: solo "Transferencia" */
-  medio: 'Transferencia'
+  /** "Transferencia" (bancos) o "Tarjeta de Crédito" (tarjetas), como los nombra la grilla de pagos de Colppy */
+  medio: 'Transferencia' | 'Tarjeta de Crédito'
   /** Nombre del banco en Colppy (Tesoreria/leer_origen_fondos2 → Nombre) */
   cuenta: string
   importe: number
@@ -151,7 +151,7 @@ export function armarAltaPago(p: PedidoAltaPago): AltaPagoArmado {
 
   if (!p.medios.length) errores.push('Falta el medio de pago')
   for (const m of p.medios) {
-    if (m.medio !== 'Transferencia') errores.push(`Medio de pago no soportado todavía: ${m.medio}`)
+    if (m.medio !== 'Transferencia' && m.medio !== 'Tarjeta de Crédito') errores.push(`Medio de pago no soportado todavía: ${m.medio}`)
     if (!m.cuenta?.trim()) errores.push('Falta la cuenta del medio de pago')
     if (!(r2(m.importe) > 0)) errores.push(`Importe inválido en ${m.cuenta || 'un medio de pago'}`)
   }

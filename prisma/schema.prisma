@@ -752,6 +752,9 @@ model PurchaseInvoiceItem {
   // Contabilidad
   accountId String? // Cuenta contable (115100 - Mercaderías)
   account   ChartOfAccount? @relation(fields: [accountId], references: [id])
+  // Línea de gasto: cuenta de Colppy por nombre exacto ("Seguros", "Gastos Bancarios").
+  // null = mercadería de siempre (cuenta "Mercaderias", con artículo y stock).
+  colppyAccount String?
 
   // Inventario
   stockProcessed Boolean @default(false)

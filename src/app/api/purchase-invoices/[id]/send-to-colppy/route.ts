@@ -285,6 +285,31 @@ export async function POST(
         const listPrice = Number(item.listPrice) // Precio de lista (bruto, antes de descuento)
         const discountPercent = Number(item.discountPercent) // % de descuento
         const taxRate = Number(item.taxRate)
+
+        // Línea de gasto (seguros, gastos bancarios...): sin artículo ni stock,
+        // imputada a su cuenta por nombre, como la carga el front de Colppy
+        // (FC A 00031-00346507 Visuar → "Gastos Galpon": idItem "0", codigo "").
+        if (item.colppyAccount) {
+          const hasDiscountG = discountPercent > 0 && listPrice > 0 && listPrice !== unitPrice
+          const importeUnitarioG = hasDiscountG ? Math.round(listPrice * 100) / 100 : Math.round(unitPrice * 100) / 100
+          const importeTotalG = Math.round(Math.round(unitPrice * 100) / 100 * qty * 100) / 100
+          return {
+            idItem: '0',
+            tipoItem: '',
+            Descripcion: item.description,
+            unidadMedida: item.unit || 'Un',
+            Cantidad: String(qty),
+            ImporteUnitario: importeUnitarioG.toFixed(2),
+            importeTotal: importeTotalG.toFixed(2),
+            importeIva: (Math.round(importeTotalG * taxRate / 100 * 100) / 100).toFixed(2),
+            IVA: taxRate.toFixed(2),
+            idPlanCuenta: item.colppyAccount,
+            codigo: '',
+            almacen: '',
+            porcDesc: (hasDiscountG ? discountPercent : 0).toFixed(2),
+            Comentario: `FC ${invoice.invoiceNumber}`,
+          }
+        }
         // Código para Colppy: preferir el SKU del producto vinculado — el
         // catálogo del ERP viene de Colppy, así que el SKU es el código que
         // Colppy conoce. El código impreso en la factura puede diferir solo en

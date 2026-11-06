@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
 
     // Get unlinked items grouped by invoice
     const items = await prisma.purchaseInvoiceItem.findMany({
-      where: { productId: null },
+      where: { productId: null, colppyAccount: null }, // las líneas de gasto no llevan artículo
       include: {
         purchaseInvoice: {
           select: {

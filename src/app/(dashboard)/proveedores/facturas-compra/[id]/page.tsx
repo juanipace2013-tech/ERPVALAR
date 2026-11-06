@@ -82,6 +82,8 @@ interface PurchaseInvoice {
   }
   items: Array<{
     id: string
+    /** Línea de gasto: cuenta de Colppy */
+    colppyAccount?: string | null
     supplierProductCode: string | null
     description: string
     quantity: number
@@ -555,12 +557,12 @@ export default function PurchaseInvoiceDetailPage() {
                     )}</strong>
                   </DialogDescription>
                 </DialogHeader>
-                {invoice.items.some(i => !i.product) && (
+                {invoice.items.some(i => !i.product && !i.colppyAccount) && (
                   <div className="flex items-start gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                     <AlertTriangle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
                     <div>
                       <p className="text-sm font-medium text-yellow-800">
-                        {invoice.items.filter(i => !i.product).length} item(s) sin producto vinculado
+                        {invoice.items.filter(i => !i.product && !i.colppyAccount).length} item(s) sin producto vinculado
                       </p>
                       <p className="text-xs text-yellow-700 mt-1">
                         Estos items serán omitidos. Puede vincularlos desde Inventario {'>'} Items sin vincular.
@@ -993,7 +995,12 @@ export default function PurchaseInvoiceDetailPage() {
                                   Cód. proveedor: <span className="font-mono">{item.supplierProductCode}</span>
                                 </p>
                               )}
-                              {item.product ? (
+                              {item.colppyAccount ? (
+                                <p className="text-sm text-gray-600">
+                                  <Badge variant="outline" className="mr-1">Gasto</Badge>
+                                  {item.colppyAccount.trim()}
+                                </p>
+                              ) : item.product ? (
                                 <p className="text-sm text-gray-500 truncate flex items-center gap-2" title={skuLabel}>
                                   <span className="truncate">{skuLabel}</span>
                                   {!item.stockProcessed && (

@@ -11,7 +11,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -60,6 +62,40 @@ import { resolveJurisdiccionIIBB } from '@/lib/jurisdicciones-iibb'
 import { REVIEW_REASONS, type ReviewReason } from '@/lib/review-reasons'
 import { normalizePaymentTerm } from '@/lib/purchase-invoices/payment-terms'
 import { generateSkuVariants } from '@/lib/purchase-invoices/sku-variants'
+import { cuentasGastoOrdenadas } from '@/lib/compras/cuentas-colppy'
+
+/** Valor del selector de imputación para la línea de mercadería de siempre */
+const MERCADERIA = '__mercaderia__'
+const CUENTAS_GASTO_UI = cuentasGastoOrdenadas()
+
+function SelectorImputacion({ value, onChange, className }: { value: string | null | undefined; onChange: (cuenta: string | null) => void; className?: string }) {
+  return (
+    <Select value={value || MERCADERIA} onValueChange={(v) => onChange(v === MERCADERIA ? null : v)}>
+      <SelectTrigger className={className ?? 'h-8 text-xs'} aria-label="Imputación de la línea">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={MERCADERIA}>Mercadería (artículo)</SelectItem>
+        <SelectGroup>
+          <SelectLabel>Gastos frecuentes</SelectLabel>
+          {CUENTAS_GASTO_UI.frecuentes.map((c) => (
+            <SelectItem key={c.codigo} value={c.nombre}>
+              {c.nombre.trim()}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+        <SelectGroup>
+          <SelectLabel>Otras cuentas</SelectLabel>
+          {CUENTAS_GASTO_UI.resto.map((c) => (
+            <SelectItem key={c.codigo} value={c.nombre}>
+              {c.nombre.trim()} ({c.codigo})
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  )
+}
 
 // ============ TYPES ============
 
@@ -85,6 +121,8 @@ interface InvoiceItem {
   listPrice: number
   bonificacion: number
   taxRate: number
+  /** Línea de gasto: cuenta de Colppy (sin artículo ni stock). Vacío = mercadería. */
+  colppyAccount?: string | null
 }
 
 interface OcrPercepcion {
@@ -341,6 +379,22 @@ export default function NuevaFacturaCompraForm({
 
   // Invoice form fields
   const [supplierId, setSupplierId] = useState(proveedorInicialId ?? '')
+  // Última cuenta de gasto usada con el proveedor (Allianz → Seguros)
+  const [cuentaSugerida, setCuentaSugerida] = useState<string | null>(null)
+  useEffect(() => {
+    setCuentaSugerida(null)
+    if (!supplierId) return
+    let vigente = true
+    fetch(`/api/purchase-invoices/cuenta-gasto?supplierId=${encodeURIComponent(supplierId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (vigente) setCuentaSugerida(d?.cuenta ?? null)
+      })
+      .catch(() => {})
+    return () => {
+      vigente = false
+    }
+  }, [supplierId])
   const [supplierInfo, setSupplierInfo] = useState({ razonSocial: '', cuit: '', condicionIva: '', direccion: '' })
   const [voucherType, setVoucherType] = useState('A')
   const [invoiceType, setInvoiceType] = useState('FA')
@@ -806,6 +860,24 @@ export default function NuevaFacturaCompraForm({
     )
   }
 
+  /** Cambia la imputación de una línea; una línea de gasto no lleva artículo */
+  const setImputacion = (itemId: string, cuenta: string | null) => {
+    setItems((prev) => prev.map((item) => (item.id === itemId ? { ...item, colppyAccount: cuenta, productId: cuenta ? null : item.productId } : item)))
+    if (cuenta) {
+      setLinkedProducts((prev) => {
+        const next = { ...prev }
+        delete next[itemId]
+        return next
+      })
+    }
+  }
+
+  /** Imputa todas las líneas a la misma cuenta (o todas a mercadería) */
+  const setImputacionTodas = (cuenta: string | null) => {
+    setItems((prev) => prev.map((item) => ({ ...item, colppyAccount: cuenta, productId: cuenta ? null : item.productId })))
+    if (cuenta) setLinkedProducts({})
+  }
+
   const handleProductLink = (itemId: string, product: Product) => {
     setItems(
       items.map((item) =>
@@ -1038,7 +1110,8 @@ export default function NuevaFacturaCompraForm({
           items: items
             .filter((item) => item.quantity > 0)
             .map((item) => ({
-              productId: item.productId,
+              productId: item.colppyAccount ? null : item.productId,
+              colppyAccount: item.colppyAccount || null,
               supplierProductCode: item.supplierProductCode,
               description: item.description,
               unit: item.unit,
@@ -1614,17 +1687,30 @@ export default function NuevaFacturaCompraForm({
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Items</CardTitle>
-              <Button onClick={addItem} size="sm">
-                <Plus className="h-4 w-4 mr-2" />
-                Agregar Item
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                {cuentaSugerida && !items.every((i) => i.colppyAccount === cuentaSugerida) && (
+                  <Button variant="outline" size="sm" onClick={() => setImputacionTodas(cuentaSugerida)} title="Última cuenta de gasto usada con este proveedor">
+                    Imputar todo a {cuentaSugerida.trim()}
+                  </Button>
+                )}
+                <span className="text-xs text-muted-foreground">Toda la factura a:</span>
+                <SelectorImputacion
+                  value={items.length > 0 && items.every((i) => (i.colppyAccount || null) === (items[0].colppyAccount || null)) ? items[0].colppyAccount : MERCADERIA}
+                  onChange={setImputacionTodas}
+                  className="h-8 w-56 text-xs"
+                />
+                <Button onClick={addItem} size="sm">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Agregar Item
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="border rounded-lg overflow-x-auto">
                 <Table className="min-w-[960px]">
                   <TableHeader>
                     <TableRow className="bg-gray-50">
-                      <TableHead className="w-52">Producto</TableHead>
+                      <TableHead className="w-52">Producto / cuenta</TableHead>
                       <TableHead className="w-24">Cód.Prov</TableHead>
                       <TableHead className="min-w-[180px]">Descripción</TableHead>
                       <TableHead className="w-[75px] text-right">Cant</TableHead>
@@ -1638,15 +1724,18 @@ export default function NuevaFacturaCompraForm({
                   <TableBody>
                     {items.map((item) => (
                       <TableRow key={item.id}>
-                        <TableCell className="w-52">
-                          <ProductSearchCell
-                            itemId={item.id}
-                            productId={item.productId}
-                            linkedProduct={linkedProducts[item.id]}
-                            supplierProductCode={item.supplierProductCode}
-                            onSelect={(product) => handleProductLink(item.id, product)}
-                            onClear={() => handleProductClear(item.id)}
-                          />
+                        <TableCell className="w-52 space-y-1">
+                          <SelectorImputacion value={item.colppyAccount} onChange={(c) => setImputacion(item.id, c)} />
+                          {!item.colppyAccount && (
+                            <ProductSearchCell
+                              itemId={item.id}
+                              productId={item.productId}
+                              linkedProduct={linkedProducts[item.id]}
+                              supplierProductCode={item.supplierProductCode}
+                              onSelect={(product) => handleProductLink(item.id, product)}
+                              onClear={() => handleProductClear(item.id)}
+                            />
+                          )}
                         </TableCell>
                         <TableCell>
                           <Input

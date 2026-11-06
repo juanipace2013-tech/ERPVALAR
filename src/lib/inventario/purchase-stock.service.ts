@@ -100,7 +100,7 @@ export async function processPurchaseInvoiceStock(
         skippedDetails.push({
           description: item.description,
           quantity: Number(item.quantity),
-          reason: 'Sin producto vinculado',
+          reason: item.colppyAccount ? `Gasto (${item.colppyAccount.trim()})` : 'Sin producto vinculado',
         })
         continue
       }

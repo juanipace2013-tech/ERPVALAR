@@ -33,11 +33,12 @@ export async function POST(request: NextRequest) {
 
         const item = await tx.purchaseInvoiceItem.findUnique({
           where: { id: purchaseInvoiceItemId },
-          select: { id: true, stockProcessed: true },
+          select: { id: true, stockProcessed: true, colppyAccount: true },
         })
         if (!item) continue
 
-        if (item.stockProcessed) {
+        // Las líneas de gasto no se vinculan a artículos (no mueven stock)
+        if (item.stockProcessed || (item.colppyAccount && productId)) {
           skipped.push(purchaseInvoiceItemId)
           continue
         }

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger'
 import {
   createPurchaseInvoice,
+  PurchaseInvoiceInputError,
   buildInvoiceNumber,
   isDuplicateInvoiceError,
   type CreatePurchaseInvoiceInput,
@@ -124,6 +125,10 @@ export async function POST(request: NextRequest) {
         },
         { status: 409 }
       )
+    }
+
+    if (error instanceof PurchaseInvoiceInputError) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
     logger.error('Error creating purchase invoice:', error);

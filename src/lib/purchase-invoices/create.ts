@@ -10,6 +10,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { resolveJurisdiccionIIBB, COLPPY_JURISDICCIONES } from '@/lib/jurisdicciones-iibb'
+import { cuentaGasto } from '@/lib/compras/cuentas-colppy'
 import { REVIEW_REASONS, isReviewReason, type ReviewReason } from '@/lib/review-reasons'
 import { findLearnedLinks } from './learned-links'
 import { stripTrailingSegment } from './sku-variants'
@@ -23,6 +24,8 @@ export interface CreatePurchaseInvoiceItemInput {
   listPrice: number
   taxRate: number
   accountId?: string | null
+  /** Línea de gasto: cuenta de Colppy por nombre (ver lib/compras/cuentas-colppy). Sin artículo ni stock. */
+  colppyAccount?: string | null
   batchNumber?: string | null
   expirationDate?: string | null
   importInfo?: string | null
@@ -93,6 +96,14 @@ export function isDuplicateInvoiceError(error: unknown): boolean {
   return targetFields.length === 0 || targetFields.some((f) => String(f).includes('invoiceNumber'))
 }
 
+/** Pedido inválido (se responde 400 con el mensaje) */
+export class PurchaseInvoiceInputError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'PurchaseInvoiceInputError'
+  }
+}
+
 export async function createPurchaseInvoice(
   input: CreatePurchaseInvoiceInput,
   createdBy: string
@@ -116,6 +127,13 @@ export async function createPurchaseInvoice(
     perceptions,
   } = input
   const generalDiscount = Number(input.generalDiscount) || 0
+
+  // Una cuenta de gasto que no existe en Colppy haría fallar el envío: se frena acá
+  for (const item of items) {
+    if (item.colppyAccount && !cuentaGasto(item.colppyAccount)) {
+      throw new PurchaseInvoiceInputError(`La cuenta "${item.colppyAccount}" no es una cuenta de gasto de Colppy (línea "${item.description}")`)
+    }
+  }
 
   const warnings: string[] = []
   let effectiveRequiresReview = Boolean(input.requiresReview)
@@ -204,8 +222,11 @@ export async function createPurchaseInvoice(
           const itemNetAmount = itemSubtotal * (1 - generalDiscount / 100)
           const itemTaxAmount = itemNetAmount * (Number(item.taxRate) / 100)
 
+          // Línea de gasto: nunca lleva artículo (no mueve stock ni se descarga en Colppy)
+          const gasto = cuentaGasto(item.colppyAccount)
           return {
-            productId: item.productId || null,
+            productId: gasto ? null : item.productId || null,
+            colppyAccount: gasto ? gasto.nombre : null,
             supplierProductCode: item.supplierProductCode || null,
             description: item.description,
             unit: item.unit || 'UN',
@@ -253,7 +274,7 @@ export async function createPurchaseInvoice(
 
   // Auto-vincular items por código de proveedor → SKU del catálogo (batch)
   let autoLinkedCount = 0
-  const unlinkItems = purchaseInvoice.items.filter((i) => !i.productId && i.supplierProductCode)
+  const unlinkItems = purchaseInvoice.items.filter((i) => !i.productId && !i.colppyAccount && i.supplierProductCode)
   if (unlinkItems.length > 0) {
     const allCodes: string[] = []
     for (const item of unlinkItems) {

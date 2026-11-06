@@ -29,6 +29,7 @@ import {
   colppyNetosFacturas,
   colppyPagosDelMes,
   colppyProximoNumeroOp,
+  colppySaldoProveedor,
   type BancoColppy,
   type ProveedorColppy,
 } from './colppy-pagos'
@@ -134,6 +135,22 @@ function paraPantalla(f: ImpagaColppy): ImpagaParaPantalla {
  * Facturas adeudadas al proveedor, en vivo de Colppy (como la pestaña
  * "Facturas adeudadas" de Colppy). Liviana: una sola lectura paginada.
  */
+/**
+ * Copia a Supplier.balance el saldo actual del proveedor en Colppy, para que el
+ * listado no espere al sync. Best-effort: si falla, queda el saldo anterior.
+ */
+export async function actualizarSaldoProveedor(supplierId: string): Promise<void> {
+  try {
+    const s = await prisma.supplier.findUnique({ where: { id: supplierId }, select: { colppyId: true, balance: true } })
+    if (!s?.colppyId || !/^\d+$/.test(s.colppyId)) return
+    const saldo = await colppySaldoProveedor(s.colppyId)
+    if (saldo === null || Math.abs(Number(s.balance) - saldo) < 0.005) return
+    await prisma.supplier.update({ where: { id: supplierId }, data: { balance: saldo } })
+  } catch (e) {
+    logger.warn(`[Proveedores] No se pudo actualizar el saldo de ${supplierId}: ${(e as Error).message}`)
+  }
+}
+
 export async function facturasAdeudadas(supplierId: string): Promise<{ colppyId: string; impagas: ImpagaParaPantalla[]; saldo: number }> {
   const s = await proveedorErp(supplierId)
   const impagas = (await colppyImpagasProveedor(s.colppyId)).map(paraPantalla)
@@ -634,6 +651,7 @@ export async function registrarOrdenDePago(p: PedidoOrdenPago, user: { id: strin
         data: { status: 'REGISTRADA', colppyPaymentId: r.idPago, colppyResponse: r.respuesta as Prisma.InputJsonValue, registeredAt: new Date(), lastError: null },
       })
       await aplicarEnFacturasErp(id)
+      await actualizarSaldoProveedor(p.supplierId)
       logger.info(`[Pagos proveedores] OP ${o.paymentNumber} registrada en Colppy (idPago ${r.idPago})`)
       return resultado(o, false)
     }

@@ -77,6 +77,10 @@ interface SyncStatus {
 
 // Estado en module scope (se reinicia al reiniciar PM2, aceptable)
 let syncStatus: SyncStatus = { running: false, startedAt: null, result: null, error: null }
+/** Cuándo terminó bien el último sync (para el sync automático al abrir el listado) */
+let ultimoSyncOk: number | null = null
+/** El listado dispara el sync solo si el último tiene más de esto */
+const SYNC_AUTO_VIGENCIA_MS = 10 * 60 * 1000
 
 /**
  * Sincroniza TODOS los proveedores de Colppy a la tabla Supplier local.
@@ -148,6 +152,9 @@ async function runSyncProveedores(): Promise<SyncProveedoresResult> {
           const province = (p.DirPostalProvincia || p.Provincia || '').trim() || null
           const postalCode = (p.DirPostalCodigoPostal || p.CodigoPostal || '').trim() || null
           const website = (p.Web || p.Website || '').trim() || null
+          // Saldo de Colppy (lo que les debemos); antes solo lo copiaba el cron de las 8:30
+          const saldo = Math.round(parseFloat(p.Saldo || '0') * 100) / 100
+          const balance = Number.isFinite(saldo) ? saldo : undefined
 
           // Extraer condición de pago (días)
           const paymentDaysRaw = parseInt(
@@ -175,6 +182,7 @@ async function runSyncProveedores(): Promise<SyncProveedoresResult> {
                   postalCode,
                   website,
                   paymentDays,
+                  balance,
                 },
               }).then(() => { actualizados++ })
             )
@@ -196,6 +204,7 @@ async function runSyncProveedores(): Promise<SyncProveedoresResult> {
                   postalCode,
                   website,
                   paymentDays,
+                  balance,
                   status: 'ACTIVE',
                 },
               }).then(() => {
@@ -254,11 +263,17 @@ async function runSyncProveedores(): Promise<SyncProveedoresResult> {
  * (antes bloqueaba el request hasta 2 minutos). GET devuelve el estado
  * para polling — mismo patrón que /api/clientes/sync-colppy.
  */
-export async function POST() {
+export async function POST(req: Request) {
   try {
     const session = await auth()
     if (!session?.user) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    }
+
+    // ?auto=1 (al abrir el listado): no se repite si el último sync es reciente
+    const auto = new URL(req.url).searchParams.get('auto') === '1'
+    if (auto && !syncStatus.running && ultimoSyncOk && Date.now() - ultimoSyncOk < SYNC_AUTO_VIGENCIA_MS) {
+      return NextResponse.json({ status: 'fresh', lastSyncAt: ultimoSyncOk })
     }
 
     if (syncStatus.running) {
@@ -275,6 +290,7 @@ export async function POST() {
     runSyncProveedores()
       .then((result) => {
         syncStatus = { running: false, startedAt: null, result, error: null }
+        ultimoSyncOk = Date.now()
       })
       .catch((error: any) => {
         logger.error('[Sync Proveedores] Error:', error)

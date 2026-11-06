@@ -75,14 +75,18 @@ function ProveedoresGestion() {
   const anotarSaldoVivo = useCallback((id: string, saldo: number) => setSaldosVivos((m) => (m[id] === saldo ? m : { ...m, [id]: saldo })), [])
   const panelRef = useRef<HTMLDivElement>(null)
 
-  const handleSyncColppy = async () => {
+  /**
+   * Trae de Colppy proveedores nuevos y saldos. `auto` = al abrir el listado:
+   * sin avisos, y el server no lo repite si el último sync tiene menos de 10 min.
+   */
+  const handleSyncColppy = async (auto = false) => {
     try {
       setSyncing(true)
-      toast.info('Sincronizando proveedores desde Colppy...')
+      if (!auto) toast.info('Trayendo proveedores y saldos de Colppy...')
 
       // El sync corre en background en el server: el POST responde al instante
       // y acá se hace polling del estado hasta que termine.
-      const response = await fetch('/api/proveedores/sync-colppy', {
+      const response = await fetch(`/api/proveedores/sync-colppy${auto ? '?auto=1' : ''}`, {
         method: 'POST',
       })
 
@@ -91,7 +95,8 @@ function ProveedoresGestion() {
       if (!response.ok) {
         throw new Error(started.error || 'Error al sincronizar')
       }
-      if (started.status === 'already_running') {
+      if (started.status === 'fresh') return
+      if (started.status === 'already_running' && !auto) {
         toast.info('Ya hay una sincronización en progreso, esperando que termine...')
       }
 
@@ -105,6 +110,10 @@ function ProveedoresGestion() {
 
         if (status.status === 'done') {
           const data = status.result
+          if (auto) {
+            fetchSuppliers()
+            return
+          }
           toast.success(
             `Sync completada: ${data.creados} creados, ${data.actualizados} actualizados` +
             (data.omitidos > 0 ? `, ${data.omitidos} omitidos` : '') +
@@ -121,11 +130,17 @@ function ProveedoresGestion() {
       throw new Error('La sincronización sigue corriendo en el servidor; recargá en unos minutos')
     } catch (error) {
       console.error('Error sync Colppy:', error)
-      toast.error((error instanceof Error && error.message) || 'Error al sincronizar proveedores')
+      if (!auto) toast.error((error instanceof Error && error.message) || 'Error al sincronizar proveedores')
     } finally {
       setSyncing(false)
     }
   }
+
+  // Al abrir el listado, saldos y proveedores nuevos frescos de Colppy (si el último sync es viejo)
+  useEffect(() => {
+    handleSyncColppy(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     fetchSuppliers()
@@ -294,8 +309,9 @@ function ProveedoresGestion() {
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
-            onClick={handleSyncColppy}
+            onClick={() => handleSyncColppy()}
             disabled={syncing}
+            title="Trae de Colppy los proveedores nuevos y los saldos (se hace solo al abrir, cada 10 minutos)"
             className="border-purple-600 text-purple-600 hover:bg-purple-50"
           >
             {syncing ? (
@@ -303,7 +319,7 @@ function ProveedoresGestion() {
             ) : (
               <CloudDownload className="h-4 w-4 mr-2" />
             )}
-            {syncing ? 'Sincronizando...' : 'Sync Colppy → DB'}
+            {syncing ? 'Trayendo de Colppy...' : 'Traer de Colppy'}
           </Button>
           <Button variant="outline" onClick={fetchSuppliers}>
             <RefreshCw className="h-4 w-4 mr-2" />

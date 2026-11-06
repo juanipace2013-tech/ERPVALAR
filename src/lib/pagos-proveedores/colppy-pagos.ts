@@ -93,6 +93,25 @@ export async function colppyDetalleProveedor(idProveedor: string): Promise<Prove
   }
 }
 
+/**
+ * Saldo del proveedor en Colppy, el mismo número que muestra su listado
+ * (listar_proveedor → Saldo). Se filtra por id y, por las dudas de que Colppy
+ * ignore el filtro, se busca la fila con ese id: si no aparece, null.
+ */
+export async function colppySaldoProveedor(idProveedor: string): Promise<number | null> {
+  const r = await leer('Proveedor', 'listar_proveedor', {
+    start: 0,
+    limit: 50,
+    filter: [{ field: 'idProveedor', op: '=', value: idProveedor }],
+    order: [{ field: 'RazonSocial', dir: 'asc' }],
+  })
+  const filas: any[] = Array.isArray(r?.data) ? r.data : []
+  const fila = filas.find((p) => String(p?.idProveedor ?? '') === idProveedor)
+  if (!fila) return null
+  const saldo = Math.round(parseFloat(String(fila.Saldo ?? '')) * 100) / 100
+  return Number.isFinite(saldo) ? saldo : null
+}
+
 /** Todas las facturas/NC impagas del proveedor, como las lista la pantalla de pagos */
 export async function colppyImpagasProveedor(idProveedor: string): Promise<ImpagaColppy[]> {
   const out: ImpagaColppy[] = []

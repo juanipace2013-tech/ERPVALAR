@@ -2,6 +2,7 @@ import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
+import { actualizarSaldoProveedor } from '@/lib/pagos-proveedores/registrar'
 import {
   colppyLogin,
   colppyLogout,
@@ -532,6 +533,9 @@ export async function POST(
       })
 
       logger.info(`[Colppy] Factura de compra ${invoice.invoiceNumber} enviada como ${estadoColppy}. ID Colppy: ${result.idFactura}`)
+
+      // El saldo del proveedor en el listado, al día sin esperar al sync
+      if (estadoColppy === 'Aprobada') await actualizarSaldoProveedor(invoice.supplierId)
 
       // Mensaje con info de percepciones IIBB
       let message = estadoColppy === 'Aprobada'

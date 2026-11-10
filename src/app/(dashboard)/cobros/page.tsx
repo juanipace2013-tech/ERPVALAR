@@ -295,6 +295,11 @@ function ClientePanel({ clienteId, nombreLista, onCerrar, onCobrado }: { cliente
                           <TableCell>
                             <div className="font-medium">
                               {f.tipoComprobante} {f.nroFactura}
+                              {f.saldoUsd !== null && (
+                                <span className="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-semibold text-emerald-800">
+                                  USD {f.saldoUsd.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                              )}
                             </div>
                             {(f.motivoNoCobrable || f.descripcion) && (
                               <div className="max-w-md truncate text-xs text-muted-foreground" title={f.motivoNoCobrable ?? f.descripcion}>
@@ -310,8 +315,15 @@ function ClientePanel({ clienteId, nombreLista, onCerrar, onCobrado }: { cliente
                     </TableBody>
                   </Table>
                 </div>
+                {cobrables.length === 0 && (
+                  <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                    Ninguna de estas facturas se puede cobrar todavía desde el ERP (mirá el motivo debajo de cada una). Por ahora cargá este cobro en Colppy.
+                  </p>
+                )}
                 <p className="mt-2 text-sm text-muted-foreground">
-                  {tildadas.size > 0
+                  {cobrables.length === 0
+                    ? ''
+                    : tildadas.size > 0
                     ? `${tildadas.size} tildada${tildadas.size === 1 ? '' : 's'}: ${formatCurrency(totalTildado)}. "Agregar cobro" las trae ya marcadas.`
                     : 'Tildá las que te pagaron y tocá "Agregar cobro", o abrilo y marcalas ahí.'}
                 </p>
@@ -486,11 +498,13 @@ function CobrosGestion() {
                         onClick={() => seleccionar(c.id)}
                         className={`cursor-pointer ${c.id === seleccionadoId ? 'bg-blue-100 hover:bg-blue-100' : 'hover:bg-blue-50'}`}
                       >
-                        <TableCell>
-                          <div className="font-medium">{c.businessName || c.name}</div>
+                        <TableCell className="w-full max-w-0">
+                          <div className="truncate font-medium" title={c.businessName || c.name}>
+                            {c.businessName || c.name}
+                          </div>
                           <div className="text-xs text-muted-foreground">{c.cuit}</div>
                         </TableCell>
-                        <TableCell className="text-right">{formatCurrency(Number(c.balance))}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right">{formatCurrency(Number(c.balance))}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

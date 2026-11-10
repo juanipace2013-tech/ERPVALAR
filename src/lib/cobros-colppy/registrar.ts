@@ -15,7 +15,8 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import type { BancoColppy } from '@/lib/pagos-proveedores/colppy-pagos'
-import { armarAltaCobro, AltaCobroError, esCobrableFase1, saldoImpagaCobro, type ImpagaCobroColppy, type MedioCobro } from './alta-cobro'
+import { getExchangeRate } from '@/lib/currency'
+import { armarAltaCobro, AltaCobroError, esCobrableFase1, monedaImpaga, saldoImpagaCobro, tcFacturaImpaga, type ImpagaCobroColppy, type MedioCobro } from './alta-cobro'
 import { colppyAltaCobro, colppyCuentasCobroArs, colppyImpagasCliente, colppyProximoNumeroRecibo, colppyUsuarioSesion } from './colppy-cobros'
 
 const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
@@ -75,7 +76,12 @@ export interface ImpagaCobroPantalla {
   tipoComprobante: string
   vencimiento: string
   totalFactura: number
+  /** En pesos; en facturas en dólares, al T/C de la factura (así lo lleva Colppy) */
   saldo: number
+  moneda: 'ARS' | 'USD'
+  /** Solo en dólares: T/C de la factura y saldo en dólares */
+  tcFactura: number | null
+  saldoUsd: number | null
   cobrable: boolean
   motivoNoCobrable: string | null
   descripcion: string
@@ -85,12 +91,15 @@ export interface PreparacionCobro {
   cliente: { id: string; nombre: string; cuit: string; colppyId: string }
   impagas: ImpagaCobroPantalla[]
   cuentas: BancoColppy[]
+  /** Dólar del día cargado en el ERP (BNA billete venta), si hay */
+  tcDia: number | null
   proximoNumero: string
   altasHabilitadas: boolean
 }
 
 function paraPantalla(f: ImpagaCobroColppy): ImpagaCobroPantalla {
   const c = esCobrableFase1(f)
+  const enDolares = monedaImpaga(f) === 'USD' && tcFacturaImpaga(f) > 0
   return {
     idFactura: String(f.idFactura),
     nroFactura: String(f.nroFactura),
@@ -98,6 +107,9 @@ function paraPantalla(f: ImpagaCobroColppy): ImpagaCobroPantalla {
     vencimiento: String(f.fechaPago ?? ''),
     totalFactura: r2(Number(f.totalFactura)),
     saldo: saldoImpagaCobro(f),
+    moneda: enDolares ? 'USD' : 'ARS',
+    tcFactura: enDolares ? tcFacturaImpaga(f) : null,
+    saldoUsd: enDolares ? r2(saldoImpagaCobro(f) / tcFacturaImpaga(f)) : null,
     cobrable: c.ok,
     motivoNoCobrable: c.ok ? null : c.motivo,
     descripcion: String(f.descripcion ?? ''),
@@ -109,10 +121,12 @@ export async function prepararCobro(customerId: string): Promise<PreparacionCobr
   const impagas = await colppyImpagasCliente(c.colppyId)
   const cuentas = await colppyCuentasCobroArs()
   const n = await colppyProximoNumeroRecibo()
+  const tcDia = await getExchangeRate('USD', 'ARS').catch(() => null)
   return {
     cliente: { id: c.id, nombre: c.businessName || c.name, cuit: c.cuit, colppyId: c.colppyId },
     impagas: impagas.map(paraPantalla),
     cuentas,
+    tcDia: tcDia && tcDia > 0 ? tcDia : null,
     proximoNumero: `${n.nroRecibo1}-${n.nroRecibo2}`,
     altasHabilitadas: altasCobroHabilitadas(),
   }
@@ -126,6 +140,8 @@ export interface PedidoCobro {
   fecha: string
   /** idFactura (Colppy) → importe a cobrar */
   cobros: Record<string, number>
+  /** idFactura (Colppy) → T/C del cobro, para las facturas en dólares */
+  tcCobro: Record<string, number>
   medios: Array<{ cuenta: string; importe: number }>
   descripcion: string
 }
@@ -148,6 +164,16 @@ export function validarPedidoCobro(body: unknown): PedidoCobro {
     }
     if (!Object.keys(cobros).length) errores.push('Elegí al menos un comprobante')
   }
+  const tcCobro: Record<string, number> = {}
+  if (b.tcCobro !== undefined && b.tcCobro !== null) {
+    if (typeof b.tcCobro !== 'object' || Array.isArray(b.tcCobro)) errores.push('Tipos de cambio inválidos')
+    else
+      for (const [k, v] of Object.entries(b.tcCobro)) {
+        const n = Number(v)
+        if (!/^\d+$/.test(k) || !Number.isFinite(n) || n <= 0) errores.push(`Tipo de cambio inválido para el comprobante ${k}`)
+        else if (k in cobros) tcCobro[k] = Math.round(n * 10000) / 10000
+      }
+  }
   const medios: PedidoCobro['medios'] = []
   if (!Array.isArray(b.medios) || !b.medios.length) errores.push('Falta el medio de cobro')
   else if (b.medios.length > 10) errores.push('Demasiados medios de cobro')
@@ -164,6 +190,7 @@ export function validarPedidoCobro(body: unknown): PedidoCobro {
     customerId: b.customerId,
     fecha: String(b.fecha ?? ''),
     cobros,
+    tcCobro,
     medios,
     descripcion: String(b.descripcion ?? '').slice(0, 200),
   }
@@ -320,6 +347,7 @@ export async function registrarCobro(p: PedidoCobro, user: { id: string }): Prom
         nroRecibo2: n.nroRecibo2,
         impagas,
         cobros: p.cobros,
+        tcCobro: p.tcCobro,
         medios: medios.map((m) => ({ medio: m.medio, cuenta: m.cuenta, importe: m.importe })),
         descripcion: p.descripcion,
       })

@@ -6,8 +6,10 @@
  * las facturas adeudadas donde se tilda "Pagar" o se escribe "Este cobro",
  * grilla de medios de cobro y la columna de totales.
  *
- * Fase 1: comprobantes en pesos y transferencias a cuentas en pesos, sin
- * retenciones. Se da de alta con Cliente/alta_cobro (docs/DISENO-COBROS-COLPPY.md).
+ * Alcance: comprobantes en pesos o en dólares (se cobran en pesos, al T/C de
+ * la factura o al que se indique: la diferencia de cambio sale sola) y
+ * transferencias a cuentas en pesos, sin retenciones. Se da de alta con
+ * Cliente/alta_cobro (docs/DISENO-COBROS-COLPPY.md).
  *
  * Idempotencia: la clave se genera para el contenido del formulario; cualquier
  * cambio la descarta. Un error de red se reintenta con LA MISMA clave (el
@@ -36,6 +38,8 @@ import type { PreparacionCobro, ResultadoCobro } from '@/lib/cobros-colppy/regis
 
 const MAX_MEDIOS = 10
 const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
+const usd = (n: number) => `USD ${n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+const tcTexto = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
 
 /** Hoy en Argentina (UTC-3), YYYY-MM-DD */
 function hoyAr(): string {
@@ -89,6 +93,8 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
   const [fecha, setFecha] = useState(hoyAr())
   /** idFactura → "este cobro" (texto) de los comprobantes que se cobran */
   const [elegidas, setElegidas] = useState<Record<string, string>>({})
+  /** idFactura → T/C del cobro (texto) de las facturas en dólares */
+  const [tcs, setTcs] = useState<Record<string, string>>({})
   const [medios, setMedios] = useState<Medio[]>([{ uid: nuevoUid(), cuenta: '', importe: '', auto: true }])
   const [descripcion, setDescripcion] = useState('')
 
@@ -117,6 +123,8 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
       }
       const p = d as PreparacionCobro
       setPrep(p)
+      // T/C del cobro: arranca en el de la factura; se conserva lo que ya se escribió
+      setTcs((t) => Object.fromEntries(p.impagas.filter((f) => f.cobrable && f.tcFactura).map((f) => [f.idFactura, t[f.idFactura] ?? String(f.tcFactura)])))
       // Se conserva lo tildado que sigue impago; la primera vez, lo que venía tildado del panel
       setElegidas((e) => {
         const base = Object.keys(e).length ? e : Object.fromEntries(iniciales.current.map((id) => [id, '']))
@@ -148,12 +156,26 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
     () => r2(medios.reduce((a, m) => a + (Number.isFinite(aNumero(m.importe)) ? aNumero(m.importe) : 0), 0)),
     [medios]
   )
-  const diferencia = r2(totalMedios - totalAplicado)
+  /** Lo que se cobra de más (o de menos) por cobrar a un T/C distinto al de la factura */
+  const diferenciaCambio = useMemo(() => {
+    if (!prep) return 0
+    let d = 0
+    for (const [id, v] of Object.entries(elegidas)) {
+      const f = prep.impagas.find((x) => x.idFactura === id)
+      const este = aNumero(v)
+      const tc = aNumero(tcs[id] ?? '')
+      if (!f?.tcFactura || !Number.isFinite(este) || !Number.isFinite(tc) || tc <= 0) continue
+      d += (este / f.tcFactura) * tc - este
+    }
+    return r2(d)
+  }, [prep, elegidas, tcs])
+  const totalACobrar = r2(totalAplicado + diferenciaCambio)
+  const diferencia = r2(totalMedios - totalACobrar)
 
   // Con un solo medio sin tocar, su importe sigue al total a cobrar
   useEffect(() => {
-    setMedios((ms) => (ms.length === 1 && ms[0].auto ? [{ ...ms[0], importe: totalAplicado > 0 ? totalAplicado.toFixed(2) : '' }] : ms))
-  }, [totalAplicado])
+    setMedios((ms) => (ms.length === 1 && ms[0].auto ? [{ ...ms[0], importe: totalACobrar > 0 ? totalACobrar.toFixed(2) : '' }] : ms))
+  }, [totalACobrar])
 
   const problemas = useMemo(() => {
     const p: string[] = []
@@ -165,6 +187,11 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
       if (!f) continue
       if (!Number.isFinite(n) || n <= 0) p.push(`${f.nroFactura}: importe inválido`)
       else if (n > f.saldo + 0.005) p.push(`${f.nroFactura}: el importe supera el saldo`)
+      if (f.tcFactura) {
+        const tc = aNumero(tcs[id] ?? '')
+        if (!Number.isFinite(tc) || tc <= 0) p.push(`${f.nroFactura}: falta el tipo de cambio del cobro`)
+        else if (tc < f.tcFactura * 0.5 || tc > f.tcFactura * 2) p.push(`${f.nroFactura}: el tipo de cambio del cobro está muy lejos del de la factura`)
+      }
     }
     for (const m of medios) {
       if (!m.cuenta) p.push('Elegí la cuenta de cada medio de cobro')
@@ -172,20 +199,25 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
       if (!Number.isFinite(n) || n <= 0) p.push('Importe inválido en un medio de cobro')
     }
     if (totalAplicado > 0 && Math.abs(diferencia) > 0.005) {
-      p.push(`Los medios suman ${formatCurrency(totalMedios)} y el total a cobrar es ${formatCurrency(totalAplicado)}`)
+      p.push(`Los medios suman ${formatCurrency(totalMedios)} y el total a cobrar es ${formatCurrency(totalACobrar)}`)
     }
     return [...new Set(p)]
-  }, [prep, elegidas, medios, totalAplicado, totalMedios, diferencia])
+  }, [prep, elegidas, tcs, medios, totalAplicado, totalACobrar, totalMedios, diferencia])
 
   const pedido = useMemo(
     () => ({
       customerId: clienteId,
       fecha,
       cobros: Object.fromEntries(Object.entries(elegidas).map(([k, v]) => [k, r2(aNumero(v))])),
+      tcCobro: Object.fromEntries(
+        Object.keys(elegidas)
+          .filter((k) => k in tcs)
+          .map((k) => [k, aNumero(tcs[k])])
+      ),
       medios: medios.map((m) => ({ cuenta: m.cuenta, importe: r2(aNumero(m.importe)) })),
       descripcion,
     }),
-    [clienteId, fecha, elegidas, medios, descripcion]
+    [clienteId, fecha, elegidas, tcs, medios, descripcion]
   )
 
   async function registrar() {
@@ -250,6 +282,8 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
 
   const cobrables = prep.impagas.filter((f) => f.cobrable)
   const todasTildadas = cobrables.length > 0 && cobrables.every((f) => f.idFactura in elegidas)
+  const enDolares = cobrables.filter((f) => f.tcFactura)
+  const hayDolares = enDolares.length > 0
 
   return (
     <div className="space-y-5">
@@ -271,7 +305,22 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
 
       {/* Facturas a cobrar */}
       <div>
-        <h3 className="mb-2 text-sm font-semibold text-blue-900">Facturas a cobrar</h3>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-blue-900">Facturas a cobrar</h3>
+          {hayDolares && (
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Cobrar las facturas en dólares al tipo de cambio:</span>
+              <Button variant="outline" size="sm" onClick={() => setTcs(Object.fromEntries(enDolares.map((f) => [f.idFactura, String(f.tcFactura)])))}>
+                De la factura
+              </Button>
+              {prep.tcDia && (
+                <Button variant="outline" size="sm" onClick={() => setTcs(Object.fromEntries(enDolares.map((f) => [f.idFactura, String(prep.tcDia)])))}>
+                  Del día ({tcTexto(prep.tcDia)})
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
         {prep.impagas.length === 0 ? (
           <p className="rounded-md border p-4 text-sm text-muted-foreground">Este cliente no tiene comprobantes impagos en Colppy.</p>
         ) : (
@@ -291,6 +340,8 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead className="text-right">Cobrado</TableHead>
                   <TableHead className="text-right">Saldo anterior</TableHead>
+                  {hayDolares && <TableHead className="text-right">T/C factura</TableHead>}
+                  {hayDolares && <TableHead className="w-32 text-right">T/C cobro</TableHead>}
                   <TableHead className="w-40 text-right">Este cobro</TableHead>
                   <TableHead className="text-right">Saldo</TableHead>
                 </TableRow>
@@ -299,6 +350,9 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
                 {prep.impagas.map((f) => {
                   const tildada = f.idFactura in elegidas
                   const este = tildada && Number.isFinite(aNumero(elegidas[f.idFactura])) ? aNumero(elegidas[f.idFactura]) : 0
+                  const tc = aNumero(tcs[f.idFactura] ?? '')
+                  /** Pesos que entran por esta factura al T/C del cobro */
+                  const enPesos = f.tcFactura && este > 0 && Number.isFinite(tc) && tc > 0 ? r2((este / f.tcFactura) * tc) : null
                   return (
                     <TableRow key={f.idFactura} className={f.cobrable ? (tildada ? 'bg-green-50/60' : '') : 'text-muted-foreground'}>
                       <TableCell className="text-center">
@@ -319,6 +373,7 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
                       <TableCell>
                         <div className="font-medium">
                           {f.tipoComprobante} {f.nroFactura}
+                          {f.saldoUsd !== null && <span className="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-semibold text-emerald-800">{usd(f.saldoUsd)}</span>}
                         </div>
                         {(f.motivoNoCobrable || f.descripcion) && (
                           <div className="max-w-xs truncate text-xs text-muted-foreground" title={f.motivoNoCobrable ?? f.descripcion}>
@@ -330,7 +385,24 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
                       <TableCell className="text-right">{formatCurrency(f.totalFactura)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(r2(f.totalFactura - f.saldo))}</TableCell>
                       <TableCell className="text-right">{formatCurrency(f.saldo)}</TableCell>
+                      {hayDolares && <TableCell className="text-right">{f.tcFactura ? tcTexto(f.tcFactura) : '—'}</TableCell>}
+                      {hayDolares && (
+                        <TableCell className="text-right">
+                          {f.cobrable && f.tcFactura ? (
+                            <Input
+                              className="h-8 text-right"
+                              inputMode="decimal"
+                              aria-label={`Tipo de cambio del cobro de ${f.nroFactura}`}
+                              value={tcs[f.idFactura] ?? ''}
+                              onChange={(e) => setTcs((t) => ({ ...t, [f.idFactura]: e.target.value }))}
+                            />
+                          ) : (
+                            '—'
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell className="text-right">
+                        {enPesos !== null && Math.abs(enPesos - este) > 0.005 && <div className="mb-1 text-xs text-muted-foreground">entran {formatCurrency(enPesos)}</div>}
                         {f.cobrable && (
                           <Input
                             className="h-8 text-right"
@@ -431,14 +503,15 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
             </Button>
           )}
           <p className="mt-2 text-xs text-muted-foreground">
-            Por ahora solo transferencias a cuentas en pesos. Retenciones, e-cheqs, dólares y anticipos se siguen cargando en Colppy.
+            Por ahora solo transferencias a cuentas en pesos. Retenciones, e-cheqs y anticipos se siguen cargando en Colppy.
           </p>
         </div>
 
         <div className="space-y-1 self-start rounded-md border bg-muted/40 p-4 text-sm">
           <Total label="Total este cobro" valor={totalAplicado} />
           <Total label="Retenciones" valor={0} />
-          <Total label="Total a cobrar" valor={totalAplicado} fuerte />
+          {hayDolares && <Total label="Diferencia de cambio" valor={diferenciaCambio} />}
+          <Total label="Total a cobrar" valor={totalACobrar} fuerte />
           <Total label="Total cobrado" valor={totalMedios} fuerte />
           <div className={`flex justify-between border-t pt-2 ${Math.abs(diferencia) > 0.005 ? 'font-semibold text-red-700' : 'text-muted-foreground'}`}>
             <span>Diferencia</span>
@@ -474,7 +547,8 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
             <AlertDialogTitle>¿Registrar el cobro en Colppy?</AlertDialogTitle>
             <AlertDialogDescription>
               {prep.cliente.nombre}: {formatCurrency(totalMedios)} aplicados a {Object.keys(elegidas).length}{' '}
-              {Object.keys(elegidas).length === 1 ? 'comprobante' : 'comprobantes'}. El recibo queda aprobado en Colppy y no se puede deshacer desde el ERP.
+              {Object.keys(elegidas).length === 1 ? 'comprobante' : 'comprobantes'}
+              {Math.abs(diferenciaCambio) > 0.005 ? ` (incluye ${formatCurrency(diferenciaCambio)} de diferencia de cambio)` : ''}. El recibo queda aprobado en Colppy y no se puede deshacer desde el ERP.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

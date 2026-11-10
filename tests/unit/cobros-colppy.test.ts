@@ -133,14 +133,66 @@ describe('alta_cobro (igual que la pantalla de Colppy)', () => {
     expect(errores({ medios: [] })).toContain('Falta el medio de cobro')
   })
 
-  it('fase 1: no cobra comprobantes en dólares, NC ni sin saldo', () => {
+  it('no cobra NC, comprobantes sin saldo, otras monedas ni dólares sin T/C', () => {
     expect(esCobrableFase1(impagaMl)).toEqual({ ok: true })
-    expect(esCobrableFase1(impagaUsd)).toMatchObject({ ok: false })
+    expect(esCobrableFase1(impagaUsd)).toEqual({ ok: true })
     expect(esCobrableFase1({ ...impagaMl, tipoComprobante: 'NCV' })).toMatchObject({ ok: false })
     expect(esCobrableFase1({ ...impagaMl, Saldo: 0 })).toMatchObject({ ok: false })
-    expect(() =>
-      armarAltaCobro({ ...pedidoMl, impagas: [impagaUsd], cobros: { '55013602': 387711.5 }, medios: [{ medio: 'Transferencia', cuenta: 'Cta Cte Galicia', importe: 387711.5 }] })
-    ).toThrow(AltaCobroError)
+    expect(esCobrableFase1({ ...impagaUsd, currency: 'EUR' })).toMatchObject({ ok: false })
+    expect(esCobrableFase1({ ...impagaUsd, rate: null })).toMatchObject({ ok: false })
+  })
+})
+
+describe('facturas en dólares cobradas en pesos', () => {
+  // FAV 0007-00000154 de LE GURIE (recibo real 0001-00012880): USD 5.165,83 a T/C 1.535
+  const fav154: ImpagaCobroColppy = {
+    ...impagaMl,
+    idFactura: '54577906',
+    nroFactura: '0007-00000154',
+    descripcion: '',
+    totalFactura: '7929549.05',
+    saldoAnterior: '7929549.05',
+    Saldo: 7929549.05,
+    currency: 'USD',
+    rate: '1535.000000',
+    totalme: 5165.83,
+  }
+  const base: PedidoAltaCobro = { ...pedidoMl, idCliente: '11328281', impagas: [fav154], cobros: { '54577906': 7929549.05 } }
+
+  it('al T/C del cobro: la diferencia de cambio da igual que en el recibo real (51.658,30)', () => {
+    const a = armarAltaCobro({ ...base, tcCobro: { '54577906': 1545 }, medios: [{ medio: 'Transferencia', cuenta: 'Cta Cte Galicia', importe: 7981207.35 }] })
+    expect(a.totalAplicado).toBe(7929549.05)
+    expect(a.diferenciaCambio).toBe(51658.3)
+    expect(a.parameters).toMatchObject({ totalEsteCobro: 7929549.05, diferenciaTipoCambio: 51658.3, totalACobrar: 7981207.35, totalCobrado: 7981207.35, saldoFacturas: 0 })
+    const fila = (a.parameters.cobros as Array<Record<string, unknown>>)[0]
+    expect(fila).toMatchObject({ currency: 'USD', rate: '1535.000000', tcCobroRate: 1545, esteCobro: 7929549.05, Saldo: 0, pagar: true })
+    expect(String(fila.totalme)).toMatch(/^USD-5165\.83/)
+  })
+
+  it('al T/C de la factura: sin diferencia de cambio', () => {
+    const a = armarAltaCobro({ ...base, medios: [{ medio: 'Transferencia', cuenta: 'Cta Cte Galicia', importe: 7929549.05 }] })
+    expect(a.diferenciaCambio).toBe(0)
+    expect(a.parameters).toMatchObject({ diferenciaTipoCambio: 0, totalACobrar: 7929549.05 })
+    expect((a.parameters.cobros as Array<Record<string, unknown>>)[0]).toMatchObject({ tcCobroRate: 1535 })
+  })
+
+  it('T/C del cobro menor al de la factura: diferencia negativa', () => {
+    const a = armarAltaCobro({ ...base, tcCobro: { '54577906': 1500 }, medios: [{ medio: 'Transferencia', cuenta: 'Cta Cte Galicia', importe: 7748745 }] })
+    expect(a.diferenciaCambio).toBe(-180804.05)
+    expect(a.parameters.totalACobrar).toBe(7748745)
+  })
+
+  it('pesos y dólares en el mismo recibo; la factura en dólares no cobrada va sin diferencia', () => {
+    const a = armarAltaCobro({ ...pedidoMl, impagas: [impagaMl, fav154], tcCobro: {} })
+    expect(a.diferenciaCambio).toBe(0)
+    const cobros = a.parameters.cobros as Array<Record<string, unknown>>
+    expect(cobros[0]).toMatchObject({ tcCobroRate: '', currency: null })
+    expect(cobros[1]).toMatchObject({ esteCobro: 0, pagar: false, tcCobroRate: 1535 })
+  })
+
+  it('rechaza: medios al T/C equivocado y T/C disparatado', () => {
+    expect(() => armarAltaCobro({ ...base, tcCobro: { '54577906': 1545 }, medios: [{ medio: 'Transferencia', cuenta: 'Cta Cte Galicia', importe: 7929549.05 }] })).toThrow(/total a cobrar es 7981207.35/)
+    expect(() => armarAltaCobro({ ...base, tcCobro: { '54577906': 15.45 }, medios: [{ medio: 'Transferencia', cuenta: 'Cta Cte Galicia', importe: 79812.07 }] })).toThrow(/muy lejos/)
   })
 })
 

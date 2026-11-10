@@ -170,6 +170,28 @@ Notas:
 - Impagas de un recibo nuevo traen además `idMoneda`, `valorCambio`, `is_fce`,
   `idTipoComprobante`, `totalme`.
 
+## Facturas en dólares cobradas en pesos (10/11/2026, leído del front, SIN captura de guardado)
+
+Val Arg factura en USD y cobra en pesos, al T/C de la factura o al del día del
+pago según el cliente. Leído de `colppyall_min.js` (`facturasacobrargrid`,
+`cobroform.calcularTotalConTCFactura/TCCobro`, `reCalculateTotal`, `onSave3`):
+
+- La fila lleva `currency:"USD"`, `rate` (T/C factura, texto `"1535.000000"`),
+  `esteCobro`/`saldoAnterior` en pesos **al T/C de la factura**, y
+  `tcCobroRate` (número, hasta 4 decimales; al abrir Colppy lo carga con su T/C
+  del día y es editable). El front le agrega `totalme` = `"USD-" +
+  totalFactura / rate.toFixed(2)`. `esteCobroMe` va `""` salvo que se use el
+  "Calculador moneda extranjera" (cobro parcial en USD).
+- `diferenciaTipoCambio` = Σ `esteCobro / rate × tcCobroRate` − Σ `esteCobro`
+  (solo filas con moneda).
+- `totalACobrar` = `totalEsteCobro` − retenciones + … + `diferenciaTipoCambio`,
+  y tiene que igualar a la suma de medios.
+- En el ERP: columna "T/C cobro" por factura (arranca en el de la factura,
+  botones "De la factura" / "Del día" con el BNA del ERP). La aplicación que
+  se guarda es en pesos al T/C de la factura (lo que baja el saldo en Colppy).
+- **Primer cobro real en dólares: revisar en Colppy** el recibo y el asiento
+  de diferencia de cambio (tipos de dato de `tcCobroRate` sin confirmar).
+
 ## Pendiente de capturar
 
 - [x] **Alta del recibo** (operación, grillas, numeración `nroRecibo1/2`).

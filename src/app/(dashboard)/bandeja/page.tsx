@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -411,6 +411,63 @@ function ConversationView({ detail }: { detail: ConversationDetail }) {
   )
 }
 
+/**
+ * Muestra el HTML de un mail entrante aislado en un iframe.
+ *
+ * El HTML viene de afuera (cualquiera puede mandar un mail a la casilla), así
+ * que nunca se inserta en la página. El iframe va con sandbox SIN
+ * allow-scripts: no corre JavaScript ni manejadores inline, no envía
+ * formularios y no puede navegar la ventana del ERP. allow-same-origin solo
+ * sirve para que esta página pueda medir el alto del contenido; sin scripts
+ * adentro no le da ningún poder al mail. La CSP interna además corta cualquier
+ * carga que no sea imagen o estilo.
+ */
+function EmailHtmlFrame({ html }: { html: string }) {
+  const ref = useRef<HTMLIFrameElement>(null)
+  const [height, setHeight] = useState(80)
+
+  const srcDoc = useMemo(
+    () =>
+      '<!doctype html><html><head><meta charset="utf-8">' +
+      `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; font-src data:; form-action 'none'">` +
+      '<base target="_blank">' +
+      '<style>html,body{margin:0;padding:0}body{font:14px/1.45 system-ui,sans-serif;color:#111827;background:#fff;overflow-wrap:anywhere}img{max-width:100%;height:auto}table{max-width:100%}</style>' +
+      '</head><body>' +
+      html +
+      '</body></html>',
+    [html]
+  )
+
+  const measure = useCallback(() => {
+    const doc = ref.current?.contentDocument
+    if (!doc?.documentElement) return
+    setHeight(Math.min(doc.documentElement.scrollHeight, 4000))
+  }, [])
+
+  const onLoad = useCallback(() => {
+    measure()
+    // Las imágenes remotas cargan después y cambian el alto.
+    const body = ref.current?.contentDocument?.body
+    if (body && typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(measure)
+      ro.observe(body)
+    }
+  }, [measure])
+
+  return (
+    <iframe
+      ref={ref}
+      title="Contenido del mail"
+      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+      referrerPolicy="no-referrer"
+      srcDoc={srcDoc}
+      onLoad={onLoad}
+      style={{ height }}
+      className="block w-[640px] max-w-full rounded border-0 bg-white"
+    />
+  )
+}
+
 function MessageBubble({
   message,
   channelType,
@@ -432,11 +489,7 @@ function MessageBubble({
         )}
       >
         {channelType === 'EMAIL' && message.bodyHtml ? (
-          // eslint-disable-next-line react/no-danger
-          <div
-            className="prose prose-sm max-w-none dark:prose-invert"
-            dangerouslySetInnerHTML={{ __html: message.bodyHtml }}
-          />
+          <EmailHtmlFrame html={message.bodyHtml} />
         ) : (
           <p className="whitespace-pre-wrap break-words">{message.body}</p>
         )}

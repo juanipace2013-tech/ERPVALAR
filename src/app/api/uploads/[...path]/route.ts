@@ -38,7 +38,7 @@ export async function GET(
     // Security: ensure resolved path is within public/uploads/
     const uploadsDir = path.resolve(process.cwd(), 'public', 'uploads')
     const resolvedPath = path.resolve(filePath)
-    if (!resolvedPath.startsWith(uploadsDir)) {
+    if (!resolvedPath.startsWith(uploadsDir + path.sep)) {
       return NextResponse.json({ error: 'Ruta no válida' }, { status: 400 })
     }
 
@@ -64,6 +64,7 @@ export async function GET(
         'Content-Disposition': ext === '.pdf' ? 'inline' : `inline; filename="${path.basename(resolvedPath)}"`,
         'Content-Length': fileBuffer.length.toString(),
         'Cache-Control': 'private, max-age=3600',
+        'X-Content-Type-Options': 'nosniff',
       },
     })
   } catch (error) {

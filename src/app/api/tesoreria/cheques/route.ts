@@ -1,5 +1,6 @@
 import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
+import { requireRole, ROLES } from '@/lib/authz'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/prisma'
@@ -14,6 +15,8 @@ export async function GET(request: NextRequest) {
         { status: 401 }
       )
     }
+    const forbidden = requireRole(session, ROLES.FINANZAS)
+    if (forbidden) return forbidden
 
     const { searchParams } = new URL(request.url)
     const filter = searchParams.get('filter') || 'ALL'

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
+import { requireRole, ROLES } from '@/lib/authz'
 import { prisma } from '@/lib/prisma'
 
 export async function PUT(
@@ -11,6 +12,8 @@ export async function PUT(
     if (!session?.user) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
+    const forbidden = requireRole(session, ROLES.FINANZAS)
+    if (forbidden) return forbidden
 
     const { productId } = await params
     const body = await request.json()

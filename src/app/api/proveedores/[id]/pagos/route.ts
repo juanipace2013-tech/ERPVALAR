@@ -1,5 +1,6 @@
 import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
+import { requireRole, ROLES } from '@/lib/authz'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/prisma'
@@ -55,6 +56,8 @@ export async function POST(
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
+    const forbidden = requireRole(session, ROLES.FINANZAS)
+    if (forbidden) return forbidden
 
     const { id } = await params
     const body = await request.json()

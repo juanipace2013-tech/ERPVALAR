@@ -7,6 +7,7 @@
  * curso responde 409 sin ejecutar.
  */
 
+import { cronSecretFromRequest, isCronSecretValid } from '@/lib/cron-auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { logger } from '@/lib/logger'
 import { syncStockToMl, type StockSyncResult } from '@/lib/mercadolibre/listings'
@@ -17,7 +18,7 @@ export const maxDuration = 600
 const JOB: CronJob = 'sync-ml-stock'
 
 export async function GET(req: NextRequest) {
-  const secret = req.nextUrl.searchParams.get('secret')
+  const secret = cronSecretFromRequest(req)
   if (!secret) {
     const { last, running } = await getCronStatus(JOB)
     return NextResponse.json({
@@ -29,7 +30,7 @@ export async function GET(req: NextRequest) {
       running: running ? { since: running.startedAt } : null,
     })
   }
-  if (secret !== process.env.CRON_SECRET) {
+  if (!isCronSecretValid(secret)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

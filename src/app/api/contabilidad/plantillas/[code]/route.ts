@@ -4,6 +4,7 @@
  */
 
 import { auth } from '@/auth';
+import { requireRole, ROLES } from '@/lib/authz'
 import { NextRequest, NextResponse } from 'next/server';
 import { getTemplateByCode, validateTemplate } from '@/lib/contabilidad/apply-template';
 import { logger } from '@/lib/logger'
@@ -27,6 +28,8 @@ export async function GET(
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
     }
+    const forbidden = requireRole(session, ROLES.FINANZAS)
+    if (forbidden) return forbidden
 
     const { code } = await params;
     const template = await getTemplateByCode(code);
@@ -67,6 +70,8 @@ export async function PATCH(
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
     }
+    const forbidden = requireRole(session, ROLES.FINANZAS)
+    if (forbidden) return forbidden
 
     const { code } = await params;
     const body = await request.json();

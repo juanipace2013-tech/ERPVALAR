@@ -22,6 +22,7 @@
  * Mismo patrón de auth y forma de respuesta que /api/cron/sync-balances.
  */
 
+import { cronSecretFromRequest, isCronSecretValid } from '@/lib/cron-auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
@@ -78,7 +79,7 @@ function isDeadSubscriptionError(err: unknown): boolean {
 // ─── Handler ─────────────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
-  const secret = req.nextUrl.searchParams.get('secret')
+  const secret = cronSecretFromRequest(req)
 
   // Sin secret → devolver estado de última corrida (público para la UI)
   if (!secret) {
@@ -90,7 +91,7 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  if (secret !== process.env.CRON_SECRET) {
+  if (!isCronSecretValid(secret)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

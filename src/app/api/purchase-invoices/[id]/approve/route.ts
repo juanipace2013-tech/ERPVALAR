@@ -1,4 +1,5 @@
 import { auth } from '@/auth';
+import { requireRole, ROLES } from '@/lib/authz'
 import { NextRequest, NextResponse } from 'next/server';
 import { approvePurchaseInvoice } from '@/lib/purchase-accounting';
 import { logger } from '@/lib/logger'
@@ -12,6 +13,8 @@ export async function POST(
     if (!session?.user) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
     }
+    const forbidden = requireRole(session, ROLES.FINANZAS)
+    if (forbidden) return forbidden
 
     const { id } = await params;
 

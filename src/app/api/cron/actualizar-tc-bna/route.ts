@@ -8,6 +8,7 @@
  * GET sin ?secret devuelve el estado de la última corrida (cron_runs).
  */
 
+import { cronSecretFromRequest, isCronSecretValid } from '@/lib/cron-auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { logger } from '@/lib/logger'
 import { runCronJob, getCronStatus, cronSkippedResponse, type CronJob } from '@/lib/cron-run'
@@ -16,7 +17,7 @@ import { actualizarTipoCambioBNA } from '@/lib/tipo-cambio-bna'
 const JOB: CronJob = 'actualizar-tc-bna'
 
 export async function GET(req: NextRequest) {
-  const secret = req.nextUrl.searchParams.get('secret')
+  const secret = cronSecretFromRequest(req)
 
   // Sin secret → estado de la última corrida (público para la UI)
   if (!secret) {
@@ -29,7 +30,7 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  if (secret !== process.env.CRON_SECRET) {
+  if (!isCronSecretValid(secret)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

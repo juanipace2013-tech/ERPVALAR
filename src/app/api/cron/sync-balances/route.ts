@@ -10,6 +10,7 @@
  * responde 409 sin ejecutar.
  */
 
+import { cronSecretFromRequest, isCronSecretValid } from '@/lib/cron-auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { colppyLogin, colppyLogout, getColppyConfig, md5Hash, callColppyAPI, fetchAllColppyPages } from '@/lib/colppy'
@@ -180,7 +181,7 @@ async function sincronizarSaldos(): Promise<SyncResult> {
 // ─── Handler ────────────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
-  const secret = req.nextUrl.searchParams.get('secret')
+  const secret = cronSecretFromRequest(req)
 
   // Sin secret → devolver estado de última sincronización (público para la UI)
   if (!secret) {
@@ -197,7 +198,7 @@ export async function GET(req: NextRequest) {
   }
 
   // Con secret → ejecutar sync
-  if (secret !== process.env.CRON_SECRET) {
+  if (!isCronSecretValid(secret)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

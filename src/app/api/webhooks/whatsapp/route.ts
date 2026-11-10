@@ -85,8 +85,12 @@ interface WhatsAppPayload {
 function verifySignature(rawBody: string, signatureHeader: string | null): boolean {
   const secret = process.env.META_WHATSAPP_APP_SECRET
   if (!secret) {
-    logger.warn('[WhatsApp Webhook] META_WHATSAPP_APP_SECRET no configurado — omitiendo verificación de firma')
-    return true // dev mode — permitir; en prod debería ser exigido
+    if (process.env.NODE_ENV === 'production') {
+      logger.error('[WhatsApp Webhook] META_WHATSAPP_APP_SECRET no configurado — se rechaza el mensaje')
+      return false
+    }
+    logger.warn('[WhatsApp Webhook] META_WHATSAPP_APP_SECRET no configurado — omitiendo verificación de firma (solo desarrollo)')
+    return true
   }
   if (!signatureHeader || !signatureHeader.startsWith('sha256=')) return false
   const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex')

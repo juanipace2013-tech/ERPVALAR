@@ -59,7 +59,8 @@ export async function POST(
 
     await mkdir(UPLOAD_DIR, { recursive: true })
 
-    const ext = file.name.split('.').pop() || 'pdf'
+    // La extensión sale del tipo ya validado, nunca del nombre que manda el cliente.
+    const ext = file.type === 'application/pdf' ? 'pdf' : file.type === 'image/png' ? 'png' : 'jpg'
     const safeSku = product.sku.replace(/[^a-zA-Z0-9-_]/g, '-')
     const fileName = `${safeSku}_ficha_${Date.now()}.${ext}`
     const filePath = path.join(UPLOAD_DIR, fileName)

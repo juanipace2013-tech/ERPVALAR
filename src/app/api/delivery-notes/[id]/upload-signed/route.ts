@@ -59,7 +59,8 @@ export async function POST(
     await mkdir(UPLOAD_DIR, { recursive: true });
 
     // Generar nombre de archivo único
-    const ext = file.name.split('.').pop() || 'pdf';
+    // La extensión sale del tipo ya validado, nunca del nombre que manda el cliente.
+    const ext = file.type === 'application/pdf' ? 'pdf' : file.type === 'image/png' ? 'png' : 'jpg';
     const safeNumber = deliveryNote.deliveryNumber.replace(/\s/g, '-');
     const timestamp = Date.now();
     const fileName = `${safeNumber}_firmado_${timestamp}.${ext}`;

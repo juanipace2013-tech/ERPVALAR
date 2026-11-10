@@ -1,5 +1,6 @@
 import { logger } from '@/lib/logger'
 import { auth } from '@/auth'
+import { requireRole, ROLES } from '@/lib/authz'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
@@ -24,6 +25,8 @@ export async function GET(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
+    const forbidden = requireRole(session, ROLES.FINANZAS)
+    if (forbidden) return forbidden
 
     const mes = new URL(request.url).searchParams.get('mes') || ''
     if (!/^\d{4}-\d{2}$/.test(mes)) {
@@ -101,6 +104,8 @@ export async function PUT(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
+    const forbidden = requireRole(session, ROLES.FINANZAS)
+    if (forbidden) return forbidden
 
     const body = putSchema.parse(await request.json())
 

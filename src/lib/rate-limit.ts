@@ -6,12 +6,12 @@ const WINDOW_MS = 15 * 60 * 1000 // 15 minutos
 /**
  * Devuelve true si el key puede intentar, false si está bloqueado.
  */
-export async function checkRateLimit(key: string): Promise<boolean> {
+export async function checkRateLimit(key: string, max: number = MAX_ATTEMPTS): Promise<boolean> {
   const since = new Date(Date.now() - WINDOW_MS)
   const count = await prisma.authAttempt.count({
     where: { key, createdAt: { gte: since } },
   })
-  return count < MAX_ATTEMPTS
+  return count < max
 }
 
 /**

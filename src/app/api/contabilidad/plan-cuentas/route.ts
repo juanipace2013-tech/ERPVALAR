@@ -1,9 +1,17 @@
 import { NextResponse } from 'next/server';
+import { requireRole, ROLES } from '@/lib/authz'
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger'
 
 export async function GET() {
   try {
+    const session = await (await import('@/auth')).auth();
+    if (!session) {
+      return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
+    }
+    const forbidden = requireRole(session, ROLES.FINANZAS)
+    if (forbidden) return forbidden
+
     // Obtener todas las cuentas
     const allAccounts = await prisma.chartOfAccount.findMany({
       where: { isActive: true },
@@ -39,6 +47,8 @@ export async function POST(request: Request) {
     if (!session) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
     }
+    const forbidden = requireRole(session, ROLES.FINANZAS)
+    if (forbidden) return forbidden
 
     const data = await request.json();
 

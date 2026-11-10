@@ -25,6 +25,7 @@
  * Mismo patrón de auth, lock y forma de respuesta que los otros /api/cron/*.
  */
 
+import { cronSecretFromRequest, isCronSecretValid } from '@/lib/cron-auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { logger } from '@/lib/logger'
 import { runCronJob, getCronStatus, cronSkippedResponse, type CronJob } from '@/lib/cron-run'
@@ -36,7 +37,7 @@ const JOB: CronJob = 'ingest-facturas-mail'
 export const maxDuration = 300
 
 export async function GET(req: NextRequest) {
-  const secret = req.nextUrl.searchParams.get('secret')
+  const secret = cronSecretFromRequest(req)
 
   if (!secret) {
     const { last, running } = await getCronStatus(JOB)
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  if (secret !== process.env.CRON_SECRET) {
+  if (!isCronSecretValid(secret)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

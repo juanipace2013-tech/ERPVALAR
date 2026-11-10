@@ -60,6 +60,12 @@ export async function POST(req: NextRequest) {
   }
 
   const expectedClientState = process.env.GRAPH_WEBHOOK_CLIENT_STATE
+  // En producción el secreto es obligatorio: sin él cualquiera podría mandar
+  // notificaciones falsas, así que se descartan todas.
+  if (!expectedClientState && process.env.NODE_ENV === 'production') {
+    logger.error('[Graph Webhook] GRAPH_WEBHOOK_CLIENT_STATE no configurado — notificaciones descartadas')
+    return new NextResponse(null, { status: 202 })
+  }
   const mailFromUpn = process.env.AZURE_MAIL_FROM || ''
 
   // Responder 202 rápido para no provocar reintentos de Graph

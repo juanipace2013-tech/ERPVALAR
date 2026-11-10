@@ -17,6 +17,14 @@ function getClientIp(request: Request | undefined): string {
   return 'unknown'
 }
 
+/** Intentos fallidos por email (desde cualquier IP) en la ventana de 15 minutos. */
+const MAX_ATTEMPTS_PER_EMAIL = 15
+
+async function registrarFallo(key: string, emailKey: string): Promise<void> {
+  await recordFailedAttempt(key)
+  await recordFailedAttempt(emailKey)
+}
+
 /** Cada cuánto se relee estado/rol del usuario desde la DB en el callback jwt. */
 const REVALIDATE_MS = 5 * 60 * 1000
 
@@ -38,8 +46,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const email = (credentials.email as string).toLowerCase()
         const ip = getClientIp(request as Request | undefined)
         const key = `login:${ip}:${email}`
+        // Tope por email solo, sin IP: la IP sale de X-Forwarded-For y un atacante
+        // puede rotarla para esquivar el límite de arriba. Es más alto para que
+        // unos pocos errores de tipeo ajenos no bloqueen al usuario real.
+        const emailKey = `login-email:${email}`
 
-        if (!(await checkRateLimit(key))) {
+        if (!(await checkRateLimit(key)) || !(await checkRateLimit(emailKey, MAX_ATTEMPTS_PER_EMAIL))) {
           throw new Error('Demasiados intentos. Intentá nuevamente en 15 minutos.')
         }
 
@@ -48,12 +60,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         })
 
         if (!user) {
-          await recordFailedAttempt(key)
+          await registrarFallo(key, emailKey)
           throw new Error('Email o contraseña incorrectos')
         }
 
         if (user.status !== 'ACTIVE') {
-          await recordFailedAttempt(key)
+          await registrarFallo(key, emailKey)
           throw new Error('Email o contraseña incorrectos')
         }
 
@@ -63,7 +75,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         )
 
         if (!isPasswordValid) {
-          await recordFailedAttempt(key)
+          await registrarFallo(key, emailKey)
           throw new Error('Email o contraseña incorrectos')
         }
 
@@ -87,12 +99,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           const delta = totp.validate({ token: mfaCode, window: 1 })
 
           if (delta === null) {
-            await recordFailedAttempt(key)
+            await registrarFallo(key, emailKey)
             throw new Error('MFA_INVALID')
           }
         }
 
         await clearAttempts(key)
+        await clearAttempts(emailKey)
         return {
           id: user.id,
           email: user.email,

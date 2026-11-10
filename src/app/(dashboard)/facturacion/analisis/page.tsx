@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -42,10 +42,12 @@ import {
   BarChart3,
   ArrowUpDown,
   CalendarIcon,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getLocalDateString } from '@/lib/utils'
-import * as XLSX from 'xlsx'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import {
   BarChart,
   Bar,
@@ -165,6 +167,40 @@ const paymentLabels: Record<string, string> = {
 type SortField = 'invoiceNumber' | 'issueDate' | 'customer' | 'salesPerson' | 'total' | 'status'
 type SortDir = 'asc' | 'desc'
 
+// Filas por página del listado: dibujar los ~2.600 comprobantes de 12 meses de
+// una vez dejaba la pantalla pesada (el Excel sigue exportando todo).
+const PAGE_SIZE = 50
+
+const fmt = (n: number, currency = 'USD') =>
+  new Intl.NumberFormat('es-AR', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
+
+const fmtDate = (d: string) =>
+  new Date(d).toLocaleDateString('es-AR', { year: 'numeric', month: 'short', day: 'numeric' })
+
+function SortHeader({ onSort, children }: { onSort: () => void; children: React.ReactNode }) {
+  return (
+    <TableHead
+      className="font-semibold text-blue-900 cursor-pointer select-none hover:bg-blue-100"
+      onClick={onSort}
+    >
+      <div className="flex items-center gap-1">
+        {children}
+        <ArrowUpDown className="h-3 w-3 opacity-50" />
+      </div>
+    </TableHead>
+  )
+}
+
+function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number }>; label?: string }) {
+  if (!active || !payload?.length) return null
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3">
+      <p className="text-sm font-medium text-gray-900">{label}</p>
+      <p className="text-sm text-blue-600 font-semibold">{fmt(payload[0].value)}</p>
+    </div>
+  )
+}
+
 // ============================================================================
 // COMPONENT
 // ============================================================================
@@ -192,6 +228,14 @@ export default function AnalisisFacturacionPage() {
   // Sort
   const [sortField, setSortField] = useState<SortField>('issueDate')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [page, setPage] = useState(1)
+
+  // Lo que se tipea (búsqueda y fechas) se aplica con una pausa: cada pedido
+  // baja el período completo, no puede salir uno por tecla.
+  const searchAplicado = useDebouncedValue(search, 400)
+  const dateFromAplicado = useDebouncedValue(dateFrom, 400)
+  const dateToAplicado = useDebouncedValue(dateTo, 400)
+  const pedidoEnCurso = useRef<AbortController | null>(null)
 
   // Sync modal
   const [syncModalOpen, setSyncModalOpen] = useState(false)
@@ -210,31 +254,40 @@ export default function AnalisisFacturacionPage() {
   }, [])
 
   const fetchData = useCallback(async () => {
+    // Un pedido nuevo cancela el anterior: si no, una respuesta vieja y lenta
+    // podía pisar a la de los filtros actuales.
+    pedidoEnCurso.current?.abort()
+    const controller = new AbortController()
+    pedidoEnCurso.current = controller
     try {
       setLoading(true)
       const params = new URLSearchParams()
-      if (dateFrom) params.append('dateFrom', dateFrom)
-      if (dateTo) params.append('dateTo', dateTo)
+      if (dateFromAplicado) params.append('dateFrom', dateFromAplicado)
+      if (dateToAplicado) params.append('dateTo', dateToAplicado)
       if (salesPersonId !== 'ALL') params.append('salesPersonId', salesPersonId)
-      if (search) params.append('search', search)
+      if (searchAplicado) params.append('search', searchAplicado)
       if (brand !== 'ALL') params.append('brand', brand)
       if (statusFilter !== 'ALL') params.append('status', statusFilter)
 
       const url = `/api/facturacion/analisis${params.toString() ? `?${params}` : ''}`
-      const res = await fetch(url)
+      const res = await fetch(url, { signal: controller.signal })
       if (!res.ok) throw new Error('Error al cargar datos')
       const json = await res.json()
       setData(json)
+      setPage(1)
     } catch {
+      if (controller.signal.aborted) return
       toast.error('Error al cargar análisis de facturación')
     } finally {
-      setLoading(false)
+      if (pedidoEnCurso.current === controller) setLoading(false)
     }
-  }, [dateFrom, dateTo, salesPersonId, search, brand, statusFilter])
+  }, [dateFromAplicado, dateToAplicado, salesPersonId, searchAplicado, brand, statusFilter])
 
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  useEffect(() => () => pedidoEnCurso.current?.abort(), [])
 
   const handleClearFilters = () => {
     setSearch('')
@@ -345,28 +398,42 @@ export default function AnalisisFacturacionPage() {
       setSortField(field)
       setSortDir('desc')
     }
+    setPage(1)
   }
 
-  const sortedInvoices = data?.invoices
-    ? [...data.invoices].sort((a, b) => {
-        const dir = sortDir === 'asc' ? 1 : -1
-        switch (sortField) {
-          case 'invoiceNumber': return a.invoiceNumber.localeCompare(b.invoiceNumber) * dir
-          case 'issueDate': return (new Date(a.issueDate).getTime() - new Date(b.issueDate).getTime()) * dir
-          case 'customer': return a.customer.name.localeCompare(b.customer.name) * dir
-          case 'salesPerson': return a.salesPerson.name.localeCompare(b.salesPerson.name) * dir
-          case 'total': return (Number(a.total) - Number(b.total)) * dir
-          case 'status': return a.status.localeCompare(b.status) * dir
-          default: return 0
-        }
-      })
-    : []
+  const invoices = data?.invoices
+  const sortedInvoices = useMemo(() => {
+    if (!invoices) return []
+    const dir = sortDir === 'asc' ? 1 : -1
+    return [...invoices].sort((a, b) => {
+      switch (sortField) {
+        case 'invoiceNumber': return a.invoiceNumber.localeCompare(b.invoiceNumber) * dir
+        // Fechas ISO: comparan bien como texto, sin crear un Date por comparación
+        case 'issueDate': return (a.issueDate < b.issueDate ? -1 : a.issueDate > b.issueDate ? 1 : 0) * dir
+        case 'customer': return a.customer.name.localeCompare(b.customer.name) * dir
+        case 'salesPerson': return a.salesPerson.name.localeCompare(b.salesPerson.name) * dir
+        case 'total': return (Number(a.total) - Number(b.total)) * dir
+        case 'status': return a.status.localeCompare(b.status) * dir
+        default: return 0
+      }
+    })
+  }, [invoices, sortField, sortDir])
 
-  const handleExportExcel = () => {
+  const totalPages = Math.max(1, Math.ceil(sortedInvoices.length / PAGE_SIZE))
+  const currentPage = Math.min(page, totalPages)
+  const pageInvoices = useMemo(
+    () => sortedInvoices.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
+    [sortedInvoices, currentPage]
+  )
+
+  const handleExportExcel = async () => {
     if (!sortedInvoices.length) {
       toast.error('No hay facturas para exportar')
       return
     }
+
+    // La librería de Excel pesa: se baja recién al exportar, no al abrir la pantalla
+    const XLSX = await import('xlsx')
 
     const rows = sortedInvoices.map((inv) => ({
       'Nº Factura': inv.invoiceNumber,
@@ -400,35 +467,6 @@ export default function AnalisisFacturacionPage() {
     const today = getLocalDateString().replace(/-/g, '')
     XLSX.writeFile(wb, `Facturacion_VAL_ARG_${today}.xlsx`)
     toast.success('Excel descargado correctamente')
-  }
-
-  const fmt = (n: number, currency = 'USD') =>
-    new Intl.NumberFormat('es-AR', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
-
-  const fmtDate = (d: string) =>
-    new Date(d).toLocaleDateString('es-AR', { year: 'numeric', month: 'short', day: 'numeric' })
-
-  const SortHeader = ({ field, children }: { field: SortField; children: React.ReactNode }) => (
-    <TableHead
-      className="font-semibold text-blue-900 cursor-pointer select-none hover:bg-blue-100"
-      onClick={() => handleSort(field)}
-    >
-      <div className="flex items-center gap-1">
-        {children}
-        <ArrowUpDown className="h-3 w-3 opacity-50" />
-      </div>
-    </TableHead>
-  )
-
-  // Custom tooltip for charts
-  const ChartTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number }>; label?: string }) => {
-    if (!active || !payload?.length) return null
-    return (
-      <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3">
-        <p className="text-sm font-medium text-gray-900">{label}</p>
-        <p className="text-sm text-blue-600 font-semibold">{fmt(payload[0].value)}</p>
-      </div>
-    )
   }
 
   if (loading && !data) {
@@ -736,7 +774,7 @@ export default function AnalisisFacturacionPage() {
           {/* Facturación mensual */}
           <Card className="border-blue-200">
             <CardHeader>
-              <CardTitle className="text-blue-900">Facturación Mensual (USD) - Año 2026</CardTitle>
+              <CardTitle className="text-blue-900">Facturación Mensual (USD) - Año {graficos.facturacionMensual[0]?.month.slice(0, 4)}</CardTitle>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
@@ -887,21 +925,21 @@ export default function AnalisisFacturacionPage() {
               <Table className="min-w-[1200px]">
                 <TableHeader>
                   <TableRow className="bg-blue-50 hover:bg-blue-50">
-                    <SortHeader field="invoiceNumber">Nº Factura</SortHeader>
+                    <SortHeader onSort={() => handleSort('invoiceNumber')}>Nº Factura</SortHeader>
                     <TableHead className="font-semibold text-blue-900">Tipo</TableHead>
-                    <SortHeader field="issueDate">Fecha</SortHeader>
-                    <SortHeader field="customer">Cliente</SortHeader>
-                    <SortHeader field="salesPerson">Vendedor</SortHeader>
-                    <SortHeader field="status">Estado</SortHeader>
+                    <SortHeader onSort={() => handleSort('issueDate')}>Fecha</SortHeader>
+                    <SortHeader onSort={() => handleSort('customer')}>Cliente</SortHeader>
+                    <SortHeader onSort={() => handleSort('salesPerson')}>Vendedor</SortHeader>
+                    <SortHeader onSort={() => handleSort('status')}>Estado</SortHeader>
                     <TableHead className="font-semibold text-blue-900">Pago</TableHead>
                     <TableHead className="font-semibold text-blue-900">Moneda</TableHead>
-                    <SortHeader field="total">
+                    <SortHeader onSort={() => handleSort('total')}>
                       <span className="text-right w-full">Total</span>
                     </SortHeader>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sortedInvoices.map((inv) => {
+                  {pageInvoices.map((inv) => {
                     const esNC = inv.transactionType === 'CREDIT_NOTE'
                     return (
                     <TableRow key={inv.id} className={`transition-colors ${esNC ? 'bg-red-50/50 hover:bg-red-50' : 'hover:bg-blue-50'}`}>
@@ -970,6 +1008,39 @@ export default function AnalisisFacturacionPage() {
                   })}
                 </TableBody>
               </Table>
+            </div>
+          )}
+          {!loading && sortedInvoices.length > 0 && (
+            <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
+              <span>
+                {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, sortedInvoices.length)} de{' '}
+                {sortedInvoices.length} comprobantes
+              </span>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(currentPage - 1)}
+                    disabled={currentPage <= 1}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Anterior
+                  </Button>
+                  <span>
+                    Página {currentPage} de {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(currentPage + 1)}
+                    disabled={currentPage >= totalPages}
+                  >
+                    Siguiente
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </CardContent>

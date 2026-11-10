@@ -79,6 +79,7 @@ interface Invoice {
   paymentStatus: string
   currency: string
   exchangeRate: number | null
+  tcAplicado?: number
   subtotal: number
   taxAmount: number
   discount: number
@@ -97,6 +98,7 @@ interface Resumen {
   totalCreditNotesARS: number
   ticketPromedio: number
   variacionMesAnterior: number
+  variacionHastaDia?: number
 }
 
 interface ChartItem {
@@ -176,6 +178,25 @@ const fmt = (n: number, currency = 'USD') =>
 
 const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString('es-AR', { year: 'numeric', month: 'short', day: 'numeric' })
+
+/**
+ * Facturación por vendedor en USD (NC restan), igual que la calcula el
+ * endpoint: se usa para rehacer el gráfico al reasignar un vendedor desde la
+ * tabla, sin volver a pedir todo.
+ */
+function totalPorVendedor(invoices: Invoice[]): ChartItem[] {
+  const porVendedor: Record<string, ChartItem> = {}
+  for (const inv of invoices) {
+    const signo = inv.transactionType === 'CREDIT_NOTE' ? -1 : 1
+    const tc = Number(inv.tcAplicado || 0)
+    const enUSD = inv.currency === 'USD' ? Number(inv.total) : tc > 1 ? Number(inv.total) / tc : 0
+    const vendedor = (porVendedor[inv.salesPerson.id] ??= { name: inv.salesPerson.name, total: 0 })
+    vendedor.total += enUSD * signo
+  }
+  return Object.values(porVendedor)
+    .sort((a, b) => b.total - a.total)
+    .map((v) => ({ ...v, total: Math.round(v.total * 100) / 100 }))
+}
 
 function SortHeader({ onSort, children }: { onSort: () => void; children: React.ReactNode }) {
   return (
@@ -374,13 +395,15 @@ export default function AnalisisFacturacionPage() {
       // Actualizar estado local sin recargar todo
       setData((prev) => {
         if (!prev) return prev
+        const invoices = prev.invoices.map((inv) =>
+          inv.id === invoiceId
+            ? { ...inv, salesPerson: result.salesPerson }
+            : inv
+        )
         return {
           ...prev,
-          invoices: prev.invoices.map((inv) =>
-            inv.id === invoiceId
-              ? { ...inv, salesPerson: result.salesPerson }
-              : inv
-          ),
+          invoices,
+          graficos: { ...prev.graficos, facturacionPorVendedor: totalPorVendedor(invoices) },
         }
       })
 
@@ -761,6 +784,11 @@ export default function AnalisisFacturacionPage() {
                   <p className={`text-2xl font-bold ${resumen.variacionMesAnterior >= 0 ? 'text-green-900' : 'text-red-900'}`}>
                     {resumen.variacionMesAnterior >= 0 ? '+' : ''}{resumen.variacionMesAnterior}%
                   </p>
+                  {resumen.variacionHastaDia && (
+                    <p className="text-xs text-muted-foreground">
+                      Del 1 al {resumen.variacionHastaDia} de cada mes
+                    </p>
+                  )}
                 </div>
               </div>
             </CardContent>

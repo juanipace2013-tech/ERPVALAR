@@ -8,16 +8,10 @@ const TIPOS_VENTA: Prisma.InvoiceWhereInput = {
   transactionType: { in: ['SALE', 'CREDIT_NOTE', 'DEBIT_NOTE'] },
 }
 
-const round2 = (n: number) => Math.round(n * 100) / 100
+// Solo si la tabla de cotizaciones estuviera vacía (no debería: el cron BNA carga a diario)
+const TC_ULTIMO_RECURSO = 1420
 
-/** Total del comprobante en USD con signo (las NC restan). ARS sin TC = 0. */
-function toUSD(inv: { total: unknown; currency: string; exchangeRate: unknown; transactionType: string }) {
-  const total = Number(inv.total)
-  const signo = inv.transactionType === 'CREDIT_NOTE' ? -1 : 1
-  if (inv.currency === 'USD') return total * signo
-  const tc = Number(inv.exchangeRate || 0)
-  return tc > 1 ? (total / tc) * signo : 0
-}
+const round2 =(n: number) => Math.round(n * 100) / 100
 
 /**
  * GET /api/facturacion/analisis
@@ -88,10 +82,17 @@ export async function GET(request: NextRequest) {
     const currentMonthStart = new Date(currentYear, now.getMonth(), 1)
     const prevMonthStart = new Date(currentYear, now.getMonth() - 1, 1)
     const serieDesde = prevMonthStart < yearStart ? prevMonthStart : yearStart
+    // La variación compara el mes en curso contra los MISMOS días del mes
+    // anterior (del 1 al día de hoy): contra el mes completo, cualquier mes
+    // daba muy negativo hasta sus últimos días.
+    const diasMesAnterior = new Date(currentYear, now.getMonth(), 0).getDate()
+    const prevMonthCorte = new Date(
+      currentYear, now.getMonth() - 1, Math.min(now.getDate(), diasMesAnterior), 23, 59, 59, 999
+    )
 
     // Todas las consultas en paralelo: antes eran 5 viajes en serie a la base, y
     // los ítems venían anidados dentro de cada factura.
-    const [invoices, items, serie, marcasResult] = await Promise.all([
+    const [invoices, items, serie, marcasResult, cotizaciones] = await Promise.all([
       prisma.invoice.findMany({
         where,
         select: {
@@ -137,7 +138,40 @@ export async function GET(request: NextRequest) {
         distinct: ['brand'],
         orderBy: { brand: 'asc' },
       }),
+      // Cotizaciones USD→ARS cargadas (BNA y manuales), para las facturas que
+      // quedaron sin TC propio: se convierten al TC de su fecha
+      prisma.exchangeRate.findMany({
+        where: { fromCurrency: 'USD', toCurrency: 'ARS' },
+        select: { rate: true, validFrom: true },
+        orderBy: { validFrom: 'asc' },
+      }),
     ])
+
+    const tcs = cotizaciones.map((c) => ({ desde: c.validFrom.getTime(), rate: Number(c.rate) }))
+    /** TC vigente a una fecha: la última cotización cargada hasta ese día (o la primera que haya). */
+    const tcALaFecha = (fecha: Date) => {
+      if (tcs.length === 0) return TC_ULTIMO_RECURSO
+      const t = fecha.getTime()
+      let lo = 0
+      let hi = tcs.length - 1
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1
+        if (tcs[mid].desde <= t) lo = mid
+        else hi = mid - 1
+      }
+      return tcs[lo].rate
+    }
+    /** TC del comprobante: el propio y, si no lo tiene, el de la fecha de la factura. */
+    const tcDe = (inv: { exchangeRate: unknown; issueDate: Date }) => {
+      const tc = Number(inv.exchangeRate || 0)
+      return tc > 1 ? tc : tcALaFecha(inv.issueDate)
+    }
+    /** Total del comprobante en USD con signo (las NC restan). */
+    const toUSD = (inv: { total: unknown; currency: string; exchangeRate: unknown; issueDate: Date; transactionType: string }) => {
+      const signo = inv.transactionType === 'CREDIT_NOTE' ? -1 : 1
+      const total = Number(inv.total) * signo
+      return inv.currency === 'USD' ? total : total / tcDe(inv)
+    }
 
     // Totales separados por moneda + generales en USD y ARS, por vendedor y por
     // cliente, en una sola pasada. NC se RESTAN; ND y FAV se SUMAN.
@@ -153,13 +187,17 @@ export async function GET(request: NextRequest) {
     const porCliente: Record<string, { name: string; total: number }> = {}
     // Factor por factura para llevar sus ítems a USD con signo
     const factorItems = new Map<string, { rate: number; signo: number }>()
+    // TC usado para cada comprobante (va al listado: la pantalla rehace el
+    // gráfico por vendedor con el mismo TC al reasignar)
+    const tcAplicado = new Map<string, number>()
 
     for (const inv of invoices) {
       const total = Number(inv.total)
       const esNC = inv.transactionType === 'CREDIT_NOTE'
       const signo = esNC ? -1 : 1
-      const tc = Number(inv.exchangeRate || 0)
+      const tc = tcDe(inv)
       const enUSD = toUSD(inv)
+      tcAplicado.set(inv.id, tc)
 
       if (esNC) totalNC++
       if (inv.transactionType === 'SALE') totalSaleOnly++
@@ -168,7 +206,7 @@ export async function GET(request: NextRequest) {
       if (inv.currency === 'USD') {
         totalUSD += total * signo
         // Para totalGeneralARS: USD × TC
-        totalGeneralARS += (tc > 1 ? total * tc : total * 1420) * signo
+        totalGeneralARS += total * tc * signo
         if (esNC) totalCreditNotesUSD += total
       } else {
         totalARS += total * signo
@@ -183,7 +221,7 @@ export async function GET(request: NextRequest) {
 
       // Los ítems están en la moneda original de la factura
       factorItems.set(inv.id, {
-        rate: inv.currency === 'USD' ? 1 : tc > 1 ? 1 / tc : 0,
+        rate: inv.currency === 'USD' ? 1 : 1 / tc,
         signo,
       })
     }
@@ -244,7 +282,7 @@ export async function GET(request: NextRequest) {
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
       if (monthlyData[key] !== undefined) monthlyData[key] += enUSD
       if (d >= currentMonthStart) currentMonthTotal += enUSD
-      else if (d >= prevMonthStart) prevMonthTotal += enUSD
+      else if (d >= prevMonthStart && d <= prevMonthCorte) prevMonthTotal += enUSD
     }
 
     const variacionMesAnterior = prevMonthTotal > 0
@@ -286,6 +324,7 @@ export async function GET(request: NextRequest) {
           paymentStatus: inv.paymentStatus,
           currency: inv.currency,
           exchangeRate: inv.exchangeRate,
+          tcAplicado: tcAplicado.get(inv.id),
           subtotal: inv.subtotal,
           taxAmount: inv.taxAmount,
           discount: inv.discount,
@@ -304,6 +343,7 @@ export async function GET(request: NextRequest) {
         totalCreditNotesARS: round2(totalCreditNotesARS),
         ticketPromedio: round2(ticketPromedio),
         variacionMesAnterior: Math.round(variacionMesAnterior * 10) / 10,
+        variacionHastaDia: now.getDate(),
       },
       graficos: {
         facturacionMensual,

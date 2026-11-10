@@ -12,7 +12,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
-import { ChevronLeft, ChevronRight, HandCoins, Loader2, MousePointerClick, Plus, RefreshCw, Search, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, FileDown, HandCoins, Loader2, MousePointerClick, Plus, RefreshCw, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -39,9 +39,11 @@ interface CobroListado {
   fecha: string
   estado: string
   numero: string | null
-  cliente: { id: string; nombre: string }
+  cliente: { id: string; nombre: string; cuit?: string | null; direccion?: string | null; localidad?: string | null; condicionIva?: string | null }
+  descripcion?: string | null
+  totalAplicado: number
   totalCobrado: number
-  comprobantes: Array<{ numero: string; importe: number }>
+  comprobantes: Array<{ numero: string; tipo: string; total: number; saldoAnterior: number; importe: number; tcFactura: number | null; tcCobro: number | null }>
   medios: Array<{ cuenta: string; importe: number }>
   error: string | null
   creadoPor: string
@@ -73,6 +75,7 @@ function RecibosErp({ clienteId, version, conCliente }: { clienteId?: string; ve
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [verificando, setVerificando] = useState<string | null>(null)
+  const [bajando, setBajando] = useState<string | null>(null)
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -93,8 +96,38 @@ function RecibosErp({ clienteId, version, conCliente }: { clienteId?: string; ve
   }, [clienteId])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial y recarga después de un cobro
     void cargar()
   }, [cargar, version])
+
+  /** Arma el PDF del recibo (para mandar al cliente) y lo descarga */
+  async function descargarRecibo(c: CobroListado) {
+    if (!c.numero) return
+    setBajando(c.id)
+    try {
+      const { generateReciboPDF } = await import('@/lib/pdf/recibo-generator')
+      const blob = await generateReciboPDF({
+        numero: c.numero,
+        fecha: c.fecha,
+        cliente: c.cliente,
+        comprobantes: c.comprobantes,
+        medios: c.medios.map((m) => ({ medio: 'Transferencia', cuenta: m.cuenta, importe: m.importe })),
+        totalAplicado: c.totalAplicado,
+        totalCobrado: c.totalCobrado,
+        descripcion: c.descripcion,
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Recibo_${c.numero}_${c.cliente.nombre.replace(/[^\p{L}\p{N}]+/gu, '_').slice(0, 40)}.pdf`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 5000)
+    } catch (e) {
+      toast.error(`No se pudo armar el recibo: ${(e as Error).message}`)
+    } finally {
+      setBajando(null)
+    }
+  }
 
   async function verificar(id: string) {
     setVerificando(id)
@@ -156,6 +189,12 @@ function RecibosErp({ clienteId, version, conCliente }: { clienteId?: string; ve
                 {c.error && <div className="mt-1 max-w-xs text-xs text-muted-foreground">{c.error}</div>}
               </TableCell>
               <TableCell className="text-right">
+                {c.estado === 'REGISTRADA' && c.numero && (
+                  <Button variant="outline" size="sm" disabled={bajando === c.id} onClick={() => descargarRecibo(c)} title="Descargar el recibo en PDF para mandar al cliente">
+                    {bajando === c.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileDown className="mr-2 h-4 w-4" />}
+                    Recibo
+                  </Button>
+                )}
                 {(c.estado === 'INCIERTO' || c.estado === 'REGISTRANDO') && (
                   <Button variant="outline" size="sm" disabled={verificando === c.id} onClick={() => verificar(c.id)}>
                     {verificando === c.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -172,7 +211,20 @@ function RecibosErp({ clienteId, version, conCliente }: { clienteId?: string; ve
 }
 
 /** Panel del cliente elegido: facturas adeudadas (en vivo de Colppy), recibos del ERP y "Agregar cobro" */
-function ClientePanel({ clienteId, nombreLista, onCerrar, onCobrado }: { clienteId: string; nombreLista?: string; onCerrar: () => void; onCobrado: () => void }) {
+function ClientePanel({
+  clienteId,
+  nombreLista,
+  onCerrar,
+  onCobrado,
+  onSaldo,
+}: {
+  clienteId: string
+  nombreLista?: string
+  onCerrar: () => void
+  onCobrado: () => void
+  /** Lo adeudado leído recién de Colppy (pisa en la lista al saldo del último sync) */
+  onSaldo: (clienteId: string, saldo: number) => void
+}) {
   const [prep, setPrep] = useState<PreparacionCobro | null>(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -192,18 +244,20 @@ function ClientePanel({ clienteId, nombreLista, onCerrar, onCobrado }: { cliente
         setError(d?.error || `No se pudo leer Colppy (HTTP ${r.status})`)
         return
       }
-      setPrep(d as PreparacionCobro)
+      const p = d as PreparacionCobro
+      setPrep(p)
+      onSaldo(clienteId, Math.round(p.impagas.reduce((a, f) => a + f.saldo, 0) * 100) / 100)
     } catch {
       setPrep(null)
       setError('No se pudo conectar con el servidor')
     } finally {
       setCargando(false)
     }
-  }, [clienteId])
+  }, [clienteId, onSaldo])
 
+  // El panel se monta de nuevo por cada cliente (key), así que arranca vacío
   useEffect(() => {
-    setPrep(null)
-    setTildadas(new Set())
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial: lee Colppy al elegir el cliente
     void traer()
   }, [traer])
 
@@ -387,6 +441,9 @@ function CobrosGestion() {
   const [cargando, setCargando] = useState(true)
   const [version, setVersion] = useState(0)
   const panelRef = useRef<HTMLDivElement>(null)
+  /** Saldos leídos en vivo de Colppy por el panel (pisan al del último sync) */
+  const [saldosVivos, setSaldosVivos] = useState<Record<string, number>>({})
+  const anotarSaldoVivo = useCallback((id: string, saldo: number) => setSaldosVivos((m) => (m[id] === saldo ? m : { ...m, [id]: saldo })), [])
 
   /** Lo que se está listando; cambiar filtro o búsqueda vuelve a la página 1 */
   const consulta = `${filtro}|${busquedaLenta.trim()}`
@@ -504,7 +561,7 @@ function CobrosGestion() {
                           </div>
                           <div className="text-xs text-muted-foreground">{c.cuit}</div>
                         </TableCell>
-                        <TableCell className="whitespace-nowrap text-right">{formatCurrency(Number(c.balance))}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right">{formatCurrency(saldosVivos[c.id] ?? Number(c.balance))}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -540,6 +597,7 @@ function CobrosGestion() {
               nombreLista={elegido ? elegido.businessName || elegido.name : undefined}
               onCerrar={() => seleccionar(null)}
               onCobrado={() => setVersion((v) => v + 1)}
+              onSaldo={anotarSaldoVivo}
             />
           ) : (
             <Card className="border-blue-200">

@@ -34,27 +34,57 @@ export async function GET(req: NextRequest) {
     orderBy: { createdAt: 'desc' },
     take: limit,
     include: {
-      customer: { select: { id: true, name: true, businessName: true } },
+      customer: { select: { id: true, name: true, businessName: true, cuit: true, address: true, city: true, province: true, taxCondition: true } },
       createdBy: { select: { name: true } },
-      applications: { select: { invoiceNumber: true, amount: true } },
+      applications: { select: { colppyInvoiceId: true, invoiceNumber: true, invoiceTotal: true, previousBalance: true, amount: true } },
       media: { select: { accountName: true, amount: true } },
     },
   })
+  /** Filas del pedido a Colppy (tipo de comprobante y tipos de cambio), por id de factura */
+  const filasPedido = (req: unknown): Map<string, Record<string, unknown>> => {
+    const filas = (req as { cobros?: unknown } | null)?.cobros
+    return new Map(Array.isArray(filas) ? filas.map((f: Record<string, unknown>) => [String(f.idFactura), f]) : [])
+  }
+  const tc = (v: unknown) => (Number(v) > 0 ? Number(v) : null)
   return NextResponse.json({
-    cobros: cobros.map((o) => ({
+    cobros: cobros.map((o) => {
+      const filas = filasPedido(o.colppyRequest)
+      return {
       id: o.id,
       fecha: o.collectionDate.toISOString().slice(0, 10),
       estado: o.status,
       numero: o.receiptNumber,
       colppyCobroId: o.colppyCobroId,
-      cliente: { id: o.customer.id, nombre: o.customer.businessName || o.customer.name },
+      cliente: {
+        id: o.customer.id,
+        nombre: o.customer.businessName || o.customer.name,
+        cuit: o.customer.cuit,
+        direccion: o.customer.address,
+        localidad: [o.customer.city, o.customer.province].filter(Boolean).join(', ') || null,
+        condicionIva: o.customer.taxCondition,
+      },
+      descripcion: o.description,
+      totalAplicado: Number(o.appliedTotal),
       totalCobrado: Number(o.totalCollected),
-      comprobantes: o.applications.map((a) => ({ numero: a.invoiceNumber, importe: Number(a.amount) })),
+      comprobantes: o.applications.map((a) => {
+        const f = filas.get(a.colppyInvoiceId)
+        const enDolares = f?.currency === 'USD'
+        return {
+          numero: a.invoiceNumber,
+          tipo: String(f?.tipoComprobante ?? 'FAV'),
+          total: Number(a.invoiceTotal),
+          saldoAnterior: Number(a.previousBalance),
+          importe: Number(a.amount),
+          tcFactura: enDolares ? tc(f?.rate) : null,
+          tcCobro: enDolares ? tc(f?.tcCobroRate) : null,
+        }
+      }),
       medios: o.media.map((m) => ({ cuenta: m.accountName, importe: Number(m.amount) })),
       error: o.lastError,
       creadoPor: o.createdBy.name,
       creadoEl: o.createdAt.toISOString(),
-    })),
+      }
+    }),
   })
 }
 

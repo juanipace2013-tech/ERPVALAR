@@ -52,11 +52,24 @@ function fechaCorta(s: string): string {
   return m ? `${m[1]}/${m[2]}/${m[3]}` : s || '—'
 }
 
-/** Texto de un input numérico → número (NaN si está vacío o no es número) */
+/**
+ * Texto de un input → número (NaN si está vacío o no es número). Formato
+ * argentino: punto de miles y coma decimal ("1.233.741,60"). Sin coma, un punto
+ * seguido de exactamente 3 dígitos es de miles ("1.560"); si no, es decimal
+ * ("1560.5"), para que también sirva pegar un número con punto.
+ */
 function aNumero(s: string): number {
-  const t = s.trim().replace(',', '.')
-  return t === '' ? NaN : Number(t)
+  let t = s.replace(/[\s$]/g, '')
+  if (t === '') return NaN
+  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.')
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '')
+  return /^-?\d+(\.\d+)?$/.test(t) ? Number(t) : NaN
 }
+
+/** Importe como se escribe acá: 1.233.741,60 */
+const imp = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+/** Al salir del campo, lo escrito se acomoda al formato argentino */
+const acomodar = (texto: string, fmt: (n: number) => string = imp) => (Number.isFinite(aNumero(texto)) ? fmt(aNumero(texto)) : texto)
 
 function mensajesDeError(d: unknown, status: number): string[] {
   const b = (d ?? {}) as { error?: unknown; errores?: unknown }
@@ -124,14 +137,14 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
       const p = d as PreparacionCobro
       setPrep(p)
       // T/C del cobro: arranca en el de la factura; se conserva lo que ya se escribió
-      setTcs((t) => Object.fromEntries(p.impagas.filter((f) => f.cobrable && f.tcFactura).map((f) => [f.idFactura, t[f.idFactura] ?? String(f.tcFactura)])))
+      setTcs((t) => Object.fromEntries(p.impagas.filter((f) => f.cobrable && f.tcFactura).map((f) => [f.idFactura, t[f.idFactura] ?? tcTexto(Number(f.tcFactura))])))
       // Se conserva lo tildado que sigue impago; la primera vez, lo que venía tildado del panel
       setElegidas((e) => {
         const base = Object.keys(e).length ? e : Object.fromEntries(iniciales.current.map((id) => [id, '']))
         const n: Record<string, string> = {}
         for (const f of p.impagas) {
           if (!f.cobrable || !(f.idFactura in base)) continue
-          n[f.idFactura] = base[f.idFactura] || f.saldo.toFixed(2)
+          n[f.idFactura] = base[f.idFactura] || imp(f.saldo)
         }
         return n
       })
@@ -144,6 +157,7 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
   }, [clienteId])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial: lee Colppy al abrir el formulario
     void traer()
   }, [traer])
 
@@ -174,7 +188,8 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
 
   // Con un solo medio sin tocar, su importe sigue al total a cobrar
   useEffect(() => {
-    setMedios((ms) => (ms.length === 1 && ms[0].auto ? [{ ...ms[0], importe: totalACobrar > 0 ? totalACobrar.toFixed(2) : '' }] : ms))
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- el importe del medio único acompaña al total hasta que se lo toca
+    setMedios((ms) => (ms.length === 1 && ms[0].auto ? [{ ...ms[0], importe: totalACobrar > 0 ? imp(totalACobrar) : '' }] : ms))
   }, [totalACobrar])
 
   const problemas = useMemo(() => {
@@ -310,11 +325,11 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
           {hayDolares && (
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <span className="text-muted-foreground">Cobrar las facturas en dólares al tipo de cambio:</span>
-              <Button variant="outline" size="sm" onClick={() => setTcs(Object.fromEntries(enDolares.map((f) => [f.idFactura, String(f.tcFactura)])))}>
+              <Button variant="outline" size="sm" onClick={() => setTcs(Object.fromEntries(enDolares.map((f) => [f.idFactura, tcTexto(Number(f.tcFactura))])))}>
                 De la factura
               </Button>
               {prep.tcDia && (
-                <Button variant="outline" size="sm" onClick={() => setTcs(Object.fromEntries(enDolares.map((f) => [f.idFactura, String(prep.tcDia)])))}>
+                <Button variant="outline" size="sm" onClick={() => setTcs(Object.fromEntries(enDolares.map((f) => [f.idFactura, tcTexto(Number(prep.tcDia))])))}>
                   Del día ({tcTexto(prep.tcDia)})
                 </Button>
               )}
@@ -332,7 +347,7 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
                     <Checkbox
                       aria-label="Pagar todas"
                       checked={todasTildadas}
-                      onCheckedChange={(v) => setElegidas(v ? Object.fromEntries(cobrables.map((f) => [f.idFactura, f.saldo.toFixed(2)])) : {})}
+                      onCheckedChange={(v) => setElegidas(v ? Object.fromEntries(cobrables.map((f) => [f.idFactura, imp(f.saldo)])) : {})}
                     />
                   </TableHead>
                   <TableHead>Comprobante</TableHead>
@@ -363,7 +378,7 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
                           onCheckedChange={(v) =>
                             setElegidas((e) => {
                               const n = { ...e }
-                              if (v) n[f.idFactura] = f.saldo.toFixed(2)
+                              if (v) n[f.idFactura] = imp(f.saldo)
                               else delete n[f.idFactura]
                               return n
                             })
@@ -395,6 +410,7 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
                               aria-label={`Tipo de cambio del cobro de ${f.nroFactura}`}
                               value={tcs[f.idFactura] ?? ''}
                               onChange={(e) => setTcs((t) => ({ ...t, [f.idFactura]: e.target.value }))}
+                              onBlur={() => setTcs((t) => ({ ...t, [f.idFactura]: acomodar(t[f.idFactura] ?? '', tcTexto) }))}
                             />
                           ) : (
                             '—'
@@ -410,6 +426,7 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
                             placeholder="0,00"
                             aria-label={`Este cobro de ${f.nroFactura}`}
                             value={elegidas[f.idFactura] ?? ''}
+                            onBlur={() => setElegidas((x) => (f.idFactura in x ? { ...x, [f.idFactura]: acomodar(x[f.idFactura]) } : x))}
                             onChange={(e) =>
                               setElegidas((x) => {
                                 const n = { ...x }
@@ -472,6 +489,7 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
                         aria-label="Importe del medio de cobro"
                         value={m.importe}
                         onChange={(e) => setMedios((ms) => ms.map((x) => (x.uid === m.uid ? { ...x, importe: e.target.value, auto: false } : x)))}
+                        onBlur={() => setMedios((ms) => ms.map((x) => (x.uid === m.uid ? { ...x, importe: acomodar(x.importe) } : x)))}
                       />
                     </TableCell>
                     <TableCell>
@@ -496,7 +514,7 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
               variant="outline"
               size="sm"
               className="mt-2"
-              onClick={() => setMedios((ms) => [...ms, { uid: nuevoUid(), cuenta: '', importe: diferencia < 0 ? Math.abs(diferencia).toFixed(2) : '', auto: false }])}
+              onClick={() => setMedios((ms) => [...ms, { uid: nuevoUid(), cuenta: '', importe: diferencia < 0 ? imp(Math.abs(diferencia)) : '', auto: false }])}
             >
               <Plus className="mr-1 h-4 w-4" />
               Agregar medio

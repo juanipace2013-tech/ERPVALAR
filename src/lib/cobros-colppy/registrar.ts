@@ -399,6 +399,10 @@ export async function registrarCobro(p: PedidoCobro, user: { id: string }): Prom
         data: { status: 'REGISTRADA', colppyCobroId: r.idCobro, colppyResponse: r.respuesta as Prisma.InputJsonValue, registeredAt: new Date(), lastError: null },
       })
       logger.info(`[Cobros] Recibo ${o.receiptNumber} registrado en Colppy (idCobro ${r.idCobro})`)
+      // El saldo del cliente en el ERP baja ya (el sync diario con Colppy lo vuelve a pisar)
+      await prisma.customer
+        .update({ where: { id: p.customerId }, data: { balance: { decrement: o.appliedTotal } } })
+        .catch((e) => logger.warn(`[Cobros] No se pudo bajar el saldo del cliente ${p.customerId}: ${(e as Error).message}`))
       return resultado(o, false)
     }
     if (r.estado === 'RECHAZADO') {

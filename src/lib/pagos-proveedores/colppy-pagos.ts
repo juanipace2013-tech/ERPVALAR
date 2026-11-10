@@ -25,7 +25,7 @@ export class ColppyPagoError extends Error {
   }
 }
 
-function payload(session: ColppySession, provision: string, operacion: string, extra: Record<string, unknown>) {
+export function payload(session: ColppySession, provision: string, operacion: string, extra: Record<string, unknown>) {
   const config = getColppyConfig()
   return {
     auth: { usuario: config.user, password: md5Hash(config.password) },
@@ -39,11 +39,11 @@ function payload(session: ColppySession, provision: string, operacion: string, e
 }
 
 /** Respuesta "ok" de Colppy: result.estado 0 y response.success distinto de false */
-function respuestaOk(r: any): boolean {
+export function respuestaOk(r: any): boolean {
   return r?.result?.estado === 0 && r?.response?.success !== false
 }
 
-function mensaje(r: any): string {
+export function mensaje(r: any): string {
   return String(r?.response?.message || r?.result?.mensaje || 'Error desconocido de Colppy')
 }
 
@@ -51,7 +51,7 @@ function mensaje(r: any): string {
  * Llamada de LECTURA con la sesión cacheada; si Colppy la invalidó, renueva y
  * reintenta una vez (leer no tiene efectos, reintentar es seguro).
  */
-async function leer(provision: string, operacion: string, extra: Record<string, unknown>, timeoutMs = 60000): Promise<any> {
+export async function leer(provision: string, operacion: string, extra: Record<string, unknown>, timeoutMs = 60000): Promise<any> {
   if (!/^(leer|listar|buscar|detalle|facturas_impagas)_/.test(operacion)) {
     throw new Error(`leer() es solo para lecturas: ${provision}/${operacion}`)
   }
@@ -148,7 +148,7 @@ export interface BancoColppy {
 export type MedioColppy = 'Transferencia' | 'Tarjeta de Crédito'
 const ORIGEN_POR_MEDIO: Record<MedioColppy, string> = { Transferencia: 'banco', 'Tarjeta de Crédito': 'tc' }
 
-async function cuentasArs(medio: MedioColppy): Promise<BancoColppy[]> {
+export async function cuentasArs(medio: MedioColppy): Promise<BancoColppy[]> {
   const r = await leer('Tesoreria', 'leer_origen_fondos2', { idTipo: ORIGEN_POR_MEDIO[medio], monedas: ['ARS'] })
   const filas: any[] = r?.data?.data ?? []
   return filas

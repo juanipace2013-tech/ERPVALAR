@@ -109,6 +109,7 @@ model User {
 
   // Órdenes de pago a proveedores (registradas en Colppy)
   supplierPaymentOrders SupplierPaymentOrder[]
+  customerCollections   CustomerCollection[]
 
   @@index([email])
   @@index([role])
@@ -257,6 +258,7 @@ model Customer {
   activities          Activity[]
   receipts            Receipt[]
   customerReceipts    CustomerReceipt[]         @relation("CustomerReceipts")
+  collections         CustomerCollection[]
   deliveryAddresses   CustomerDeliveryAddress[]
   transports          CustomerTransport[]
   googleAdsLeads      GoogleAdsLead[]
@@ -708,10 +710,10 @@ model SupplierPaymentMedium {
   orderId String
   order   SupplierPaymentOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
-  method      String // "Transferencia", "Tarjeta de Crédito" o "Echeqs"
-  accountName String // nombre del banco en Colppy ("Cta Cte Galicia")
-  accountCode String? // cuenta contable (111200)
-  amount      Decimal @db.Decimal(15, 2)
+  method       String // "Transferencia", "Tarjeta de Crédito" o "Echeqs"
+  accountName  String // nombre del banco en Colppy ("Cta Cte Galicia")
+  accountCode  String? // cuenta contable (111200)
+  amount       Decimal   @db.Decimal(15, 2)
   // E-cheq propio ("Echeqs"): número de 8 dígitos como en Colppy y fecha de pago
   chequeNumber String?
   chequeDate   DateTime? @db.Date
@@ -719,6 +721,80 @@ model SupplierPaymentMedium {
   @@index([orderId])
   @@index([accountName, chequeNumber])
   @@map("supplier_payment_media")
+}
+
+// ============================================================================
+// COBROS A CLIENTES (recibos que se arman en el ERP y se dan de alta en Colppy
+// con Cliente/alta_cobro). Ver docs/DISENO-COBROS-COLPPY.md.
+// ============================================================================
+
+model CustomerCollection {
+  id             String @id @default(cuid())
+  // Clave que manda la pantalla: el mismo pedido no se registra dos veces
+  idempotencyKey String @unique
+
+  customerId       String
+  customer         Customer @relation(fields: [customerId], references: [id])
+  colppyCustomerId String
+
+  collectionDate DateTime                   @db.Date
+  // Mismos estados que las órdenes de pago (REGISTRANDO/REGISTRADA/ERROR/INCIERTO)
+  status         SupplierPaymentOrderStatus @default(REGISTRANDO)
+
+  appliedTotal   Decimal @db.Decimal(15, 2) // totalEsteCobro (aplicado a comprobantes)
+  totalCollected Decimal @db.Decimal(15, 2) // totalCobrado = Σ medios
+  description    String? @db.Text
+
+  receiptNumber  String? // 0001-00012987
+  colppyCobroId  String?   @unique // idCobro
+  colppyRequest  Json? // parameters mandados (sin sesión)
+  colppyResponse Json?
+  lastError      String?   @db.Text
+  registeredAt   DateTime?
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  applications CustomerCollectionApplication[]
+  media        CustomerCollectionMedium[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([status])
+  @@index([collectionDate])
+  @@map("customer_collections")
+}
+
+model CustomerCollectionApplication {
+  id           String             @id @default(cuid())
+  collectionId String
+  collection   CustomerCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  colppyInvoiceId String
+  invoiceNumber   String
+  invoiceTotal    Decimal @db.Decimal(15, 2)
+  previousBalance Decimal @db.Decimal(15, 2)
+  amount          Decimal @db.Decimal(15, 2) // esteCobro
+
+  @@index([collectionId])
+  @@index([colppyInvoiceId])
+  @@map("customer_collection_applications")
+}
+
+model CustomerCollectionMedium {
+  id           String             @id @default(cuid())
+  collectionId String
+  collection   CustomerCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  method      String // "Transferencia"
+  accountName String // nombre de la cuenta en Colppy ("Cta Cte Galicia", "MERCADOPAGO")
+  accountCode String? // cuenta contable (111200)
+  amount      Decimal @db.Decimal(15, 2)
+
+  @@index([collectionId])
+  @@map("customer_collection_media")
 }
 
 model PurchaseInvoiceItem {
@@ -750,8 +826,8 @@ model PurchaseInvoiceItem {
   total     Decimal @db.Decimal(15, 2)
 
   // Contabilidad
-  accountId String? // Cuenta contable (115100 - Mercaderías)
-  account   ChartOfAccount? @relation(fields: [accountId], references: [id])
+  accountId     String? // Cuenta contable (115100 - Mercaderías)
+  account       ChartOfAccount? @relation(fields: [accountId], references: [id])
   // Línea de gasto: cuenta de Colppy por nombre exacto ("Seguros", "Gastos Bancarios").
   // null = mercadería de siempre (cuenta "Mercaderias", con artículo y stock).
   colppyAccount String?

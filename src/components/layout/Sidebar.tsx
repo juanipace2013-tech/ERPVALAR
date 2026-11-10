@@ -170,6 +170,13 @@ const navItems: NavItem[] = [
         roles: ['ADMIN', 'GERENTE', 'VENDEDOR', 'CONTADOR'],
       },
       {
+        // Recibos de cobro que se cargan en Colppy (Cliente/alta_cobro)
+        title: 'Cobros',
+        href: '/cobros',
+        icon: Banknote,
+        roles: ['ADMIN', 'GERENTE', 'CONTADOR'],
+      },
+      {
         title: 'Análisis',
         href: '/facturacion/analisis',
         icon: TrendingUp,

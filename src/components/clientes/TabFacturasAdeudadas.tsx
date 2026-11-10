@@ -11,13 +11,21 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Loader2, RefreshCw, AlertCircle, AlertTriangle } from 'lucide-react'
+import { Loader2, RefreshCw, AlertCircle, AlertTriangle, Plus } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { formatNumber, formatDateAR } from '@/lib/utils'
+import NuevoCobroForm from '@/components/cobros/NuevoCobroForm'
+import RecibosErp from '@/components/cobros/RecibosErp'
 
 /**
  * Replica la vista "Facturas adeudadas por el cliente" de Colppy.
  * Columnas: Nro. Comprobante | Tipo | Fecha pago | Descripción | Valor ME | Total | Cobrado | Saldo | Saldo acumulado
  * Solo muestra facturas con saldo pendiente (no pagadas completamente).
+ *
+ * Acá también se carga el cobro: se tildan las facturas que pagó el cliente y
+ * "Agregar cobro" abre el formulario (el recibo se da de alta en Colppy). Abajo
+ * quedan los recibos cargados desde el ERP, con su PDF para mandar al cliente.
  */
 
 interface ColppyFactura {
@@ -42,9 +50,17 @@ interface ColppyFactura {
 
 interface Props {
   colppyId: string
+  /** Id del cliente en el ERP: habilita cargar cobros desde esta pestaña */
+  customerId?: string
+  nombre?: string
 }
 
-export default function TabFacturasAdeudadas({ colppyId }: Props) {
+export default function TabFacturasAdeudadas({ colppyId, customerId, nombre }: Props) {
+  /** Facturas tildadas para cobrar (id de Colppy) */
+  const [tildadas, setTildadas] = useState<Set<string>>(new Set())
+  const [cobroAbierto, setCobroAbierto] = useState(false)
+  const [cobroOcupado, setCobroOcupado] = useState(false)
+  const [versionRecibos, setVersionRecibos] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [facturas, setFacturas] = useState<ColppyFactura[]>([])
@@ -145,11 +161,28 @@ export default function TabFacturasAdeudadas({ colppyId }: Props) {
       {/* Tabla replicando Colppy */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-3">
-          <CardTitle className="text-lg">Facturas adeudadas por el cliente</CardTitle>
-          <Button variant="outline" size="sm" onClick={() => fetchFacturas(true)} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
-            Actualizar
-          </Button>
+          <div>
+            <CardTitle className="text-lg">Facturas adeudadas por el cliente</CardTitle>
+            {customerId && facturasAdeudadas.length > 0 && (
+              <p className="mt-1 text-xs text-gray-500">
+                {tildadas.size > 0
+                  ? `${tildadas.size} tildada${tildadas.size === 1 ? '' : 's'} para cobrar: $ ${formatNumber(facturasAdeudadas.filter((f) => tildadas.has(f.idFactura)).reduce((s, f) => s + f.saldo, 0))}`
+                  : 'Tildá las que te pagaron y tocá "Agregar cobro".'}
+              </p>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => fetchFacturas(true)} disabled={loading}>
+              <RefreshCw className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
+              Actualizar
+            </Button>
+            {customerId && (
+              <Button size="sm" className="bg-blue-600 hover:bg-blue-700" disabled={facturasAdeudadas.length === 0} onClick={() => setCobroAbierto(true)}>
+                <Plus className="h-4 w-4 mr-1" />
+                Agregar cobro
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {loading && facturas.length === 0 ? (
@@ -173,6 +206,7 @@ export default function TabFacturasAdeudadas({ colppyId }: Props) {
               <Table>
                 <TableHeader>
                   <TableRow className="text-xs">
+                    {customerId && <TableHead className="w-8" />}
                     <TableHead className="whitespace-nowrap">Nro. Comprobante</TableHead>
                     <TableHead>Tipo</TableHead>
                     <TableHead className="whitespace-nowrap">Fecha pago</TableHead>
@@ -189,6 +223,22 @@ export default function TabFacturasAdeudadas({ colppyId }: Props) {
                     const isVencida = f.fechaVto ? new Date(f.fechaVto) < new Date() : false
                     return (
                       <TableRow key={f.idFactura || i} className={isVencida ? 'bg-red-50' : ''}>
+                        {customerId && (
+                          <TableCell>
+                            <Checkbox
+                              aria-label={`Cobrar ${f.numero}`}
+                              checked={tildadas.has(f.idFactura)}
+                              onCheckedChange={(v) =>
+                                setTildadas((s) => {
+                                  const n = new Set(s)
+                                  if (v) n.add(f.idFactura)
+                                  else n.delete(f.idFactura)
+                                  return n
+                                })
+                              }
+                            />
+                          </TableCell>
+                        )}
                         <TableCell className="font-mono text-xs whitespace-nowrap">
                           {f.numero || '\u2014'}
                         </TableCell>
@@ -223,7 +273,7 @@ export default function TabFacturasAdeudadas({ colppyId }: Props) {
                 {/* Totals row */}
                 <tfoot>
                   <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold">
-                    <td colSpan={5} className="px-4 py-2 text-xs text-right text-gray-600">
+                    <td colSpan={customerId ? 6 : 5} className="px-4 py-2 text-xs text-right text-gray-600">
                       TOTALES
                     </td>
                     <td className="px-4 py-2 text-right font-mono text-xs">
@@ -248,6 +298,50 @@ export default function TabFacturasAdeudadas({ colppyId }: Props) {
           )}
         </CardContent>
       </Card>
+
+      {customerId && (
+        <>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg">Cobros cargados desde el ERP</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <RecibosErp clienteId={customerId} version={versionRecibos} />
+            </CardContent>
+          </Card>
+
+          <Sheet open={cobroAbierto} onOpenChange={(v) => !cobroOcupado && setCobroAbierto(v)}>
+            <SheetContent
+              side="right"
+              className="flex w-full flex-col gap-0 p-0 sm:max-w-[min(1200px,96vw)]"
+              // Solo se cierra con Cancelar o la X (un Esc o un clic afuera perdería lo cargado)
+              onEscapeKeyDown={(e) => e.preventDefault()}
+              onInteractOutside={(e) => e.preventDefault()}
+            >
+              <SheetHeader className="border-b">
+                <SheetTitle>Nuevo cobro</SheetTitle>
+                <SheetDescription>{nombre ? `${nombre} · ` : ''}el recibo se da de alta en Colppy</SheetDescription>
+              </SheetHeader>
+              <div className="flex-1 overflow-y-auto p-4">
+                {cobroAbierto && (
+                  <NuevoCobroForm
+                    clienteId={customerId}
+                    facturasIniciales={[...tildadas]}
+                    onOcupadoChange={setCobroOcupado}
+                    onCerrar={() => setCobroAbierto(false)}
+                    onRegistrado={() => {
+                      setCobroAbierto(false)
+                      setTildadas(new Set())
+                      setVersionRecibos((v) => v + 1)
+                      void fetchFacturas(true)
+                    }}
+                  />
+                )}
+              </div>
+            </SheetContent>
+          </Sheet>
+        </>
+      )}
     </div>
   )
 }

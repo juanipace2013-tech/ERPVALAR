@@ -25,6 +25,8 @@ import { CONDICIONES_IVA } from '@/lib/constants'
 
 interface ColppyCustomer {
   id: string
+  /** Id del cliente en el ERP (para cargarle cobros); falta si no está dado de alta localmente */
+  erpId?: string
   colppyId: string
   name: string
   businessName: string
@@ -80,6 +82,7 @@ export default function ClienteDetailPage() {
   function buildLocalCustomer(localData: any): ColppyCustomer {
     return {
       id: localData.id,
+      erpId: localData.id,
       colppyId: '',
       name: localData.name || '',
       businessName: localData.businessName || localData.name || '',
@@ -164,6 +167,7 @@ export default function ClienteDetailPage() {
                 defaultTransportAddress: localCustomer.defaultTransportAddress || match.defaultTransportAddress || '',
                 defaultTransportSchedule: localCustomer.defaultTransportSchedule || match.defaultTransportSchedule || '',
                 exchangeRateType: localCustomer.exchangeRateType || null,
+                erpId: localCustomer.id,
               })
             } else {
               setCustomer(match)
@@ -194,6 +198,7 @@ export default function ClienteDetailPage() {
               defaultTransportAddress: localCustomer.defaultTransportAddress || colppyMatch.defaultTransportAddress || '',
               defaultTransportSchedule: localCustomer.defaultTransportSchedule || colppyMatch.defaultTransportSchedule || '',
               exchangeRateType: localCustomer.exchangeRateType || null,
+                erpId: localCustomer.id,
             })
           } else {
             setCustomer(colppyMatch)
@@ -230,6 +235,7 @@ export default function ClienteDetailPage() {
               defaultTransportAddress: localData.defaultTransportAddress || colppyMatch.defaultTransportAddress || '',
               defaultTransportSchedule: localData.defaultTransportSchedule || colppyMatch.defaultTransportSchedule || '',
               exchangeRateType: localData.exchangeRateType || null,
+              erpId: localData.id,
             })
             return
           }

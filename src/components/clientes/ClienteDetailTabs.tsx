@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   User,
@@ -19,6 +20,8 @@ import { esClienteExterior } from '@/lib/cliente-exterior'
 
 interface ColppyCustomer {
   id: string
+  /** Id del cliente en el ERP (para cargarle cobros) */
+  erpId?: string
   colppyId: string
   name: string
   businessName: string
@@ -52,9 +55,12 @@ interface Props {
 }
 
 export default function ClienteDetailTabs({ colppyCustomer, cuit, onCustomerUpdate }: Props) {
-  const [activeTab, setActiveTab] = useState('general')
+  // ?tab=facturas abre directo en esa pestaña (desde Cobros)
+  const tabPedida = useSearchParams().get('tab') || ''
+  const tabInicial = ['general', 'facturas', 'cc', 'comercial', 'bcra'].includes(tabPedida) ? tabPedida : 'general'
+  const [activeTab, setActiveTab] = useState(tabInicial)
   // Track which tabs have been activated (lazy loading)
-  const [activatedTabs, setActivatedTabs] = useState<Set<string>>(new Set(['general']))
+  const [activatedTabs, setActivatedTabs] = useState<Set<string>>(new Set(['general', tabInicial]))
 
   const handleTabChange = (value: string) => {
     setActiveTab(value)
@@ -104,7 +110,7 @@ export default function ClienteDetailTabs({ colppyCustomer, cuit, onCustomerUpda
         <TabsContent value="facturas" className="mt-0">
           {activatedTabs.has('facturas') && (
             hasColppy ? (
-              <TabFacturasAdeudadas colppyId={colppyId} />
+              <TabFacturasAdeudadas colppyId={colppyId} customerId={colppyCustomer.erpId} nombre={colppyCustomer.businessName || colppyCustomer.name} />
             ) : (
               <div className="flex flex-col items-center justify-center py-12 text-gray-500">
                 <AlertCircle className="h-8 w-8 mb-2 text-gray-400" />

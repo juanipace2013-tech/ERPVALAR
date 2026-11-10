@@ -105,6 +105,7 @@ interface ChartItem {
   name: string
   total: number
   qty?: number
+  sku?: string | null
 }
 
 interface MonthlyItem {
@@ -198,6 +199,13 @@ function totalPorVendedor(invoices: Invoice[]): ChartItem[] {
     .map((v) => ({ ...v, total: Math.round(v.total * 100) / 100 }))
 }
 
+// Etiquetas del eje de los rankings: los nombres de producto son descripciones
+// largas que, partidas en varios renglones, se encimaban entre sí. Van en un
+// solo renglón recortado; el nombre completo queda en el tooltip.
+const MAX_ETIQUETA = 32
+const recortar = (texto: string) =>
+  texto.length > MAX_ETIQUETA ? `${texto.slice(0, MAX_ETIQUETA - 1).trimEnd()}…` : texto
+
 function SortHeader({ onSort, children }: { onSort: () => void; children: React.ReactNode }) {
   return (
     <TableHead
@@ -215,8 +223,8 @@ function SortHeader({ onSort, children }: { onSort: () => void; children: React.
 function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number }>; label?: string }) {
   if (!active || !payload?.length) return null
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3">
-      <p className="text-sm font-medium text-gray-900">{label}</p>
+    <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 max-w-xs">
+      <p className="text-sm font-medium text-gray-900 break-words">{label}</p>
       <p className="text-sm text-blue-600 font-semibold">{fmt(payload[0].value)}</p>
     </div>
   )
@@ -502,6 +510,11 @@ export default function AnalisisFacturacionPage() {
 
   const resumen = data?.resumen
   const graficos = data?.graficos
+  // Código + nombre: el código es lo que identifica al artículo cuando el nombre se recorta
+  const topProductos = (graficos?.topProductos ?? []).map((p) => ({
+    ...p,
+    etiqueta: p.sku && !p.name.startsWith(p.sku) ? `${p.sku} · ${p.name}` : p.name,
+  }))
 
   return (
     <div className="space-y-6">
@@ -898,8 +911,8 @@ export default function AnalisisFacturacionPage() {
                     <BarChart data={graficos.topClientes} layout="vertical" margin={{ left: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                       <XAxis type="number" tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
-                      <YAxis type="category" dataKey="name" width={140} tick={{ fontSize: 11 }} />
-                      <Tooltip formatter={((value: number) => fmt(value)) as never} />
+                      <YAxis type="category" dataKey="name" width={210} interval={0} tickFormatter={recortar} tick={{ fontSize: 11 }} />
+                      <Tooltip content={<ChartTooltip />} />
                       <Bar dataKey="total" fill="#10b981" radius={[0, 4, 4, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
@@ -916,11 +929,11 @@ export default function AnalisisFacturacionPage() {
               <CardContent>
                 {graficos.topProductos.length > 0 ? (
                   <ResponsiveContainer width="100%" height={350}>
-                    <BarChart data={graficos.topProductos} layout="vertical" margin={{ left: 20 }}>
+                    <BarChart data={topProductos} layout="vertical" margin={{ left: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                       <XAxis type="number" tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
-                      <YAxis type="category" dataKey="name" width={140} tick={{ fontSize: 11 }} />
-                      <Tooltip formatter={((value: number) => fmt(value)) as never} />
+                      <YAxis type="category" dataKey="etiqueta" width={210} interval={0} tickFormatter={recortar} tick={{ fontSize: 11 }} />
+                      <Tooltip content={<ChartTooltip />} />
                       <Bar dataKey="total" fill="#f59e0b" radius={[0, 4, 4, 0]} />
                     </BarChart>
                   </ResponsiveContainer>

@@ -239,7 +239,7 @@ export async function GET(request: NextRequest) {
       .map((c) => ({ ...c, total: round2(c.total) }))
 
     // Top productos y facturación por marca (NC restan)
-    const porProducto: Record<string, { name: string; total: number; qty: number }> = {}
+    const porProducto: Record<string, { name: string; sku: string | null; total: number; qty: number }> = {}
     const porMarca: Record<string, number> = {}
     for (const item of items) {
       const factor = factorItems.get(item.invoiceId)
@@ -249,6 +249,7 @@ export async function GET(request: NextRequest) {
       const key = item.productId || item.description || 'sin-producto'
       const producto = (porProducto[key] ??= {
         name: item.product?.name || item.description || item.product?.sku || 'Sin nombre',
+        sku: item.product?.sku ?? null,
         total: 0,
         qty: 0,
       })

@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { ArrowLeft, Loader2, Users, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Loader2, Users, AlertCircle, FilePlus } from 'lucide-react'
 import { formatCUIT, formatNumber } from '@/lib/utils'
 
 const TC_BADGE_COLORS: Record<string, string> = {
@@ -353,14 +353,29 @@ export default function ClienteDetailPage() {
                 </div>
               </div>
             </div>
-            <div className="text-right">
-              <p className="text-xs text-gray-500">Saldo CC</p>
-              <p className={`text-2xl font-bold ${saldoColor}`}>
-                $ {formatNumber(customer.saldo)}
-              </p>
-              <Badge className={`${saldoBadge} text-xs mt-1`}>
-                {customer.saldo <= 0 ? 'Al día' : 'Deudor'}
-              </Badge>
+            <div className="flex items-start gap-6">
+              {/* Atajo: abre Nueva Cotización con este cliente ya elegido */}
+              {customer.cuit && (
+                <Button
+                  onClick={() => {
+                    const clave = esClaveExterior(customer.cuit) ? customer.cuit : customer.cuit.replace(/\D/g, '')
+                    router.push(`/cotizaciones/nueva?cliente=${encodeURIComponent(clave)}`)
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  <FilePlus className="h-4 w-4 mr-2" />
+                  Nueva cotización
+                </Button>
+              )}
+              <div className="text-right">
+                <p className="text-xs text-gray-500">Saldo CC</p>
+                <p className={`text-2xl font-bold ${saldoColor}`}>
+                  $ {formatNumber(customer.saldo)}
+                </p>
+                <Badge className={`${saldoBadge} text-xs mt-1`}>
+                  {customer.saldo <= 0 ? 'Al día' : 'Deudor'}
+                </Badge>
+              </div>
             </div>
           </div>
         </CardContent>

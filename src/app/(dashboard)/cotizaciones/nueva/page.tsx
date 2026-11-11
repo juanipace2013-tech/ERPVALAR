@@ -72,7 +72,28 @@ export default function NuevaCotizacionPage() {
 
   useEffect(() => {
     fetchInitialData()
+    precargarCliente()
   }, [])
+
+  // Llegando desde la ficha de un cliente (?cliente=<CUIT>) se lo deja ya
+  // elegido, con su condición de pago, vendedor y TC como si se lo buscara.
+  const precargarCliente = async () => {
+    const clave = new URLSearchParams(window.location.search).get('cliente')
+    if (!clave) return
+    try {
+      const res = await fetch(`/api/colppy/clientes?search=${encodeURIComponent(clave)}&limit=5`)
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      const soloDigitos = (v: string) => v.replace(/\D/g, '')
+      const cliente = ((data.customers || []) as ColppyCustomer[]).find((c) =>
+        esClaveExterior(clave) ? c.cuit === clave : soloDigitos(c.cuit || '') === soloDigitos(clave)
+      )
+      if (!cliente) throw new Error()
+      await handleCustomerSelect(cliente)
+    } catch {
+      toast.error('No se pudo precargar el cliente: buscalo en el campo de cliente')
+    }
+  }
 
   const fetchInitialData = async () => {
     try {

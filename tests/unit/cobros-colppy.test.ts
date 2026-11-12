@@ -238,3 +238,43 @@ describe('validación del pedido de cobro', () => {
     expect(() => validarPedidoCobro({ ...ok, medios: [{ cuenta: '', importe: 1 }] })).toThrow(CobroError)
   })
 })
+
+describe('cobro con e-cheq recibido', () => {
+  // Recibo real 0001-00013016 de ZEN INGENIERIA (12/11/2026): FAV en USD al T/C de la factura, e-cheq Santander
+  const fav317: ImpagaCobroColppy = { ...impagaMl, idFactura: '55067191', nroFactura: '0007-00000317', descripcion: 'Factura de Ventas', totalFactura: '65783', saldoAnterior: '65783', Saldo: 65783, currency: 'USD', rate: '1570.000000', totalme: 41.9 }
+  const base: PedidoAltaCobro = {
+    ...pedidoMl,
+    idCliente: '1218332',
+    fecha: '2026-11-12',
+    nroRecibo2: '00013016',
+    impagas: [fav317],
+    cobros: { '55067191': 65783 },
+    medios: [{ medio: 'Echeqs', cuenta: '', banco: 'SANTANDER RIO', numero: '00002751', fechaPago: '2026-11-26', importe: 65783 }],
+  }
+
+  it('manda el e-cheq como la grilla de Colppy: Valores a Depositar, número sin ceros y fecha DD/MM/AAAA', () => {
+    const a = armarAltaCobro(base)
+    expect(a.parameters.mediospagos).toEqual([
+      { idMedioCobro: 'Echeqs', idPlanCuenta: 'Valores a Depositar', Banco: 'SANTANDER RIO', nroCheque: 2751, fechaValidez: '26/11/2026', importe: 65783, VAD: 'S', Conciliado: '', idTabla: 0, idElemento: 0, idItem: 0 },
+    ])
+    expect(a.parameters).toMatchObject({ idMedioCobro: 'Echeqs', totalACobrar: 65783, totalCobrado: 65783, diferenciaTipoCambio: 0 })
+  })
+
+  it('e-cheq y transferencia en el mismo recibo', () => {
+    const a = armarAltaCobro({
+      ...base,
+      medios: [
+        { medio: 'Echeqs', cuenta: '', banco: 'ICBC', numero: '14719505', fechaPago: '2026-11-09', importe: 60000 },
+        { medio: 'Transferencia', cuenta: 'Cta Cte Galicia', importe: 5783 },
+      ],
+    })
+    expect(a.totalCobrado).toBe(65783)
+    expect((a.parameters.mediospagos as Array<Record<string, unknown>>)[1]).toMatchObject({ idMedioCobro: 'Transferencia', idPlanCuenta: 'Cta Cte Galicia', nroCheque: '', fechaValidez: '' })
+  })
+
+  it('rechaza un e-cheq sin banco, número o fecha', () => {
+    expect(() => armarAltaCobro({ ...base, medios: [{ medio: 'Echeqs', cuenta: '', banco: '', numero: 'x', importe: 65783 }] })).toThrow(/banco del e-cheq/)
+    expect(() => validarPedidoCobro({ idempotencyKey: '0b0e4c1e-7a57-4c3b-9d55-0d6f0c2a9b11', customerId: 'c1', fecha: '2026-11-12', cobros: { '55067191': 65783 }, medios: [{ medio: 'Echeqs', banco: 'ICBC', numero: '', fechaPago: '2026-11-26', importe: 65783 }] })).toThrow(CobroError)
+    expect(validarPedidoCobro({ idempotencyKey: '0b0e4c1e-7a57-4c3b-9d55-0d6f0c2a9b11', customerId: 'c1', fecha: '2026-11-12', cobros: { '55067191': 65783 }, medios: [{ medio: 'Echeqs', banco: 'ICBC', numero: '2751', fechaPago: '2026-11-26', importe: 65783 }] }).medios[0]).toMatchObject({ medio: 'Echeqs', banco: 'ICBC', numero: '2751', fechaPago: '2026-11-26' })
+  })
+})

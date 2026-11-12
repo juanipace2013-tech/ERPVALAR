@@ -5,7 +5,7 @@
  * GET  → últimos cobros (?customerId=, ?limit=)
  * POST → registra un recibo en Colppy.
  *   Body: { idempotencyKey (UUID), customerId, fecha (YYYY-MM-DD),
- *           cobros: { [idFacturaColppy]: importe }, medios: [{ cuenta, importe }], descripcion? }
+ *           cobros: { [idFacturaColppy]: importe }, medios: [{ medio?: 'Transferencia'|'Echeqs', cuenta, importe, banco?, numero?, fechaPago? }], tcCobro?, descripcion? }
  *   201 { id, estado: REGISTRADA|ERROR|INCIERTO, numero, colppyCobroId, totalCobrado, error, repetida:false }
  *   200 lo mismo con repetida:true (esa clave ya se registró: no se manda de nuevo)
  * Roles: ADMIN, GERENTE, CONTADOR.
@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
       customer: { select: { id: true, name: true, businessName: true, cuit: true, address: true, city: true, province: true, taxCondition: true } },
       createdBy: { select: { name: true } },
       applications: { select: { colppyInvoiceId: true, invoiceNumber: true, invoiceTotal: true, previousBalance: true, amount: true } },
-      media: { select: { accountName: true, amount: true } },
+      media: { select: { method: true, accountName: true, amount: true } },
     },
   })
   /** Filas del pedido a Colppy (tipo de comprobante y tipos de cambio), por id de factura */
@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
           tcCobro: enDolares ? tc(f?.tcCobroRate) : null,
         }
       }),
-      medios: o.media.map((m) => ({ cuenta: m.accountName, importe: Number(m.amount) })),
+      medios: o.media.map((m) => ({ medio: m.method, cuenta: m.accountName, importe: Number(m.amount) })),
       error: o.lastError,
       creadoPor: o.createdBy.name,
       creadoEl: o.createdAt.toISOString(),

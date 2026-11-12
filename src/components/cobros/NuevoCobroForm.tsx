@@ -80,6 +80,11 @@ function mensajesDeError(d: unknown, status: number): string[] {
 
 interface Medio {
   uid: string
+  medio: 'Transferencia' | 'Echeqs'
+  /** Solo e-cheq */
+  banco: string
+  numero: string
+  fechaPago: string
   cuenta: string
   importe: string
   /** El importe sigue al total mientras el usuario no lo toque */
@@ -87,6 +92,7 @@ interface Medio {
 }
 
 const nuevoUid = () => Math.random().toString(36).slice(2, 10)
+const MEDIO_VACIO: Omit<Medio, 'uid'> = { medio: 'Transferencia', banco: '', numero: '', fechaPago: '', cuenta: '', importe: '', auto: false }
 
 export interface NuevoCobroFormProps {
   clienteId: string
@@ -108,7 +114,7 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
   const [elegidas, setElegidas] = useState<Record<string, string>>({})
   /** idFactura → T/C del cobro (texto) de las facturas en dólares */
   const [tcs, setTcs] = useState<Record<string, string>>({})
-  const [medios, setMedios] = useState<Medio[]>([{ uid: nuevoUid(), cuenta: '', importe: '', auto: true }])
+  const [medios, setMedios] = useState<Medio[]>([{ ...MEDIO_VACIO, uid: nuevoUid(), auto: true }])
   const [descripcion, setDescripcion] = useState('')
 
   const [confirmando, setConfirmando] = useState(false)
@@ -209,7 +215,11 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
       }
     }
     for (const m of medios) {
-      if (!m.cuenta) p.push('Elegí la cuenta de cada medio de cobro')
+      if (m.medio === 'Echeqs') {
+        if (!m.banco.trim()) p.push('Falta el banco del e-cheq')
+        if (!/^\d{1,15}$/.test(m.numero.trim())) p.push('Falta el número del e-cheq (solo dígitos)')
+        if (!m.fechaPago) p.push('Falta la fecha de pago del e-cheq')
+      } else if (!m.cuenta) p.push('Elegí la cuenta de cada medio de cobro')
       const n = aNumero(m.importe)
       if (!Number.isFinite(n) || n <= 0) p.push('Importe inválido en un medio de cobro')
     }
@@ -229,7 +239,11 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
           .filter((k) => k in tcs)
           .map((k) => [k, aNumero(tcs[k])])
       ),
-      medios: medios.map((m) => ({ cuenta: m.cuenta, importe: r2(aNumero(m.importe)) })),
+      medios: medios.map((m) =>
+        m.medio === 'Echeqs'
+          ? { medio: m.medio, cuenta: '', banco: m.banco.trim(), numero: m.numero.trim(), fechaPago: m.fechaPago, importe: r2(aNumero(m.importe)) }
+          : { medio: m.medio, cuenta: m.cuenta, importe: r2(aNumero(m.importe)) }
+      ),
       descripcion,
     }),
     [clienteId, fecha, elegidas, tcs, medios, descripcion]
@@ -458,7 +472,7 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
               <TableHeader>
                 <TableRow className="bg-blue-50">
                   <TableHead className="w-36">Medio</TableHead>
-                  <TableHead>Cuenta</TableHead>
+                  <TableHead>Cuenta / datos del e-cheq</TableHead>
                   <TableHead className="w-40 text-right">Importe</TableHead>
                   <TableHead className="w-10" />
                 </TableRow>
@@ -466,8 +480,46 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
               <TableBody>
                 {medios.map((m) => (
                   <TableRow key={m.uid}>
-                    <TableCell className="text-sm">Transferencia</TableCell>
                     <TableCell>
+                      <Select value={m.medio} onValueChange={(v) => setMedios((ms) => ms.map((x) => (x.uid === m.uid ? { ...x, medio: v as Medio['medio'] } : x)))}>
+                        <SelectTrigger className="h-8" aria-label="Medio de cobro">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Transferencia">Transferencia</SelectItem>
+                          <SelectItem value="Echeqs">E-cheq</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell>
+                      {m.medio === 'Echeqs' ? (
+                        <div className="flex gap-2">
+                          <Input
+                            className="h-8 flex-1"
+                            placeholder="Banco emisor"
+                            aria-label="Banco del e-cheq"
+                            maxLength={60}
+                            value={m.banco}
+                            onChange={(e) => setMedios((ms) => ms.map((x) => (x.uid === m.uid ? { ...x, banco: e.target.value } : x)))}
+                          />
+                          <Input
+                            className="h-8 w-28"
+                            placeholder="Número"
+                            aria-label="Número del e-cheq"
+                            inputMode="numeric"
+                            value={m.numero}
+                            onChange={(e) => setMedios((ms) => ms.map((x) => (x.uid === m.uid ? { ...x, numero: e.target.value.replace(/\D/g, '') } : x)))}
+                          />
+                          <Input
+                            className="h-8 w-40"
+                            type="date"
+                            aria-label="Fecha de pago del e-cheq"
+                            title="Fecha de pago del e-cheq"
+                            value={m.fechaPago}
+                            onChange={(e) => setMedios((ms) => ms.map((x) => (x.uid === m.uid ? { ...x, fechaPago: e.target.value } : x)))}
+                          />
+                        </div>
+                      ) : (
                       <Select value={m.cuenta} onValueChange={(v) => setMedios((ms) => ms.map((x) => (x.uid === m.uid ? { ...x, cuenta: v } : x)))}>
                         <SelectTrigger className="h-8" aria-label="Cuenta">
                           <SelectValue placeholder="Cuenta donde entró" />
@@ -480,6 +532,7 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
                           ))}
                         </SelectContent>
                       </Select>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Input
@@ -514,14 +567,14 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
               variant="outline"
               size="sm"
               className="mt-2"
-              onClick={() => setMedios((ms) => [...ms, { uid: nuevoUid(), cuenta: '', importe: diferencia < 0 ? imp(Math.abs(diferencia)) : '', auto: false }])}
+              onClick={() => setMedios((ms) => [...ms, { ...MEDIO_VACIO, uid: nuevoUid(), importe: diferencia < 0 ? imp(Math.abs(diferencia)) : '' }])}
             >
               <Plus className="mr-1 h-4 w-4" />
               Agregar medio
             </Button>
           )}
           <p className="mt-2 text-xs text-muted-foreground">
-            Por ahora solo transferencias a cuentas en pesos. Retenciones, e-cheqs y anticipos se siguen cargando en Colppy.
+            Transferencias a cuentas en pesos y e-cheqs recibidos (entran a Valores a Depositar). Retenciones y anticipos se siguen cargando en Colppy.
           </p>
         </div>
 

@@ -142,7 +142,7 @@ export interface PedidoCobro {
   cobros: Record<string, number>
   /** idFactura (Colppy) → T/C del cobro, para las facturas en dólares */
   tcCobro: Record<string, number>
-  medios: Array<{ cuenta: string; importe: number }>
+  medios: Array<{ medio: 'Transferencia' | 'Echeqs'; cuenta: string; importe: number; banco?: string; numero?: string; fechaPago?: string }>
   descripcion: string
 }
 
@@ -181,8 +181,14 @@ export function validarPedidoCobro(body: unknown): PedidoCobro {
     for (const m of b.medios) {
       const importe = Number(m?.importe)
       const cuenta = String(m?.cuenta ?? '').trim()
-      if (!cuenta || !Number.isFinite(importe) || importe <= 0) errores.push('Medio de cobro incompleto')
-      else medios.push({ cuenta, importe: r2(importe) })
+      if (m?.medio === 'Echeqs') {
+        const banco = String(m?.banco ?? '').trim().slice(0, 60)
+        const numero = String(m?.numero ?? '').trim()
+        const fechaPago = String(m?.fechaPago ?? '')
+        if (!banco || !/^\d{1,15}$/.test(numero) || !/^\d{4}-\d{2}-\d{2}$/.test(fechaPago) || !Number.isFinite(importe) || importe <= 0) errores.push('E-cheq incompleto (banco, número, fecha de pago e importe)')
+        else medios.push({ medio: 'Echeqs', cuenta: '', importe: r2(importe), banco, numero, fechaPago })
+      } else if (!cuenta || !Number.isFinite(importe) || importe <= 0) errores.push('Medio de cobro incompleto')
+      else medios.push({ medio: 'Transferencia', cuenta, importe: r2(importe) })
     }
   if (errores.length) throw new CobroError(errores.join(' · '), 'PEDIDO_INVALIDO', 400, { errores })
   return {
@@ -331,6 +337,11 @@ export async function registrarCobro(p: PedidoCobro, user: { id: string }): Prom
       const impagas = await colppyImpagasCliente(c.colppyId)
       const cuentas = await colppyCuentasCobroArs()
       const medios: Array<MedioCobro & { codigo: string }> = p.medios.map((m) => {
+        if (m.medio === 'Echeqs') {
+          // Entra a cartera (Valores a Depositar, 113200); el detalle queda en el nombre para el listado y el recibo
+          const [a, me, d] = String(m.fechaPago).split('-')
+          return { medio: 'Echeqs' as const, cuenta: `E-cheq ${m.banco} N° ${m.numero} (pago ${d}/${me}/${a})`, importe: r2(m.importe), banco: m.banco, numero: m.numero, fechaPago: m.fechaPago, codigo: '113200' }
+        }
         const mismas = cuentas.filter((x) => x.nombre === m.cuenta)
         if (!mismas.length) throw new CobroError(`La cuenta "${m.cuenta}" no es una cuenta en pesos de Colppy`, 'VALIDACION', 422)
         if (mismas.length > 1) throw new CobroError(`En Colppy hay más de una cuenta llamada "${m.cuenta}": cargá este cobro en Colppy`, 'VALIDACION', 422)
@@ -348,7 +359,7 @@ export async function registrarCobro(p: PedidoCobro, user: { id: string }): Prom
         impagas,
         cobros: p.cobros,
         tcCobro: p.tcCobro,
-        medios: medios.map((m) => ({ medio: m.medio, cuenta: m.cuenta, importe: m.importe })),
+        medios: medios.map((m) => ({ medio: m.medio, cuenta: m.cuenta, importe: m.importe, banco: m.banco, numero: m.numero, fechaPago: m.fechaPago })),
         descripcion: p.descripcion,
       })
       parameters = armado.parameters

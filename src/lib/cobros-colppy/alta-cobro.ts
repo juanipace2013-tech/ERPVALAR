@@ -10,8 +10,13 @@
  * - `mediospagos`: medios de cobro, con medio y cuenta POR NOMBRE
  *   (idMedioCobro "Transferencia", idPlanCuenta "Cta Cte Galicia").
  * - A diferencia de alta_pago, las dos grillas van como ARREGLOS.
- * Alcance: FAV/NDV en pesos o en dólares, transferencias a cuentas en pesos,
- * sin retenciones, anticipos ni cobros a cuenta.
+ * Alcance: FAV/NDV en pesos o en dólares, transferencias a cuentas en pesos y
+ * e-cheqs recibidos, sin retenciones, anticipos ni cobros a cuenta.
+ *
+ * E-cheq recibido (leído del front de Colppy, grilla fondoscobro, y verificado
+ * contra el recibo real 0001-00013016 de ZEN INGENIERIA, 12/11/2026):
+ * idMedioCobro "Echeqs", idPlanCuenta "Valores a Depositar" (113200, entra a
+ * cartera), Banco texto libre, nroCheque número, fechaValidez "DD/MM/AAAA".
  *
  * Facturas en dólares (leído del front de Colppy, colppyall_min.js, grilla
  * facturasacobrargrid y cobroform; SIN captura de un guardado real todavía):
@@ -46,12 +51,19 @@ export interface ImpagaCobroColppy {
   is_fce?: string | number
 }
 
+/** Cuenta a la que Colppy manda los cheques y e-cheqs recibidos */
+export const CUENTA_VALORES_A_DEPOSITAR = 'Valores a Depositar'
+
 export interface MedioCobro {
   /** Como lo nombra la grilla de cobros de Colppy */
-  medio: 'Transferencia'
-  /** Nombre de la cuenta en Colppy (Tesoreria/leer_origen_fondos2 → Nombre) */
+  medio: 'Transferencia' | 'Echeqs'
+  /** Transferencia: nombre de la cuenta en Colppy (Tesoreria/leer_origen_fondos2 → Nombre). E-cheq: no se usa. */
   cuenta: string
   importe: number
+  /** Solo e-cheq: banco emisor (texto libre), número y fecha de pago YYYY-MM-DD */
+  banco?: string
+  numero?: string
+  fechaPago?: string
 }
 
 export interface PedidoAltaCobro {
@@ -195,9 +207,14 @@ export function armarAltaCobro(p: PedidoAltaCobro): AltaCobroArmado {
 
   if (!p.medios.length) errores.push('Falta el medio de cobro')
   for (const m of p.medios) {
-    if (m.medio !== 'Transferencia') errores.push(`Medio de cobro no soportado todavía: ${m.medio}`)
-    if (!m.cuenta?.trim()) errores.push('Falta la cuenta del medio de cobro')
-    if (!(r2(m.importe) > 0)) errores.push(`Importe inválido en ${m.cuenta || 'un medio de cobro'}`)
+    if (m.medio === 'Echeqs') {
+      if (!m.banco?.trim()) errores.push('Falta el banco del e-cheq')
+      if (!/^\d{1,15}$/.test(String(m.numero ?? '').trim())) errores.push('Número de e-cheq inválido')
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(m.fechaPago ?? ''))) errores.push('Falta la fecha de pago del e-cheq')
+    } else if (m.medio === 'Transferencia') {
+      if (!m.cuenta?.trim()) errores.push('Falta la cuenta del medio de cobro')
+    } else errores.push(`Medio de cobro no soportado todavía: ${String(m.medio)}`)
+    if (!(r2(m.importe) > 0)) errores.push(`Importe inválido en ${m.medio === 'Echeqs' ? 'un e-cheq' : m.cuenta || 'un medio de cobro'}`)
   }
   const totalCobrado = r2(p.medios.reduce((a, m) => a + r2(m.importe), 0))
   // Sin retenciones ni cobros a cuenta: lo cobrado es lo aplicado más la diferencia de cambio
@@ -213,10 +230,11 @@ export function armarAltaCobro(p: PedidoAltaCobro): AltaCobroArmado {
     cobros,
     mediospagos: p.medios.map((m) => ({
       idMedioCobro: m.medio,
-      idPlanCuenta: m.cuenta.trim(),
-      Banco: '',
-      nroCheque: '',
-      fechaValidez: '',
+      idPlanCuenta: m.medio === 'Echeqs' ? CUENTA_VALORES_A_DEPOSITAR : m.cuenta.trim(),
+      Banco: m.medio === 'Echeqs' ? String(m.banco).trim() : '',
+      // El front manda el número como número (sin ceros a la izquierda) y la fecha DD/MM/AAAA
+      nroCheque: m.medio === 'Echeqs' ? Number(String(m.numero).trim()) : '',
+      fechaValidez: m.medio === 'Echeqs' ? ddmmyyyy(String(m.fechaPago)).replace(/-/g, '/') : '',
       importe: r2(m.importe),
       VAD: 'S',
       Conciliado: '',

@@ -198,7 +198,11 @@ pago según el cliente. Leído de `colppyall_min.js` (`facturasacobrargrid`,
 - [x] Recibo con transferencia (cuenta destino por nombre, como en pagos).
 - [ ] Cliente con varias impagas (qué se manda de las no cobradas) y cobro parcial.
 - [ ] Recibo con retención IIBB (`retsufridas`) y otras (`retsufridasotras`).
-- [ ] Recibo con e-cheq recibido (`Banco`, `nroCheque`, `fechaValidez`, `VAD`).
+- [x] Recibo con e-cheq recibido: `idMedioCobro:"Echeqs"`, `idPlanCuenta:"Valores a Depositar"`,
+  `Banco` texto libre, `nroCheque` número, `fechaValidez` `DD/MM/AAAA` (la grilla `fondoscobro`
+  la convierte en `onAfterEdit`). Leído del front y verificado contra el recibo real
+  0001-00013016 de ZEN INGENIERIA (idCobro 12197091, 12/11/2026, cargado en Colppy); el
+  guardado en sí no quedó grabado. En el ERP desde 12/11/2026.
 - [ ] Recibo con retención de Ganancias / IVA / SUSS.
 - [ ] Recibo de factura en USD: quién calcula la diferencia de cambio.
 - [ ] Anticipo (cobro sin factura) y NC dentro del cobro.

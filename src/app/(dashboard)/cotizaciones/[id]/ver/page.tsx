@@ -74,6 +74,7 @@ interface Quote {
   validUntil: string | null
   currency: string
   exchangeRate: number | null
+  mostrarEnPesos?: boolean
   subtotal: number
   bonification: number
   total: number
@@ -2164,6 +2165,7 @@ export default function QuoteViewPage() {
               total: quote.total,
               currency: quote.currency,
               exchangeRate: quote.exchangeRate,
+              mostrarEnPesos: quote.mostrarEnPesos,
               notes: quote.notes ?? undefined,
               purchaseOrderNumber: quote.purchaseOrderNumber,
               bonification: Number(quote.bonification) || 0,

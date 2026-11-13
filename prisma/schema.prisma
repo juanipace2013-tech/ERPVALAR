@@ -1252,6 +1252,11 @@ model Quote {
   // Tipo de cambio USD->ARS del día
   exchangeRate Decimal @db.Decimal(12, 6)
 
+  // Presentar el presupuesto en pesos (clientes que no aceptan USD). Los importes
+  // siguen guardados en USD; el PDF, el mail y el link público se muestran
+  // convertidos con exchangeRate. Ver src/lib/cotizacion-pesos.ts
+  mostrarEnPesos Boolean @default(false)
+
   // Multiplicador de precio para esta cotización (precargado del cliente)
   multiplier Decimal @default(1.0) @db.Decimal(5, 3)
 

@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { LOGO_BASE64 } from '@/lib/logo-base64'
+import { condicionesComerciales, formatoImporte, type MonedaPresentacion } from '@/lib/cotizacion-pesos'
 
 interface QuotePDFData {
   quoteNumber: string
@@ -37,6 +38,8 @@ interface QuotePDFData {
   bonification: number
   total: number
   exchangeRate: number
+  /** Moneda de los importes que llegan en `items`, `subtotal` y `total`. Default USD. */
+  moneda?: MonedaPresentacion
   paymentTerms: string
   validityDays: number
   purchaseOrderNumber?: string
@@ -55,10 +58,6 @@ const MARGIN_BOTTOM = 20
 const USABLE_BOTTOM = PAGE_HEIGHT - MARGIN_BOTTOM
 const CONTINUATION_TOP = 20 // Top margin for continuation pages (space for header text)
 const BLUE: [number, number, number] = [0, 102, 204]
-
-function fmtUSD(n: number): string {
-  return `USD ${n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
 
 function formatDate(date: Date): string {
   return new Intl.DateTimeFormat('es-AR', {
@@ -223,6 +222,8 @@ function drawFirstPageHeader(doc: jsPDF, data: QuotePDFData): number {
 
 export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
   const doc = new jsPDF()
+  const moneda: MonedaPresentacion = data.moneda ?? 'USD'
+  const fmtImporte = (n: number) => formatoImporte(n, moneda)
 
   // Track which PDF pages are "continuation" pages (no logo, just text header)
   const continuationPages: number[] = []
@@ -240,8 +241,8 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
     `${item.description}\nMarca: ${item.brand}` +
       (item.clientReference ? `\nRef. cliente: ${item.clientReference}` : ''),
     item.quantity.toString(),
-    fmtUSD(item.unitPrice),
-    fmtUSD(item.totalPrice),
+    fmtImporte(item.unitPrice),
+    fmtImporte(item.totalPrice),
     item.deliveryTime
   ])
 
@@ -327,16 +328,16 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
   const GAP = 4 // espacio mínimo entre etiqueta e importe
   doc.setFontSize(9)
   doc.setFont('helvetica', 'normal')
-  let rowsWidth = doc.getTextWidth('Subtotal:') + GAP + doc.getTextWidth(fmtUSD(data.subtotal))
+  let rowsWidth = doc.getTextWidth('Subtotal:') + GAP + doc.getTextWidth(fmtImporte(data.subtotal))
   if (data.bonification > 0) {
     rowsWidth = Math.max(
       rowsWidth,
-      doc.getTextWidth(`Bonif. (${bonifPct}%):`) + GAP + doc.getTextWidth(`- ${fmtUSD(bonifAmount)}`)
+      doc.getTextWidth(`Bonif. (${bonifPct}%):`) + GAP + doc.getTextWidth(`- ${fmtImporte(bonifAmount)}`)
     )
   }
   doc.setFontSize(11)
   doc.setFont('helvetica', 'bold')
-  rowsWidth = Math.max(rowsWidth, doc.getTextWidth('Total:') + GAP + doc.getTextWidth(fmtUSD(data.total)))
+  rowsWidth = Math.max(rowsWidth, doc.getTextWidth('Total:') + GAP + doc.getTextWidth(fmtImporte(data.total)))
   // +6 de sangría de etiqueta y +1 de margen derecho del importe
   const totalsLeft = Math.min(124, totalsRight - (rowsWidth + 7))
 
@@ -350,7 +351,7 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(0, 0, 0)
   doc.text('Subtotal:', totalsLeft + 6, curY + 8)
-  doc.text(fmtUSD(data.subtotal), totalsRight - 1, curY + 8, { align: 'right' })
+  doc.text(fmtImporte(data.subtotal), totalsRight - 1, curY + 8, { align: 'right' })
 
   let bonifOffset = 0
   if (data.bonification > 0) {
@@ -358,7 +359,7 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0, 128, 0)
     doc.text(`Bonif. (${bonifPct}%):`, totalsLeft + 6, curY + 14)
-    doc.text(`- ${fmtUSD(bonifAmount)}`, totalsRight - 1, curY + 14, { align: 'right' })
+    doc.text(`- ${fmtImporte(bonifAmount)}`, totalsRight - 1, curY + 14, { align: 'right' })
     doc.setTextColor(0, 0, 0)
     bonifOffset = 6
   }
@@ -372,7 +373,7 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
   doc.setFontSize(11)
   doc.setFont('helvetica', 'bold')
   doc.text('Total:', totalsLeft + 6, curY + 17 + bonifOffset)
-  doc.text(fmtUSD(data.total), totalsRight - 1, curY + 17 + bonifOffset, { align: 'right' })
+  doc.text(fmtImporte(data.total), totalsRight - 1, curY + 17 + bonifOffset, { align: 'right' })
 
   // Línea final
   doc.setLineWidth(0.3)
@@ -398,20 +399,13 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
 
-  const ivaLegend = data.customer.exterior && !data.pricesIncludeTax
-    ? 'Operación de exportación: los precios no incluyen IVA y están expresados en dólares americanos.'
-    : data.pricesIncludeTax
-    ? 'Los precios INCLUYEN IVA (21%) y están expresados en dólares americanos cotización BNA billete vendedor.'
-    : 'Los precios No incluyen IVA (21%) y estan expresados en dólares americanos cotización BNA billete vendedor.'
-  const conditions = [
-    ivaLegend,
-    `Validez de la oferta: ${data.validityDays} días.`,
-    'Lugar de entrega: 14 de Julio 175 - Paternal. CABA',
-    `Condición de pago: ${data.paymentTerms}`,
-    'Si hubiere una diferencia de cambio ±3% entre la fecha real de acreditación de los fondos y la fecha de',
-    'emisión de la factura, nos veremos obligados a la emisión de una nota de débito o de crédito',
-    'correspondiente a dicha diferencia.'
-  ]
+  const conditions = condicionesComerciales({
+    moneda,
+    exterior: data.customer.exterior,
+    pricesIncludeTax: data.pricesIncludeTax,
+    validityDays: data.validityDays,
+    paymentTerms: data.paymentTerms,
+  })
 
   curY += 8
   conditions.forEach(line => {

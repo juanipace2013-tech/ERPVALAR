@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/prisma'
 import { generateQuotePDF } from '@/lib/pdf/quote-generator'
+import { importesPresentacion, type MonedaPresentacion } from '@/lib/cotizacion-pesos'
 import { esClienteExterior, etiquetaIdFiscal, idFiscalParaMostrar } from '@/lib/cliente-exterior'
 
 export async function GET(
@@ -151,6 +152,7 @@ export async function GET(
       bonification: Number(quote.bonification || 0),
       total: Number(quote.total),
       exchangeRate: Number(quote.exchangeRate),
+      moneda: 'USD' as MonedaPresentacion,
       paymentTerms: quote.terms || 'Cuenta corriente a 30 días fecha factura',
       validityDays: quote.validUntil
         ? Math.ceil((quote.validUntil.getTime() - quote.date.getTime()) / (1000 * 60 * 60 * 24))
@@ -160,6 +162,13 @@ export async function GET(
       tenderNumber: quote.tenderNumber || undefined,
       pricesIncludeTax: quote.pricesIncludeTax,
     }
+
+    // Cotización presentada en pesos: el PDF sale con los importes convertidos
+    const presentacion = importesPresentacion(quote, pdfData.items)
+    pdfData.items = presentacion.items
+    pdfData.subtotal = presentacion.subtotal
+    pdfData.total = presentacion.total
+    pdfData.moneda = presentacion.moneda
 
     // Generar PDF
     const pdfBlob = await generateQuotePDF(pdfData)

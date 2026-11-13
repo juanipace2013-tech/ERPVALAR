@@ -41,6 +41,7 @@ import {
   AlertTriangle,
   History,
   UserRoundPen,
+  ArrowLeftRight,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useSession } from 'next-auth/react'
@@ -54,6 +55,7 @@ import { getBobinasElectrovalvula, type BobinaKit, ELECTROVALVULAS_NAMUR, type N
 import { getPosicionadores, MONTAJE_POSICIONADOR, type PosicionadorOpcion } from '@/lib/genebre-posicionadores'
 import { getRepuestosOpcionales, type RepuestoOpcion } from '@/lib/genebre-repuestos-opcionales'
 import { candidateCodes, findExactSkuMatch } from '@/lib/quotes/manual-sku-match'
+import { cotizacionEnPesos, importesEnPesos } from '@/lib/cotizacion-pesos'
 
 interface Product {
   id: string
@@ -129,6 +131,7 @@ interface Quote {
   bonification: number
   total: number
   pricesIncludeTax: boolean
+  mostrarEnPesos?: boolean
   items: QuoteItem[]
 }
 
@@ -241,6 +244,11 @@ export default function QuoteDetailPage() {
 
   // IVA incluido (Factura B para CF / Monotributo / Exento)
   const [pricesIncludeTaxLoading, setPricesIncludeTaxLoading] = useState(false)
+  // Presentar el presupuesto en pesos (clientes que no aceptan USD)
+  const [showPesosDialog, setShowPesosDialog] = useState(false)
+  const [pesosTC, setPesosTC] = useState('')
+  const [pesosTCFecha, setPesosTCFecha] = useState<string | null>(null)
+  const [pesosLoading, setPesosLoading] = useState(false)
   const [showIvaConfirm, setShowIvaConfirm] = useState<null | { target: boolean }>(null)
 
   // Reasignar vendedor
@@ -801,6 +809,58 @@ export default function QuoteDetailPage() {
       toast.error('Error al cambiar el modo de IVA')
     } finally {
       setPricesIncludeTaxLoading(false)
+    }
+  }
+
+  // Abre el diálogo "Pasar a pesos" proponiendo el dólar del día (BNA billete
+  // venta cargado en /tipo-cambio); si no hay, queda el TC de la cotización.
+  const handleOpenPesosDialog = async () => {
+    if (!quote) return
+    setPesosTC(Number(quote.exchangeRate).toFixed(2))
+    setPesosTCFecha(null)
+    setShowPesosDialog(true)
+    try {
+      const response = await fetch('/api/tipo-cambio')
+      if (!response.ok) return
+      const data = await response.json()
+      const usdArs = (data.rates || []).find(
+        (r: { fromCurrency: string; toCurrency: string }) =>
+          r.fromCurrency === 'USD' && r.toCurrency === 'ARS'
+      )
+      if (usdArs) {
+        setPesosTC(Number(usdArs.rate).toFixed(2))
+        setPesosTCFecha(usdArs.validFrom || null)
+      }
+    } catch {
+      // sin TC del día: se usa el de la cotización, editable en el diálogo
+    }
+  }
+
+  const handleSetMostrarEnPesos = async (pasarAPesos: boolean) => {
+    const tc = parseFloat(pesosTC.replace(',', '.'))
+    if (pasarAPesos && (isNaN(tc) || tc <= 0)) {
+      toast.error('El tipo de cambio debe ser mayor a 0')
+      return
+    }
+    try {
+      setPesosLoading(true)
+      const response = await fetch(`/api/quotes/${quoteId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(pasarAPesos ? { mostrarEnPesos: true, exchangeRate: tc } : { mostrarEnPesos: false }),
+      })
+      if (!response.ok) throw new Error()
+      setShowPesosDialog(false)
+      toast.success(
+        pasarAPesos
+          ? `Presupuesto en pesos al tipo de cambio ${formatNumber(tc)}`
+          : 'Presupuesto de nuevo en dólares'
+      )
+      await fetchQuoteData()
+    } catch {
+      toast.error('No se pudo cambiar la moneda del presupuesto')
+    } finally {
+      setPesosLoading(false)
     }
   }
 
@@ -1545,7 +1605,23 @@ export default function QuoteDetailPage() {
     )
   }
 
-  const totalInARS = Number(quote.total) * Number(quote.exchangeRate)
+  // En pesos se muestran los mismos importes que salen en el PDF (unitario
+  // redondeado a centavos y totales rearmados desde ahí).
+  const enPesos = cotizacionEnPesos(quote)
+  const lineasImporte = quote.items.map((it) => ({
+    id: it.id,
+    quantity: Number(it.quantity),
+    unitPrice: Number(it.unitPrice),
+    totalPrice: Number(it.totalPrice),
+    isAlternative: it.isAlternative,
+  }))
+  const bonifPct = Number(quote.bonification) || 0
+  const importesARS =
+    Number(quote.exchangeRate) > 0 ? importesEnPesos(lineasImporte, bonifPct, Number(quote.exchangeRate)) : null
+  const arsPorItem = new Map((importesARS?.items ?? []).map((it) => [it.id, it]))
+  const totalInARS = importesARS ? importesARS.total : Number(quote.total) * Number(quote.exchangeRate)
+  const pesosTCNum = parseFloat(pesosTC.replace(',', '.'))
+  const pesosPreview = pesosTCNum > 0 ? importesEnPesos(lineasImporte, bonifPct, pesosTCNum) : null
 
   return (
     <div className="space-y-6">
@@ -1576,6 +1652,28 @@ export default function QuoteDetailPage() {
           >
             <Eye className="h-4 w-4" />
           </Button>
+          {quote.currency === 'USD' && (
+            enPesos ? (
+              <Button
+                variant="outline"
+                onClick={() => handleSetMostrarEnPesos(false)}
+                disabled={pesosLoading}
+                title="El presupuesto vuelve a mostrarse en dólares"
+              >
+                {pesosLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ArrowLeftRight className="h-4 w-4 mr-2" />}
+                Volver a USD
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={handleOpenPesosDialog}
+                title="Presentar el presupuesto en pesos argentinos"
+              >
+                <ArrowLeftRight className="h-4 w-4 mr-2" />
+                Pasar a pesos
+              </Button>
+            )
+          )}
           <Button
             variant="outline"
             onClick={async () => {
@@ -1605,6 +1703,16 @@ export default function QuoteDetailPage() {
           </Button>
         </div>
       </div>
+
+      {enPesos && (
+        <Alert className="border-amber-300 bg-amber-50">
+          <AlertDescription className="text-amber-900">
+            <strong>Presupuesto en pesos.</strong> El PDF, el mail y el link del cliente salen en pesos
+            argentinos a $ {formatNumber(quote.exchangeRate)} por dólar, sin referencias a USD. Acá se sigue
+            cargando y editando en dólares; si cambiás el tipo de cambio, cambian los importes en pesos.
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Quote Info */}
       <Card className="border-blue-200">
@@ -3027,10 +3135,11 @@ export default function QuoteDetailPage() {
                               <p className="text-xl font-mono font-bold text-blue-900">
                                 USD {formatNumber(mainItem.totalPrice)}
                               </p>
-                              <p className="text-sm text-muted-foreground">
+                              <p className={enPesos ? 'text-sm font-mono font-semibold text-amber-800' : 'text-sm text-muted-foreground'}>
                                 ARS{' '}
                                 {formatNumber(
-                                  Number(mainItem.totalPrice) * Number(quote.exchangeRate)
+                                  arsPorItem.get(mainItem.id)?.totalPrice ??
+                                    Number(mainItem.totalPrice) * Number(quote.exchangeRate)
                                 )}
                               </p>
                             </div>
@@ -3255,9 +3364,12 @@ export default function QuoteDetailPage() {
               <span>Total:</span>
               <div className="text-right">
                 <div className="font-mono">USD {formatNumber(quote.total)}</div>
-                <div className="text-lg font-normal text-muted-foreground">
+                <div className={enPesos ? 'text-xl font-mono text-amber-800' : 'text-lg font-normal text-muted-foreground'}>
                   ARS {formatNumber(totalInARS)}
                 </div>
+                {enPesos && (
+                  <div className="text-xs font-normal text-amber-800">Total que ve el cliente</div>
+                )}
               </div>
             </div>
 
@@ -3316,6 +3428,71 @@ export default function QuoteDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Pasar el presupuesto a pesos */}
+      <Dialog open={showPesosDialog} onOpenChange={(open) => !pesosLoading && setShowPesosDialog(open)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Pasar el presupuesto a pesos</DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-2 pt-2 text-sm">
+                <p>
+                  El PDF, el mail y el link del cliente van a salir en <strong>pesos argentinos</strong>, sin
+                  referencias al dólar ni a diferencia de cambio.
+                </p>
+                <p>
+                  La cotización se sigue guardando en USD (comisiones y análisis no cambian) y se puede volver
+                  atrás con el botón Volver a USD.
+                </p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="pesos-tc">Tipo de cambio (pesos por dólar)</Label>
+              <Input
+                id="pesos-tc"
+                type="number"
+                step="0.01"
+                min="1"
+                value={pesosTC}
+                onChange={(e) => setPesosTC(e.target.value)}
+                className="w-40 font-mono"
+                disabled={pesosLoading}
+              />
+              <p className="text-xs text-muted-foreground">
+                {pesosTCFecha
+                  ? `Dólar BNA billete venta cargado el ${new Date(pesosTCFecha).toLocaleDateString('es-AR')}. Se puede cambiar.`
+                  : 'Tipo de cambio de la cotización. Se puede cambiar.'}{' '}
+                Queda guardado como tipo de cambio de la cotización.
+              </p>
+            </div>
+            <div className="rounded-lg border bg-gray-50 p-3 text-sm space-y-1">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Total en dólares:</span>
+                <span className="font-mono">USD {formatNumber(quote.total)}</span>
+              </div>
+              <div className="flex justify-between font-semibold">
+                <span>Total en pesos:</span>
+                <span className="font-mono">{pesosPreview ? `$ ${formatNumber(pesosPreview.total)}` : '—'}</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowPesosDialog(false)} disabled={pesosLoading}>
+              Cancelar
+            </Button>
+            <Button
+              className="bg-blue-600 hover:bg-blue-700"
+              onClick={() => handleSetMostrarEnPesos(true)}
+              disabled={pesosLoading || !pesosPreview}
+            >
+              {pesosLoading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Pasar a pesos
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal confirmación toggle pricesIncludeTax */}
       <Dialog

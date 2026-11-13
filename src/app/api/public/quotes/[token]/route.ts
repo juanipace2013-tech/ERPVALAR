@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyPublicToken } from '@/lib/email/send-quote-email';
 import { logger } from '@/lib/logger'
+import { importesPresentacion } from '@/lib/cotizacion-pesos'
 
 /**
  * GET - Obtener cotización usando token público
@@ -29,6 +30,20 @@ export async function GET(
         totalPrice: Number(item.totalPrice)
       }))
     };
+
+    // Cotización presentada en pesos: el cliente ve los importes convertidos y
+    // ninguna referencia al dólar (ni moneda ni tipo de cambio).
+    const presentacion = importesPresentacion(quote, serializedQuote.items);
+    if (presentacion.moneda === 'ARS' && quote.currency === 'USD') {
+      return NextResponse.json({
+        ...serializedQuote,
+        currency: 'ARS',
+        exchangeRate: null,
+        items: presentacion.items,
+        subtotal: presentacion.subtotal,
+        total: presentacion.total,
+      });
+    }
 
     return NextResponse.json(serializedQuote);
   } catch (error) {

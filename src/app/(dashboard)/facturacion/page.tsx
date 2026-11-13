@@ -146,6 +146,7 @@ interface BoardCard {
   }
   salesPerson: { id: string; name: string }
   currency: 'USD' | 'ARS'
+  mostrarEnPesos?: boolean
   total: number
   exchangeRate: number
   bonification: number
@@ -537,6 +538,7 @@ export default function FacturacionPage() {
       total: quote.total,
       currency: quote.currency,
       exchangeRate: quote.exchangeRate,
+      mostrarEnPesos: quote.mostrarEnPesos,
       notes: quote.notes ?? undefined,
       purchaseOrderNumber: quote.purchaseOrderNumber,
       bonification: quote.bonification,

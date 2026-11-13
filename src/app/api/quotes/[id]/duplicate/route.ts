@@ -159,6 +159,7 @@ export async function POST(
           subtotal: originalQuote.subtotal,
           total: originalQuote.total,
           pricesIncludeTax: originalQuote.pricesIncludeTax,
+          mostrarEnPesos: originalQuote.mostrarEnPesos,
           validUntil: newValidUntil,
           terms: originalQuote.terms,
           notes: originalQuote.notes,

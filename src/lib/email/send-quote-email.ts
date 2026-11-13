@@ -9,6 +9,7 @@ import { generateQuoteEmailHTML, generateQuoteEmailText } from './templates/quot
 import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import { esClienteExterior, etiquetaIdFiscal, idFiscalParaMostrar } from '@/lib/cliente-exterior'
+import { importesPresentacion, formatoImporte, type MonedaPresentacion } from '@/lib/cotizacion-pesos'
 
 interface SendQuoteEmailOptions {
   quoteId: string
@@ -64,11 +65,20 @@ export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
   const rejectUrl = `${appUrl}/public/quotes/${publicToken}?action=reject`
 
   // Formatear datos para el template
-  const currencySymbol = quote.currency === 'USD' ? 'USD' : 'ARS'
-  const formattedTotal = `${currencySymbol} ${Number(quote.total).toLocaleString('es-AR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`
+  // Si la cotización se presenta en pesos, el cuerpo del mail también va en pesos
+  const enMail = importesPresentacion(
+    quote,
+    quote.items.map((item) => ({
+      item,
+      quantity: item.quantity,
+      unitPrice: Number(item.unitPrice),
+      totalPrice: Number(item.totalPrice),
+      isAlternative: item.isAlternative,
+    }))
+  )
+  const currencySymbol = enMail.moneda
+  const fmtPrice = (n: number) => formatoImporte(n, enMail.moneda)
+  const formattedTotal = fmtPrice(enMail.total)
 
   const formattedValidUntil = quote.validUntil
     ? new Date(quote.validUntil).toLocaleDateString('es-AR', {
@@ -79,16 +89,13 @@ export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
     : 'No especificada'
 
   // Preparar items para el email (solo principales, sin alternativas)
-  const fmtPrice = (n: number) =>
-    `${currencySymbol} ${n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-
-  const emailItems = quote.items
-    .filter((item) => !item.isAlternative)
-    .map((item) => ({
+  const emailItems = enMail.items
+    .filter((linea) => !linea.isAlternative)
+    .map(({ item, unitPrice, totalPrice }) => ({
       description: item.product?.name || item.description || 'Item',
       quantity: item.quantity,
-      unitPrice: fmtPrice(Number(item.unitPrice)),
-      totalPrice: fmtPrice(Number(item.totalPrice)),
+      unitPrice: fmtPrice(unitPrice),
+      totalPrice: fmtPrice(totalPrice),
       deliveryTime: item.deliveryTime || 'Consultar',
       clientReference: item.clientReference,
     }))
@@ -183,6 +190,7 @@ export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
       bonification: Number(quote.bonification || 0),
       total: Number(quote.total),
       exchangeRate: Number(quote.exchangeRate),
+      moneda: 'USD' as MonedaPresentacion,
       paymentTerms: quote.terms || 'Cuenta corriente a 30 días fecha factura',
       validityDays: quote.validUntil
         ? Math.ceil((quote.validUntil.getTime() - quote.date.getTime()) / (1000 * 60 * 60 * 24))
@@ -192,6 +200,13 @@ export async function sendQuoteEmail(options: SendQuoteEmailOptions) {
       tenderNumber: quote.tenderNumber || undefined,
       pricesIncludeTax: quote.pricesIncludeTax,
     }
+
+    // Cotización presentada en pesos: el PDF sale con los importes convertidos
+    const presentacion = importesPresentacion(quote, pdfData.items)
+    pdfData.items = presentacion.items
+    pdfData.subtotal = presentacion.subtotal
+    pdfData.total = presentacion.total
+    pdfData.moneda = presentacion.moneda
 
     const pdfBlob = await generateQuotePDF(pdfData)
     const buffer = Buffer.from(await pdfBlob.arrayBuffer())

@@ -233,6 +233,8 @@ export async function PUT(
     if (body.bonification !== undefined) updateData.bonification = body.bonification
     if (body.tenderNumber !== undefined) updateData.tenderNumber = body.tenderNumber || null
     if (body.pricesIncludeTax !== undefined) updateData.pricesIncludeTax = body.pricesIncludeTax
+    // Presentar el presupuesto en pesos: solo cambia la marca, los importes siguen en USD
+    if (typeof body.mostrarEnPesos === 'boolean') updateData.mostrarEnPesos = body.mostrarEnPesos
 
     const quote = await prisma.quote.update({
       where: { id },

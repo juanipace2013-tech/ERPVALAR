@@ -113,6 +113,9 @@ interface SendToColppyDialogProps {
     total: number;
     currency: string;
     exchangeRate: number | null;
+    /** El presupuesto se le presentó al cliente en pesos: la factura arranca
+     *  en pesos y con el TC de la cotización, para que coincida con lo cotizado. */
+    mostrarEnPesos?: boolean;
     notes?: string;
     /** N° de OC del cliente cargado en la cotización (para el comentario de línea). */
     purchaseOrderNumber?: string | null;
@@ -237,8 +240,13 @@ export function SendToColppyDialog({
   // Inicializar datos cuando se abre el dialog
   useEffect(() => {
     if (open) {
-      setTcModo('BILLETE');
-      setTcManual('');
+      // Presupuesto presentado en pesos: la factura arranca en pesos y con el
+      // TC de la cotización, así coincide con lo que se le cotizó al cliente.
+      const presupuestoEnPesos =
+        quote.currency === 'USD' && quote.mostrarEnPesos === true && Number(quote.exchangeRate) > 0;
+      setTcModo(presupuestoEnPesos ? 'DIVISA' : 'BILLETE');
+      setTcManual(presupuestoEnPesos ? String(Number(quote.exchangeRate)) : '');
+      setMonedaFactura(presupuestoEnPesos ? 'ARS' : 'USD');
       // Inicializar items. El comentario arranca vacío: cotización, remito y OC
       // ya salen en el encabezado de la factura; acá va lo propio de cada línea
       // (N° de ítem/SOLPED de la OC, etc.) y se imprime debajo de la descripción.
@@ -292,7 +300,6 @@ export function SendToColppyDialog({
       // Inicializar descripción y OC (la de la cotización)
       setDescripcionFactura(`Cotización ${quote.quoteNumber}`);
       setOrdenCompra(quote.purchaseOrderNumber ?? '');
-      setMonedaFactura('USD');
     }
   }, [open, quote]);
 
@@ -823,6 +830,11 @@ export function SendToColppyDialog({
                 {formatCurrency(totales.total, quote.currency)}
               </span>
             </div>
+            {quote.currency === 'USD' && quote.mostrarEnPesos && (
+              <div className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800">
+                El presupuesto se le presentó al cliente en pesos: se propone facturar en pesos al TC de la cotización.
+              </div>
+            )}
             {quote.currency === 'USD' && monedaFactura === 'ARS' && (
               <div className="flex justify-between rounded bg-amber-50 px-2 py-1 text-amber-900">
                 <span className="font-semibold">Factura en pesos (TC {tcEfectivo ? tcEfectivo.toLocaleString('es-AR', { minimumFractionDigits: 2 }) : '—'}):</span>

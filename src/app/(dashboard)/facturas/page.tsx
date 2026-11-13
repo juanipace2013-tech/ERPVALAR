@@ -33,6 +33,9 @@ interface Invoice {
     name: string
     cuit: string
   }
+  /** Cotización y remito de origen: de ahí sale la orden de compra del cliente */
+  quote?: { quoteNumber: string; purchaseOrderNumber: string | null } | null
+  deliveryNote?: { purchaseOrder: string | null } | null
   _count?: {
     stockMovements: number
     journalEntries: number
@@ -235,7 +238,7 @@ export default function FacturasPage() {
             <div className="relative">
               <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar por número, cliente o CUIT..."
+                placeholder="Buscar por número, cliente, CUIT, orden de compra o cotización..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-10"
@@ -270,6 +273,7 @@ export default function FacturasPage() {
                     <TableHead>Número</TableHead>
                     <TableHead>Tipo</TableHead>
                     <TableHead>Cliente</TableHead>
+                    <TableHead>OC / Cotización</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead>Fecha Emisión</TableHead>
                     <TableHead>Vencimiento</TableHead>
@@ -297,6 +301,10 @@ export default function FacturasPage() {
                             {invoice.customer.cuit}
                           </div>
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm">{invoice.quote?.purchaseOrderNumber || invoice.deliveryNote?.purchaseOrder || '—'}</div>
+                        {invoice.quote?.quoteNumber && <div className="text-xs text-muted-foreground">{invoice.quote.quoteNumber}</div>}
                       </TableCell>
                       <TableCell>
                         <Badge className={statusColors[invoice.status]}>

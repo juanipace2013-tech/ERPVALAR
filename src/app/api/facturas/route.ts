@@ -30,6 +30,10 @@ export async function GET(request: NextRequest) {
               { customer: { name: { contains: search, mode: 'insensitive' } } },
               { customer: { cuit: { contains: search } } },
               { cae: { contains: search } },
+              // Orden de compra del cliente: la de la cotización o la del remito
+              { quote: { purchaseOrderNumber: { contains: search, mode: 'insensitive' } } },
+              { deliveryNote: { purchaseOrder: { contains: search, mode: 'insensitive' } } },
+              { quote: { quoteNumber: { contains: search, mode: 'insensitive' } } },
             ],
           }
         : {}),
@@ -39,7 +43,11 @@ export async function GET(request: NextRequest) {
       prisma.invoice.count({ where }),
       prisma.invoice.findMany({
         where,
-        include: { customer: { select: { id: true, name: true, cuit: true } } },
+        include: {
+          customer: { select: { id: true, name: true, cuit: true } },
+          quote: { select: { quoteNumber: true, purchaseOrderNumber: true } },
+          deliveryNote: { select: { purchaseOrder: true } },
+        },
         orderBy: [{ issueDate: 'desc' }, { createdAt: 'desc' }],
         take: limit,
         skip: offset,

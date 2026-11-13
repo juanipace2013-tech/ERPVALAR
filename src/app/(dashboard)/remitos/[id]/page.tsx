@@ -170,6 +170,19 @@ const REVERSAL_MAP: Record<string, string> = {
   DELIVERED: 'DISPATCHED',
 }
 
+/**
+ * Nombre del archivo que se descarga: "Remito-RE-0006-00001187 CENTRAL PUERTO S A.pdf"
+ * (mismo formato que el adjunto del mail del remito), para encontrarlo por cliente.
+ */
+function nombreArchivoRemito(prefijo: string, numero: string, destinatario: string | null | undefined, ext: string): string {
+  const nombre = (destinatario || '')
+    .replace(/[/\\:*?"<>|]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80)
+  return `${prefijo}-${numero.replace(/\s/g, '-')}${nombre ? ` ${nombre}` : ''}.${ext}`
+}
+
 export default function DeliveryNoteDetailPage() {
   const params = useParams()
   const searchParams = useSearchParams()
@@ -390,7 +403,7 @@ export default function DeliveryNoteDetailPage() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `Remito-${deliveryNumber.replace(/\s/g, '-')}.pdf`
+      a.download = nombreArchivoRemito('Remito', deliveryNumber, recipientLegalName || recipientName, 'pdf')
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -437,7 +450,7 @@ export default function DeliveryNoteDetailPage() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `Rotulo-${deliveryNote.deliveryNumber.replace(/\s/g, '-')}.pdf`
+      a.download = nombreArchivoRemito('Rotulo', deliveryNote.deliveryNumber, deliveryNote.supplier?.legalName || deliveryNote.supplier?.name || deliveryNote.customer?.businessName || deliveryNote.customer?.name, 'pdf')
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -462,7 +475,7 @@ export default function DeliveryNoteDetailPage() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `Remito-${deliveryNote.deliveryNumber.replace(/\s/g, '-')}.xlsx`
+      a.download = nombreArchivoRemito('Remito', deliveryNote.deliveryNumber, deliveryNote.supplier?.legalName || deliveryNote.supplier?.name || deliveryNote.customer?.businessName || deliveryNote.customer?.name, 'xlsx')
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)

@@ -296,7 +296,7 @@ export default function AnalisisCrediticioPage() {
     try {
       setLoadingHistory(true)
       const params = new URLSearchParams()
-      if (histCuitFilter) params.append('cuit', histCuitFilter.replace(/\D/g, ''))
+      if (histCuitFilter.trim()) params.append('q', histCuitFilter.trim())
       if (histDateFrom) params.append('dateFrom', histDateFrom)
       if (histDateTo) params.append('dateTo', histDateTo)
       params.append('limit', '50')
@@ -670,12 +670,12 @@ export default function AnalisisCrediticioPage() {
             {/* Filtros historial */}
             <div className="flex flex-wrap gap-3 items-end border rounded-lg p-3 bg-gray-50">
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">CUIT</label>
+                <label className="text-xs text-gray-500 mb-1 block">CUIT o nombre</label>
                 <Input
-                  placeholder="Filtrar por CUIT"
+                  placeholder="CUIT o nombre del cliente"
                   value={histCuitFilter}
                   onChange={(e) => setHistCuitFilter(e.target.value)}
-                  className="h-8 text-sm w-40 font-mono"
+                  className="h-8 text-sm w-56"
                 />
               </div>
               <div>

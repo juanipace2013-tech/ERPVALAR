@@ -13,6 +13,8 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const cuit = searchParams.get('cuit')
+    // Búsqueda libre: por CUIT (con o sin guiones) o por nombre del cliente
+    const q = (searchParams.get('q') || '').trim()
     const userId = searchParams.get('userId')
     const dateFrom = searchParams.get('dateFrom')
     const dateTo = searchParams.get('dateTo')
@@ -20,6 +22,15 @@ export async function GET(request: NextRequest) {
 
     const where: any = {}
     if (cuit) where.cuit = { contains: cuit.replace(/\D/g, '') }
+    if (q) {
+      const digitos = q.replace(/\D/g, '')
+      // Solo números/guiones/puntos: se busca como CUIT; si no, por nombre
+      // (y también por CUIT si el texto trae dígitos).
+      const soloCuit = /^[\d\s.\-]+$/.test(q)
+      const porNombre = { customerName: { contains: q, mode: 'insensitive' as const } }
+      const porCuit = { cuit: { contains: digitos } }
+      where.OR = soloCuit ? [porCuit] : digitos.length >= 3 ? [porNombre, porCuit] : [porNombre]
+    }
     if (userId && userId !== 'all') where.userId = userId
     if (dateFrom || dateTo) {
       where.searchDate = {}

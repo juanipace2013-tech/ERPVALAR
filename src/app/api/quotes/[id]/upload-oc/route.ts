@@ -37,7 +37,7 @@ export async function POST(
       return NextResponse.json({ error: 'Cotización no encontrada' }, { status: 404 })
     }
 
-    if (quote.status !== 'ACCEPTED' && quote.status !== 'CONVERTED') {
+    if (quote.status !== 'ACCEPTED' && quote.status !== 'CONVERTED' && quote.status !== 'FACTURADA_PARCIAL') {
       return NextResponse.json(
         { error: 'Solo se puede adjuntar OC a cotizaciones aceptadas' },
         { status: 400 }
@@ -143,7 +143,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Cotización no encontrada' }, { status: 404 })
     }
 
-    if (quote.status !== 'ACCEPTED' && quote.status !== 'CONVERTED') {
+    if (quote.status !== 'ACCEPTED' && quote.status !== 'CONVERTED' && quote.status !== 'FACTURADA_PARCIAL') {
       return NextResponse.json(
         { error: 'Solo se puede editar OC de cotizaciones aceptadas' },
         { status: 400 }

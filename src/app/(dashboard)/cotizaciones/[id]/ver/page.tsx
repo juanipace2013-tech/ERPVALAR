@@ -1060,8 +1060,8 @@ export default function QuoteViewPage() {
         </CardContent>
       </Card>
 
-      {/* Orden de Compra del Cliente — solo para ACCEPTED / CONVERTED */}
-      {(quote.status === 'ACCEPTED' || quote.status === 'CONVERTED') && (
+      {/* Orden de Compra del Cliente — aceptada, facturada parcial o facturada */}
+      {(quote.status === 'ACCEPTED' || quote.status === 'CONVERTED' || quote.status === 'FACTURADA_PARCIAL') && (
         <Card className="mb-6 border-amber-200">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">

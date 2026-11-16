@@ -408,9 +408,21 @@ export async function generateQuotePDF(data: QuotePDFData): Promise<Blob> {
   })
 
   curY += 8
+  // Una condición puede traer saltos de línea (condición de pago escrita en
+  // varios renglones) o ser más ancha que la hoja: se parte y cada renglón
+  // avanza el cursor, así no se pisa con la línea siguiente.
+  const anchoCondiciones = PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT
   conditions.forEach(line => {
-    doc.text(line, MARGIN_LEFT, curY)
-    curY += 5
+    const renglones = doc.splitTextToSize(line, anchoCondiciones) as string[]
+    renglones.forEach(renglon => {
+      if (curY > USABLE_BOTTOM) {
+        doc.addPage()
+        continuationPages.push(doc.getNumberOfPages())
+        curY = CONTINUATION_TOP
+      }
+      doc.text(renglon, MARGIN_LEFT, curY)
+      curY += 5
+    })
   })
 
   // Firma

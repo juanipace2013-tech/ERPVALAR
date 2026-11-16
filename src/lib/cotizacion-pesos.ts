@@ -123,7 +123,9 @@ export function condicionesComerciales(o: {
     leyendaPrecios,
     `Validez de la oferta: ${o.validityDays} días.`,
     'Lugar de entrega: 14 de Julio 175 - Paternal. CABA',
-    `Condición de pago: ${o.paymentTerms}`,
+    // Si la condición ya viene escrita con el rótulo ("Condición de pago: ..."),
+    // no se repite.
+    `Condición de pago: ${(o.paymentTerms ?? '').replace(/^\s*condici[oó]n(es)? de pago\s*:\s*/i, '').trim()}`,
     ...(enPesos
       ? []
       : [

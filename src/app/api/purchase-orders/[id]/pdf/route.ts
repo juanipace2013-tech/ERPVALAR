@@ -73,6 +73,7 @@ export async function GET(
         unitCost: Number(item.unitCost),
         discount: Number(item.discount),
         taxRate: Number(item.taxRate),
+        deliveryTime: item.deliveryTime,
       })),
       notes: order.notes,
     })

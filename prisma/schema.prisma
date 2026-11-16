@@ -500,6 +500,9 @@ model PurchaseOrderItem {
 
   description String?
 
+  // Plazo de entrega acordado con el proveedor para este ítem (ej: "6 semanas")
+  deliveryTime String? @db.VarChar(100)
+
   purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
   product       Product?      @relation(fields: [productId], references: [id])
 

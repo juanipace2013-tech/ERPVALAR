@@ -28,6 +28,8 @@ export interface PurchaseOrderPDFData {
     discount: number
     /** Porcentaje 0-100 */
     taxRate: number
+    /** Plazo de entrega acordado para el ítem (texto libre) */
+    deliveryTime?: string | null
   }>
   notes?: string | null
 }
@@ -231,6 +233,7 @@ export async function generatePurchaseOrderPDF(data: PurchaseOrderPDFData): Prom
 
   const hasCodes = data.items.some((i) => i.code)
   const hasDiscount = data.items.some((i) => i.discount > 0)
+  const hasPlazo = data.items.some((i) => i.deliveryTime?.trim())
 
   const head = [
     'Item',
@@ -240,6 +243,7 @@ export async function generatePurchaseOrderPDF(data: PurchaseOrderPDFData): Prom
     'Precio\n(Unitario)',
     ...(hasDiscount ? ['Desc.'] : []),
     'Precio\n(Total)',
+    ...(hasPlazo ? ['Plazo de\nentrega'] : []),
   ]
   const body = data.items.map((item, idx) => {
     const lineNet = item.quantity * item.unitCost * (1 - item.discount / 100)
@@ -251,11 +255,12 @@ export async function generatePurchaseOrderPDF(data: PurchaseOrderPDFData): Prom
       fmtMoney(item.unitCost, currency),
       ...(hasDiscount ? [item.discount > 0 ? `${fmtNumber(item.discount)}%` : '-'] : []),
       fmtMoney(lineNet, currency),
+      ...(hasPlazo ? [item.deliveryTime?.trim() || '-'] : []),
     ]
   })
 
   // Anchos fijos para números; la descripción se lleva el resto
-  const fixed = 12 + (hasCodes ? 28 : 0) + 15 + 29 + (hasDiscount ? 14 : 0) + 29
+  const fixed = 12 + (hasCodes ? 28 : 0) + 15 + 29 + (hasDiscount ? 14 : 0) + 29 + (hasPlazo ? 22 : 0)
   const columnStyles: Record<number, { halign?: 'center' | 'right'; cellWidth: number }> = {}
   let col = 0
   columnStyles[col++] = { halign: 'center', cellWidth: 12 }
@@ -265,6 +270,7 @@ export async function generatePurchaseOrderPDF(data: PurchaseOrderPDFData): Prom
   columnStyles[col++] = { halign: 'right', cellWidth: 29 }
   if (hasDiscount) columnStyles[col++] = { halign: 'center', cellWidth: 14 }
   columnStyles[col++] = { halign: 'right', cellWidth: 29 }
+  if (hasPlazo) columnStyles[col++] = { halign: 'center', cellWidth: 22 }
 
   autoTable(doc, {
     startY: tableStartY,

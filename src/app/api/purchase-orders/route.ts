@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { plazoEntregaItem } from '@/lib/ordenes-compra/plazo-entrega'
 import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
@@ -167,6 +168,7 @@ export async function POST(request: NextRequest) {
               taxRate: itemTaxRate(item),
               subtotal: Number(item.quantity) * Number(item.unitCost),
               description: item.description,
+              deliveryTime: plazoEntregaItem(item.deliveryTime),
             })),
           },
         },

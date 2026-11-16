@@ -51,6 +51,7 @@ interface OrderItem {
   discount: number
   taxRate: number
   subtotal: number
+  deliveryTime: string
 }
 
 // Selector de producto con búsqueda debounced + opción de item manual.
@@ -296,6 +297,7 @@ export default function NewPurchaseOrderPage() {
         discount: 0,
         taxRate: 21,
         subtotal: 0,
+        deliveryTime: '',
       },
     ])
   }
@@ -409,6 +411,7 @@ export default function NewPurchaseOrderPage() {
             unitCost: item.unitCost,
             discount: item.discount,
             taxRate: item.taxRate,
+            deliveryTime: item.deliveryTime,
           })),
         }),
       })
@@ -555,6 +558,7 @@ export default function NewPurchaseOrderPage() {
                         <TableHead className="w-[100px]">Desc %</TableHead>
                         <TableHead className="w-[100px]">IVA %</TableHead>
                         <TableHead className="w-[120px]">Subtotal</TableHead>
+                        <TableHead className="w-[150px]">Plazo de entrega</TableHead>
                         <TableHead className="w-[50px]"></TableHead>
                       </TableRow>
                     </TableHeader>
@@ -632,6 +636,14 @@ export default function NewPurchaseOrderPage() {
                           </TableCell>
                           <TableCell className="font-semibold">
                             {formatCurrency(item.subtotal)}
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              value={item.deliveryTime}
+                              onChange={(e) => updateItem(index, 'deliveryTime', e.target.value)}
+                              placeholder="Ej: 6 semanas"
+                              maxLength={100}
+                            />
                           </TableCell>
                           <TableCell>
                             <Button

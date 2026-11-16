@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { plazoEntregaItem } from '@/lib/ordenes-compra/plazo-entrega'
 import { logger } from '@/lib/logger'
 import { requireRole, ROLES } from '@/lib/authz';
 
@@ -67,6 +68,17 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
+
+    // Plazo de entrega por ítem: [{ id, deliveryTime }]. Solo toca ítems de esta OC.
+    if (Array.isArray(body.itemsDeliveryTime)) {
+      for (const it of body.itemsDeliveryTime) {
+        if (!it || typeof it.id !== 'string') continue
+        await prisma.purchaseOrderItem.updateMany({
+          where: { id: it.id, purchaseOrderId: id },
+          data: { deliveryTime: plazoEntregaItem(it.deliveryTime) },
+        })
+      }
+    }
 
     const purchaseOrder = await prisma.purchaseOrder.update({
       where: { id },

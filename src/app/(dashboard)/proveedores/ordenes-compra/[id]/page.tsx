@@ -67,6 +67,7 @@ interface PurchaseOrder {
     taxRate: number
     subtotal: number
     description: string | null
+    deliveryTime: string | null
     product: {
       id: string
       name: string
@@ -122,11 +123,41 @@ export default function PurchaseOrderDetailPage() {
   const [paymentTerms, setPaymentTerms] = useState('')
   const [generalDiscount, setGeneralDiscount] = useState(0)
 
+  // Plazo de entrega por ítem: texto en edición (por id de ítem) y cuál se está guardando
+  const [plazos, setPlazos] = useState<Record<string, string>>({})
+  const [savingPlazoId, setSavingPlazoId] = useState<string | null>(null)
+
   useEffect(() => {
     if (params.id) {
       fetchOrder()
     }
   }, [params.id])
+
+  const handleSavePlazo = async (itemId: string) => {
+    if (!order) return
+    const item = order.items.find((i) => i.id === itemId)
+    const nuevo = (plazos[itemId] ?? '').trim()
+    if (!item || nuevo === (item.deliveryTime ?? '')) return
+    try {
+      setSavingPlazoId(itemId)
+      const response = await fetch(`/api/purchase-orders/${order.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemsDeliveryTime: [{ id: itemId, deliveryTime: nuevo }] }),
+      })
+      if (!response.ok) throw new Error()
+      setOrder({
+        ...order,
+        items: order.items.map((i) => (i.id === itemId ? { ...i, deliveryTime: nuevo || null } : i)),
+      })
+      toast.success(nuevo ? 'Plazo de entrega guardado' : 'Plazo de entrega borrado')
+    } catch {
+      toast.error('No se pudo guardar el plazo de entrega')
+      setPlazos((p) => ({ ...p, [itemId]: item.deliveryTime ?? '' }))
+    } finally {
+      setSavingPlazoId(null)
+    }
+  }
 
   const fetchOrder = async () => {
     try {
@@ -474,6 +505,7 @@ export default function PurchaseOrderDetailPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Producto</TableHead>
+                  <TableHead>Plazo de entrega</TableHead>
                   <TableHead className="text-right">Cantidad</TableHead>
                   <TableHead className="text-right">Recibido</TableHead>
                   <TableHead className="text-right">Costo Unit.</TableHead>
@@ -501,6 +533,18 @@ export default function PurchaseOrderDetailPage() {
                           <p className="text-xs text-amber-600">Item manual (sin producto)</p>
                         )}
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        value={plazos[item.id] ?? item.deliveryTime ?? ''}
+                        onChange={(e) => setPlazos((p) => ({ ...p, [item.id]: e.target.value }))}
+                        onBlur={() => handleSavePlazo(item.id)}
+                        onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                        placeholder="Ej: 6 semanas"
+                        maxLength={100}
+                        disabled={savingPlazoId === item.id}
+                        className="h-8 w-36 text-sm"
+                      />
                     </TableCell>
                     <TableCell className="text-right">{item.quantity}</TableCell>
                     <TableCell className="text-right">

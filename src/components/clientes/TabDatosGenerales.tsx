@@ -44,6 +44,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { CONDICIONES_IVA } from '@/lib/constants'
+import { PLAZOS_PAGO_DIAS, etiquetaCondicionPago } from '@/lib/clientes/condicion-pago-cliente'
 import { esClienteExterior, etiquetaIdFiscal, idFiscalParaMostrar, parametroBusquedaCliente } from '@/lib/cliente-exterior'
 
 interface DeliveryAddress {
@@ -200,6 +201,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
     email: '',
     priceMultiplier: 1,
     taxCondition: '',
+    paymentTermsDays: '0',
   })
   const [savingEdit, setSavingEdit] = useState(false)
   const [loadingAFIP, setLoadingAFIP] = useState(false)
@@ -329,6 +331,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
       email: customer.email || '',
       priceMultiplier: customer.priceMultiplier || 1,
       taxCondition: customer.taxCondition || '',
+      paymentTermsDays: String(customer.paymentTermsDays || 0),
     })
     setIsEditing(true)
   }
@@ -391,6 +394,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
           email: editForm.email || null,
           priceMultiplier: Number(editForm.priceMultiplier) || 1,
           taxCondition: editForm.taxCondition,
+          paymentTerms: Number(editForm.paymentTermsDays) || 0,
         }),
       })
       if (!res.ok) {
@@ -410,6 +414,8 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
         email: editForm.email,
         priceMultiplier: Number(editForm.priceMultiplier) || 1,
         taxCondition: editForm.taxCondition,
+        paymentTermsDays: Number(editForm.paymentTermsDays) || 0,
+        paymentTerms: etiquetaCondicionPago(Number(editForm.paymentTermsDays) || 0),
         taxConditionDisplay:
           CONDICIONES_IVA.find((c) => c.value === editForm.taxCondition)?.label ||
           editForm.taxCondition,
@@ -823,8 +829,32 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
               <InfoRow icon={Mail} label="Email" value={customer.email} />
             )}
 
-            {/* Condición de pago — read only (viene de Colppy) */}
-            <InfoRow icon={Clock} label="Condición de Pago" value={customer.paymentTerms} />
+            {/* Condición de pago — editable: manda el ERP (no se cambia en Colppy) */}
+            {isEditing ? (
+              <div className="flex items-start gap-3 py-2">
+                <Clock className="h-4 w-4 text-gray-400 mt-2.5 shrink-0" />
+                <div className="flex-1">
+                  <p className="text-xs text-gray-500 mb-1">Condición de Pago</p>
+                  <Select
+                    value={editForm.paymentTermsDays}
+                    onValueChange={(v) => v && setEditForm({ ...editForm, paymentTermsDays: v })}
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="Seleccionar condición de pago" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PLAZOS_PAGO_DIAS.map((d) => (
+                        <SelectItem key={d} value={String(d)}>
+                          {etiquetaCondicionPago(d)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            ) : (
+              <InfoRow icon={Clock} label="Condición de Pago" value={customer.paymentTerms} />
+            )}
 
             {/* Certificado de calidad: los remitos del cliente nacen con el aviso al depósito */}
             <div className="flex items-start gap-3 py-2">

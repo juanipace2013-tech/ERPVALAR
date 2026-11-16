@@ -69,13 +69,16 @@ async function syncColppyClients() {
 
   // 3. Cargar TODOS los CUITs existentes en la base local
   const existingCustomers = await prisma.customer.findMany({
-    select: { id: true, cuit: true },
+    select: { id: true, cuit: true, paymentTerms: true },
   })
   const existingByCuit = new Map<string, string>()
+  // La condición de pago la manda el ERP: Colppy solo la completa si falta
+  const conCondicionPago = new Set<string>()
   existingCustomers.forEach(c => {
     if (c.cuit) {
       existingByCuit.set(c.cuit.replace(/\D/g, ''), c.id)
     }
+    if (c.paymentTerms !== null) conCondicionPago.add(c.id)
   })
 
   // 4. Procesar en batches
@@ -139,7 +142,7 @@ async function syncColppyClients() {
                 city,
                 province,
                 postalCode,
-                paymentTerms: paymentTermsDays,
+                paymentTerms: conCondicionPago.has(existingId) ? undefined : paymentTermsDays,
                 balance,
               },
             }).then(() => { actualizados++ })

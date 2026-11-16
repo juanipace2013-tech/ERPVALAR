@@ -522,7 +522,7 @@ export default function FacturacionPage() {
         taxCondition: quote.customer.taxCondition || '',
         idCondicionPago: quote.customer.paymentTerms != null
           ? String(quote.customer.paymentTerms)
-          : '0',
+          : undefined,
       },
       items: itemsToSend.map((item) => ({
         id: item.id,

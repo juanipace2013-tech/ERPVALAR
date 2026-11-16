@@ -1,4 +1,5 @@
 import { logger } from '@/lib/logger'
+import { esPlazoPago } from '@/lib/clientes/condicion-pago-cliente'
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -295,6 +296,15 @@ export async function PATCH(
       if (field in body) {
         updateData[field] = body[field] ?? null
       }
+    }
+
+    // Condición de pago (días): manda el ERP. Solo los plazos que maneja Colppy.
+    if ('paymentTerms' in updateData && updateData.paymentTerms !== null) {
+      const dias = Number(updateData.paymentTerms)
+      if (!esPlazoPago(dias)) {
+        return NextResponse.json({ error: 'Condición de pago inválida' }, { status: 400 })
+      }
+      updateData.paymentTerms = dias
     }
 
     // Cliente del exterior: país e ID fiscal editables (recalcula la clave

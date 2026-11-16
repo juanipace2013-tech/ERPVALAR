@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { condicionPagoCliente, etiquetaCondicionPago } from '@/lib/clientes/condicion-pago-cliente'
 import { useParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -100,7 +101,7 @@ export default function ClienteDetailPage() {
       email: localData.email || '',
       saldo: parseFloat(localData.balance) || 0,
       priceMultiplier: localData.priceMultiplier || 1,
-      paymentTerms: localData.paymentTerms ? `${localData.paymentTerms} días` : 'Sin dato',
+      paymentTerms: localData.paymentTerms != null ? etiquetaCondicionPago(localData.paymentTerms) : 'Sin dato',
       paymentTermsDays: localData.paymentTerms || 0,
       defaultTransportName: localData.defaultTransportName || '',
       defaultTransportAddress: localData.defaultTransportAddress || '',
@@ -167,6 +168,7 @@ export default function ClienteDetailPage() {
                 defaultTransportAddress: localCustomer.defaultTransportAddress || match.defaultTransportAddress || '',
                 defaultTransportSchedule: localCustomer.defaultTransportSchedule || match.defaultTransportSchedule || '',
                 exchangeRateType: localCustomer.exchangeRateType || null,
+                ...condicionPagoCliente(localCustomer.paymentTerms, match),
                 erpId: localCustomer.id,
               })
             } else {
@@ -198,6 +200,7 @@ export default function ClienteDetailPage() {
               defaultTransportAddress: localCustomer.defaultTransportAddress || colppyMatch.defaultTransportAddress || '',
               defaultTransportSchedule: localCustomer.defaultTransportSchedule || colppyMatch.defaultTransportSchedule || '',
               exchangeRateType: localCustomer.exchangeRateType || null,
+              ...condicionPagoCliente(localCustomer.paymentTerms, colppyMatch),
                 erpId: localCustomer.id,
             })
           } else {
@@ -235,6 +238,7 @@ export default function ClienteDetailPage() {
               defaultTransportAddress: localData.defaultTransportAddress || colppyMatch.defaultTransportAddress || '',
               defaultTransportSchedule: localData.defaultTransportSchedule || colppyMatch.defaultTransportSchedule || '',
               exchangeRateType: localData.exchangeRateType || null,
+              ...condicionPagoCliente(localData.paymentTerms, colppyMatch),
               erpId: localData.id,
             })
             return

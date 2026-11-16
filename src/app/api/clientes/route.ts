@@ -107,6 +107,7 @@ export async function GET(request: NextRequest) {
           creditLimit: true,
           creditCurrency: true,
           priceMultiplier: true,
+          paymentTerms: true,
           createdAt: true,
           salesPerson: {
             select: {

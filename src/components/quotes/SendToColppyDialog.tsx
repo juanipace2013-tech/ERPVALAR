@@ -267,10 +267,11 @@ export function SendToColppyDialog({
       );
 
       // Inicializar condición de pago: primero usar el valor del prop si existe
-      if (quote.customer.idCondicionPago && quote.customer.idCondicionPago !== '0') {
+      // La condición del cliente la manda el ERP ("0" = Contado cargado en el ERP)
+      if (quote.customer.idCondicionPago != null && quote.customer.idCondicionPago !== '') {
         setCondicionPago(condicionMap[quote.customer.idCondicionPago] || 'Contado');
       } else {
-        // Si no hay valor del prop o es "0", intentar obtenerlo desde la cache de Colppy
+        // Sin condición en el ERP: intentar obtenerla desde la cache de Colppy
         setCondicionPago('Contado'); // default mientras carga
         const cuit = quote.customer.cuit?.replace(/\D/g, '');
         if (cuit && cuit.length >= 7) {

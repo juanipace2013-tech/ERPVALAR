@@ -13,6 +13,12 @@ import Anthropic from '@anthropic-ai/sdk'
 import { logger } from '@/lib/logger'
 import { SONNET_MODEL_ID, calculateCostUsd, type TokenUsage } from '@/lib/inbox/ai/pricing'
 import type { MlItem, MlQuestion } from './client'
+import {
+  applyListingLinks,
+  linkPlaceholder,
+  stripAllowedLinks,
+  type ActiveListing,
+} from './answerLinks'
 
 let cached: { key: string; client: Anthropic } | null = null
 
@@ -44,8 +50,9 @@ Reglas de contenido (estrictas):
 - Si la pregunta no se puede responder con certeza con esos datos, o pide algo comercial fuera de lo publicado (precio por cantidad, descuento, factura especial, envío a un lugar concreto, fabricación a medida, algo que no es este producto), marcá needs_review=true y redactá igual la mejor respuesta parcial posible, indicando en review_reason qué falta confirmar.
 - El precio y el stock vigentes son los de la publicación. Si el comprador pregunta precio, el precio es el publicado. Si pregunta stock y la publicación tiene stock, decí que hay disponibilidad.
 - Si hay variaciones (medidas/modelos), indicá que se elige la variante al comprar.
-- Si el comprador pide OTRA medida o modelo y figura en "Otras medidas del mismo modelo en el ERP": si esa medida tiene publicación en ML, decile que sí la tenemos y nombrá la publicación por su título (sin links) para que la busque; si tiene stock pero no publicación, decile que la trabajamos y que puede consultarnos por esa medida. Si no figura en la lista, no afirmes que existe.
-- Mercado Libre prohíbe en las respuestas: teléfonos, mails, direcciones web, links, redes sociales, o invitar a comprar/contactar fuera de la plataforma. NUNCA incluyas nada de eso.
+- Si el comprador pide OTRA medida o modelo y figura en "Otras medidas del mismo modelo en el ERP": si esa medida figura con publicación activa en ML, decile que sí la tenemos y pasale el link escribiendo su "marcador de link" tal cual figura en la lista (por ejemplo [[LINK:MLA123456789]]), solo, en un renglón aparte antes del saludo final; el sistema lo reemplaza por el link real de la publicación. Si figura "sin publicación activa en ML", NO digas que está publicada ni que la busque en Mercado Libre: si tiene stock, decile que la trabajamos y que puede consultarnos por esa medida. Si no figura en la lista, no afirmes que existe.
+- NUNCA escribas una dirección web vos mismo (ni de Mercado Libre ni de ningún otro sitio): el único link permitido es el marcador [[LINK:...]] copiado de la lista, y solo para la medida que pidió el comprador.
+- Mercado Libre prohíbe en las respuestas: teléfonos, mails, direcciones web o links de fuera de Mercado Libre, redes sociales, o invitar a comprar/contactar fuera de la plataforma. NUNCA incluyas nada de eso.
 - Si el comprador pide factura A: sí emitimos factura A (somos responsables inscriptos); se elige al comprar.
 - Envíos: se hacen por Mercado Envíos según lo que marque la publicación; no prometas plazos concretos.
 
@@ -85,7 +92,9 @@ export interface FamilyVariantContext {
   name: string
   stockQuantity: number
   unit: string
-  mlTitle: string | null // título de la publicación activa en ML, si tiene
+  // Publicación ACTIVA de esta medida, confirmada contra la API de ML al armar
+  // el borrador (título y permalink reales). null = no tiene publicación activa.
+  listing: ActiveListing | null
 }
 
 export interface ErpProductContext {
@@ -141,9 +150,27 @@ function fmtVariations(item: MlItem): string {
   return `Variaciones publicadas:\n${lines.join('\n')}`
 }
 
-// Teléfonos, mails, URLs, redes: prohibidos por ML en las respuestas.
+// Teléfonos, mails, URLs, redes: prohibidos por ML en las respuestas. Se evalúa
+// sobre el texto SIN los links a publicaciones propias (ver answerLinks.ts).
 const FORBIDDEN_RE =
   /(https?:\/\/|www\.|\S+@\S+\.\S+|\b\d{2,4}[-\s]?\d{3,4}[-\s]?\d{4}\b|whatsapp|instagram|facebook)/i
+
+/**
+ * Texto final a partir de lo que devolvió la IA: reemplaza los marcadores de
+ * link por el permalink real de la publicación, saca cualquier otra URL y
+ * detecta contacto prohibido. Respeta ML_ANSWER_MAX_CHARS.
+ */
+export function finalizeAnswer(
+  rawAnswer: string,
+  listings: ActiveListing[]
+): { answer: string; forbidden: boolean; linkIssues: string[] } {
+  const applied = applyListingLinks(rawAnswer.trim(), listings, ML_ANSWER_MAX_CHARS)
+  return {
+    answer: applied.answer,
+    forbidden: FORBIDDEN_RE.test(stripAllowedLinks(applied.answer, applied.links)),
+    linkIssues: applied.issues,
+  }
+}
 
 export async function generateAnswer(input: AnswerInput): Promise<AnswerResult> {
   const client = getClient()
@@ -188,7 +215,9 @@ export async function generateAnswer(input: AnswerInput): Promise<AnswerResult> 
       parts.push('')
       parts.push('## Otras medidas del mismo modelo en el ERP')
       for (const v of product.family) {
-        const pub = v.mlTitle ? `publicada en ML como "${v.mlTitle}"` : 'sin publicación en ML'
+        const pub = v.listing
+          ? `publicación activa en ML: "${v.listing.title}" — marcador de link: ${linkPlaceholder(v.listing.mlItemId)}`
+          : 'sin publicación activa en ML'
         parts.push(`  - ${v.sku}: ${v.name} — stock ${v.stockQuantity} ${v.unit} — ${pub}`)
       }
     }
@@ -238,7 +267,10 @@ export async function generateAnswer(input: AnswerInput): Promise<AnswerResult> 
     needs_review?: boolean
     review_reason?: string
   }
-  const answer = (raw.answer ?? '').trim().slice(0, ML_ANSWER_MAX_CHARS)
+  const listings = (product?.family ?? [])
+    .map((v) => v.listing)
+    .filter((l): l is ActiveListing => l !== null)
+  const { answer, forbidden, linkIssues } = finalizeAnswer(raw.answer ?? '', listings)
   if (!answer) throw new Error('La IA devolvió una respuesta vacía')
 
   const usage: TokenUsage = {
@@ -248,10 +280,10 @@ export async function generateAnswer(input: AnswerInput): Promise<AnswerResult> 
     cache_read_input_tokens: response.usage.cache_read_input_tokens ?? null,
   }
 
-  const forbidden = FORBIDDEN_RE.test(answer)
-  const needsReview = Boolean(raw.needs_review) || forbidden
+  const needsReview = Boolean(raw.needs_review) || forbidden || linkIssues.length > 0
   let reviewReason: string | null = null
   if (forbidden) reviewReason = 'La respuesta contiene contacto/link (prohibido por ML)'
+  else if (linkIssues.length) reviewReason = linkIssues.join('; ').slice(0, 300)
   else if (raw.needs_review) reviewReason = (raw.review_reason || 'La IA pidió revisión').slice(0, 300)
 
   return {

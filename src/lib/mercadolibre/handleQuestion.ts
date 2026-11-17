@@ -27,11 +27,14 @@ import {
   getItemDescription,
   getItemAnsweredQuestions,
   getMyUnansweredQuestions,
+  getItemsLite,
   postAnswer,
   MlApiError,
   type MlItem,
+  type MlItemLite,
   type MlQuestion,
 } from './client'
+import { pickActiveListing } from './answerLinks'
 import {
   generateAnswer,
   ML_ANSWER_MAX_CHARS,
@@ -93,8 +96,14 @@ async function findErpProduct(mlItemId: string, sku: string | null) {
 /**
  * Otras medidas del mismo modelo: SKUs con el mismo prefijo antes del espacio
  * ("2415 06" -> familia "2415"), con su publicación activa en ML si la tienen.
- * Le permite a la IA responder "¿lo tienen en DN40?" con la publicación
- * correcta. SKUs sin espacio no tienen familia.
+ * Le permite a la IA responder "¿lo tienen en DN40?" con el link a la
+ * publicación correcta. SKUs sin espacio no tienen familia.
+ *
+ * El estado guardado en MlItemLink puede estar viejo (se refresca al importar
+ * publicaciones), así que las candidatas se confirman en vivo contra la API de
+ * ML: solo cuenta como publicada la que ML devuelve activa, y el título y el
+ * permalink salen de esa respuesta. Si ML no contesta, ninguna figura como
+ * publicada (la respuesta no promete un link que no se pudo confirmar).
  */
 async function findFamilyVariants(sku: string, productId: string): Promise<FamilyVariantContext[]> {
   const family = sku.split(' ')[0]
@@ -107,20 +116,33 @@ async function findFamilyVariants(sku: string, productId: string): Promise<Famil
       stockQuantity: true,
       unit: true,
       mlItemLinks: {
-        where: { mlStatus: 'active' },
-        select: { title: true },
-        take: 1,
+        where: { OR: [{ mlStatus: null }, { mlStatus: { not: 'closed' } }] },
+        select: { mlItemId: true },
+        orderBy: { mlItemId: 'asc' },
       },
     },
     orderBy: { sku: 'asc' },
     take: 40,
   })
+  const candidateIds = [...new Set(rows.flatMap((r) => r.mlItemLinks.map((l) => l.mlItemId)))]
+  const live = new Map<string, MlItemLite>()
+  if (candidateIds.length) {
+    try {
+      for (const it of await getItemsLite(candidateIds)) live.set(it.id, it)
+    } catch (err) {
+      logger.warn('[ML Preguntas] No se pudo confirmar publicaciones de la familia en ML', err)
+    }
+  }
+
   return rows.map((r) => ({
     sku: r.sku,
     name: r.name,
     stockQuantity: r.stockQuantity,
     unit: r.unit,
-    mlTitle: r.mlItemLinks[0]?.title ?? null,
+    listing: pickActiveListing(
+      r.mlItemLinks.map((l) => l.mlItemId),
+      live
+    ),
   }))
 }
 

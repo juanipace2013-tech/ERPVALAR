@@ -120,6 +120,29 @@ async function fetchBCRAWithRetry(url: string, maxRetries = MAX_RETRIES): Promis
   throw new Error(`BCRA API no disponible después de ${maxRetries} intentos`)
 }
 
+/**
+ * El BCRA a veces no informa la razón social (denominacion null), típico de
+ * CUIT sin deuda vigente. En ese caso se usa el nombre del cliente del ERP y
+ * se marca el origen para que la pantalla lo aclare.
+ */
+async function conNombreErp<T extends { denominacion?: string | null }>(
+  cuit: string,
+  data: T
+): Promise<T & { denominacionOrigen?: 'erp' }> {
+  if (data.denominacion) return data
+  try {
+    const cliente = await prisma.customer.findFirst({
+      where: { cuit: { in: [cuit, formatCuit(cuit)] } },
+      select: { name: true, businessName: true },
+    })
+    const nombre = cliente?.businessName?.trim() || cliente?.name?.trim()
+    if (nombre) return { ...data, denominacion: nombre, denominacionOrigen: 'erp' }
+  } catch (e) {
+    logger.warn(`[BCRA] No se pudo buscar el cliente del ERP para ${cuit}`, e)
+  }
+  return data
+}
+
 // ── Route handler ───────────────────────────────────────────────────────────
 
 export async function GET(
@@ -144,7 +167,7 @@ export async function GET(
    * si no hay NADA cacheado para el CUIT (los datos del BCRA cambian ~1 vez
    * por mes, así que un valor viejo sigue siendo útil).
    */
-  function staleFallback(reason: string, error?: unknown): NextResponse {
+  async function staleFallback(reason: string, error?: unknown): Promise<NextResponse> {
     const cached = cacheRow?.data as any
     if (cached?.resumen && cached?.deudas) {
       const ageH = Math.round(
@@ -155,7 +178,7 @@ export async function GET(
         ageHours: ageH,
         error: error instanceof Error ? error.message : error ? String(error) : undefined,
       })
-      return NextResponse.json({ ...cached, stale: true })
+      return NextResponse.json({ ...(await conNombreErp(cuit, cached)), stale: true })
     }
     logger.error(`[BCRA] ${reason} y sin cache disponible para ${cuit}`, error ?? '')
     return NextResponse.json(
@@ -174,7 +197,7 @@ export async function GET(
       const cached = cacheRow.data as any
       if (cached?.resumen && cached?.deudas) {
         logger.info(`[BCRA] Cache hit for ${cuit} (age: ${Math.round(age / 3600000)}h)`)
-        return NextResponse.json({ ...cached, stale: false })
+        return NextResponse.json({ ...(await conNombreErp(cuit, cached)), stale: false })
       }
       logger.warn(`[BCRA] Cache invalid for ${cuit}, refetching...`)
     }
@@ -330,7 +353,7 @@ export async function GET(
         }
       : cheques
 
-  const result = {
+  const result = await conNombreErp(cuit, {
     cuit: formatCuit(cuit),
     denominacion,
     noData, // true = el CUIT no figura en el BCRA (todos 404); se cachea para no reconsultar
@@ -344,7 +367,7 @@ export async function GET(
       cantidadChequesRechazados,
       semaforo,
     },
-  }
+  })
 
   logger.info(
     `[BCRA] Result: semaforo=${semaforo}, deuda=$${montoTotalDeuda}, entidades=${entidadesMapped.length}`
@@ -364,7 +387,7 @@ export async function GET(
       await prisma.bcraSearchHistory.create({
         data: {
           cuit,
-          customerName: denominacion || '',
+          customerName: result.denominacion || '',
           semaforo,
           userId: session.user.id,
           result: result as any,

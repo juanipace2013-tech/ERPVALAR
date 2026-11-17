@@ -95,6 +95,7 @@ interface Causal {
 interface BcraResult {
   cuit: string
   denominacion: string
+  denominacionOrigen?: 'erp' // el BCRA no informó razón social: nombre del cliente del ERP
   deudas: {
     status: number
     results?: {
@@ -177,7 +178,7 @@ function formatCompacto(pesos: number): string {
 }
 
 const SITUACION_LABEL: Record<number, string> = {
-  0: 'Sin deudas',
+  0: 'Sin deuda informada',
   1: 'Normal',
   2: 'Con seguimiento',
   3: 'Con problemas',
@@ -401,10 +402,11 @@ export default function AnalisisCrediticioPage() {
       .map((p) => ({
         mes: formatPeriodo(p.periodo),
         periodo: p.periodo,
+        // 0 = el BCRA no informa deuda ese mes (no es lo mismo que situación 1)
         situacion:
           p.entidades.length > 0
-            ? Math.max(...p.entidades.map((e) => Number(e.situacion) || 1))
-            : 1,
+            ? Math.max(...p.entidades.map((e) => Number(e.situacion) || 0))
+            : 0,
       }))
   }, [result])
 
@@ -827,6 +829,11 @@ export default function AnalisisCrediticioPage() {
                     <p className="text-xl font-semibold text-gray-900 mt-0.5">
                       {result.denominacion || '—'}
                     </p>
+                    {result.denominacionOrigen === 'erp' && (
+                      <p className="text-xs text-gray-500">
+                        Nombre según el ERP: el BCRA no informa razón social para este CUIT
+                      </p>
+                    )}
                     <p className="text-sm text-gray-500 font-mono">{formatCuit(result.cuit)}</p>
                   </div>
                 </div>
@@ -966,13 +973,14 @@ export default function AnalisisCrediticioPage() {
                   <ResponsiveContainer width={printing ? 640 : '100%'} height="100%">
                     <LineChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <ReferenceArea y1={-0.5} y2={0.5} fill="#f3f4f6" fillOpacity={0.8} />
                       <ReferenceArea y1={0.5} y2={1.5} fill="#dcfce7" fillOpacity={0.6} />
                       <ReferenceArea y1={1.5} y2={3.5} fill="#fef9c3" fillOpacity={0.5} />
                       <ReferenceArea y1={3.5} y2={5.5} fill="#fee2e2" fillOpacity={0.5} />
                       <XAxis dataKey="mes" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
                       <YAxis
-                        domain={[0.5, 5.5]}
-                        ticks={[1, 2, 3, 4, 5]}
+                        domain={[-0.5, 5.5]}
+                        ticks={[0, 1, 2, 3, 4, 5]}
                         tickFormatter={(v) => SITUACION_LABEL[v] ?? String(v)}
                         tick={{ fontSize: 10 }}
                         width={110}
@@ -1000,6 +1008,9 @@ export default function AnalisisCrediticioPage() {
                   </ResponsiveContainer>
                 </div>
                 <div className="flex gap-4 justify-center mt-3 text-xs text-gray-500">
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block w-3 h-3 rounded-sm bg-gray-200" /> Sin deuda informada (0)
+                  </span>
                   <span className="flex items-center gap-1">
                     <span className="inline-block w-3 h-3 rounded-sm bg-green-200" /> Normal (1)
                   </span>

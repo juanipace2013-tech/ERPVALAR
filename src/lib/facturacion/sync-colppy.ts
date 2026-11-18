@@ -459,7 +459,9 @@ export async function syncColppyFacturas(dateFrom: Date, dateTo: Date): Promise<
   const colppyClientMap = new Map(colppyClients.map((c) => [c.idCliente, c]))
   logger.info(`[Sync Colppy] Clientes Colppy cargados: ${colppyClients.length}`)
 
-  const systemUser = await prisma.user.findFirst({ select: { id: true } })
+  // Con orderBy: sin él Postgres devuelve una fila cualquiera y el comodín
+  // cambiaba de persona (el análisis de facturación lo identifica igual).
+  const systemUser = await prisma.user.findFirst({ select: { id: true }, orderBy: { createdAt: 'asc' } })
   if (!systemUser) {
     throw new Error('No hay usuarios en el sistema')
   }

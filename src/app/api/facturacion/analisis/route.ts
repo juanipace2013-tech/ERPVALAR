@@ -49,9 +49,8 @@ export async function GET(request: NextRequest) {
       where.issueDate = dateFilter
     }
 
-    if (salesPersonId) {
-      where.userId = salesPersonId
-    }
+    // El filtro por vendedor se aplica más abajo, sobre el vendedor EFECTIVO
+    // (ver vendedorDe), no sobre invoice.userId.
 
     if (status && status !== 'ALL') {
       where.status = status as InvoiceStatus
@@ -92,7 +91,7 @@ export async function GET(request: NextRequest) {
 
     // Todas las consultas en paralelo: antes eran 5 viajes en serie a la base, y
     // los ítems venían anidados dentro de cada factura.
-    const [invoices, items, serie, marcasResult, cotizaciones] = await Promise.all([
+    const [invoicesTodas, items, serie, marcasResult, cotizaciones, systemUser] = await Promise.all([
       prisma.invoice.findMany({
         where,
         select: {
@@ -112,7 +111,8 @@ export async function GET(request: NextRequest) {
           discount: true,
           total: true,
           colppyId: true,
-          customer: { select: { id: true, name: true } },
+          quoteId: true,
+          customer: { select: { id: true, name: true, salesPerson: { select: { id: true, name: true } } } },
           user: { select: { id: true, name: true } },
         },
         orderBy: { issueDate: 'desc' },
@@ -130,7 +130,7 @@ export async function GET(request: NextRequest) {
       }),
       prisma.invoice.findMany({
         where: { ...TIPOS_VENTA, issueDate: { gte: serieDesde } },
-        select: { total: true, currency: true, exchangeRate: true, issueDate: true, transactionType: true },
+        select: { subtotal: true, currency: true, exchangeRate: true, issueDate: true, transactionType: true },
       }),
       prisma.product.findMany({
         where: { brand: { not: null } },
@@ -145,7 +145,26 @@ export async function GET(request: NextRequest) {
         select: { rate: true, validFrom: true },
         orderBy: { validFrom: 'asc' },
       }),
+      // Usuario comodín del sync de Colppy (el más antiguo): a su nombre quedan
+      // las facturas que no matchean con ninguna cotización
+      // (src/lib/facturacion/sync-colppy.ts)
+      prisma.user.findFirst({ select: { id: true }, orderBy: { createdAt: 'asc' } }),
     ])
+
+    /**
+     * Vendedor efectivo del comprobante. Las facturas importadas de Colppy sin
+     * cotización quedan a nombre del usuario comodín del sync: sumárselas a esa
+     * persona le inflaba la torta (61% del año). Para esas se usa el vendedor
+     * asignado al cliente y, si no tiene, "Sin asignar". No se toca la factura.
+     */
+    const SIN_ASIGNAR = { id: 'SIN_ASIGNAR', name: 'Sin asignar' }
+    const vendedorDe = (inv: (typeof invoicesTodas)[number]) => {
+      if (inv.quoteId || inv.user.id !== systemUser?.id) return inv.user
+      return inv.customer.salesPerson ?? SIN_ASIGNAR
+    }
+    const invoices = salesPersonId
+      ? invoicesTodas.filter((inv) => vendedorDe(inv).id === salesPersonId)
+      : invoicesTodas
 
     const tcs = cotizaciones.map((c) => ({ desde: c.validFrom.getTime(), rate: Number(c.rate) }))
     /** TC vigente a una fecha: la última cotización cargada hasta ese día (o la primera que haya). */
@@ -166,10 +185,13 @@ export async function GET(request: NextRequest) {
       const tc = Number(inv.exchangeRate || 0)
       return tc > 1 ? tc : tcALaFecha(inv.issueDate)
     }
-    /** Total del comprobante en USD con signo (las NC restan). */
-    const toUSD = (inv: { total: unknown; currency: string; exchangeRate: unknown; issueDate: Date; transactionType: string }) => {
+    /**
+     * Neto del comprobante (SIN IVA) en USD con signo (las NC restan). Todo el
+     * análisis va sin IVA, igual que marcas/productos y que las cotizaciones.
+     */
+    const toUSD = (inv: { subtotal: unknown; currency: string; exchangeRate: unknown; issueDate: Date; transactionType: string }) => {
       const signo = inv.transactionType === 'CREDIT_NOTE' ? -1 : 1
-      const total = Number(inv.total) * signo
+      const total = Number(inv.subtotal) * signo
       return inv.currency === 'USD' ? total : total / tcDe(inv)
     }
 
@@ -192,7 +214,7 @@ export async function GET(request: NextRequest) {
     const tcAplicado = new Map<string, number>()
 
     for (const inv of invoices) {
-      const total = Number(inv.total)
+      const total = Number(inv.subtotal)
       const esNC = inv.transactionType === 'CREDIT_NOTE'
       const signo = esNC ? -1 : 1
       const tc = tcDe(inv)
@@ -214,7 +236,8 @@ export async function GET(request: NextRequest) {
         if (esNC) totalCreditNotesARS += total
       }
 
-      const vendedor = (porVendedor[inv.user.id] ??= { name: inv.user.name, total: 0 })
+      const vend = vendedorDe(inv)
+      const vendedor = (porVendedor[vend.id] ??= { name: vend.name, total: 0 })
       vendedor.total += enUSD
       const cliente = (porCliente[inv.customer.id] ??= { name: inv.customer.name, total: 0 })
       cliente.total += enUSD
@@ -319,8 +342,8 @@ export async function GET(request: NextRequest) {
           comprobanteLabel,
           issueDate: inv.issueDate,
           dueDate: inv.dueDate,
-          customer: inv.customer,
-          salesPerson: inv.user,
+          customer: { id: inv.customer.id, name: inv.customer.name },
+          salesPerson: vendedorDe(inv),
           status: inv.status,
           paymentStatus: inv.paymentStatus,
           currency: inv.currency,

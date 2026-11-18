@@ -181,7 +181,7 @@ const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString('es-AR', { year: 'numeric', month: 'short', day: 'numeric' })
 
 /**
- * Facturación por vendedor en USD (NC restan), igual que la calcula el
+ * Facturación por vendedor en USD sin IVA (NC restan), igual que la calcula el
  * endpoint: se usa para rehacer el gráfico al reasignar un vendedor desde la
  * tabla, sin volver a pedir todo.
  */
@@ -190,7 +190,7 @@ function totalPorVendedor(invoices: Invoice[]): ChartItem[] {
   for (const inv of invoices) {
     const signo = inv.transactionType === 'CREDIT_NOTE' ? -1 : 1
     const tc = Number(inv.tcAplicado || 0)
-    const enUSD = inv.currency === 'USD' ? Number(inv.total) : tc > 1 ? Number(inv.total) / tc : 0
+    const enUSD = inv.currency === 'USD' ? Number(inv.subtotal) : tc > 1 ? Number(inv.subtotal) / tc : 0
     const vendedor = (porVendedor[inv.salesPerson.id] ??= { name: inv.salesPerson.name, total: 0 })
     vendedor.total += enUSD * signo
   }
@@ -741,7 +741,7 @@ export default function AnalisisFacturacionPage() {
                   <DollarSign className="h-5 w-5 text-blue-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Facturado (neto)</p>
+                  <p className="text-sm text-muted-foreground">Total Facturado (sin IVA)</p>
                   <p className="text-2xl font-bold text-blue-900">{fmt(resumen.totalGeneralUSD)} USD</p>
                   <p className="text-xs text-muted-foreground">{fmt(resumen.totalGeneralARS, 'ARS')} ARS</p>
                   {resumen.totalNC > 0 && (
@@ -815,7 +815,7 @@ export default function AnalisisFacturacionPage() {
           {/* Facturación mensual */}
           <Card className="border-blue-200">
             <CardHeader>
-              <CardTitle className="text-blue-900">Facturación Mensual (USD) - Año {graficos.facturacionMensual[0]?.month.slice(0, 4)}</CardTitle>
+              <CardTitle className="text-blue-900">Facturación Mensual (USD, sin IVA) - Año {graficos.facturacionMensual[0]?.month.slice(0, 4)}</CardTitle>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
@@ -834,7 +834,7 @@ export default function AnalisisFacturacionPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card className="border-blue-200">
               <CardHeader>
-                <CardTitle className="text-blue-900">Facturación por Vendedor (USD)</CardTitle>
+                <CardTitle className="text-blue-900">Facturación por Vendedor (USD, sin IVA)</CardTitle>
               </CardHeader>
               <CardContent>
                 {graficos.facturacionPorVendedor.length > 0 ? (

@@ -13,7 +13,7 @@ import { Loader2 } from 'lucide-react'
 interface FamiqStockData {
   linked: boolean
   stockTotal?: number
-  sucursales?: { nombre: string; stock: number }[]
+  sucursales?: { nombre: string; stock: number; sinCantidad?: boolean }[]
   precioListaUsd?: number | null
   fetchedAt?: string
   url?: string
@@ -56,12 +56,20 @@ export function FamiqStock({ sku }: { sku: string }) {
       >
         Stock FAMIQ:
       </a>
-      {conStock.length === 0 ? (
+      {data.error ? (
+        // no confundir "no pude consultar" con "no hay"
+        <Badge variant="outline" className="text-amber-700 border-amber-200">no se pudo consultar</Badge>
+      ) : conStock.length === 0 ? (
         <Badge variant="outline" className="text-red-600 border-red-200">sin stock</Badge>
       ) : (
         conStock.map((s) => (
-          <Badge key={s.nombre} variant="outline" className="text-green-700 border-green-200">
-            {s.nombre} {s.stock}
+          <Badge
+            key={s.nombre}
+            variant="outline"
+            className="text-green-700 border-green-200"
+            title={s.sinCantidad ? 'La web de FAMIQ no publica la cantidad de este artículo: verla con login' : undefined}
+          >
+            {s.nombre} {s.sinCantidad ? 'con stock' : s.stock}
           </Badge>
         ))
       )}

@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
     linked: true,
     codigo: data.codigo,
     stockTotal: data.stockTotal,
-    sucursales: data.sucursales.filter((s) => s.stock > 0),
+    sucursales: data.sucursales.filter((s) => s.stock > 0 || s.sinCantidad),
     precioListaUsd: data.precioListaUsd,
     precioListaAnterior: prev != null && prev !== data.precioListaUsd ? prev : null,
     fetchedAt: data.fetchedAt,

@@ -56,6 +56,7 @@ import {
   Truck,
   Plus,
   Globe,
+  Mail,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatNumber, formatCurrency as formatCurrencyAR, getLocalDateString } from '@/lib/utils'
@@ -65,6 +66,7 @@ import { FacturaExportacionDialog } from '@/components/quotes/FacturaExportacion
 import { DuplicateQuoteDialog } from '@/components/quotes/DuplicateQuoteDialog'
 import { esClienteExterior, etiquetaIdFiscal, idFiscalParaMostrar } from '@/lib/cliente-exterior'
 import { withClientReference } from '@/lib/quotes/client-reference'
+import type { OcMailMensaje } from '@/lib/quotes/oc-mail'
 
 interface Quote {
   id: string
@@ -226,6 +228,12 @@ export default function QuoteViewPage() {
   const [ocNumber, setOcNumber] = useState('')
   const [ocDate, setOcDate] = useState('')
   const [ocSaving, setOcSaving] = useState(false)
+  const [ocDragOver, setOcDragOver] = useState(false)
+  // OC desde el mail
+  const [showOcMail, setShowOcMail] = useState(false)
+  const [ocMailLoading, setOcMailLoading] = useState(false)
+  const [ocMailError, setOcMailError] = useState<string | null>(null)
+  const [ocMailMensajes, setOcMailMensajes] = useState<OcMailMensaje[]>([])
 
   // Cronograma de entregas parciales
   const [dsRows, setDsRows] = useState<Array<{ fecha: string; cantidad: string }>>([])
@@ -521,12 +529,30 @@ export default function QuoteViewPage() {
   }
 
   // ── OC handlers ──
-  const handleUploadOC = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+  const aplicarOC = (updated: {
+    purchaseOrderUrl: string | null
+    purchaseOrderNumber: string | null
+    purchaseOrderDate: string | null
+  }) => {
+    setQuote((prev) =>
+      prev
+        ? {
+            ...prev,
+            purchaseOrderUrl: updated.purchaseOrderUrl,
+            purchaseOrderNumber: updated.purchaseOrderNumber,
+            purchaseOrderDate: updated.purchaseOrderDate,
+          }
+        : prev
+    )
+    if (updated.purchaseOrderDate) setOcDate(getLocalDateString(new Date(updated.purchaseOrderDate)))
+    toast.success('Orden de compra adjuntada correctamente')
+  }
 
+  /** Sube un archivo como OC: del selector, arrastrado o pegado */
+  const subirOC = async (file: File, sinConfirmar = false) => {
     const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf']
-    if (!allowedTypes.includes(file.type)) {
+    // Lo arrastrado desde el correo a veces llega sin tipo: vale la extensión (el servidor mira el contenido)
+    if (!allowedTypes.includes(file.type) && !/\.(pdf|jpe?g|png)$/i.test(file.name)) {
       toast.error('Tipo de archivo no permitido. Solo JPG, PNG o PDF.')
       return
     }
@@ -534,6 +560,7 @@ export default function QuoteViewPage() {
       toast.error('El archivo excede el límite de 10MB.')
       return
     }
+    if (!sinConfirmar && quote?.purchaseOrderUrl && !confirm('Esta cotización ya tiene una OC adjunta. ¿Reemplazarla?')) return
 
     try {
       setOcUploadLoading(true)
@@ -552,24 +579,82 @@ export default function QuoteViewPage() {
         throw new Error(err.error || 'Error al subir archivo')
       }
 
-      const updated = await response.json()
-      setQuote((prev) =>
-        prev
-          ? {
-              ...prev,
-              purchaseOrderUrl: updated.purchaseOrderUrl,
-              purchaseOrderNumber: updated.purchaseOrderNumber,
-              purchaseOrderDate: updated.purchaseOrderDate,
-            }
-          : prev
-      )
-      toast.success('Orden de compra adjuntada correctamente')
+      aplicarOC(await response.json())
     } catch (error) {
       console.error('Error:', error)
       toast.error(error instanceof Error ? error.message : 'Error al subir archivo')
     } finally {
       setOcUploadLoading(false)
       if (ocFileInputRef.current) ocFileInputRef.current.value = ''
+    }
+  }
+
+  const handleDropOC = (e: React.DragEvent) => {
+    e.preventDefault()
+    setOcDragOver(false)
+    if (ocUploadLoading) return
+    const file = e.dataTransfer.files?.[0]
+    if (file) subirOC(file)
+    else toast.error('No llegó ningún archivo. Si lo arrastraste desde el correo web, usá "Buscar en el mail".')
+  }
+
+  // Pegar (Ctrl+V) un archivo o captura copiados, con la tarjeta de OC visible
+  const subirOCRef = useRef(subirOC)
+  subirOCRef.current = subirOC
+  const ocVisible = !!quote && ['ACCEPTED', 'CONVERTED', 'FACTURADA_PARCIAL'].includes(quote.status)
+  useEffect(() => {
+    if (!ocVisible) return
+    const onPaste = (e: ClipboardEvent) => {
+      const file = e.clipboardData?.files?.[0]
+      if (!file) return
+      e.preventDefault()
+      subirOCRef.current(file)
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [ocVisible])
+
+  const abrirOcMail = async () => {
+    setShowOcMail(true)
+    setOcMailLoading(true)
+    setOcMailError(null)
+    setOcMailMensajes([])
+    try {
+      const response = await fetch(`/api/quotes/${id}/oc-mail`)
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'No se pudo consultar el correo')
+      setOcMailMensajes(data.mensajes)
+    } catch (error) {
+      setOcMailError(error instanceof Error ? error.message : 'No se pudo consultar el correo')
+    } finally {
+      setOcMailLoading(false)
+    }
+  }
+
+  const adjuntarOcDesdeMail = async (m: OcMailMensaje, attachmentId: string) => {
+    if (quote?.purchaseOrderUrl && !confirm('Esta cotización ya tiene una OC adjunta. ¿Reemplazarla?')) return
+    try {
+      setOcUploadLoading(true)
+      const response = await fetch(`/api/quotes/${id}/oc-mail`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          buzon: m.buzon,
+          messageId: m.messageId,
+          attachmentId,
+          purchaseOrderNumber: ocNumber.trim() || undefined,
+          // Sin fecha cargada, la del mail donde llegó la OC
+          purchaseOrderDate: ocDate || getLocalDateString(new Date(m.fecha)),
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'No se pudo adjuntar')
+      aplicarOC(data)
+      setShowOcMail(false)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo adjuntar')
+    } finally {
+      setOcUploadLoading(false)
     }
   }
 
@@ -1062,11 +1147,23 @@ export default function QuoteViewPage() {
 
       {/* Orden de Compra del Cliente — aceptada, facturada parcial o facturada */}
       {(quote.status === 'ACCEPTED' || quote.status === 'CONVERTED' || quote.status === 'FACTURADA_PARCIAL') && (
-        <Card className="mb-6 border-amber-200">
+        <Card
+          className={`mb-6 border-amber-200 transition-colors ${ocDragOver ? 'border-dashed border-amber-500 bg-amber-50' : ''}`}
+          onDragOver={(e) => {
+            if (!e.dataTransfer.types.includes('Files')) return
+            e.preventDefault()
+            setOcDragOver(true)
+          }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOcDragOver(false)
+          }}
+          onDrop={handleDropOC}
+        >
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <Paperclip className="h-5 w-5 text-amber-600" />
               Orden de Compra del Cliente
+              {ocDragOver && <span className="text-sm font-normal text-amber-700">— soltá el archivo acá</span>}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -1076,7 +1173,10 @@ export default function QuoteViewPage() {
               type="file"
               accept=".jpg,.jpeg,.png,.pdf"
               className="hidden"
-              onChange={handleUploadOC}
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) subirOC(file, true)
+              }}
             />
 
             {quote.purchaseOrderUrl ? (
@@ -1128,6 +1228,10 @@ export default function QuoteViewPage() {
                   >
                     <RefreshCw className="h-4 w-4 mr-1" />
                     Reemplazar
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={abrirOcMail} disabled={ocUploadLoading}>
+                    <Mail className="h-4 w-4 mr-1" />
+                    Buscar en el mail
                   </Button>
                   <Button
                     variant="ghost"
@@ -1181,8 +1285,12 @@ export default function QuoteViewPage() {
                     )}
                     Subir OC
                   </Button>
+                  <Button variant="outline" onClick={abrirOcMail} disabled={ocUploadLoading}>
+                    <Mail className="h-4 w-4 mr-2" />
+                    Buscar en el mail
+                  </Button>
                   <span className="text-xs text-gray-500">
-                    Formatos: PDF, JPG, PNG (máx 10MB)
+                    También podés arrastrar el archivo acá o pegarlo con Ctrl+V. PDF, JPG, PNG (máx 10MB)
                   </span>
                 </div>
               </div>
@@ -2193,6 +2301,58 @@ export default function QuoteViewPage() {
           subtitle={quote.status === 'FACTURADA_PARCIAL' ? 'Facturación parcial: se proponen los ítems pendientes de facturar' : undefined}
         />
       )}
+
+      {/* Dialog: OC desde el mail */}
+      <Dialog open={showOcMail} onOpenChange={setShowOcMail}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Adjuntar la OC desde el mail</DialogTitle>
+            <DialogDescription>
+              Mails de los últimos 90 días que mencionan la cotización {quote.quoteNumber} o vienen del cliente, con
+              adjuntos PDF o imagen. Elegí el archivo que es la orden de compra.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto space-y-3">
+            {ocMailLoading && (
+              <p className="flex items-center gap-2 text-sm text-gray-500 py-6 justify-center">
+                <Loader2 className="h-4 w-4 animate-spin" /> Buscando en el correo...
+              </p>
+            )}
+            {ocMailError && <p className="text-sm text-red-600 py-4">{ocMailError}</p>}
+            {!ocMailLoading && !ocMailError && ocMailMensajes.length === 0 && (
+              <p className="text-sm text-gray-500 py-6 text-center">
+                No se encontraron mails con adjuntos para esta cotización o cliente.
+              </p>
+            )}
+            {ocMailMensajes.map((m) => (
+              <div key={`${m.buzon}-${m.messageId}`} className="rounded-md border p-3">
+                <p className="text-sm font-medium break-words">{m.asunto}</p>
+                <p className="text-xs text-gray-500 mb-2">
+                  {m.de} · {new Date(m.fecha).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })} ·{' '}
+                  {m.buzon.split('@')[0]}@
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {m.adjuntos.map((a) => (
+                    <Button
+                      key={a.id}
+                      variant="outline"
+                      size="sm"
+                      className="h-auto py-1 max-w-full"
+                      disabled={ocUploadLoading}
+                      onClick={() => adjuntarOcDesdeMail(m, a.id)}
+                      title="Adjuntar como OC"
+                    >
+                      <Paperclip className="h-3.5 w-3.5 mr-1 shrink-0" />
+                      <span className="truncate">{a.name}</span>
+                      <span className="ml-1 text-xs text-gray-400 shrink-0">{Math.max(1, Math.round(a.size / 1024))} KB</span>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog: Duplicar Cotización */}
       {quote && (

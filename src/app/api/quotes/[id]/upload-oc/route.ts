@@ -1,15 +1,14 @@
 import { auth } from '@/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { writeFile, mkdir, unlink } from 'fs/promises'
+import { unlink } from 'fs/promises'
 import path from 'path'
 import { logger } from '@/lib/logger'
 import { parseCivilDate } from '@/lib/date-helpers'
 import { requireRole, ROLES } from '@/lib/authz'
+import { detectarTipoOC, guardarArchivoOC } from '@/lib/quotes/oc-archivo'
 
-const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads', 'cotizaciones-oc')
 const MAX_SIZE = 10 * 1024 * 1024 // 10MB
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'application/pdf']
 
 /**
  * POST /api/quotes/[id]/upload-oc
@@ -53,14 +52,6 @@ export async function POST(
       return NextResponse.json({ error: 'No se recibió archivo' }, { status: 400 })
     }
 
-    // Validar tipo
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      return NextResponse.json(
-        { error: 'Tipo de archivo no permitido. Solo JPG, PNG o PDF.' },
-        { status: 400 }
-      )
-    }
-
     // Validar tamaño
     if (file.size > MAX_SIZE) {
       return NextResponse.json(
@@ -69,25 +60,20 @@ export async function POST(
       )
     }
 
-    // Crear directorio si no existe
-    await mkdir(UPLOAD_DIR, { recursive: true })
+    // Validar tipo por contenido: lo arrastrado desde el correo puede venir sin tipo declarado
+    const bytes = Buffer.from(await file.arrayBuffer())
+    const tipo = detectarTipoOC(bytes)
+    if (!tipo) {
+      return NextResponse.json(
+        { error: 'Tipo de archivo no permitido. Solo JPG, PNG o PDF.' },
+        { status: 400 }
+      )
+    }
 
-    // Generar nombre de archivo único
-    // La extensión sale del tipo ya validado, nunca del nombre que manda el cliente.
-    const ext = file.type === 'application/pdf' ? 'pdf' : file.type === 'image/png' ? 'png' : 'jpg'
-    const safeNumber = quote.quoteNumber.replace(/\s/g, '-')
-    const timestamp = Date.now()
-    const fileName = `${safeNumber}_oc_${timestamp}.${ext}`
-    const filePath = path.join(UPLOAD_DIR, fileName)
-
-    // Escribir archivo
-    const bytes = await file.arrayBuffer()
-    await writeFile(filePath, Buffer.from(bytes))
+    const purchaseOrderUrl = await guardarArchivoOC(quote.quoteNumber, bytes, tipo)
 
     // Actualizar quote en la base de datos
-    const updateData: Record<string, unknown> = {
-      purchaseOrderUrl: `/uploads/cotizaciones-oc/${fileName}`,
-    }
+    const updateData: Record<string, unknown> = { purchaseOrderUrl }
 
     if (purchaseOrderNumber) {
       updateData.purchaseOrderNumber = purchaseOrderNumber

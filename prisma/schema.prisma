@@ -1090,6 +1090,7 @@ model Product {
   mlQuestions MlQuestion[]
   mlItemLinks MlItemLink[]
   famiqLink   FamiqLink?
+  jmhLink     JmhLink?
 
   @@index([sku])
   @@index([name])
@@ -3952,6 +3953,26 @@ model FamiqLink {
   updatedAt        DateTime  @updatedAt
 
   @@map("famiq_links")
+}
+
+// Mapeo producto JMH/CENI -> ID del producto en su tienda (tienda.jmh.com.ar,
+// Odoo), para consultar stock en vivo y precio de lista sin login
+// (POST /website_sale/get_combination_info). Se carga con
+// scripts/cargar-jmh-links.ts recorriendo el listado de la tienda; codigo =
+// referencia interna de JMH = SKU del producto en el ERP.
+model JmhLink {
+  id               String    @id @default(cuid())
+  codigo           String    @unique // código JMH = Product.sku
+  templateId       Int // product.template de la tienda
+  nombre           String?
+  productId        String?   @unique
+  product          Product?  @relation(fields: [productId], references: [id])
+  precioListaWeb   Decimal?  @db.Decimal(12, 2) // último precio de lista visto en la tienda (USD)
+  precioListaWebAt DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@map("jmh_links")
 }
 
 // Stock semanal de WINTERS en Buenos Aires (planilla "Stock WINAR"): lo importa

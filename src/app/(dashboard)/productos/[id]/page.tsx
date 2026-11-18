@@ -18,6 +18,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { SupplierCombobox } from '@/components/productos/SupplierCombobox'
 import { FamiqStock } from '@/components/productos/FamiqStock'
 import { WintersStock } from '@/components/productos/WintersStock'
+import { JmhStock, esMarcaJmh } from '@/components/productos/JmhStock'
 import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, FileText, Loader2, Package, Pencil, Save, Trash2, Upload, X } from 'lucide-react'
 import { toast } from 'sonner'
@@ -569,6 +570,7 @@ export default function ProductoDetallePage() {
                 Control de stock y unidades
                 {product.brand?.toUpperCase() === 'FMQ' && <FamiqStock sku={product.sku} />}
                 {product.brand?.toUpperCase() === 'WINTERS' && <WintersStock sku={product.sku} />}
+                {esMarcaJmh(product.brand) && <JmhStock sku={product.sku} />}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">

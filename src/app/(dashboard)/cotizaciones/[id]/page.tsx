@@ -50,6 +50,7 @@ import { useColppyStock, refreshInventoryCache } from '@/hooks/useColppyStock'
 import { StockBadge, StockWarning } from '@/components/StockBadge'
 import { FamiqStock } from '@/components/productos/FamiqStock'
 import { WintersStock } from '@/components/productos/WintersStock'
+import { JmhStock, esMarcaJmh } from '@/components/productos/JmhStock'
 import { getConjuntosGenebre, type ConjuntoOpcion, type ConjuntoTipo } from '@/lib/genebre-conjuntos'
 import { getBobinasElectrovalvula, type BobinaKit, ELECTROVALVULAS_NAMUR, type NamurKit } from '@/lib/genebre-electrovalvulas'
 import { getPosicionadores, MONTAJE_POSICIONADOR, type PosicionadorOpcion } from '@/lib/genebre-posicionadores'
@@ -2385,6 +2386,9 @@ export default function QuoteDetailPage() {
                               {selectedProduct.brand?.toUpperCase() === 'WINTERS' && (
                                 <WintersStock sku={selectedProduct.sku} />
                               )}
+                              {esMarcaJmh(selectedProduct.brand) && (
+                                <JmhStock sku={selectedProduct.sku} />
+                              )}
                             </div>
                           </div>
                           <span className="text-sm font-mono font-semibold shrink-0 ml-3">USD {formatNumber(selectedProduct.listPriceUSD || 0)}</span>
@@ -3018,6 +3022,9 @@ export default function QuoteDetailPage() {
                                     {mainItem.product.brand?.toUpperCase() === 'WINTERS' && (
                                       <WintersStock sku={mainItem.product.sku} />
                                     )}
+                                    {esMarcaJmh(mainItem.product.brand) && (
+                                      <JmhStock sku={mainItem.product.sku} />
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -3217,6 +3224,9 @@ export default function QuoteDetailPage() {
                                       )}
                                       {alt.product.brand?.toUpperCase() === 'WINTERS' && (
                                         <WintersStock sku={alt.product.sku} />
+                                      )}
+                                      {esMarcaJmh(alt.product.brand) && (
+                                        <JmhStock sku={alt.product.sku} />
                                       )}
                                     </div>
                                   )}

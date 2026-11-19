@@ -197,12 +197,20 @@ pago según el cliente. Leído de `colppyall_min.js` (`facturasacobrargrid`,
 - [x] **Alta del recibo** (operación, grillas, numeración `nroRecibo1/2`).
 - [x] Recibo con transferencia (cuenta destino por nombre, como en pagos).
 - [ ] Cliente con varias impagas (qué se manda de las no cobradas) y cobro parcial.
-- [ ] Recibo con retención IIBB (`retsufridas`) y otras (`retsufridasotras`).
+- [x] Recibo con retenciones: **guardado real capturado** el 19/11/2026 (recibo 0001-00013070
+  de ROLIDAR, idCobro 12236346: FAV en USD + IIBB Buenos Aires + Ganancias + transferencia).
+  `retsufridas:[{jurisdiccion:"Buenos Aires",nroCertificado:"2018006759",importeRet:1370.5,importeBaseRet:""}]`,
+  `retsufridasotras:[{tipoRetencion:"Ganancias",nroCertificado:"2018003831",importeRet:6852.51}]`,
+  `retencionIIBB:1370.5`, `retencionOtras:6852.51`, `totalACobrar` = aplicado − retenciones.
+  Tipos de "otras": Ganancias, IVA, SUSS (los precarga `Cliente/listar_retsufridasotras`).
+  Jurisdicciones: `Cliente/listar_jurisdiccionesRet` (24, todas a 114301). En esa captura la
+  fila en USD fue con `esteCobroMe:263.22` y `totalme:"USD-263.22"`, y la transferencia con
+  `fechaValidez:"19/11/2026"`. En el ERP desde 19/11/2026.
 - [x] Recibo con e-cheq recibido: `idMedioCobro:"Echeqs"`, `idPlanCuenta:"Valores a Depositar"`,
   `Banco` texto libre, `nroCheque` número, `fechaValidez` `DD/MM/AAAA` (la grilla `fondoscobro`
   la convierte en `onAfterEdit`). Leído del front y verificado contra el recibo real
   0001-00013016 de ZEN INGENIERIA (idCobro 12197091, 12/11/2026, cargado en Colppy); el
   guardado en sí no quedó grabado. En el ERP desde 12/11/2026.
-- [ ] Recibo con retención de Ganancias / IVA / SUSS.
+- [x] Recibo con retención de Ganancias (capturado; IVA y SUSS van por la misma lista, sin recibo real aún).
 - [ ] Recibo de factura en USD: quién calcula la diferencia de cambio.
 - [ ] Anticipo (cobro sin factura) y NC dentro del cobro.

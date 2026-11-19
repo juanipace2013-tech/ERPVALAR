@@ -5,7 +5,8 @@
  * GET  → últimos cobros (?customerId=, ?limit=)
  * POST → registra un recibo en Colppy.
  *   Body: { idempotencyKey (UUID), customerId, fecha (YYYY-MM-DD),
- *           cobros: { [idFacturaColppy]: importe }, medios: [{ medio?: 'Transferencia'|'Echeqs', cuenta, importe, banco?, numero?, fechaPago? }], tcCobro?, descripcion? }
+ *           cobros: { [idFacturaColppy]: importe }, medios: [{ medio?: 'Transferencia'|'Echeqs', cuenta, importe, banco?, numero?, fechaPago? }], tcCobro?,
+ *           retenciones?: [{ tipo: 'IIBB'|'Ganancias'|'IVA'|'SUSS', jurisdiccion?, certificado, importe }], descripcion? }
  *   201 { id, estado: REGISTRADA|ERROR|INCIERTO, numero, colppyCobroId, totalCobrado, error, repetida:false }
  *   200 lo mismo con repetida:true (esa clave ya se registró: no se manda de nuevo)
  * Roles: ADMIN, GERENTE, CONTADOR.
@@ -45,6 +46,15 @@ export async function GET(req: NextRequest) {
     const filas = (req as { cobros?: unknown } | null)?.cobros
     return new Map(Array.isArray(filas) ? filas.map((f: Record<string, unknown>) => [String(f.idFactura), f]) : [])
   }
+  /** Retenciones sufridas, tal como se mandaron a Colppy */
+  const retencionesPedido = (req: unknown) => {
+    const r = (req ?? {}) as { retsufridas?: unknown; retsufridasotras?: unknown }
+    const lista = (v: unknown) => (Array.isArray(v) ? (v as Array<Record<string, unknown>>) : [])
+    return [
+      ...lista(r.retsufridas).map((x) => ({ tipo: `IIBB ${String(x.jurisdiccion ?? '')}`.trim(), certificado: String(x.nroCertificado ?? ''), importe: Number(x.importeRet) || 0 })),
+      ...lista(r.retsufridasotras).map((x) => ({ tipo: String(x.tipoRetencion ?? ''), certificado: String(x.nroCertificado ?? ''), importe: Number(x.importeRet) || 0 })),
+    ]
+  }
   const tc = (v: unknown) => (Number(v) > 0 ? Number(v) : null)
   return NextResponse.json({
     cobros: cobros.map((o) => {
@@ -64,6 +74,7 @@ export async function GET(req: NextRequest) {
         condicionIva: o.customer.taxCondition,
       },
       descripcion: o.description,
+      retenciones: retencionesPedido(o.colppyRequest),
       totalAplicado: Number(o.appliedTotal),
       totalCobrado: Number(o.totalCollected),
       comprobantes: o.applications.map((a) => {

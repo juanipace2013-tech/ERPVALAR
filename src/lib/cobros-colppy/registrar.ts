@@ -16,7 +16,7 @@ import { prisma } from '@/lib/prisma'
 import { logger } from '@/lib/logger'
 import type { BancoColppy } from '@/lib/pagos-proveedores/colppy-pagos'
 import { getExchangeRate } from '@/lib/currency'
-import { armarAltaCobro, AltaCobroError, esCobrableFase1, monedaImpaga, saldoImpagaCobro, tcFacturaImpaga, type ImpagaCobroColppy, type MedioCobro } from './alta-cobro'
+import { armarAltaCobro, AltaCobroError, esCobrableFase1, JURISDICCIONES_IIBB, TIPOS_RETENCION_OTRAS, type RetencionCobro, monedaImpaga, saldoImpagaCobro, tcFacturaImpaga, type ImpagaCobroColppy, type MedioCobro } from './alta-cobro'
 import { colppyAltaCobro, colppyCuentasCobroArs, colppyImpagasCliente, colppyProximoNumeroRecibo, colppyUsuarioSesion } from './colppy-cobros'
 
 const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
@@ -142,6 +142,8 @@ export interface PedidoCobro {
   cobros: Record<string, number>
   /** idFactura (Colppy) → T/C del cobro, para las facturas en dólares */
   tcCobro: Record<string, number>
+  /** Retenciones sufridas (IIBB con jurisdicción; Ganancias, IVA o SUSS) */
+  retenciones: RetencionCobro[]
   medios: Array<{ medio: 'Transferencia' | 'Echeqs'; cuenta: string; importe: number; banco?: string; numero?: string; fechaPago?: string }>
   descripcion: string
 }
@@ -174,6 +176,23 @@ export function validarPedidoCobro(body: unknown): PedidoCobro {
         else if (k in cobros) tcCobro[k] = Math.round(n * 10000) / 10000
       }
   }
+  const retenciones: RetencionCobro[] = []
+  if (b.retenciones !== undefined && b.retenciones !== null) {
+    if (!Array.isArray(b.retenciones) || b.retenciones.length > 20) errores.push('Retenciones inválidas')
+    else
+      for (const r of b.retenciones) {
+        const importe = Number(r?.importe)
+        const tipo = String(r?.tipo ?? '')
+        const certificado = String(r?.certificado ?? '').trim().slice(0, 40)
+        const jurisdiccion = String(r?.jurisdiccion ?? '')
+        if (!Number.isFinite(importe) || importe <= 0) errores.push('Retención con importe inválido')
+        else if (tipo === 'IIBB') {
+          if (!(JURISDICCIONES_IIBB as readonly string[]).includes(jurisdiccion)) errores.push('Falta la jurisdicción de la retención de IIBB')
+          else retenciones.push({ tipo: 'IIBB', jurisdiccion, certificado, importe: r2(importe) })
+        } else if ((TIPOS_RETENCION_OTRAS as readonly string[]).includes(tipo)) retenciones.push({ tipo: tipo as RetencionCobro['tipo'], certificado, importe: r2(importe) })
+        else errores.push(`Tipo de retención no soportado: ${tipo}`)
+      }
+  }
   const medios: PedidoCobro['medios'] = []
   if (!Array.isArray(b.medios) || !b.medios.length) errores.push('Falta el medio de cobro')
   else if (b.medios.length > 10) errores.push('Demasiados medios de cobro')
@@ -197,6 +216,7 @@ export function validarPedidoCobro(body: unknown): PedidoCobro {
     fecha: String(b.fecha ?? ''),
     cobros,
     tcCobro,
+    retenciones,
     medios,
     descripcion: String(b.descripcion ?? '').slice(0, 200),
   }
@@ -359,6 +379,7 @@ export async function registrarCobro(p: PedidoCobro, user: { id: string }): Prom
         impagas,
         cobros: p.cobros,
         tcCobro: p.tcCobro,
+        retenciones: p.retenciones,
         medios: medios.map((m) => ({ medio: m.medio, cuenta: m.cuenta, importe: m.importe, banco: m.banco, numero: m.numero, fechaPago: m.fechaPago })),
         descripcion: p.descripcion,
       })

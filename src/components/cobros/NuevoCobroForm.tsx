@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { formatCurrency } from '@/lib/utils'
 import type { PreparacionCobro, ResultadoCobro } from '@/lib/cobros-colppy/registrar'
+import { JURISDICCIONES_IIBB } from '@/lib/cobros-colppy/alta-cobro'
 
 const MAX_MEDIOS = 10
 const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
@@ -78,6 +79,14 @@ function mensajesDeError(d: unknown, status: number): string[] {
   return [`Error HTTP ${status}`]
 }
 
+interface Retencion {
+  uid: string
+  tipo: 'IIBB' | 'Ganancias' | 'IVA' | 'SUSS'
+  jurisdiccion: string
+  certificado: string
+  importe: string
+}
+
 interface Medio {
   uid: string
   medio: 'Transferencia' | 'Echeqs'
@@ -116,6 +125,8 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
   const [tcs, setTcs] = useState<Record<string, string>>({})
   const [medios, setMedios] = useState<Medio[]>([{ ...MEDIO_VACIO, uid: nuevoUid(), auto: true }])
   const [descripcion, setDescripcion] = useState('')
+  /** Retenciones sufridas que informó el cliente en su orden de pago */
+  const [rets, setRets] = useState<Retencion[]>([])
 
   const [confirmando, setConfirmando] = useState(false)
   const [enviando, setEnviando] = useState(false)
@@ -189,7 +200,8 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
     }
     return r2(d)
   }, [prep, elegidas, tcs])
-  const totalACobrar = r2(totalAplicado + diferenciaCambio)
+  const totalRetenciones = useMemo(() => r2(rets.reduce((a, r) => a + (Number.isFinite(aNumero(r.importe)) ? aNumero(r.importe) : 0), 0)), [rets])
+  const totalACobrar = r2(totalAplicado - totalRetenciones + diferenciaCambio)
   const diferencia = r2(totalMedios - totalACobrar)
 
   // Con un solo medio sin tocar, su importe sigue al total a cobrar
@@ -223,17 +235,24 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
       const n = aNumero(m.importe)
       if (!Number.isFinite(n) || n <= 0) p.push('Importe inválido en un medio de cobro')
     }
+    for (const r of rets) {
+      const n = aNumero(r.importe)
+      if (!Number.isFinite(n) || n <= 0) p.push('Importe inválido en una retención (o quitá el renglón)')
+      if (r.tipo === 'IIBB' && !r.jurisdiccion) p.push('Elegí la jurisdicción de la retención de IIBB')
+    }
+    if (totalAplicado > 0 && totalACobrar <= 0) p.push('Las retenciones no pueden cubrir todo el cobro')
     if (totalAplicado > 0 && Math.abs(diferencia) > 0.005) {
       p.push(`Los medios suman ${formatCurrency(totalMedios)} y el total a cobrar es ${formatCurrency(totalACobrar)}`)
     }
     return [...new Set(p)]
-  }, [prep, elegidas, tcs, medios, totalAplicado, totalACobrar, totalMedios, diferencia])
+  }, [prep, elegidas, tcs, rets, medios, totalAplicado, totalACobrar, totalMedios, diferencia])
 
   const pedido = useMemo(
     () => ({
       customerId: clienteId,
       fecha,
       cobros: Object.fromEntries(Object.entries(elegidas).map(([k, v]) => [k, r2(aNumero(v))])),
+      retenciones: rets.map((r) => ({ tipo: r.tipo, jurisdiccion: r.tipo === 'IIBB' ? r.jurisdiccion : undefined, certificado: r.certificado.trim(), importe: r2(aNumero(r.importe)) })),
       tcCobro: Object.fromEntries(
         Object.keys(elegidas)
           .filter((k) => k in tcs)
@@ -246,7 +265,7 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
       ),
       descripcion,
     }),
-    [clienteId, fecha, elegidas, tcs, medios, descripcion]
+    [clienteId, fecha, elegidas, tcs, rets, medios, descripcion]
   )
 
   async function registrar() {
@@ -463,6 +482,98 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
         )}
       </div>
 
+      {/* Retenciones sufridas */}
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-blue-900">Retenciones sufridas</h3>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={rets.length >= 20}
+            onClick={() => setRets((rs) => [...rs, { uid: nuevoUid(), tipo: 'IIBB', jurisdiccion: '', certificado: '', importe: '' }])}
+          >
+            <Plus className="mr-1 h-4 w-4" />
+            Agregar retención
+          </Button>
+        </div>
+        {rets.length === 0 ? (
+          <p className="text-xs text-muted-foreground">Si el cliente te retuvo IIBB, Ganancias, IVA o SUSS, agregá un renglón por cada certificado.</p>
+        ) : (
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-blue-50">
+                  <TableHead className="w-40">Retención</TableHead>
+                  <TableHead>Jurisdicción</TableHead>
+                  <TableHead>N° de certificado</TableHead>
+                  <TableHead className="w-40 text-right">Importe</TableHead>
+                  <TableHead className="w-10" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rets.map((r) => {
+                  const cambiar = (c: Partial<Retencion>) => setRets((rs) => rs.map((x) => (x.uid === r.uid ? { ...x, ...c } : x)))
+                  return (
+                    <TableRow key={r.uid}>
+                      <TableCell>
+                        <Select value={r.tipo} onValueChange={(v) => cambiar({ tipo: v as Retencion['tipo'] })}>
+                          <SelectTrigger className="h-8" aria-label="Tipo de retención">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="IIBB">Ingresos Brutos</SelectItem>
+                            <SelectItem value="Ganancias">Ganancias</SelectItem>
+                            <SelectItem value="IVA">IVA</SelectItem>
+                            <SelectItem value="SUSS">SUSS</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell>
+                        {r.tipo === 'IIBB' ? (
+                          <Select value={r.jurisdiccion} onValueChange={(v) => cambiar({ jurisdiccion: v })}>
+                            <SelectTrigger className="h-8" aria-label="Jurisdicción">
+                              <SelectValue placeholder="Elegir jurisdicción" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {JURISDICCIONES_IIBB.map((j) => (
+                                <SelectItem key={j} value={j}>
+                                  {j}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Input className="h-8" aria-label="Número de certificado" maxLength={40} value={r.certificado} onChange={(e) => cambiar({ certificado: e.target.value })} />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          className="h-8 text-right"
+                          inputMode="decimal"
+                          placeholder="0,00"
+                          aria-label="Importe de la retención"
+                          value={r.importe}
+                          onChange={(e) => cambiar({ importe: e.target.value })}
+                          onBlur={() => cambiar({ importe: acomodar(r.importe) })}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Quitar retención" onClick={() => setRets((rs) => rs.filter((x) => x.uid !== r.uid))}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </div>
+
       {/* Medios de cobro + totales */}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div>
@@ -574,13 +685,13 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
             </Button>
           )}
           <p className="mt-2 text-xs text-muted-foreground">
-            Transferencias a cuentas en pesos y e-cheqs recibidos (entran a Valores a Depositar). Retenciones y anticipos se siguen cargando en Colppy.
+            Transferencias a cuentas en pesos y e-cheqs recibidos (entran a Valores a Depositar). Los anticipos se siguen cargando en Colppy.
           </p>
         </div>
 
         <div className="space-y-1 self-start rounded-md border bg-muted/40 p-4 text-sm">
           <Total label="Total este cobro" valor={totalAplicado} />
-          <Total label="Retenciones" valor={0} />
+          <Total label="Retenciones" valor={-totalRetenciones} />
           {hayDolares && <Total label="Diferencia de cambio" valor={diferenciaCambio} />}
           <Total label="Total a cobrar" valor={totalACobrar} fuerte />
           <Total label="Total cobrado" valor={totalMedios} fuerte />

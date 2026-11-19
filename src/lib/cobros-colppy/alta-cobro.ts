@@ -79,11 +79,38 @@ export interface PedidoAltaCobro {
   cobros: Record<string, number>
   /** idFactura → T/C al que se cobra (solo facturas en dólares; si falta, el de la factura) */
   tcCobro?: Record<string, number>
+  retenciones?: RetencionCobro[]
   medios: MedioCobro[]
   descripcion?: string
 }
 
+/** Jurisdicciones de IIBB configuradas en Colppy (Cliente/listar_jurisdiccionesRet, 19/11/2026); todas van a la cuenta 114301 */
+export const JURISDICCIONES_IIBB = [
+  'Buenos Aires', 'CABA', 'Catamarca', 'Chaco', 'Chubut', 'Córdoba', 'Corrientes', 'Entre Ríos', 'Formosa', 'Jujuy', 'La Pampa', 'La Rioja',
+  'Mendoza', 'Misiones', 'Neuquén', 'Río Negro', 'Salta', 'San Juan', 'San Luis', 'Santa Cruz', 'Santa Fé', 'Santiago del Estero', 'Tierra del Fuego', 'Tucumán',
+] as const
+
+/** Tipos de retención que no son IIBB (los que precarga Colppy en "Otras retenciones") */
+export const TIPOS_RETENCION_OTRAS = ['Ganancias', 'IVA', 'SUSS'] as const
+
+/**
+ * Retención sufrida en el cobro. Capturado del guardado real del recibo
+ * 0001-00013070 de ROLIDAR (19/11/2026): IIBB va en `retsufridas`
+ * ({jurisdiccion, nroCertificado, importeRet, importeBaseRet:""}) y el resto en
+ * `retsufridasotras` ({tipoRetencion, nroCertificado, importeRet}); los totales
+ * en `retencionIIBB` y `retencionOtras`, y restan del total a cobrar.
+ */
+export interface RetencionCobro {
+  tipo: 'IIBB' | (typeof TIPOS_RETENCION_OTRAS)[number]
+  /** Solo IIBB */
+  jurisdiccion?: string
+  certificado: string
+  importe: number
+}
+
 export interface AltaCobroArmado {
+  /** Σ retenciones sufridas (IIBB + otras) */
+  retenciones: number
   parameters: Record<string, unknown>
   /** Σ esteCobro: pesos al T/C de cada factura (lo que baja el saldo en Colppy) */
   totalAplicado: number
@@ -193,7 +220,8 @@ export function armarAltaCobro(p: PedidoAltaCobro): AltaCobroArmado {
       cobrado: Number(f.cobrado) || 0,
       saldoAnterior: saldo,
       esteCobro: pagar ? importe : 0,
-      esteCobroMe: '',
+      // En el guardado real de una factura en dólares el front manda lo cobrado en dólares
+      esteCobroMe: enDolares && tcFactura && pagar ? r2(importe / tcFactura) : '',
       Saldo: pagar ? r2(saldo - importe) : saldo,
       // El front de Colppy agrega esto a las filas en moneda extranjera
       ...(enDolares && tcFactura ? { totalme: `${f.currency}-${Number(f.totalFactura) / Number(tcFactura.toFixed(2))}` } : {}),
@@ -217,8 +245,18 @@ export function armarAltaCobro(p: PedidoAltaCobro): AltaCobroArmado {
     if (!(r2(m.importe) > 0)) errores.push(`Importe inválido en ${m.medio === 'Echeqs' ? 'un e-cheq' : m.cuenta || 'un medio de cobro'}`)
   }
   const totalCobrado = r2(p.medios.reduce((a, m) => a + r2(m.importe), 0))
-  // Sin retenciones ni cobros a cuenta: lo cobrado es lo aplicado más la diferencia de cambio
-  const totalACobrar = r2(totalAplicado + diferenciaCambio)
+  const rets = p.retenciones ?? []
+  for (const r of rets) {
+    if (!(r2(r.importe) > 0)) errores.push(`Importe inválido en la retención de ${r.tipo}`)
+    if (r.tipo === 'IIBB') {
+      if (!(JURISDICCIONES_IIBB as readonly string[]).includes(String(r.jurisdiccion))) errores.push('Falta la jurisdicción de la retención de IIBB')
+    } else if (!(TIPOS_RETENCION_OTRAS as readonly string[]).includes(r.tipo)) errores.push(`Tipo de retención no soportado: ${String(r.tipo)}`)
+  }
+  const retencionIIBB = r2(rets.filter((r) => r.tipo === 'IIBB').reduce((a, r) => a + r2(r.importe), 0))
+  const retencionOtras = r2(rets.filter((r) => r.tipo !== 'IIBB').reduce((a, r) => a + r2(r.importe), 0))
+  // Sin anticipos ni cobros a cuenta: lo cobrado es lo aplicado, menos las retenciones, más la diferencia de cambio
+  const totalACobrar = r2(totalAplicado - retencionIIBB - retencionOtras + diferenciaCambio)
+  if (!(totalACobrar > 0)) errores.push('Las retenciones no pueden cubrir todo el cobro')
   if (Math.abs(totalCobrado - totalACobrar) > 0.005) {
     errores.push(`Los medios de cobro suman ${totalCobrado} y el total a cobrar es ${totalACobrar}`)
   }
@@ -257,14 +295,14 @@ export function armarAltaCobro(p: PedidoAltaCobro): AltaCobroArmado {
     anticipo: 0,
     descuentos: 0,
     intereses: 0,
-    retencionIIBB: 0,
+    retencionIIBB,
     totalACobrar,
     idMedioCobro: p.medios[0].medio,
     totalCobrado,
-    retencionOtras: 0,
-    retsufridas: [],
-    retsufridasotras: [],
+    retencionOtras,
+    retsufridas: rets.filter((r) => r.tipo === 'IIBB').map((r) => ({ jurisdiccion: String(r.jurisdiccion), nroCertificado: r.certificado.trim(), importeRet: r2(r.importe), importeBaseRet: '' })),
+    retsufridasotras: rets.filter((r) => r.tipo !== 'IIBB').map((r) => ({ tipoRetencion: r.tipo, nroCertificado: r.certificado.trim(), importeRet: r2(r.importe) })),
     diferenciaTipoCambio: diferenciaCambio,
   }
-  return { parameters, totalAplicado, diferenciaCambio, totalCobrado }
+  return { parameters, totalAplicado, diferenciaCambio, retenciones: r2(retencionIIBB + retencionOtras), totalCobrado }
 }

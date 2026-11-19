@@ -34,6 +34,8 @@ export interface ReciboPDFData {
     tcCobro?: number | null
   }>
   medios: Array<{ medio: string; cuenta: string; importe: number }>
+  /** Retenciones sufridas (IIBB por jurisdicción, Ganancias, IVA, SUSS) */
+  retenciones?: Array<{ tipo: string; certificado: string; importe: number }>
   totalAplicado: number
   totalCobrado: number
   descripcion?: string | null
@@ -220,6 +222,9 @@ export async function generateReciboPDF(data: ReciboPDFData): Promise<Blob> {
     y = doc.lastAutoTable.finalY + 6
   }
 
+  const retenciones = (data.retenciones ?? []).filter((r) => r.importe > 0)
+  const totalRetenciones = r2(retenciones.reduce((a, r) => a + r.importe, 0))
+
   // ── Comprobantes cobrados ──
   const hayUsd = data.comprobantes.some((c) => c.tcFactura)
   tabla(
@@ -238,7 +243,7 @@ export async function generateReciboPDF(data: ReciboPDFData): Promise<Blob> {
       ]
     }),
     hayUsd ? { 1: 'right', 2: 'right', 3: 'right', 4: 'right', 5: 'right' } : { 1: 'right', 2: 'right', 3: 'right' },
-    ['Total cobrado', ...(hayUsd ? ['', ''] : []), '', '', fmtARS(data.totalCobrado)]
+    ['Total comprobantes', ...(hayUsd ? ['', ''] : []), '', '', fmtARS(r2(data.totalCobrado + totalRetenciones))]
   )
   if (hayUsd) {
     doc.setFont('helvetica', 'normal')
@@ -246,6 +251,17 @@ export async function generateReciboPDF(data: ReciboPDFData): Promise<Blob> {
     doc.setTextColor(...GRAY)
     doc.text('Los comprobantes en dólares se cobran en pesos al tipo de cambio indicado. "Total" y "Saldo anterior" están al tipo de cambio de la factura.', ML, y - 2)
     y += 3
+  }
+
+  // ── Retenciones sufridas ──
+  if (retenciones.length) {
+    tabla(
+      'Retenciones sufridas',
+      ['Retención', 'N° de certificado', 'Importe'],
+      retenciones.map((r) => [r.tipo, r.certificado || '—', fmtARS(r.importe)]),
+      { 2: 'right' },
+      ['Total retenciones', '', fmtARS(totalRetenciones)]
+    )
   }
 
   // ── Valores recibidos ──

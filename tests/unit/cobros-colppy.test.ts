@@ -278,3 +278,91 @@ describe('cobro con e-cheq recibido', () => {
     expect(validarPedidoCobro({ idempotencyKey: '0b0e4c1e-7a57-4c3b-9d55-0d6f0c2a9b11', customerId: 'c1', fecha: '2026-11-12', cobros: { '55067191': 65783 }, medios: [{ medio: 'Echeqs', banco: 'ICBC', numero: '2751', fechaPago: '2026-11-26', importe: 65783 }] }).medios[0]).toMatchObject({ medio: 'Echeqs', banco: 'ICBC', numero: '2751', fechaPago: '2026-11-26' })
   })
 })
+
+describe('cobro con retenciones sufridas', () => {
+  // Guardado real capturado: recibo 0001-00013070 de ROLIDAR (19/11/2026, idCobro 12236346)
+  const fav397: ImpagaCobroColppy = {
+    ...impagaMl,
+    idFactura: '55197374',
+    nroFactura: '0007-00000397',
+    fechaPago: '25-11-2026',
+    descripcion: 'Cotización VAL-2026-4315 - CAE 86463287195665',
+    totalFactura: '414571.5',
+    saldoAnterior: '414571.5',
+    Saldo: 414571.5,
+    currency: 'USD',
+    rate: '1575.000000',
+    totalme: 263.22,
+  }
+  const base: PedidoAltaCobro = {
+    ...pedidoMl,
+    idCliente: '7731598',
+    idUsuario: 'usuario@colppy',
+    fecha: '2026-11-19',
+    nroRecibo2: '00013070',
+    impagas: [fav397],
+    cobros: { '55197374': 414571.5 },
+    tcCobro: { '55197374': 1575 },
+    retenciones: [
+      { tipo: 'IIBB', jurisdiccion: 'Buenos Aires', certificado: '2018006759', importe: 1370.5 },
+      { tipo: 'Ganancias', certificado: '2018003831', importe: 6852.51 },
+    ],
+    medios: [{ medio: 'Transferencia', cuenta: 'Cta Cte Galicia', importe: 406348.49 }],
+  }
+
+  it('recibo real de ROLIDAR: IIBB + Ganancias + transferencia, igual que lo mandó Colppy', () => {
+    const a = armarAltaCobro(base)
+    expect(a.retenciones).toBe(8223.01)
+    expect(a.parameters.cobros).toEqual([
+      {
+        idFactura: '55197374',
+        nroFactura: '0007-00000397',
+        tipoComprobante: 'FAV',
+        fechaPago: '25-11-2026',
+        moneda: '',
+        descripcion: 'Cotización VAL-2026-4315 - CAE 86463287195665',
+        currency: 'USD',
+        tcCobroRate: 1575,
+        rate: '1575.000000',
+        totalFactura: 414571.5,
+        cobrado: 0,
+        saldoAnterior: 414571.5,
+        esteCobro: 414571.5,
+        esteCobroMe: 263.22,
+        Saldo: 0,
+        totalme: 'USD-263.22',
+        pagar: true,
+      },
+    ])
+    expect(a.parameters.retsufridas).toEqual([{ jurisdiccion: 'Buenos Aires', nroCertificado: '2018006759', importeRet: 1370.5, importeBaseRet: '' }])
+    expect(a.parameters.retsufridasotras).toEqual([{ tipoRetencion: 'Ganancias', nroCertificado: '2018003831', importeRet: 6852.51 }])
+    expect(a.parameters).toMatchObject({
+      totalEsteCobro: 414571.5,
+      saldoFacturas: 0,
+      retencionIIBB: 1370.5,
+      retencionOtras: 6852.51,
+      totalACobrar: 406348.49,
+      totalCobrado: 406348.49,
+      diferenciaTipoCambio: 0,
+      idMedioCobro: 'Transferencia',
+    })
+  })
+
+  it('los medios tienen que cerrar contra el total menos las retenciones', () => {
+    expect(() => armarAltaCobro({ ...base, medios: [{ medio: 'Transferencia', cuenta: 'Cta Cte Galicia', importe: 414571.5 }] })).toThrow(/total a cobrar es 406348.49/)
+  })
+
+  it('rechaza IIBB sin jurisdicción, importes inválidos y retenciones que cubren todo', () => {
+    expect(() => armarAltaCobro({ ...base, retenciones: [{ tipo: 'IIBB', certificado: '1', importe: 100 }], medios: [{ medio: 'Transferencia', cuenta: 'Cta Cte Galicia', importe: 414471.5 }] })).toThrow(/jurisdicción/)
+    expect(() => armarAltaCobro({ ...base, retenciones: [{ tipo: 'IVA', certificado: '1', importe: 0 }] })).toThrow(/Importe inválido en la retención/)
+    expect(() => armarAltaCobro({ ...base, retenciones: [{ tipo: 'Ganancias', certificado: '1', importe: 414571.5 }] })).toThrow(/no pueden cubrir todo/)
+  })
+
+  it('validación del pedido: acepta retenciones bien armadas y rechaza tipos desconocidos', () => {
+    const ok = { idempotencyKey: '0b0e4c1e-7a57-4c3b-9d55-0d6f0c2a9b11', customerId: 'c1', fecha: '2026-11-19', cobros: { '55197374': 414571.5 }, medios: [{ cuenta: 'Cta Cte Galicia', importe: 406348.49 }] }
+    expect(validarPedidoCobro({ ...ok, retenciones: base.retenciones }).retenciones).toEqual(base.retenciones)
+    expect(validarPedidoCobro(ok).retenciones).toEqual([])
+    expect(() => validarPedidoCobro({ ...ok, retenciones: [{ tipo: 'Municipal', certificado: '1', importe: 10 }] })).toThrow(CobroError)
+    expect(() => validarPedidoCobro({ ...ok, retenciones: [{ tipo: 'IIBB', jurisdiccion: 'Marte', certificado: '1', importe: 10 }] })).toThrow(CobroError)
+  })
+})

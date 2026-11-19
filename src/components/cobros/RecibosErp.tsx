@@ -20,6 +20,7 @@ interface CobroListado {
   numero: string | null
   cliente: { id: string; nombre: string; cuit?: string | null; direccion?: string | null; localidad?: string | null; condicionIva?: string | null }
   descripcion?: string | null
+  retenciones?: Array<{ tipo: string; certificado: string; importe: number }>
   totalAplicado: number
   totalCobrado: number
   comprobantes: Array<{ numero: string; tipo: string; total: number; saldoAnterior: number; importe: number; tcFactura: number | null; tcCobro: number | null }>
@@ -85,6 +86,7 @@ export default function RecibosErp({ clienteId, version, conCliente }: { cliente
         cliente: c.cliente,
         comprobantes: c.comprobantes,
         medios: c.medios.map((m) => ({ medio: m.medio === 'Echeqs' ? 'E-cheq' : m.medio || 'Transferencia', cuenta: m.medio === 'Echeqs' ? m.cuenta.replace(/^E-cheq /, '') : m.cuenta, importe: m.importe })),
+        retenciones: c.retenciones ?? [],
         totalAplicado: c.totalAplicado,
         totalCobrado: c.totalCobrado,
         descripcion: c.descripcion,

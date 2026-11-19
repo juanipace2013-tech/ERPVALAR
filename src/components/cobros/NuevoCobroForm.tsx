@@ -334,7 +334,8 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
   const hayDolares = enDolares.length > 0
 
   return (
-    <div className="space-y-5">
+    // Casilleros bien visibles: fondo blanco y borde marcado en campos, desplegables y tildes
+    <div className="space-y-5 [&_button[role=checkbox]]:border-gray-500 [&_button[role=checkbox]:not([data-state=checked])]:bg-white dark:[&_button[role=checkbox]:not([data-state=checked])]:bg-transparent [&_button[role=combobox]]:border-gray-400 [&_button[role=combobox]]:bg-white dark:[&_button[role=combobox]]:bg-transparent [&_input:not([readonly])]:border-gray-400 [&_input:not([readonly])]:bg-white dark:[&_input:not([readonly])]:bg-transparent [&_input[readonly]]:border-gray-300">
       {/* Cabecera, como en Colppy */}
       <div className="grid gap-4 sm:grid-cols-[170px_190px_1fr]">
         <div className="space-y-1">
@@ -691,7 +692,7 @@ export default function NuevoCobroForm({ clienteId, facturasIniciales, onRegistr
 
         <div className="space-y-1 self-start rounded-md border bg-muted/40 p-4 text-sm">
           <Total label="Total este cobro" valor={totalAplicado} />
-          <Total label="Retenciones" valor={-totalRetenciones} />
+          <Total label="Retenciones" valor={totalRetenciones ? -totalRetenciones : 0} />
           {hayDolares && <Total label="Diferencia de cambio" valor={diferenciaCambio} />}
           <Total label="Total a cobrar" valor={totalACobrar} fuerte />
           <Total label="Total cobrado" valor={totalMedios} fuerte />

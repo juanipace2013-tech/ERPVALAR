@@ -226,6 +226,7 @@ export default function TabFacturasAdeudadas({ colppyId, customerId, nombre }: P
                         {customerId && (
                           <TableCell>
                             <Checkbox
+                              className="border-gray-500 bg-white dark:bg-transparent"
                               aria-label={`Cobrar ${f.numero}`}
                               checked={tildadas.has(f.idFactura)}
                               onCheckedChange={(v) =>

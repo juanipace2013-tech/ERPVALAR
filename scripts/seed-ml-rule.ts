@@ -37,6 +37,9 @@ Importante ‼️ Necesitamos recibir su respuesta antes de las 12:00 hs. De lo 
 const RULES = [
   { mlItemId: 'MLA2047850328', nota: 'reductora 3/4"' },
   { mlItemId: 'MLA1141588199', nota: 'reductora 1/2" + manómetro' },
+  // 2026-11-25: venta 2000016197799205 (catálogo "Genebre 3318-04 ... PN25")
+  // salió sin mensaje; es la publicación de catálogo de la 1/2" con manómetro.
+  { mlItemId: 'MLA2047850358', nota: 'reductora 1/2" 3318-04 (catálogo)' },
   { mlItemId: 'MLA1141588229', nota: 'reductora 3/4" + manómetro' },
   { mlItemId: 'MLA1141599793', nota: 'reductora 1" + manómetro' },
   { mlItemId: 'MLA1829591850', nota: 'reductora 1 1/2" + manómetro (pausada)' },

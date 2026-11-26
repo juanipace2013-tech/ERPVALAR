@@ -46,8 +46,37 @@ interface DashboardClientProps {
     tipoCambio: any
     rankingVendedores: any[]
     rankingVendedoresAnio: any[]
+    cerradasAnteriorMes: { total: number; porVendedor: Record<string, number> }
+    cerradasAnteriorAnio: { total: number; porVendedor: Record<string, number> }
     sinSeguimiento: { cantidad: number }
   }
+}
+
+/** Variación % de ventas cerradas contra el período comparable anterior.
+ *  Sin base (anterior = 0) no hay porcentaje posible: "nuevo" si ahora hay
+ *  ventas, nada si tampoco. */
+function VariacionCerradas({ actual, anterior, detalle }: { actual: number; anterior: number; detalle: string }) {
+  if (anterior <= 0) {
+    if (actual <= 0) return null
+    return (
+      <span className="text-xs font-medium text-gray-400" title={`Sin ventas cerradas en ${detalle}`}>
+        sin ventas en {detalle}
+      </span>
+    )
+  }
+  const cambio = ((actual - anterior) / anterior) * 100
+  const sube = cambio >= 0
+  const usd = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const diferencia = actual - anterior
+  return (
+    <span
+      className={`inline-flex items-center text-xs font-medium ${sube ? 'text-green-600' : 'text-red-600'}`}
+      title={`${detalle}: ${usd.format(anterior)} (${diferencia >= 0 ? '+' : '−'}${usd.format(Math.abs(diferencia))})`}
+    >
+      {sube ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+      {formatNumber(Math.abs(cambio), 1)}%
+    </span>
+  )
 }
 
 export function DashboardClient({ userName, data }: DashboardClientProps) {
@@ -61,6 +90,8 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
     tipoCambio,
     rankingVendedores,
     rankingVendedoresAnio,
+    cerradasAnteriorMes,
+    cerradasAnteriorAnio,
     sinSeguimiento
   } = data
 
@@ -492,9 +523,9 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
 
       {/* RANKING POR VENTAS CERRADAS: del mes y, debajo, del año en curso */}
       {[
-        { titulo: 'Ranking por Ventas Cerradas', ranking: rankingVendedores },
-        { titulo: `Ranking por Ventas Cerradas del año ${new Date().getFullYear()}`, ranking: rankingVendedoresAnio },
-      ].map(({ titulo, ranking }) => ranking.length > 0 && (() => {
+        { titulo: 'Ranking por Ventas Cerradas', ranking: rankingVendedores, anterior: cerradasAnteriorMes, detalle: 'mismo período del mes anterior' },
+        { titulo: `Ranking por Ventas Cerradas del año ${new Date().getFullYear()}`, ranking: rankingVendedoresAnio, anterior: cerradasAnteriorAnio, detalle: `mismo período de ${new Date().getFullYear() - 1}` },
+      ].map(({ titulo, ranking, anterior, detalle }) => ranking.length > 0 && (() => {
         const rankingCerradas = [...ranking].sort((a, b) => {
           return (b.montoAceptadas || 0) - (a.montoAceptadas || 0)
         })
@@ -525,6 +556,16 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
                   <p className="text-xs text-muted-foreground">
                     {totalOperacionesCerradas} operación{totalOperacionesCerradas !== 1 ? 'es' : ''} cerrada{totalOperacionesCerradas !== 1 ? 's' : ''} de {totalCotizacionesCerradas} cotización{totalCotizacionesCerradas !== 1 ? 'es' : ''}
                   </p>
+                  {anterior.total > 0 ? (
+                    <p className="text-xs text-muted-foreground mt-1 flex items-center justify-end gap-1 flex-wrap">
+                      <VariacionCerradas actual={totalCerrado} anterior={anterior.total} detalle={detalle} />
+                      <span>
+                        ({totalCerrado - anterior.total >= 0 ? '+' : '−'}{formatCurrency(Math.abs(totalCerrado - anterior.total))}) vs. {detalle}: {formatCurrency(anterior.total)}
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-400 mt-1">— sin dato comparable en {detalle}</p>
+                  )}
                 </div>
               </div>
             </CardHeader>
@@ -584,7 +625,12 @@ export function DashboardClient({ userName, data }: DashboardClientProps) {
 
                       {/* Monto destacado */}
                       <div className="flex-shrink-0 text-right">
-                        <p className="text-sm font-bold text-green-700">
+                        <p className="text-sm font-bold text-green-700 flex items-center justify-end gap-2">
+                          <VariacionCerradas
+                            actual={vendedor.montoAceptadas || 0}
+                            anterior={anterior.porVendedor[vendedor.id] || 0}
+                            detalle={detalle}
+                          />
                           {formatCurrency(vendedor.montoAceptadas || 0)}
                         </p>
                         <p className="text-xs text-gray-500">

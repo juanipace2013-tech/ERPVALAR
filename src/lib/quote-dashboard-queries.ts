@@ -1,5 +1,5 @@
 import { prisma } from './prisma'
-import { startOfMonth, endOfMonth, subMonths, addMonths, format, addDays, endOfDay, startOfYear, endOfYear } from 'date-fns'
+import { startOfMonth, endOfMonth, subMonths, addMonths, format, addDays, endOfDay, startOfYear, endOfYear, subYears } from 'date-fns'
 import { es } from 'date-fns/locale'
 import Holidays from 'date-holidays'
 
@@ -524,7 +524,63 @@ export async function getProductosMasCotizados(): Promise<ProductoMasCotizado[]>
     .slice(0, 10)
 }
 
+export interface VentasCerradasAnterior {
+  /** Total cerrado (USD) en el período comparable anterior, de TODOS los
+   *  vendedores (incluye a quien cerró antes y hoy no figura en el ranking). */
+  total: number
+  /** Monto cerrado por vendedor (clave = salesPersonId). */
+  porVendedor: Record<string, number>
+}
+
+/**
+ * Ventas cerradas del período comparable ANTERIOR, para mostrar la variación
+ * en los rankings de ventas cerradas.
+ *  - 'mes': mes anterior, del día 1 hasta el mismo día hábil que lleva
+ *    transcurrido el mes actual (mismo criterio que la card "Cotizaciones del
+ *    mes"), para no comparar un mes en curso contra uno completo.
+ *  - 'anio': año anterior, del 1/1 hasta la misma fecha de hoy.
+ * Mismo criterio de cierre que getRankingVendedores: responseDate + estado ganado.
+ */
+export async function getVentasCerradasAnterior(periodo: 'mes' | 'anio' = 'mes'): Promise<VentasCerradasAnterior> {
+  const now = new Date()
+  let inicio: Date
+  let fin: Date
+  if (periodo === 'anio') {
+    const haceUnAnio = subYears(now, 1)
+    inicio = startOfYear(haceUnAnio)
+    fin = endOfDay(haceUnAnio)
+  } else {
+    const N = contarDiasHabiles(now.getFullYear(), now.getMonth(), now.getDate())
+    inicio = startOfMonth(subMonths(now, 1))
+    const finCompleto = endOfMonth(inicio)
+    const diaCorte = diaDelNesimoHabil(finCompleto.getFullYear(), finCompleto.getMonth(), N, finCompleto.getDate())
+    // Sin días hábiles transcurridos todavía → sin período comparable.
+    if (diaCorte === 0) return { total: 0, porVendedor: {} }
+    fin = endOfDay(addDays(inicio, diaCorte - 1))
+  }
+
+  const filas = await prisma.quote.groupBy({
+    by: ['salesPersonId'],
+    where: {
+      responseDate: { gte: inicio, lte: fin },
+      status: { in: [...ESTADOS_CERRADA_GANADA] },
+    },
+    _sum: { total: true },
+  })
+
+  const porVendedor: Record<string, number> = {}
+  let total = 0
+  for (const f of filas) {
+    const monto = Number(f._sum.total || 0)
+    porVendedor[f.salesPersonId] = monto
+    total += monto
+  }
+  return { total, porVendedor }
+}
+
 export interface VendedorRanking {
+  /** salesPersonId, para cruzar con getVentasCerradasAnterior. */
+  id: string
   nombre: string
   cotizaciones: number
   totalUSD: number
@@ -610,6 +666,7 @@ export async function getRankingVendedores(periodo: 'mes' | 'anio' = 'mes'): Pro
     const ticketPromedio = cotizaciones > 0 ? totalUSD / cotizaciones : 0
 
     return {
+      id: v.salesPersonId,
       nombre: userMap.get(v.salesPersonId) || 'Sin nombre',
       cotizaciones,
       totalUSD,

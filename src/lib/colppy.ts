@@ -93,6 +93,8 @@ export interface EmisionExternaResultado {
   cbteTipo: number;
   cae: string;
   caeVencimiento: Date;
+  /** FCE: opción de transferencia informada a ARCA ('SCA' | 'ADC'), para marcarla igual en Colppy */
+  fceTransmision?: 'SCA' | 'ADC';
 }
 
 export interface SendToColppyOptions {
@@ -1124,7 +1126,8 @@ export async function colppyCreateInvoice(
       ...borrador,
       isFce: true,
       fceCbu: cbu,
-      fceTransmision: 'SCA',
+      // La misma opción informada a ARCA (payloads viejos no la traen: SCA)
+      fceTransmision: invoice.fceTransmision === 'ADC' ? 'ADC' : 'SCA',
       descripcion: `${marca}${cae ? ` CAE ${cae}` : ''} (aprobar)${original ? ` | ${original}` : ''}`.slice(0, 100),
     });
     return { ...r, borradorFce: true, fcePretildada: true };
@@ -2128,6 +2131,7 @@ export async function sendQuoteToColppy(
         if (emision.cbteTipo >= 201) {
           facturaPayload.mipyme = true;
           facturaPayload.cae = emision.cae;
+          if (emision.fceTransmision) facturaPayload.fceTransmision = emision.fceTransmision;
         }
         // Al entrar directamente como Aprobada (sin pasar por la pantalla de
         // Colppy) hay que decirle explícitamente que la línea es un producto de

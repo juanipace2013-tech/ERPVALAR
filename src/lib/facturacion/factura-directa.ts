@@ -30,7 +30,7 @@ import { logger } from '@/lib/logger'
 import { getArcaConfig, isArcaConfigured } from '@/lib/arca/config'
 import { consultarPersona, PadronError } from '@/lib/arca/padron'
 import { formatNroComprobante } from '@/lib/arca/wsfe'
-import { describeCbteTipo, mensajeEmisionIncierta, receptorDesdeCondicion, type ReceptorInput } from '@/lib/arca/emitir'
+import { describeCbteTipo, mensajeEmisionIncierta, normalizarFceTransmision, receptorDesdeCondicion, type ReceptorInput } from '@/lib/arca/emitir'
 import {
   ColppySessionExpiredError,
   EmisionExternaError,
@@ -155,7 +155,7 @@ export interface PedidoFacturaDirectaGuardado {
   version: 1
   customerId: string
   /** Cliente al momento de emitir (la letra y el receptor salieron de acá) */
-  cliente: { name: string; cuit: string; taxCondition: string; fceObligado: boolean }
+  cliente: { name: string; cuit: string; taxCondition: string; fceObligado: boolean; /** Ausente en pedidos viejos: SCA */ fceTransmision?: string }
   moneda: MonedaFacturaDirecta
   tipoCambio: number | null
   condicionPago: string
@@ -323,6 +323,7 @@ const SELECT_CLIENTE = {
   status: true,
   country: true,
   fceObligado: true,
+  fceTransmision: true,
   paymentTerms: true,
 } satisfies Prisma.CustomerSelect
 
@@ -894,7 +895,7 @@ function datosFila(ev: EvaluacionFacturaDirecta, pedido: PedidoFacturaDirecta, u
   const guardado: PedidoFacturaDirectaGuardado = {
     version: 1,
     customerId: ev.cliente.id,
-    cliente: { name: ev.cliente.name, cuit: ev.cliente.cuit, taxCondition: ev.cliente.taxCondition, fceObligado: ev.cliente.fceObligado },
+    cliente: { name: ev.cliente.name, cuit: ev.cliente.cuit, taxCondition: ev.cliente.taxCondition, fceObligado: ev.cliente.fceObligado, fceTransmision: ev.cliente.fceTransmision },
     moneda: pedido.moneda,
     tipoCambio: pedido.moneda === 'USD' ? Number(pedido.tipoCambio) : null,
     condicionPago: pedido.condicionPago,
@@ -1113,6 +1114,7 @@ export async function emitirFacturaDirecta(pedido: PedidoFacturaDirecta, user: {
     cuit: cliente.cuit,
     taxCondition: cliente.taxCondition,
     fceObligado: cliente.fceObligado,
+    fceTransmision: cliente.fceTransmision,
     ...(ev.documentoReceptorB ? { documentoReceptorB: { docTipo: ev.documentoReceptorB.docTipo, docNro: ev.documentoReceptorB.docNro } } : {}),
   })
   // Fecha del comprobante a las 12:00 locales del día de hoy (no la hora
@@ -1398,6 +1400,8 @@ export function emisionYaRealizada(inv: {
   cbteNumero: number | null
   cae: string | null
   caeExpiration: Date | null
+  /** FCE: opción de transferencia con la que se emitió (del pedido guardado) */
+  fceTransmision?: string | null
 }): (datos: EmisionExternaDatos) => Promise<EmisionExternaResultado> {
   return async (datos) => {
     const difiere = (a: unknown, b: unknown) => !(Math.abs(Number(a) - Number(b)) <= 0.005)
@@ -1423,6 +1427,7 @@ export function emisionYaRealizada(inv: {
       cbteTipo: inv.cbteTipo,
       cae: inv.cae,
       caeVencimiento: inv.caeExpiration,
+      ...(inv.cbteTipo >= 201 ? { fceTransmision: normalizarFceTransmision(inv.fceTransmision) } : {}),
     }
   }
 }
@@ -1579,7 +1584,7 @@ export async function registrarFacturaDirectaEnColppy(invoiceId: string): Promis
             condicionPago: p.condicionPago,
             descripcion: referenciaColppyDirecta(inv.invoiceNumber, fila.mlPackId),
             fechaFactura: inv.issueDate,
-            emisionExterna: emisionYaRealizada(inv),
+            emisionExterna: emisionYaRealizada({ ...inv, fceTransmision: p.cliente.fceTransmision }),
           },
           cotizacionSinteticaParaColppy(inv, p.lineas, { id: fila.id, mlPackId: fila.mlPackId, pedido: p })
         )

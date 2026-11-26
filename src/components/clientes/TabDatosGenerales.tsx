@@ -109,6 +109,7 @@ interface ColppyCustomer {
   defaultTransportSchedule: string
   exchangeRateType?: string | null
   fceObligado?: boolean
+  fceTransmision?: string
   requiereCertificadoCalidad?: boolean
   /** Cliente del exterior: país e ID fiscal (RUT, RUC...) tal como se cargó */
   country?: string
@@ -214,6 +215,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
 
   // FCE MiPyME state
   const [fceObligado, setFceObligado] = useState(false)
+  const [fceTransmision, setFceTransmision] = useState<'SCA' | 'ADC'>('SCA')
   const [requiereCertificado, setRequiereCertificado] = useState(false)
   const [savingCertificado, setSavingCertificado] = useState(false)
   const [savingFce, setSavingFce] = useState(false)
@@ -305,6 +307,7 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
         const tc = customerData.customer.exchangeRateType || null
         setExchangeRateType(tc)
         setFceObligado(!!customerData.customer.fceObligado)
+        setFceTransmision(customerData.customer.fceTransmision === 'ADC' ? 'ADC' : 'SCA')
         setRequiereCertificado(!!customerData.customer.requiereCertificadoCalidad)
       }
       if (usersData?.users) {
@@ -932,6 +935,41 @@ export default function TabDatosGenerales({ customer, cuit, onCustomerUpdate }: 
                   </span>
                   {savingFce && <Loader2 className="h-3 w-3 animate-spin text-gray-400" />}
                 </label>
+                {fceObligado && (
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className="text-sm">Opción de transferencia</span>
+                    <Select
+                      value={fceTransmision}
+                      disabled={savingFce || !localCustomerId}
+                      onValueChange={async (value) => {
+                        if (!localCustomerId || (value !== 'SCA' && value !== 'ADC')) return
+                        setSavingFce(true)
+                        try {
+                          const res = await fetch(`/api/clientes/${localCustomerId}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ fceTransmision: value }),
+                          })
+                          if (!res.ok) throw new Error()
+                          setFceTransmision(value)
+                          toast.success(`Las próximas FCE de este cliente salen con ${value}`)
+                        } catch {
+                          toast.error('Error al guardar la opción de transferencia')
+                        } finally {
+                          setSavingFce(false)
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-8 w-[300px] text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="SCA">SCA - Sistema de Circulación Abierta</SelectItem>
+                        <SelectItem value="ADC">ADC - Agente de Depósito Colectivo</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
             </div>
             )}

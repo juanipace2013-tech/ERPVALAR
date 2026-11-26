@@ -276,6 +276,7 @@ export async function POST(request: NextRequest) {
           cuit: quote.customer.cuit,
           taxCondition: quote.customer.taxCondition,
           fceObligado: quote.customer.fceObligado,
+          fceTransmision: quote.customer.fceTransmision,
         })
       : null
     const colppyOptions: SendToColppyOptions = {

@@ -1288,6 +1288,7 @@ export async function facturarVentaMl(params: {
       cuit,
       taxCondition: decision.taxCondition,
       fceObligado: customer.fceObligado,
+      fceTransmision: customer.fceTransmision,
       // B: el documento que va a ARCA puede ser CUIL (86) o DNI (96)
       ...(decision.clase === 'B' ? { documentoReceptorB: { docTipo: decision.docTipo, docNro: decision.docNro } } : {}),
     })

@@ -239,6 +239,11 @@ model Customer {
   // FCE MiPyME: el cliente figura en el padrón ARCA de empresas grandes →
   // facturas A por encima del monto mínimo vigente salen como FCE (201)
   fceObligado Boolean @default(false)
+  // Opción de transferencia de la FCE (Opcional 27 de ARCA) que exige el
+  // cliente: 'SCA' (Sistema de Circulación Abierta) o 'ADC' (Agente de
+  // Depósito Colectivo, p. ej. Central Puerto). No se puede cambiar después
+  // de emitir: hay que anular con NC y refacturar.
+  fceTransmision String @default("SCA")
 
   // El cliente exige siempre certificado de calidad de las válvulas (p. ej.
   // grupo Techint): sus remitos nacen con solicitaCertificadoCalidad tildado.

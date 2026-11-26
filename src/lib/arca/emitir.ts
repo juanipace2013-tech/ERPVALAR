@@ -61,6 +61,14 @@ export interface IvaInput {
   importe: number
 }
 
+/** Opción de transferencia de una FCE (Opcional 27, RG 4919) */
+export type FceTransmision = 'SCA' | 'ADC'
+
+/** Normaliza lo guardado en Customer.fceTransmision: todo lo que no sea 'ADC' es 'SCA' */
+export function normalizarFceTransmision(valor: unknown): FceTransmision {
+  return String(valor ?? '').trim().toUpperCase() === 'ADC' ? 'ADC' : 'SCA'
+}
+
 /**
  * Datos FCE MiPyME (RG 4367). Su presencia hace que el comprobante se emita
  * como FCE (201/206 factura, 203/208 NC, 202/207 ND) en vez del común.
@@ -75,7 +83,7 @@ export interface FceInput {
    * FCE: 'SCA' (Sistema de Circulación Abierta, default) o 'ADC' (Agente de
    * Depósito Colectivo). No va en NC/ND.
    */
-  transmision?: 'SCA' | 'ADC'
+  transmision?: FceTransmision
   /** Solo NC FCE (Opcional 22): 'S' anula la operación completa, 'N' ajuste parcial */
   anulacion?: 'S' | 'N'
 }

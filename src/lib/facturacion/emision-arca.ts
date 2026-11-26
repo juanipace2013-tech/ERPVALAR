@@ -32,6 +32,7 @@ import {
   cbteTipoFor,
   emitirComprobante,
   mensajeEmisionIncierta,
+  normalizarFceTransmision,
   receptorDesdeCondicion,
   type EmisionAutorizada,
   type EmisionResult,
@@ -58,6 +59,8 @@ export interface ClienteFiscal {
   taxCondition: string | null
   /** Cliente en el padrón ARCA de empresas grandes: factura A ≥ umbral sale como FCE */
   fceObligado?: boolean
+  /** Opción de transferencia de la FCE que exige el cliente (Customer.fceTransmision): 'ADC' o, por defecto, 'SCA' */
+  fceTransmision?: string | null
   /**
    * Documento del receptor de una Factura B cuando no corresponde mandar el
    * CUIT (ventas ML a consumidores finales): CUIL (86), CDI (87) o DNI (96).
@@ -194,9 +197,10 @@ export function crearHookEmisionArca(cliente: ClienteFiscal): HookEmisionArca {
         `${cliente.name} está marcado como obligado a FCE MiPyME y el total (ARS ${Math.round(totalArs)}) supera el umbral, pero falta configurar ARCA_CBU en el servidor`
       )
     }
+    const transmision = normalizarFceTransmision(cliente.fceTransmision)
     if (esFce) {
       fceVtoPago = datos.fechaVto
-      logger.info(`[Emisión ARCA] Factura a ${cliente.name} sale como FCE MiPyME (total ARS ${Math.round(totalArs)} ≥ ${cfg.fceMontoMinimo}), vto pago ${datos.fechaVto.toISOString().slice(0, 10)}`)
+      logger.info(`[Emisión ARCA] Factura a ${cliente.name} sale como FCE MiPyME (total ARS ${Math.round(totalArs)} ≥ ${cfg.fceMontoMinimo}), vto pago ${datos.fechaVto.toISOString().slice(0, 10)}, transferencia ${transmision}`)
     }
 
     // Desde acá ARCA puede llegar a recibir el pedido: se registra el intento
@@ -208,7 +212,7 @@ export function crearHookEmisionArca(cliente: ClienteFiscal): HookEmisionArca {
       resultado = await emitirComprobante({
         clase: 'FACTURA',
         letra, // ya validada contra Colppy: 'A' | 'B'
-        fce: esFce ? { vtoPago: datos.fechaVto, cbu: cfg.cbu!, transmision: 'SCA' } : undefined,
+        fce: esFce ? { vtoPago: datos.fechaVto, cbu: cfg.cbu!, transmision } : undefined,
         fecha: datos.fechaFactura,
         receptor,
         moneda: esUsd ? 'USD' : 'ARS',
@@ -262,6 +266,7 @@ export function crearHookEmisionArca(cliente: ClienteFiscal): HookEmisionArca {
       cbteTipo: resultado.cbteTipo,
       cae: resultado.cae,
       caeVencimiento: resultado.caeVencimiento,
+      ...(esFce ? { fceTransmision: transmision } : {}),
     }
   }
 

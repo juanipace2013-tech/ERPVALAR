@@ -298,6 +298,14 @@ export async function PATCH(
       }
     }
 
+    // Opción de transferencia de la FCE: solo SCA o ADC
+    if ('fceTransmision' in body) {
+      if (body.fceTransmision !== 'SCA' && body.fceTransmision !== 'ADC') {
+        return NextResponse.json({ error: 'Opción de transferencia FCE inválida (SCA o ADC)' }, { status: 400 })
+      }
+      updateData.fceTransmision = body.fceTransmision
+    }
+
     // Condición de pago (días): manda el ERP. Solo los plazos que maneja Colppy.
     if ('paymentTerms' in updateData && updateData.paymentTerms !== null) {
       const dias = Number(updateData.paymentTerms)

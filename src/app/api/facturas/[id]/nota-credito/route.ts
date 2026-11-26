@@ -6,7 +6,8 @@
  *   body: { modo: 'UNIDADES', unidades: [{ index, cantidad }], pendienteEnCotizacion?: boolean, motivo? }
  *         (devolución; pendienteEnCotizacion = las unidades vuelven a pendiente de facturar, default no)
  *      o  { modo: 'IMPORTE', netoParcial, motivo? }                      (ajuste)
- *      o  { modo: 'TOTAL', motivo? }                                     (anula la factura)
+ *      o  { modo: 'TOTAL', motivo?, fceRechazada? }                      (anula la factura;
+ *         fceRechazada = FCE MiPyME rechazada por el comprador: NC con anulación 'S')
  *   modo es obligatorio: un comprobante fiscal no se emite deduciendo la intención.
  *   Comprobantes de exportación (E, tipos 19/20/21): 422, no admiten NC A/B
  *   (guard explícito en nota-credito-arca.ts, assertNoEsExportacion).
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: 'Sin permisos para emitir notas de crédito' }, { status: 403 })
   }
   const { id } = await params
-  let body: { modo?: string; motivo?: string; netoParcial?: unknown; unidades?: unknown; pendienteEnCotizacion?: unknown } = {}
+  let body: { modo?: string; motivo?: string; netoParcial?: unknown; unidades?: unknown; pendienteEnCotizacion?: unknown; fceRechazada?: unknown } = {}
   try {
     const parsed = await request.json()
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) body = parsed
@@ -75,6 +76,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (body.pendienteEnCotizacion !== undefined && typeof body.pendienteEnCotizacion !== 'boolean') {
     return NextResponse.json({ error: 'pendienteEnCotizacion tiene que ser true o false' }, { status: 400 })
   }
+  if (body.fceRechazada !== undefined && typeof body.fceRechazada !== 'boolean') {
+    return NextResponse.json({ error: 'fceRechazada tiene que ser true o false' }, { status: 400 })
+  }
   const netoParcial = body.netoParcial === undefined ? undefined : typeof body.netoParcial === 'number' ? body.netoParcial : NaN
   if (netoParcial !== undefined && !Number.isFinite(netoParcial)) {
     return NextResponse.json({ error: 'El neto del ajuste no es un número válido' }, { status: 400 })
@@ -88,6 +92,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       netoParcial,
       unidades,
       pendienteEnCotizacion: body.pendienteEnCotizacion === true,
+      fceRechazada: body.fceRechazada === true,
     })
     logAudit({
       userId: session.user.id,
@@ -97,7 +102,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       entity: 'INVOICE',
       entityId: r.invoiceId,
       entityRef: r.numero,
-      description: `Nota de crédito ${r.esTotal ? 'total' : r.modo === 'UNIDADES' ? 'por unidades (devolución)' : 'parcial'} ${r.numero} (CAE ${r.cae}) por ${r.total} sobre factura ${id}${body.motivo ? ` — ${body.motivo}` : ''}${r.colppyPendiente ? ' [PENDIENTE Colppy]' : r.colppyBorradorFce ? ' [BORRADOR FCE en Colppy]' : ''}${r.advertencias.length ? ` [${r.advertencias.join(' ')}]` : ''}`,
+      description: `Nota de crédito ${r.esTotal ? (body.fceRechazada === true ? 'total (anulación de FCE rechazada)' : 'total') : r.modo === 'UNIDADES' ? 'por unidades (devolución)' : 'parcial'} ${r.numero} (CAE ${r.cae}) por ${r.total} sobre factura ${id}${body.motivo ? ` — ${body.motivo}` : ''}${r.colppyPendiente ? ' [PENDIENTE Colppy]' : r.colppyBorradorFce ? ' [BORRADOR FCE en Colppy]' : ''}${r.advertencias.length ? ` [${r.advertencias.join(' ')}]` : ''}`,
     })
     return NextResponse.json({
       ...r,

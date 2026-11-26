@@ -199,6 +199,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const [ncContexto, setNcContexto] = useState<ContextoNc | null>(null)
   // Devolución: ¿las unidades vuelven a quedar pendientes en la cotización? (default no)
   const [ncPendiente, setNcPendiente] = useState(false)
+  const [ncFceRechazada, setNcFceRechazada] = useState(false)
   const [ncLoading, setNcLoading] = useState(false)
   // Factura E: carga manual en Colppy (pegar el id)
   const [colppyIdManual, setColppyIdManual] = useState('')
@@ -311,6 +312,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
       const body: {
         modo: 'UNIDADES' | 'IMPORTE' | 'TOTAL'
         pendienteEnCotizacion?: boolean
+        fceRechazada?: boolean
         motivo?: string
         netoParcial?: number
         unidades?: Array<{ index: number; cantidad: number }>
@@ -329,6 +331,8 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
       } else if (ncModo === 'IMPORTE') {
         body.netoParcial = parseNumeroAr(ncParcial)
         if (!(body.netoParcial > 0)) throw new Error('Indicá el neto del ajuste (ej.: 5.000,50)')
+      } else if (ncFceRechazada && (invoice?.cbteTipo === 201 || invoice?.cbteTipo === 206)) {
+        body.fceRechazada = true
       }
       const r = await fetch(`/api/facturas/${id}/nota-credito`, {
         method: 'POST',
@@ -373,6 +377,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     setNcLineasError(null)
     setNcCantidades({})
     setNcPendiente(false)
+    setNcFceRechazada(false)
     setNcModo('UNIDADES')
     fetch(`/api/facturas/${id}/nota-credito`)
       .then(async (r) => {
@@ -1277,6 +1282,22 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
               <p className="text-sm text-red-700">
                 Anula la factura completa: devuelve todo el stock, los ítems vuelven a estar pendientes en la cotización y se quita la comisión.
               </p>
+            )}
+            {ncModo === 'TOTAL' && (invoice.cbteTipo === 201 || invoice.cbteTipo === 206) && (
+              <label className="flex items-start gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={ncFceRechazada}
+                  onChange={(e) => setNcFceRechazada(e.target.checked)}
+                />
+                <span>
+                  El cliente <b>rechazó</b> esta FCE en el Registro de FCE MiPyMEs (la NC sale como anulación).
+                  <span className="block text-gray-500">
+                    Sin tildar: ajuste normal. Si la tildás y la FCE no figura rechazada, ARCA no autoriza la NC.
+                  </span>
+                </span>
+              </label>
             )}
             <div className="space-y-2">
               <Label htmlFor="nc-motivo">Motivo</Label>

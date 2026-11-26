@@ -89,6 +89,12 @@ export interface EmitirNotaCreditoOpts {
    * o reposición que se vuelve a facturar. La comisión baja igual en los dos.
    */
   pendienteEnCotizacion?: boolean
+  /**
+   * Solo NC TOTAL sobre una FCE MiPyME que el comprador RECHAZÓ en el Registro
+   * de FCE: la NC sale con anulación 'S' (Opcional 22) en vez del ajuste 'N'.
+   * Si la FCE no está rechazada ARCA no la autoriza (error 10154).
+   */
+  fceRechazada?: boolean
 }
 
 export interface NotaCreditoResult {
@@ -425,6 +431,11 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
   // Opcional 22. Anulación 'S' solo procede si el comprador rechazó la FCE en
   // el registro (error 10154 si no); el camino normal es el ajuste ('N').
   const esFce = inv.cbteTipo === 201 || inv.cbteTipo === 206
+  if (opts.fceRechazada) {
+    if (!esFce) throw new NotaCreditoError('La anulación por rechazo solo aplica a una Factura de Crédito MiPyME (FCE)')
+    if (modoPedido !== 'TOTAL') throw new NotaCreditoError('La anulación de una FCE rechazada tiene que ser una nota de crédito total')
+  }
+  const fceAnulacion: 'S' | 'N' = opts.fceRechazada ? 'S' : 'N'
   const { receptor } = receptorDesdeCondicion(inv.customer.taxCondition, inv.docNro || inv.customer.cuit)
   if (inv.docTipo) receptor.docTipo = inv.docTipo
   if (inv.docNro) receptor.docNro = inv.docNro
@@ -440,7 +451,7 @@ async function emitirNotaCreditoInterno(invoiceId: string, opts: EmitirNotaCredi
     em = await emitirComprobante({
       clase: 'NOTA_CREDITO',
       letra,
-      fce: esFce ? { anulacion: 'N' } : undefined,
+      fce: esFce ? { anulacion: fceAnulacion } : undefined,
       fecha: new Date(),
       receptor,
       moneda: esUsd ? 'USD' : 'ARS',
